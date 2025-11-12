@@ -2,6 +2,13 @@
 
 A **containerized version of Fail2Ban-UI**, allowing easy deployment for managing Fail2Ban configurations, logs, and bans via a web-based UI.
 
+## **Features**
+- **Multi-server management**: Manage multiple Fail2ban servers (local, SSH, API agent) from a single interface
+- **SQLite database**: Persistent storage for server configurations and ban events
+- **Remote management**: Connect to remote Fail2ban instances via SSH
+- **Filter debugging**: Test filters against log lines using `fail2ban-regex`
+- **Jail management**: Enable/disable jails on local and remote servers
+
 
 ## How to Build the Image
 
@@ -67,6 +74,19 @@ Remove the container:
 podman rm fail2ban-ui
 ```
 
+## First Launch & Server Configuration
+After starting the container, access the web interface at `http://localhost:8080` (or your configured port).
+
+**Important:** On first launch, you need to:
+1. **Enable the local connector** (if Fail2ban runs on the same host), OR
+2. **Add a remote server** via SSH or API agent
+
+Go to **Settings** → **Manage Servers** in the web UI to configure your first Fail2ban server.
+
+The UI uses an embedded SQLite database to store all server configurations and ban events. The database is stored in the `/config` volume mount.
+
+> **Note:** The local Fail2ban service is optional. Fail2Ban-UI can manage remote Fail2ban servers via SSH or API agents without requiring a local Fail2ban installation in the container.
+
 ## Troubleshooting
 
 ### UI Not Accessible
@@ -79,6 +99,17 @@ podman logs fail2ban-ui
 ```bash
 podman exec -it fail2ban-ui ps aux
 ```
+
+### No Servers Configured
+- On first launch, you must add at least one Fail2ban server
+- Go to **Settings** → **Manage Servers** in the web UI
+- Enable the local connector or add a remote server via SSH
+
+### SSH Connection Issues
+- Verify SSH key authentication works from the host
+- Ensure passwordless sudo is configured on the remote server
+- Check debug mode in settings for detailed error messages
+- The container needs network access to remote SSH servers
 
 ## Contact & Support
 For issues, contributions, or feature requests, visit our GitHub repository:  

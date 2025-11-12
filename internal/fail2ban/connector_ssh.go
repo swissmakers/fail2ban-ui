@@ -422,10 +422,11 @@ func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLi
 			continue
 		}
 		// Use fail2ban-regex: log line as string, filter file path
-		// Escape the log line for shell safety
+		// Use sudo -s to run a shell that executes the piped command
 		escapedLine := strconv.Quote(logLine)
-		cmd := fmt.Sprintf("sudo fail2ban-regex %s %s", escapedLine, strconv.Quote(filterPath))
-		out, err := sc.runRemoteCommand(ctx, []string{"sh", "-c", cmd})
+		escapedPath := strconv.Quote(filterPath)
+		cmd := fmt.Sprintf("echo %s | fail2ban-regex - %s", escapedLine, escapedPath)
+		out, err := sc.runRemoteCommand(ctx, []string{"sudo", "sh", "-c", cmd})
 		// fail2ban-regex returns success (exit 0) if the line matches
 		// Look for "Lines: 1 lines, 0 ignored, 1 matched" or similar success indicators
 		if err == nil {

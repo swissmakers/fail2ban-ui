@@ -3,7 +3,7 @@ This guide provides two methods to **run Fail2Ban-UI as a systemd service**.
 1. Systemd service that starts the local compiled binary.
 2. Systemd service that starts the fail2ban-ui container.
 
-## For SELinux enabled systems (needed in bouth cases)
+## For SELinux enabled systems (needed in both cases)
 If SELinux is enabled, you must apply the required SELinux policies to allow Fail2Ban to communicate with the Fail2Ban-UI API via port 8080.
 
 Apply the prebuilt SELinux Module with:
@@ -22,6 +22,8 @@ Install **Go 1.22+** and required dependencies:
   ```
 Make sure you setup GeoIP and your country database is available under: `/usr/share/GeoIP/GeoLite2-Country.mmdb`
 
+> **Note:** The local Fail2ban service is optional. Fail2Ban-UI can manage remote Fail2ban servers via SSH or API agents without requiring a local Fail2ban installation.
+
 Clone the repository to `/opt/fail2ban-ui`:
   ```bash
   sudo git clone https://github.com/swissmakers/fail2ban-ui.git /opt/fail2ban-ui
@@ -35,8 +37,8 @@ Save this file as `/etc/systemd/system/fail2ban-ui.service`:
 ```ini
 [Unit]
 Description=Fail2Ban UI
-After=network.target fail2ban.service
-Requires=fail2ban.service
+After=network.target
+Wants=fail2ban.service
 
 [Service]
 Type=simple
@@ -80,6 +82,17 @@ Stop:
 sudo systemctl stop fail2ban-ui.service
 ```
 
+### First Launch & Server Configuration
+After starting the service, access the web interface at `http://localhost:8080` (or your configured port).
+
+**Important:** On first launch, you need to:
+1. **Enable the local connector** (if Fail2ban runs on the same host), OR
+2. **Add a remote server** via SSH or API agent
+
+Go to **Settings** → **Manage Servers** in the web UI to configure your first Fail2ban server.
+
+The UI uses an embedded SQLite database (`fail2ban-ui.db`) to store all server configurations and ban events. This database is automatically created in the working directory.
+
 ## Running Fail2Ban-UI as a (Systemd controlled) Container
 
 This method runs Fail2Ban-UI as a **containerized service** with **automatic startup** and handling through systemd.
@@ -110,8 +123,8 @@ Save this file as `/etc/systemd/system/fail2ban-ui-container.service`:
 ```ini
 [Unit]
 Description=Fail2Ban UI (Containerized)
-After=network.target fail2ban.service
-Requires=fail2ban.service
+After=network.target
+Wants=fail2ban.service
 
 [Service]
 ExecStart=/usr/bin/podman run --rm \
