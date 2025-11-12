@@ -17,7 +17,6 @@
 package fail2ban
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -89,45 +88,25 @@ func TestFilterLocal(filterName string, logLines []string) ([]string, error) {
 	if _, err := os.Stat(filterPath); err != nil {
 		return nil, fmt.Errorf("filter %s not found: %w", filterName, err)
 	}
-	// Read the filter config to extract the failregex
-	content, err := os.ReadFile(filterPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read filter config: %w", err)
-	}
-	// Extract failregex from the config
-	var failregex string
-	scanner := bufio.NewScanner(strings.NewReader(string(content)))
-	inFailregex := false
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "[Definition]") {
-			inFailregex = true
-			continue
-		}
-		if inFailregex && strings.HasPrefix(line, "failregex") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				failregex = strings.TrimSpace(parts[1])
-			}
-			break
-		}
-		if inFailregex && strings.HasPrefix(line, "[") {
-			break
-		}
-	}
-	if failregex == "" {
-		return nil, fmt.Errorf("no failregex found in filter %s", filterName)
-	}
-	// Use fail2ban-regex to test
+	// Use fail2ban-regex with filter file directly - it handles everything
+	// Format: fail2ban-regex "log line" /etc/fail2ban/filter.d/filter-name.conf
 	var matches []string
 	for _, logLine := range logLines {
+		logLine = strings.TrimSpace(logLine)
 		if logLine == "" {
 			continue
 		}
-		cmd := exec.Command("fail2ban-regex", logLine, failregex)
+		cmd := exec.Command("fail2ban-regex", logLine, filterPath)
 		out, err := cmd.CombinedOutput()
-		if err == nil && strings.Contains(string(out), "Success") {
-			matches = append(matches, logLine)
+		output := strings.ToLower(string(out))
+		// fail2ban-regex returns success (exit 0) if the line matches
+		// Look for "matched" or "success" in output
+		if err == nil {
+			if strings.Contains(output, "matched") ||
+				strings.Contains(output, "success") ||
+				strings.Contains(output, "1 matched") {
+				matches = append(matches, logLine)
+			}
 		}
 	}
 	return matches, nil

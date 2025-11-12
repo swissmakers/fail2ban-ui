@@ -295,7 +295,8 @@ func (sc *SSHConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
 	}
 
 	// Parse jail.d directory
-	jailDList, err := sc.runRemoteCommand(ctx, []string{"sudo", "bash", "-c", "for f in /etc/fail2ban/jail.d/*.conf; do [ -f \"$f\" ] && echo \"$f\"; done"})
+	jailDCmd := "sudo find /etc/fail2ban/jail.d -maxdepth 1 -name '*.conf' -type f"
+	jailDList, err := sc.runRemoteCommand(ctx, []string{"sh", "-c", jailDCmd})
 	if err == nil && jailDList != "" {
 		for _, file := range strings.Split(jailDList, "\n") {
 			file = strings.TrimSpace(file)
@@ -351,15 +352,45 @@ func (sc *SSHConnector) UpdateJailEnabledStates(ctx context.Context, updates map
 
 // GetFilters implements Connector.
 func (sc *SSHConnector) GetFilters(ctx context.Context) ([]string, error) {
-	list, err := sc.runRemoteCommand(ctx, []string{"sudo", "bash", "-c", "for f in /etc/fail2ban/filter.d/*.conf; do [ -f \"$f\" ] && basename \"$f\" .conf; done"})
+	// Use find with sudo - execute sudo separately to avoid shell issues
+	// First try with sudo, if that fails, the error will be clear
+	list, err := sc.runRemoteCommand(ctx, []string{"sudo", "find", "/etc/fail2ban/filter.d", "-maxdepth", "1", "-type", "f"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list filters: %w", err)
 	}
+	// Filter for .conf files and extract names in Go
 	var filters []string
+	seen := make(map[string]bool) // Avoid duplicates
 	for _, line := range strings.Split(list, "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			filters = append(filters, line)
+		if line == "" {
+			continue
+		}
+		// Only process .conf files - be strict about the extension
+		if !strings.HasSuffix(line, ".conf") {
+			continue
+		}
+		// Exclude backup files and other non-filter files
+		if strings.HasSuffix(line, ".conf.bak") ||
+			strings.HasSuffix(line, ".conf~") ||
+			strings.HasSuffix(line, ".conf.old") ||
+			strings.HasSuffix(line, ".conf.rpmnew") ||
+			strings.HasSuffix(line, ".conf.rpmsave") ||
+			strings.Contains(line, "README") {
+			continue
+		}
+		parts := strings.Split(line, "/")
+		if len(parts) > 0 {
+			filename := parts[len(parts)-1]
+			// Double-check it ends with .conf
+			if !strings.HasSuffix(filename, ".conf") {
+				continue
+			}
+			name := strings.TrimSuffix(filename, ".conf")
+			if name != "" && !seen[name] {
+				seen[name] = true
+				filters = append(filters, name)
+			}
 		}
 	}
 	return filters, nil
@@ -371,51 +402,40 @@ func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLi
 		return []string{}, nil
 	}
 
-	// Read filter config remotely
+	// Sanitize filter name to prevent path traversal
+	filterName = strings.TrimSpace(filterName)
+	if filterName == "" {
+		return nil, fmt.Errorf("filter name cannot be empty")
+	}
+	// Remove any path components
+	filterName = strings.ReplaceAll(filterName, "/", "")
+	filterName = strings.ReplaceAll(filterName, "..", "")
+
+	// Use fail2ban-regex with filter name directly - it handles everything
+	// Format: fail2ban-regex "log line" /etc/fail2ban/filter.d/filter-name.conf
 	filterPath := fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
-	content, err := sc.runRemoteCommand(ctx, []string{"sudo", "cat", filterPath})
-	if err != nil {
-		return nil, fmt.Errorf("filter %s not found: %w", filterName, err)
-	}
 
-	// Extract failregex
-	var failregex string
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	inFailregex := false
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "[Definition]") {
-			inFailregex = true
-			continue
-		}
-		if inFailregex && strings.HasPrefix(line, "failregex") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				failregex = strings.TrimSpace(parts[1])
-			}
-			break
-		}
-		if inFailregex && strings.HasPrefix(line, "[") {
-			break
-		}
-	}
-	if failregex == "" {
-		return nil, fmt.Errorf("no failregex found in filter %s", filterName)
-	}
-
-	// Test each log line remotely
 	var matches []string
 	for _, logLine := range logLines {
+		logLine = strings.TrimSpace(logLine)
 		if logLine == "" {
 			continue
 		}
-		// Escape the log line and regex for shell
+		// Use fail2ban-regex: log line as string, filter file path
+		// Escape the log line for shell safety
 		escapedLine := strconv.Quote(logLine)
-		escapedRegex := strconv.Quote(failregex)
-		cmd := fmt.Sprintf("echo %s | sudo fail2ban-regex - %s", escapedLine, escapedRegex)
-		out, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", cmd})
-		if err == nil && strings.Contains(out, "Success") {
-			matches = append(matches, logLine)
+		cmd := fmt.Sprintf("sudo fail2ban-regex %s %s", escapedLine, strconv.Quote(filterPath))
+		out, err := sc.runRemoteCommand(ctx, []string{"sh", "-c", cmd})
+		// fail2ban-regex returns success (exit 0) if the line matches
+		// Look for "Lines: 1 lines, 0 ignored, 1 matched" or similar success indicators
+		if err == nil {
+			// Check if output indicates a match
+			output := strings.ToLower(out)
+			if strings.Contains(output, "matched") ||
+				strings.Contains(output, "success") ||
+				strings.Contains(output, "1 matched") {
+				matches = append(matches, logLine)
+			}
 		}
 	}
 	return matches, nil
