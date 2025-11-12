@@ -719,37 +719,6 @@
         html += '</div></fieldset>';
       }
 
-      // Last 5 bans
-      html += '<fieldset class="border p-3 rounded mb-4">';
-      html += '  <legend class="w-auto px-2" data-i18n="dashboard.last_bans">Last 5 Ban Events</legend>';
-      if (!data.lastBans || data.lastBans.length === 0) {
-        html += '<p data-i18n="dashboard.no_recent_bans">No recent bans found.</p>';
-      } else {
-        html += ''
-          + '<div class="table-responsive">'
-          + '<table class="table table-bordered">'
-          + '  <thead>'
-          + '    <tr>'
-          + '      <th data-i18n="dashboard.table.time">Time</th>'
-          + '      <th data-i18n="dashboard.table.jail">Jail</th>'
-          + '      <th data-i18n="dashboard.table.ip">IP</th>'
-          + '      <th data-i18n="dashboard.table.log_line">Log Line</th>'
-          + '    </tr>'
-          + '  </thead>'
-          + '  <tbody></div>';
-
-        data.lastBans.forEach(function(e) {
-          html += ''
-            + '<tr>'
-            + '  <td>' + e.Time + '</td>'
-            + '  <td>' + e.Jail + '</td>'
-            + '  <td>' + e.IP + '</td>'
-            + '  <td>' + e.LogLine + '</td>'
-            + '</tr>';
-        });
-
-        html += '</tbody></table></fieldset>';
-      }
 
       document.getElementById('dashboard').innerHTML = html;
     }

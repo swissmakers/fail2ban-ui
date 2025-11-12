@@ -43,8 +43,7 @@ import (
 
 // SummaryResponse is what we return from /api/summary
 type SummaryResponse struct {
-	Jails    []fail2ban.JailInfo `json:"jails"`
-	LastBans []fail2ban.BanEvent `json:"lastBans"`
+	Jails []fail2ban.JailInfo `json:"jails"`
 }
 
 func resolveConnector(c *gin.Context) (fail2ban.Connector, error) {
@@ -89,7 +88,6 @@ func resolveServerForNotification(serverID, hostname string) (config.Fail2banSer
 
 // SummaryHandler returns a JSON summary of all jails, including
 // number of banned IPs, how many are new in the last hour, etc.
-// and the last 5 overall ban events from the log.
 func SummaryHandler(c *gin.Context) {
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -103,15 +101,8 @@ func SummaryHandler(c *gin.Context) {
 		return
 	}
 
-	lastBans, err := conn.FetchBanEvents(c.Request.Context(), 5)
-	if err != nil {
-		log.Printf("warning: failed to fetch ban events for summary: %v", err)
-		lastBans = []fail2ban.BanEvent{}
-	}
-
 	resp := SummaryResponse{
-		Jails:    jailInfos,
-		LastBans: lastBans,
+		Jails: jailInfos,
 	}
 	c.JSON(http.StatusOK, resp)
 }
@@ -502,16 +493,6 @@ func shouldAlertForCountry(country string, alertCountries []string) bool {
 		}
 	}
 	return false
-}
-
-func sortByTimeDesc(events []fail2ban.BanEvent) {
-	for i := 0; i < len(events); i++ {
-		for j := i + 1; j < len(events); j++ {
-			if events[j].Time.After(events[i].Time) {
-				events[i], events[j] = events[j], events[i]
-			}
-		}
-	}
 }
 
 // IndexHandler serves the HTML page

@@ -1190,7 +1190,14 @@
       if (isNaN(date.getTime())) {
         return value;
       }
-      return date.toLocaleString();
+      // Format as "2025.11.12, 21:21:52"
+      var year = date.getFullYear();
+      var month = String(date.getMonth() + 1).padStart(2, '0');
+      var day = String(date.getDate()).padStart(2, '0');
+      var hours = String(date.getHours()).padStart(2, '0');
+      var minutes = String(date.getMinutes()).padStart(2, '0');
+      var seconds = String(date.getSeconds()).padStart(2, '0');
+      return year + '.' + month + '.' + day + ', ' + hours + ':' + minutes + ':' + seconds;
     }
 
     function totalStoredBans() {
@@ -1313,38 +1320,6 @@
         });
 
         html += '    </tbody></table>';
-        html += '</div>';
-      }
-
-      if (summary.lastBans) {
-        html += '<div class="mt-6">';
-        html += '  <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="dashboard.last_bans">Last 5 Ban Events</h3>';
-        if (!summary.lastBans.length) {
-          html += '<p class="text-gray-500" data-i18n="dashboard.no_recent_bans">No recent bans found.</p>';
-        } else {
-          html += ''
-            + '<div class="overflow-x-auto">'
-            + '  <table class="min-w-full divide-y divide-gray-200 text-sm sm:text-base">'
-            + '    <thead class="bg-gray-50">'
-            + '      <tr>'
-            + '        <th class="px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.time">Time</th>'
-            + '        <th class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.jail">Jail</th>'
-            + '        <th class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.ip">IP</th>'
-            + '        <th class="px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.log_line">Details</th>'
-            + '      </tr>'
-            + '    </thead>'
-            + '    <tbody class="bg-white divide-y divide-gray-200">';
-          summary.lastBans.forEach(function(event) {
-            html += ''
-              + '<tr class="hover:bg-gray-50">'
-              + '  <td class="px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words">' + escapeHtml(event.Time || '') + '</td>'
-              + '  <td class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words">' + escapeHtml(event.Jail || '') + '</td>'
-              + '  <td class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words">' + escapeHtml(event.IP || '') + '</td>'
-              + '  <td class="px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words">' + escapeHtml(event.LogLine || '') + '</td>'
-              + '</tr>';
-          });
-          html += '    </tbody></table></div>';
-        }
         html += '</div>';
       }
 
