@@ -28,3 +28,4 @@ go.work.sum
 fail2ban-ui-settings.json
 _dev
 fail2ban-ui.db*
+.DS_Store
