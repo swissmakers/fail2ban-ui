@@ -21,6 +21,14 @@ type Connector interface {
 	GetFilterConfig(ctx context.Context, jail string) (string, error)
 	SetFilterConfig(ctx context.Context, jail, content string) error
 	FetchBanEvents(ctx context.Context, limit int) ([]BanEvent, error)
+
+	// Jail management
+	GetAllJails(ctx context.Context) ([]JailInfo, error)
+	UpdateJailEnabledStates(ctx context.Context, updates map[string]bool) error
+
+	// Filter operations
+	GetFilters(ctx context.Context) ([]string, error)
+	TestFilter(ctx context.Context, filterName string, logLines []string) ([]string, error)
 }
 
 // Manager orchestrates all connectors for configured Fail2ban servers.

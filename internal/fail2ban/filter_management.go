@@ -17,10 +17,13 @@
 package fail2ban
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // GetFilterConfig returns the filter configuration using the default connector.
@@ -58,4 +61,74 @@ func SetFilterConfigLocal(jail, newContent string) error {
 		return fmt.Errorf("failed to write config for jail %s: %v", jail, err)
 	}
 	return nil
+}
+
+// GetFiltersLocal returns a list of filter names from /etc/fail2ban/filter.d
+func GetFiltersLocal() ([]string, error) {
+	dir := "/etc/fail2ban/filter.d"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read filter directory: %w", err)
+	}
+	var filters []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".conf") {
+			name := strings.TrimSuffix(entry.Name(), ".conf")
+			filters = append(filters, name)
+		}
+	}
+	return filters, nil
+}
+
+// TestFilterLocal tests a filter against log lines using fail2ban-regex
+func TestFilterLocal(filterName string, logLines []string) ([]string, error) {
+	if len(logLines) == 0 {
+		return []string{}, nil
+	}
+	filterPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".conf")
+	if _, err := os.Stat(filterPath); err != nil {
+		return nil, fmt.Errorf("filter %s not found: %w", filterName, err)
+	}
+	// Read the filter config to extract the failregex
+	content, err := os.ReadFile(filterPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read filter config: %w", err)
+	}
+	// Extract failregex from the config
+	var failregex string
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	inFailregex := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[Definition]") {
+			inFailregex = true
+			continue
+		}
+		if inFailregex && strings.HasPrefix(line, "failregex") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				failregex = strings.TrimSpace(parts[1])
+			}
+			break
+		}
+		if inFailregex && strings.HasPrefix(line, "[") {
+			break
+		}
+	}
+	if failregex == "" {
+		return nil, fmt.Errorf("no failregex found in filter %s", filterName)
+	}
+	// Use fail2ban-regex to test
+	var matches []string
+	for _, logLine := range logLines {
+		if logLine == "" {
+			continue
+		}
+		cmd := exec.Command("fail2ban-regex", logLine, failregex)
+		out, err := cmd.CombinedOutput()
+		if err == nil && strings.Contains(string(out), "Success") {
+			matches = append(matches, logLine)
+		}
+	}
+	return matches, nil
 }

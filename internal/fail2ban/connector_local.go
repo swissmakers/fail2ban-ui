@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
@@ -51,37 +52,61 @@ func (lc *LocalConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) 
 	}
 
 	oneHourAgo := time.Now().Add(-1 * time.Hour)
-	var results []JailInfo
-	for _, jail := range jails {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
+	
+	// Use parallel execution for better performance
+	type jailResult struct {
+		jail JailInfo
+		err  error
+	}
+	results := make(chan jailResult, len(jails))
+	var wg sync.WaitGroup
 
-		bannedIPs, err := lc.GetBannedIPs(ctx, jail)
-		if err != nil {
-			continue
-		}
-		newInLastHour := 0
-		if events, ok := banHistory[jail]; ok {
-			for _, e := range events {
-				if e.Time.After(oneHourAgo) {
-					newInLastHour++
+	for _, jail := range jails {
+		wg.Add(1)
+		go func(j string) {
+			defer wg.Done()
+			bannedIPs, err := lc.GetBannedIPs(ctx, j)
+			if err != nil {
+				results <- jailResult{err: err}
+				return
+			}
+			newInLastHour := 0
+			if events, ok := banHistory[j]; ok {
+				for _, e := range events {
+					if e.Time.After(oneHourAgo) {
+						newInLastHour++
+					}
 				}
 			}
-		}
-
-		results = append(results, JailInfo{
-			JailName:      jail,
-			TotalBanned:   len(bannedIPs),
-			NewInLastHour: newInLastHour,
-			BannedIPs:     bannedIPs,
-			Enabled:       true,
-		})
+			results <- jailResult{
+				jail: JailInfo{
+					JailName:      j,
+					TotalBanned:   len(bannedIPs),
+					NewInLastHour: newInLastHour,
+					BannedIPs:     bannedIPs,
+					Enabled:       true,
+				},
+			}
+		}(jail)
 	}
 
-	return results, nil
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var finalResults []JailInfo
+	for result := range results {
+		if result.err != nil {
+			continue
+		}
+		finalResults = append(finalResults, result.jail)
+	}
+
+	sort.SliceStable(finalResults, func(i, j int) bool {
+		return finalResults[i].JailName < finalResults[j].JailName
+	})
+	return finalResults, nil
 }
 
 // GetBannedIPs implements Connector.
@@ -205,6 +230,26 @@ func (lc *LocalConnector) buildFail2banArgs(args ...string) []string {
 	}
 	base := []string{"-s", lc.server.SocketPath}
 	return append(base, args...)
+}
+
+// GetAllJails implements Connector.
+func (lc *LocalConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
+	return GetAllJails()
+}
+
+// UpdateJailEnabledStates implements Connector.
+func (lc *LocalConnector) UpdateJailEnabledStates(ctx context.Context, updates map[string]bool) error {
+	return UpdateJailEnabledStates(updates)
+}
+
+// GetFilters implements Connector.
+func (lc *LocalConnector) GetFilters(ctx context.Context) ([]string, error) {
+	return GetFiltersLocal()
+}
+
+// TestFilter implements Connector.
+func (lc *LocalConnector) TestFilter(ctx context.Context, filterName string, logLines []string) ([]string, error) {
+	return TestFilterLocal(filterName, logLines)
 }
 
 func executeShellCommand(ctx context.Context, command string) (string, error) {

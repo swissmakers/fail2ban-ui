@@ -578,9 +578,12 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 func ManageJailsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("ManageJailsHandler called (handlers.go)") // entry point
-	// Get all jails from jail.local and jail.d directories.
-	// This helper should parse both files and return []fail2ban.JailInfo.
-	jails, err := fail2ban.GetAllJails()
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	jails, err := conn.GetAllJails(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load jails: " + err.Error()})
 		return
@@ -594,21 +597,21 @@ func ManageJailsHandler(c *gin.Context) {
 func UpdateJailManagementHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("UpdateJailManagementHandler called (handlers.go)") // entry point
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var updates map[string]bool
 	if err := c.ShouldBindJSON(&updates); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
 		return
 	}
 	// Update jail configuration file(s) with the new enabled states.
-	if err := fail2ban.UpdateJailEnabledStates(updates); err != nil {
+	if err := conn.UpdateJailEnabledStates(c.Request.Context(), updates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update jail settings: " + err.Error()})
 		return
 	}
-	// Restart the Fail2ban service.
-	//if err := fail2ban.RestartFail2ban(); err != nil {
-	//	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload fail2ban: " + err.Error()})
-	//	return
-	//}
 	if err := config.MarkRestartNeeded(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -669,43 +672,35 @@ func ListFiltersHandler(c *gin.Context) {
 		return
 	}
 	server := conn.Server()
-	if server.Type != "local" {
-		c.JSON(http.StatusOK, gin.H{"filters": []string{}, "messageKey": "filter_debug.not_available"})
-		return
-	}
-
-	dir := "/etc/fail2ban/filter.d"
-	if _, statErr := os.Stat(dir); statErr != nil {
-		if os.IsNotExist(statErr) {
-			c.JSON(http.StatusOK, gin.H{"filters": []string{}, "messageKey": "filter_debug.local_missing"})
+	if server.Type == "local" {
+		// For local, check if directory exists first
+		dir := "/etc/fail2ban/filter.d"
+		if _, statErr := os.Stat(dir); statErr != nil {
+			if os.IsNotExist(statErr) {
+				c.JSON(http.StatusOK, gin.H{"filters": []string{}, "messageKey": "filter_debug.local_missing"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read filter directory: " + statErr.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read filter directory: " + statErr.Error()})
-		return
 	}
 
-	files, err := os.ReadDir(dir)
+	filters, err := conn.GetFilters(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to read filter directory: " + err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list filters: " + err.Error()})
 		return
 	}
-
-	var filters []string
-	for _, f := range files {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".conf") {
-			name := strings.TrimSuffix(f.Name(), ".conf")
-			filters = append(filters, name)
-		}
-	}
-
 	c.JSON(http.StatusOK, gin.H{"filters": filters})
 }
 
 func TestFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("TestFilterHandler called (handlers.go)") // entry point
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	var req struct {
 		FilterName string   `json:"filterName"`
 		LogLines   []string `json:"logLines"`
@@ -715,8 +710,12 @@ func TestFilterHandler(c *gin.Context) {
 		return
 	}
 
-	// For now, just pretend nothing matches
-	c.JSON(http.StatusOK, gin.H{"matches": []string{}})
+	matches, err := conn.TestFilter(c.Request.Context(), req.FilterName, req.LogLines)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to test filter: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"matches": matches})
 }
 
 // ApplyFail2banSettings updates /etc/fail2ban/jail.local [DEFAULT] with our JSON

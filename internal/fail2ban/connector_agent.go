@@ -249,3 +249,45 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 	}
 	return json.Unmarshal(data, out)
 }
+
+// GetAllJails implements Connector.
+func (ac *AgentConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
+	var resp struct {
+		Jails []JailInfo `json:"jails"`
+	}
+	if err := ac.get(ctx, "/v1/jails/all", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Jails, nil
+}
+
+// UpdateJailEnabledStates implements Connector.
+func (ac *AgentConnector) UpdateJailEnabledStates(ctx context.Context, updates map[string]bool) error {
+	return ac.post(ctx, "/v1/jails/update-enabled", updates, nil)
+}
+
+// GetFilters implements Connector.
+func (ac *AgentConnector) GetFilters(ctx context.Context) ([]string, error) {
+	var resp struct {
+		Filters []string `json:"filters"`
+	}
+	if err := ac.get(ctx, "/v1/filters", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Filters, nil
+}
+
+// TestFilter implements Connector.
+func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, logLines []string) ([]string, error) {
+	payload := map[string]any{
+		"filterName": filterName,
+		"logLines":   logLines,
+	}
+	var resp struct {
+		Matches []string `json:"matches"`
+	}
+	if err := ac.post(ctx, "/v1/filters/test", payload, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Matches, nil
+}

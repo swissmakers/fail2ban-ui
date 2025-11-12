@@ -1,6 +1,7 @@
 package fail2ban
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -8,11 +9,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
-const sshEnsureActionScript = `sudo python3 - <<'PY'
+const sshEnsureActionScript = `python3 - <<'PY'
 import base64
 import pathlib
 
@@ -90,24 +92,46 @@ func (sc *SSHConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
 		return nil, err
 	}
 
-	var infos []JailInfo
+	// Use parallel execution for better performance
+	type jailResult struct {
+		jail JailInfo
+		err  error
+	}
+	results := make(chan jailResult, len(jails))
+	var wg sync.WaitGroup
+
 	for _, jail := range jails {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-		ips, err := sc.GetBannedIPs(ctx, jail)
-		if err != nil {
+		wg.Add(1)
+		go func(j string) {
+			defer wg.Done()
+			ips, err := sc.GetBannedIPs(ctx, j)
+			if err != nil {
+				results <- jailResult{err: err}
+				return
+			}
+			results <- jailResult{
+				jail: JailInfo{
+					JailName:      j,
+					TotalBanned:   len(ips),
+					NewInLastHour: 0,
+					BannedIPs:     ips,
+					Enabled:       true,
+				},
+			}
+		}(jail)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var infos []JailInfo
+	for result := range results {
+		if result.err != nil {
 			continue
 		}
-		infos = append(infos, JailInfo{
-			JailName:      jail,
-			TotalBanned:   len(ips),
-			NewInLastHour: 0,
-			BannedIPs:     ips,
-			Enabled:       true,
-		})
+		infos = append(infos, result.jail)
 	}
 
 	sort.SliceStable(infos, func(i, j int) bool {
@@ -177,7 +201,10 @@ func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 	actionConfig := config.BuildFail2banActionConfig(callbackURL)
 	payload := base64.StdEncoding.EncodeToString([]byte(actionConfig))
 	script := strings.ReplaceAll(sshEnsureActionScript, "__PAYLOAD__", payload)
-	_, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", script})
+	// Base64 encode the entire script to avoid shell escaping issues
+	scriptB64 := base64.StdEncoding.EncodeToString([]byte(script))
+	cmd := fmt.Sprintf("echo %s | base64 -d | sudo bash", scriptB64)
+	_, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", cmd})
 	return err
 }
 
@@ -253,4 +280,177 @@ func (sc *SSHConnector) buildSSHArgs(command []string) []string {
 	args = append(args, target)
 	args = append(args, command...)
 	return args
+}
+
+// GetAllJails implements Connector.
+func (sc *SSHConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
+	// Read jail.local and jail.d files remotely
+	var allJails []JailInfo
+
+	// Parse jail.local
+	jailLocalContent, err := sc.runRemoteCommand(ctx, []string{"sudo", "cat", "/etc/fail2ban/jail.local"})
+	if err == nil {
+		jails := parseJailConfigContent(jailLocalContent)
+		allJails = append(allJails, jails...)
+	}
+
+	// Parse jail.d directory
+	jailDList, err := sc.runRemoteCommand(ctx, []string{"sudo", "bash", "-c", "for f in /etc/fail2ban/jail.d/*.conf; do [ -f \"$f\" ] && echo \"$f\"; done"})
+	if err == nil && jailDList != "" {
+		for _, file := range strings.Split(jailDList, "\n") {
+			file = strings.TrimSpace(file)
+			if file == "" {
+				continue
+			}
+			content, err := sc.runRemoteCommand(ctx, []string{"sudo", "cat", file})
+			if err == nil {
+				jails := parseJailConfigContent(content)
+				allJails = append(allJails, jails...)
+			}
+		}
+	}
+
+	return allJails, nil
+}
+
+// UpdateJailEnabledStates implements Connector.
+func (sc *SSHConnector) UpdateJailEnabledStates(ctx context.Context, updates map[string]bool) error {
+	// Read current jail.local
+	content, err := sc.runRemoteCommand(ctx, []string{"sudo", "cat", "/etc/fail2ban/jail.local"})
+	if err != nil {
+		return fmt.Errorf("failed to read jail.local: %w", err)
+	}
+
+	// Update enabled states
+	lines := strings.Split(content, "\n")
+	var outputLines []string
+	var currentJail string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			currentJail = strings.Trim(trimmed, "[]")
+			outputLines = append(outputLines, line)
+		} else if strings.HasPrefix(trimmed, "enabled") {
+			if val, ok := updates[currentJail]; ok {
+				outputLines = append(outputLines, fmt.Sprintf("enabled = %t", val))
+				delete(updates, currentJail)
+			} else {
+				outputLines = append(outputLines, line)
+			}
+		} else {
+			outputLines = append(outputLines, line)
+		}
+	}
+
+	// Write back
+	newContent := strings.Join(outputLines, "\n")
+	cmd := fmt.Sprintf("cat <<'EOF' | sudo tee /etc/fail2ban/jail.local >/dev/null\n%s\nEOF", newContent)
+	_, err = sc.runRemoteCommand(ctx, []string{"bash", "-lc", cmd})
+	return err
+}
+
+// GetFilters implements Connector.
+func (sc *SSHConnector) GetFilters(ctx context.Context) ([]string, error) {
+	list, err := sc.runRemoteCommand(ctx, []string{"sudo", "bash", "-c", "for f in /etc/fail2ban/filter.d/*.conf; do [ -f \"$f\" ] && basename \"$f\" .conf; done"})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list filters: %w", err)
+	}
+	var filters []string
+	for _, line := range strings.Split(list, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			filters = append(filters, line)
+		}
+	}
+	return filters, nil
+}
+
+// TestFilter implements Connector.
+func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLines []string) ([]string, error) {
+	if len(logLines) == 0 {
+		return []string{}, nil
+	}
+
+	// Read filter config remotely
+	filterPath := fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
+	content, err := sc.runRemoteCommand(ctx, []string{"sudo", "cat", filterPath})
+	if err != nil {
+		return nil, fmt.Errorf("filter %s not found: %w", filterName, err)
+	}
+
+	// Extract failregex
+	var failregex string
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	inFailregex := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[Definition]") {
+			inFailregex = true
+			continue
+		}
+		if inFailregex && strings.HasPrefix(line, "failregex") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				failregex = strings.TrimSpace(parts[1])
+			}
+			break
+		}
+		if inFailregex && strings.HasPrefix(line, "[") {
+			break
+		}
+	}
+	if failregex == "" {
+		return nil, fmt.Errorf("no failregex found in filter %s", filterName)
+	}
+
+	// Test each log line remotely
+	var matches []string
+	for _, logLine := range logLines {
+		if logLine == "" {
+			continue
+		}
+		// Escape the log line and regex for shell
+		escapedLine := strconv.Quote(logLine)
+		escapedRegex := strconv.Quote(failregex)
+		cmd := fmt.Sprintf("echo %s | sudo fail2ban-regex - %s", escapedLine, escapedRegex)
+		out, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", cmd})
+		if err == nil && strings.Contains(out, "Success") {
+			matches = append(matches, logLine)
+		}
+	}
+	return matches, nil
+}
+
+// parseJailConfigContent parses jail configuration content and returns JailInfo slice.
+func parseJailConfigContent(content string) []JailInfo {
+	var jails []JailInfo
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	var currentJail string
+	enabled := true
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			if currentJail != "" && currentJail != "DEFAULT" {
+				jails = append(jails, JailInfo{
+					JailName: currentJail,
+					Enabled:  enabled,
+				})
+			}
+			currentJail = strings.Trim(line, "[]")
+			enabled = true
+		} else if strings.HasPrefix(strings.ToLower(line), "enabled") {
+			parts := strings.Split(line, "=")
+			if len(parts) == 2 {
+				value := strings.TrimSpace(parts[1])
+				enabled = strings.EqualFold(value, "true")
+			}
+		}
+	}
+	if currentJail != "" && currentJail != "DEFAULT" {
+		jails = append(jails, JailInfo{
+			JailName: currentJail,
+			Enabled:  enabled,
+		})
+	}
+	return jails
 }
