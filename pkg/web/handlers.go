@@ -324,12 +324,21 @@ func SetDefaultServerHandler(c *gin.Context) {
 
 // ListSSHKeysHandler returns SSH keys available on the UI host.
 func ListSSHKeysHandler(c *gin.Context) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	var dir string
+	// Check if running inside a container
+	if _, container := os.LookupEnv("CONTAINER"); container {
+		// In container, check /config/.ssh
+		dir = "/config/.ssh"
+	} else {
+		// On host, check ~/.ssh
+		home, err := os.UserHomeDir()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		dir = filepath.Join(home, ".ssh")
 	}
-	dir := filepath.Join(home, ".ssh")
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {

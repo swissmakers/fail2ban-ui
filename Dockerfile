@@ -22,10 +22,10 @@ FROM alpine:latest AS standalone-ui
 
 # Install required container dependencies
 RUN apk --update --no-cache add \
-    bash curl wget whois tzdata jq ca-certificates htop fail2ban geoip \
+    bash curl wget whois tzdata jq ca-certificates htop fail2ban geoip openssh-client \
     && adduser -D -u 1000 -G root fail2ban
 
-RUN mkdir -p /app /config \
+RUN mkdir -p /app /config /config/.ssh \
     /etc/fail2ban/jail.d \
     /etc/fail2ban/filter.d \
     /etc/fail2ban/action.d \

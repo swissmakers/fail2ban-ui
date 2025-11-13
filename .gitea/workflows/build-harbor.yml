@@ -1,0 +1,38 @@
+name: Build and Push to Harbor when new commit to main-branch
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: linux_amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Harbor (Robot)
+        if: ${{ secrets.HARBOR_REGISTRY && secrets.HARBOR_USERNAME && secrets.HARBOR_PASSWORD }}
+        env:
+          REGISTRY: ${{ secrets.HARBOR_REGISTRY }}
+          ROBOT_USER: ${{ secrets.HARBOR_USERNAME }}
+          ROBOT_PASS: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          mkdir -p "$HOME/.config/containers"
+          echo "$ROBOT_PASS" | podman login --username "$ROBOT_USER" --password-stdin "$REGISTRY"
+
+
+      - name: Build & tag
+        env:
+          REG:  ${{ secrets.HARBOR_REGISTRY }}
+          PROJ: ${{ secrets.HARBOR_PROJECT }}
+        run: |
+          podman build -t $REG/$PROJ/fail2ban-ui:${{ github.sha }} .
+          podman tag  $REG/$PROJ/fail2ban-ui:${{ github.sha }} $REG/$PROJ/fail2ban-ui:latest
+
+      - name: Push
+        env:
+          REG:  ${{ secrets.HARBOR_REGISTRY }}
+          PROJ: ${{ secrets.HARBOR_PROJECT }}
+        run: |
+          podman push $REG/$PROJ/fail2ban-ui:${{ github.sha }}
+          podman push $REG/$PROJ/fail2ban-ui:latest
