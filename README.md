@@ -101,7 +101,18 @@ go build -o fail2ban-ui ./cmd/server/main.go
 For an easy containerized deployment:  
 📌 **[Follow the basic container deployment guide](./deployment/container/README.md)**  
 
+You can either build the image locally or pull the **official, automatically built image** from the Swissmakers registry.  
+Every merge into the `main` branch triggers a new build that is published at:
+
+```
+registry.swissmakers.ch/infra/fail2ban-ui:latest
+```
+
 ```bash
+# Pull the latest pre-built image
+podman pull registry.swissmakers.ch/infra/fail2ban-ui:latest
+
+# Run the container
 podman run -d \
   --name fail2ban-ui \
   --network=host \
@@ -110,7 +121,7 @@ podman run -d \
   -v /var/log:/var/log:ro \
   -v /var/run/fail2ban:/var/run/fail2ban \
   -v /usr/share/GeoIP:/usr/share/GeoIP:ro \
-  localhost/fail2ban-ui
+  registry.swissmakers.ch/infra/fail2ban-ui:latest
 ```
 
 > **📌 Note:** The container can also be managed as a **systemd service**.
