@@ -282,6 +282,18 @@ func UpsertServerHandler(c *gin.Context) {
 		return
 	}
 
+	// Update action file for this server if it's a remote server (SSH or Agent) and enabled
+	if server.Enabled && (server.Type == "ssh" || server.Type == "agent") {
+		// ReloadFromSettings already created the connector, so we can update its action file
+		// We need to trigger an action file update for this specific server
+		// Since UpdateActionFiles updates all, we can call it, or we can add a single-server method
+		// For now, we'll update all remote servers (it's idempotent and ensures consistency)
+		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
+			config.DebugLog("Warning: failed to update some remote action files: %v", err)
+			// Don't fail the request, just log the warning
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"server": server})
 }
 
@@ -634,6 +646,7 @@ func UpdateSettingsHandler(c *gin.Context) {
 	}
 	config.DebugLog("JSON binding successful, updating settings (handlers.go)")
 
+	oldSettings := config.GetSettings()
 	newSettings, err := config.UpdateSettings(req)
 	if err != nil {
 		fmt.Println("Error updating settings:", err)
@@ -642,9 +655,20 @@ func UpdateSettingsHandler(c *gin.Context) {
 	}
 	config.DebugLog("Settings updated successfully (handlers.go)")
 
+	// Check if callback URL changed - if so, update action files for all active remote servers
+	callbackURLChanged := oldSettings.CallbackURL != newSettings.CallbackURL
+
 	if err := fail2ban.GetManager().ReloadFromSettings(config.GetSettings()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload fail2ban connectors: " + err.Error()})
 		return
+	}
+
+	// Update action files for remote servers if callback URL changed
+	if callbackURLChanged {
+		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
+			config.DebugLog("Warning: failed to update some remote action files: %v", err)
+			// Don't fail the request, just log the warning
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
