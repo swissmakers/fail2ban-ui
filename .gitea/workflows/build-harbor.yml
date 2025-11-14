@@ -3,6 +3,7 @@ name: Build and Push to Harbor when new commit to main-branch
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
