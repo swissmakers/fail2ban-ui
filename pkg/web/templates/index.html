@@ -1410,6 +1410,66 @@
       return 0;
     }
 
+    function recurringIPsLastWeekCount() {
+      if (!latestBanInsights || !Array.isArray(latestBanInsights.recurring)) {
+        return 0;
+      }
+      var cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      var seen = {};
+      var count = 0;
+      latestBanInsights.recurring.forEach(function(stat) {
+        if (!stat || !stat.ip) {
+          return;
+        }
+        var lastSeenTime = stat.lastSeen ? new Date(stat.lastSeen).getTime() : NaN;
+        if (isNaN(lastSeenTime) || lastSeenTime >= cutoff) {
+          if (!seen[stat.ip]) {
+            seen[stat.ip] = true;
+            count += 1;
+          }
+        }
+      });
+      return count;
+    }
+
+    function captureFocusState(container) {
+      var active = document.activeElement;
+      if (!active || !container || !container.contains(active)) {
+        return null;
+      }
+      var state = { id: active.id || null };
+      if (!state.id) {
+        return null;
+      }
+      try {
+        if (typeof active.selectionStart === 'number' && typeof active.selectionEnd === 'number') {
+          state.selectionStart = active.selectionStart;
+          state.selectionEnd = active.selectionEnd;
+        }
+      } catch (err) {
+        // Ignore selection errors for elements that do not support it.
+      }
+      return state;
+    }
+
+    function restoreFocusState(state) {
+      if (!state || !state.id) {
+        return;
+      }
+      var next = document.getElementById(state.id);
+      if (!next) {
+        return;
+      }
+      next.focus();
+      try {
+        if (typeof state.selectionStart === 'number' && typeof state.selectionEnd === 'number' && typeof next.setSelectionRange === 'function') {
+          next.setSelectionRange(state.selectionStart, state.selectionEnd);
+        }
+      } catch (err) {
+        // Element may not support setSelectionRange; ignore.
+      }
+    }
+
     function getBanEventCountries() {
       var countries = {};
       latestBanEvents.forEach(function(event) {
@@ -1492,6 +1552,7 @@
     function renderDashboard() {
       var container = document.getElementById('dashboard');
       if (!container) return;
+      var focusState = captureFocusState(container);
 
       var enabledServers = serversCache.filter(function(s) { return s.enabled; });
       if (!serversCache.length) {
@@ -1531,7 +1592,7 @@
       } else {
         var totalBanned = summary.jails ? summary.jails.reduce(function(sum, j) { return sum + (j.totalBanned || 0); }, 0) : 0;
         var newLastHour = summary.jails ? summary.jails.reduce(function(sum, j) { return sum + (j.newInLastHour || 0); }, 0) : 0;
-        var totalStored = totalStoredBans();
+        var recurringWeekCount = recurringIPsLastWeekCount();
 
         html += ''
           + '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">'
@@ -1548,8 +1609,9 @@
           + '    <p class="text-2xl font-semibold text-gray-800">' + newLastHour + '</p>'
           + '  </div>'
           + '  <div class="bg-white rounded-lg shadow p-4">'
-          + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.total_logged">Stored Ban Events</p>'
-          + '    <p class="text-2xl font-semibold text-gray-800">' + totalStored + '</p>'
+          + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.recurring_week">Recurring IPs (7 days)</p>'
+          + '    <p class="text-2xl font-semibold text-gray-800">' + recurringWeekCount + '</p>'
+          + '    <p class="text-xs text-gray-500 mt-1" data-i18n="dashboard.cards.recurring_hint">Keep an eye on repeated offenders across all servers.</p>'
           + '  </div>'
           + '</div>';
 
@@ -1559,6 +1621,7 @@
           + '    <div>'
           + '      <h3 class="text-lg font-medium text-gray-900 mb-2" data-i18n="dashboard.overview">Overview active Jails and Blocks</h3>'
           + '      <p class="text-sm text-gray-500" data-i18n="dashboard.overview_hint">Use the search to filter banned IPs and click a jail to edit its configuration.</p>'
+          + '      <p class="text-sm text-gray-500 mt-1" data-i18n="dashboard.overview_detail">Collapse or expand long lists to quickly focus on impacted services.</p>'
           + '    </div>'
           + '    <div>'
           + '      <label for="ipSearch" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="dashboard.search_label">Search Banned IPs</label>'
@@ -1607,6 +1670,7 @@
       html += renderLogOverview();
 
       container.innerHTML = html;
+      restoreFocusState(focusState);
 
       const extIpEl = document.getElementById('external-ip');
       if (extIpEl) {
@@ -2188,21 +2252,72 @@
     }
 
     // Render banned IPs with "Unban" button
+    function slugifyId(value, prefix) {
+      var input = (value || '').toString();
+      var base = input.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      var hash = 0;
+      for (var i = 0; i < input.length; i++) {
+        hash = ((hash << 5) - hash) + input.charCodeAt(i);
+        hash |= 0;
+      }
+      hash = Math.abs(hash);
+      base = base.replace(/^-+|-+$/g, '');
+      if (!base) {
+        base = 'item';
+      }
+      return (prefix || 'id') + '-' + base + '-' + hash;
+    }
+
     function renderBannedIPs(jailName, ips) {
       if (!ips || ips.length === 0) {
         return '<em class="text-gray-500" data-i18n="dashboard.no_banned_ips">No banned IPs</em>';
       }
+      var listId = slugifyId(jailName || 'jail', 'banned-list');
+      var hiddenId = listId + '-hidden';
+      var toggleId = listId + '-toggle';
+      var maxVisible = 5;
+      var visible = ips.slice(0, maxVisible);
+      var hidden = ips.slice(maxVisible);
       var content = '<div class="space-y-2">';
-      ips.forEach(function(ip) {
-        content += ''
-          + '<div class="flex items-center justify-between">'
-          + '  <span class="text-sm">' + ip + '</span>'
+
+      function bannedIpRow(ip) {
+        var safeIp = escapeHtml(ip);
+        var encodedIp = encodeURIComponent(ip);
+        return ''
+          + '<div class="flex items-center justify-between banned-ip-item" data-ip="' + safeIp + '">'
+          + '  <span class="text-sm" data-ip-value="' + encodedIp + '">' + safeIp + '</span>'
           + '  <button class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600 transition-colors"'
           + '    onclick="unbanIP(\'' + jailName + '\', \'' + ip + '\')">'
           + '    <span data-i18n="dashboard.unban">Unban</span>'
           + '  </button>'
           + '</div>';
+      }
+
+      visible.forEach(function(ip) {
+        content += bannedIpRow(ip);
       });
+
+      if (hidden.length) {
+        content += '<div class="space-y-2 mt-2 hidden banned-ip-hidden" id="' + hiddenId + '" data-initially-hidden="true">';
+        hidden.forEach(function(ip) {
+          content += bannedIpRow(ip);
+        });
+        content += '</div>';
+
+        var moreLabel = t('dashboard.banned.show_more', 'Show more') + ' +' + hidden.length;
+        var lessLabel = t('dashboard.banned.show_less', 'Hide extra');
+        content += ''
+          + '<button type="button" class="text-xs font-semibold text-blue-600 hover:text-blue-800 banned-ip-toggle"'
+          + ' id="' + toggleId + '"'
+          + ' data-target="' + hiddenId + '"'
+          + ' data-more-label="' + escapeHtml(moreLabel) + '"'
+          + ' data-less-label="' + escapeHtml(lessLabel) + '"'
+          + ' data-expanded="false"'
+          + ' onclick="toggleBannedList(\'' + hiddenId + '\', \'' + toggleId + '\')">'
+          + escapeHtml(moreLabel)
+          + '</button>';
+      }
+
       content += '</div>';
       return content;
     }
@@ -2210,43 +2325,94 @@
     // Filter IPs on dashboard table
     function filterIPs() {
       const input = document.getElementById("ipSearch");
+      if (!input) {
+        return;
+      }
       const query = input.value.trim();
+      const rows = document.querySelectorAll("#jailsTable .jail-row");
 
-      // Process each row in the jails table
-      document.querySelectorAll("#jailsTable .jail-row").forEach(row => {
-        const ipItems = row.querySelectorAll("div.flex");
+      rows.forEach(row => {
+        const hiddenSections = row.querySelectorAll(".banned-ip-hidden");
+        const toggleButtons = row.querySelectorAll(".banned-ip-toggle");
+
+        if (query === "") {
+          hiddenSections.forEach(section => {
+            if (section.getAttribute("data-initially-hidden") === "true") {
+              section.classList.add("hidden");
+            }
+          });
+          toggleButtons.forEach(button => {
+            const moreLabel = button.getAttribute("data-more-label");
+            if (moreLabel) {
+              button.textContent = moreLabel;
+            }
+            button.setAttribute("data-expanded", "false");
+          });
+        } else {
+          hiddenSections.forEach(section => section.classList.remove("hidden"));
+          toggleButtons.forEach(button => {
+            const lessLabel = button.getAttribute("data-less-label");
+            if (lessLabel) {
+              button.textContent = lessLabel;
+            }
+            button.setAttribute("data-expanded", "true");
+          });
+        }
+
+        const ipItems = row.querySelectorAll(".banned-ip-item");
         let rowHasMatch = false;
 
-        ipItems.forEach(li => {
-          const span = li.querySelector("span.text-sm");
+        ipItems.forEach(item => {
+          const span = item.querySelector("span.text-sm");
           if (!span) return;
 
-          // stash original if needed
-          let originalIP = span.getAttribute("data-original");
-          if (!originalIP) {
-            originalIP = span.textContent.trim();
-            span.setAttribute("data-original", originalIP);
-          }
+          const storedValue = span.getAttribute("data-ip-value");
+          const originalIP = storedValue ? decodeURIComponent(storedValue) : span.textContent.trim();
 
           if (query === "") {
             // When the search query is empty, show all IP items and reset their inner HTML.
-            li.style.display = "";
-            span.innerHTML = originalIP;
+            item.style.display = "";
+            span.textContent = originalIP;
             rowHasMatch = true;
-          } else if (originalIP.includes(query)) {
+          } else if (originalIP.indexOf(query) !== -1) {
             // If the IP contains the query, show the item and highlight the matching text.
-            li.style.display = "";
-            const regex = new RegExp(query, "gi");
-            span.innerHTML = originalIP.replace(regex, m => `<mark>${m}</mark>`);
+            item.style.display = "";
+            const escapedPattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const regex = new RegExp(escapedPattern, "gi");
+            var highlighted = originalIP.replace(regex, function(match) {
+              return "%%MARK_START%%" + match + "%%MARK_END%%";
+            });
+            var safeHighlighted = escapeHtml(highlighted)
+              .replace(/%%MARK_START%%/g, "<mark>")
+              .replace(/%%MARK_END%%/g, "</mark>");
+            span.innerHTML = safeHighlighted;
             rowHasMatch = true;
           } else {
-            li.style.display = "none";
+            item.style.display = "none";
           }
         });
 
         // hide the whole row if nothing matched
         row.style.display = rowHasMatch ? "" : "none";
       });
+    }
+
+    function toggleBannedList(hiddenId, buttonId) {
+      var hidden = document.getElementById(hiddenId);
+      var button = document.getElementById(buttonId);
+      if (!hidden || !button) {
+        return;
+      }
+      var isHidden = hidden.classList.contains("hidden");
+      if (isHidden) {
+        hidden.classList.remove("hidden");
+        button.textContent = button.getAttribute("data-less-label") || button.textContent;
+        button.setAttribute("data-expanded", "true");
+      } else {
+        hidden.classList.add("hidden");
+        button.textContent = button.getAttribute("data-more-label") || button.textContent;
+        button.setAttribute("data-expanded", "false");
+      }
     }
 
     //*******************************************************************
