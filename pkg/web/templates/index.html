@@ -133,7 +133,7 @@
     /* Custom mark styling for search highlights */
     mark {
       background-color: #fef08a;
-      padding: 0.1em 0.2em;
+      padding: 0.1em 0em 0.1em 0.2em;
       border-radius: 0.25em;
     }
 
@@ -949,11 +949,30 @@
       countries: [],
       recurring: []
     };
+    var latestServerInsights = null;
     var banEventsFilterText = '';
     var banEventsFilterCountry = 'all';
     var banEventsFilterDebounce = null;
     var translations = {};
     var sshKeysCache = null;
+
+    function normalizeInsights(data) {
+      var normalized = data && typeof data === 'object' ? data : {};
+      if (!normalized.totals || typeof normalized.totals !== 'object') {
+        normalized.totals = { overall: 0, today: 0, week: 0 };
+      } else {
+        normalized.totals.overall = typeof normalized.totals.overall === 'number' ? normalized.totals.overall : 0;
+        normalized.totals.today = typeof normalized.totals.today === 'number' ? normalized.totals.today : 0;
+        normalized.totals.week = typeof normalized.totals.week === 'number' ? normalized.totals.week : 0;
+      }
+      if (!Array.isArray(normalized.countries)) {
+        normalized.countries = [];
+      }
+      if (!Array.isArray(normalized.recurring)) {
+        normalized.recurring = [];
+      }
+      return normalized;
+    }
 
     function t(key, fallback) {
       if (translations && Object.prototype.hasOwnProperty.call(translations, key) && translations[key]) {
@@ -1354,20 +1373,37 @@
     }
 
     function fetchBanInsightsData() {
-      return fetch('/api/events/bans/insights')
+      var sevenDaysAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)).toISOString();
+      var sinceQuery = '?since=' + encodeURIComponent(sevenDaysAgo);
+      var globalPromise = fetch('/api/events/bans/insights' + sinceQuery)
         .then(function(res) { return res.json(); })
         .then(function(data) {
-          latestBanInsights = data || {};
-          latestBanInsights.totals = latestBanInsights.totals || { overall: 0, today: 0, week: 0 };
-          latestBanInsights.countries = latestBanInsights.countries || [];
-          latestBanInsights.recurring = latestBanInsights.recurring || [];
+          latestBanInsights = normalizeInsights(data);
         })
         .catch(function(err) {
           console.error('Error fetching ban insights:', err);
           if (!latestBanInsights) {
-            latestBanInsights = { totals: { overall: 0, today: 0, week: 0 }, countries: [], recurring: [] };
+            latestBanInsights = normalizeInsights(null);
           }
         });
+
+      var serverPromise;
+      if (currentServerId) {
+        serverPromise = fetch(withServerParam('/api/events/bans/insights' + sinceQuery))
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            latestServerInsights = normalizeInsights(data);
+          })
+          .catch(function(err) {
+            console.error('Error fetching server-specific ban insights:', err);
+            latestServerInsights = null;
+          });
+      } else {
+        latestServerInsights = null;
+        serverPromise = Promise.resolve();
+      }
+
+      return Promise.all([globalPromise, serverPromise]);
     }
 
     function formatDateTime(value) {
@@ -1411,25 +1447,11 @@
     }
 
     function recurringIPsLastWeekCount() {
-      if (!latestBanInsights || !Array.isArray(latestBanInsights.recurring)) {
+      var source = latestServerInsights || latestBanInsights;
+      if (!source || !Array.isArray(source.recurring)) {
         return 0;
       }
-      var cutoff = Date.now() - (7 * 24 * 60 * 60 * 1000);
-      var seen = {};
-      var count = 0;
-      latestBanInsights.recurring.forEach(function(stat) {
-        if (!stat || !stat.ip) {
-          return;
-        }
-        var lastSeenTime = stat.lastSeen ? new Date(stat.lastSeen).getTime() : NaN;
-        if (isNaN(lastSeenTime) || lastSeenTime >= cutoff) {
-          if (!seen[stat.ip]) {
-            seen[stat.ip] = true;
-            count += 1;
-          }
-        }
-      });
-      return count;
+      return source.recurring.length;
     }
 
     function captureFocusState(container) {
@@ -1460,7 +1482,13 @@
       if (!next) {
         return;
       }
-      next.focus();
+      if (typeof next.focus === 'function') {
+        try {
+          next.focus({ preventScroll: true });
+        } catch (err) {
+          next.focus();
+        }
+      }
       try {
         if (typeof state.selectionStart === 'number' && typeof state.selectionEnd === 'number' && typeof next.setSelectionRange === 'function') {
           next.setSelectionRange(state.selectionStart, state.selectionEnd);
@@ -1522,19 +1550,24 @@
       });
     }
 
-    function updateBanEventsSearch(value) {
-      banEventsFilterText = value || '';
+    function scheduleLogOverviewRender() {
       if (banEventsFilterDebounce) {
         clearTimeout(banEventsFilterDebounce);
       }
       banEventsFilterDebounce = setTimeout(function() {
-        renderDashboard();
-      }, 200);
+        renderLogOverviewSection();
+        banEventsFilterDebounce = null;
+      }, 100);
+    }
+
+    function updateBanEventsSearch(value) {
+      banEventsFilterText = value || '';
+      scheduleLogOverviewRender();
     }
 
     function updateBanEventsCountry(value) {
       banEventsFilterCountry = value || 'all';
-      renderDashboard();
+      scheduleLogOverviewRender();
     }
 
     function getRecurringIPMap() {
@@ -1562,6 +1595,7 @@
           + '  <p class="text-sm mt-1" data-i18n="dashboard.no_servers_body">Add a server to start monitoring and controlling Fail2ban instances.</p>'
           + '</div>';
         if (typeof updateTranslations === 'function') updateTranslations();
+        restoreFocusState(focusState);
         return;
       }
       if (!enabledServers.length) {
@@ -1571,6 +1605,7 @@
           + '  <p class="text-sm mt-1" data-i18n="dashboard.no_enabled_servers_body">Enable the local connector or register a remote Fail2ban server to see live data.</p>'
           + '</div>';
         if (typeof updateTranslations === 'function') updateTranslations();
+        restoreFocusState(focusState);
         return;
       }
 
@@ -1667,7 +1702,7 @@
         html += '</div>'; // close overview card
       }
 
-      html += renderLogOverview();
+      html += '<div id="logOverview">' + renderLogOverviewContent() + '</div>';
 
       container.innerHTML = html;
       restoreFocusState(focusState);
@@ -1693,7 +1728,18 @@
       }
     }
 
-    function renderLogOverview() {
+    function renderLogOverviewSection() {
+      var target = document.getElementById('logOverview');
+      if (!target) return;
+      var focusState = captureFocusState(target);
+      target.innerHTML = renderLogOverviewContent();
+      restoreFocusState(focusState);
+      if (typeof updateTranslations === 'function') {
+        updateTranslations();
+      }
+    }
+
+    function renderLogOverviewContent() {
       var html = ''
         + '<div class="bg-white rounded-lg shadow p-6 mb-6">'
         + '  <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-4">'
@@ -1770,6 +1816,7 @@
         var countries = getBanEventCountries();
         var filteredEvents = getFilteredBanEvents();
         var recurringMap = getRecurringIPMap();
+        var searchQuery = (banEventsFilterText || '').trim();
 
         html += ''
           + '<div class="flex flex-col sm:flex-row gap-3 mb-4">'
@@ -1817,15 +1864,20 @@
           var index = latestBanEvents.indexOf(event);
           var hasWhois = event.whois && event.whois.trim().length > 0;
           var hasLogs = event.logs && event.logs.trim().length > 0;
-          var ipCell = escapeHtml(event.ip || '');
+          var serverValue = event.serverName || event.serverId || '';
+          var jailValue = event.jail || '';
+          var ipValue = event.ip || '';
+          var serverCell = highlightQueryMatch(serverValue, searchQuery);
+          var jailCell = highlightQueryMatch(jailValue, searchQuery);
+          var ipCell = highlightQueryMatch(ipValue, searchQuery);
           if (event.ip && recurringMap[event.ip]) {
             ipCell += ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">' + t('logs.badge.recurring', 'Recurring') + '</span>';
           }
           html += ''
             + '      <tr class="hover:bg-gray-50">'
             + '        <td class="px-2 py-2 whitespace-nowrap">' + escapeHtml(formatDateTime(event.occurredAt || event.createdAt)) + '</td>'
-            + '        <td class="px-2 py-2 whitespace-nowrap">' + escapeHtml(event.serverName || event.serverId || '') + '</td>'
-            + '        <td class="hidden sm:table-cell px-2 py-2 whitespace-nowrap">' + escapeHtml(event.jail || '') + '</td>'
+            + '        <td class="px-2 py-2 whitespace-nowrap">' + serverCell + '</td>'
+            + '        <td class="hidden sm:table-cell px-2 py-2 whitespace-nowrap">' + jailCell + '</td>'
             + '        <td class="px-2 py-2 whitespace-nowrap">' + ipCell + '</td>'
             + '        <td class="hidden md:table-cell px-2 py-2 whitespace-nowrap">' + escapeHtml(event.country || '—') + '</td>'
             + '        <td class="px-2 py-2 whitespace-nowrap">'
@@ -2251,6 +2303,24 @@
         });
     }
 
+    function highlightQueryMatch(value, query) {
+      var text = value || '';
+      if (!query) {
+        return escapeHtml(text);
+      }
+      var escapedPattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (!escapedPattern) {
+        return escapeHtml(text);
+      }
+      var regex = new RegExp(escapedPattern, "gi");
+      var highlighted = text.replace(regex, function(match) {
+        return "%%MARK_START%%" + match + "%%MARK_END%%";
+      });
+      return escapeHtml(highlighted)
+        .replace(/%%MARK_START%%/g, "<mark>")
+        .replace(/%%MARK_END%%/g, "</mark>");
+    }
+
     // Render banned IPs with "Unban" button
     function slugifyId(value, prefix) {
       var input = (value || '').toString();
@@ -2377,15 +2447,7 @@
           } else if (originalIP.indexOf(query) !== -1) {
             // If the IP contains the query, show the item and highlight the matching text.
             item.style.display = "";
-            const escapedPattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const regex = new RegExp(escapedPattern, "gi");
-            var highlighted = originalIP.replace(regex, function(match) {
-              return "%%MARK_START%%" + match + "%%MARK_END%%";
-            });
-            var safeHighlighted = escapeHtml(highlighted)
-              .replace(/%%MARK_START%%/g, "<mark>")
-              .replace(/%%MARK_END%%/g, "</mark>");
-            span.innerHTML = safeHighlighted;
+            span.innerHTML = highlightQueryMatch(originalIP, query);
             rowHasMatch = true;
           } else {
             item.style.display = "none";

@@ -537,8 +537,8 @@ WHERE 1=1`
 	return result, rows.Err()
 }
 
-// CountBanEvents returns total number of ban events optionally filtered by time.
-func CountBanEvents(ctx context.Context, since time.Time) (int64, error) {
+// CountBanEvents returns total number of ban events optionally filtered by time and server.
+func CountBanEvents(ctx context.Context, since time.Time, serverID string) (int64, error) {
 	if db == nil {
 		return 0, errors.New("storage not initialised")
 	}
@@ -548,6 +548,11 @@ SELECT COUNT(*)
 FROM ban_events
 WHERE 1=1`
 	args := []any{}
+
+	if serverID != "" {
+		query += " AND server_id = ?"
+		args = append(args, serverID)
+	}
 
 	if !since.IsZero() {
 		query += " AND occurred_at >= ?"
@@ -561,8 +566,8 @@ WHERE 1=1`
 	return total, nil
 }
 
-// CountBanEventsByCountry returns aggregation per country code.
-func CountBanEventsByCountry(ctx context.Context, since time.Time) (map[string]int64, error) {
+// CountBanEventsByCountry returns aggregation per country code, optionally filtered by server.
+func CountBanEventsByCountry(ctx context.Context, since time.Time, serverID string) (map[string]int64, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
 	}
@@ -572,6 +577,11 @@ SELECT COALESCE(country, '') AS country, COUNT(*)
 FROM ban_events
 WHERE 1=1`
 	args := []any{}
+
+	if serverID != "" {
+		query += " AND server_id = ?"
+		args = append(args, serverID)
+	}
 
 	if !since.IsZero() {
 		query += " AND occurred_at >= ?"
@@ -599,8 +609,8 @@ WHERE 1=1`
 	return result, rows.Err()
 }
 
-// ListRecurringIPStats returns IPs that have been banned at least minCount times.
-func ListRecurringIPStats(ctx context.Context, since time.Time, minCount, limit int) ([]RecurringIPStat, error) {
+// ListRecurringIPStats returns IPs that have been banned at least minCount times, optionally filtered by server.
+func ListRecurringIPStats(ctx context.Context, since time.Time, minCount, limit int, serverID string) ([]RecurringIPStat, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
 	}
@@ -617,6 +627,11 @@ SELECT ip, COALESCE(country, '') AS country, COUNT(*) AS cnt, MAX(occurred_at) A
 FROM ban_events
 WHERE ip != ''`
 	args := []any{}
+
+	if serverID != "" {
+		query += " AND server_id = ?"
+		args = append(args, serverID)
+	}
 
 	if !since.IsZero() {
 		query += " AND occurred_at >= ?"

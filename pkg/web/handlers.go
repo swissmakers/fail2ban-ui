@@ -248,6 +248,7 @@ func BanInsightsHandler(c *gin.Context) {
 			since = parsed
 		}
 	}
+	serverID := c.Query("serverId")
 
 	minCount := 3
 	if minCountStr := c.DefaultQuery("minCount", "3"); minCountStr != "" {
@@ -265,19 +266,19 @@ func BanInsightsHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	countriesMap, err := storage.CountBanEventsByCountry(ctx, since)
+	countriesMap, err := storage.CountBanEventsByCountry(ctx, since, serverID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	recurring, err := storage.ListRecurringIPStats(ctx, since, minCount, limit)
+	recurring, err := storage.ListRecurringIPStats(ctx, since, minCount, limit, serverID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	totalOverall, err := storage.CountBanEvents(ctx, time.Time{})
+	totalOverall, err := storage.CountBanEvents(ctx, time.Time{}, serverID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -285,13 +286,13 @@ func BanInsightsHandler(c *gin.Context) {
 
 	now := time.Now().UTC()
 
-	totalToday, err := storage.CountBanEvents(ctx, now.Add(-24*time.Hour))
+	totalToday, err := storage.CountBanEvents(ctx, now.Add(-24*time.Hour), serverID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	totalWeek, err := storage.CountBanEvents(ctx, now.Add(-7*24*time.Hour))
+	totalWeek, err := storage.CountBanEvents(ctx, now.Add(-7*24*time.Hour), serverID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
