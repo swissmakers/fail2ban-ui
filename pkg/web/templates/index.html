@@ -2163,40 +2163,80 @@
       var ip = event.ip || '';
       var logLines = logs.split('\n');
 
-      // Find the line that likely caused the block
-      // Look for lines containing the IP address, prefer the last one
-      var highlightedLineIndex = -1;
-      for (var i = logLines.length - 1; i >= 0; i--) {
-        if (ip && logLines[i].indexOf(ip) !== -1) {
-          highlightedLineIndex = i;
-          break;
+      // Determine which lines are suspicious (bad requests)
+      var suspiciousIndices = [];
+      for (var i = 0; i < logLines.length; i++) {
+        if (isSuspiciousLogLine(logLines[i], ip)) {
+          suspiciousIndices.push(i);
         }
       }
 
-      // If no line with IP found, highlight the last line
-      if (highlightedLineIndex === -1 && logLines.length > 0) {
-        highlightedLineIndex = logLines.length - 1;
-      }
-
-      // Build HTML with highlighted line
       var contentEl = document.getElementById('logsModalContent');
-      if (highlightedLineIndex >= 0) {
+      if (suspiciousIndices.length) {
+        var highlightMap = {};
+        suspiciousIndices.forEach(function(idx) { highlightMap[idx] = true; });
+
         var html = '';
-        for (var i = 0; i < logLines.length; i++) {
-          var line = escapeHtml(logLines[i] || '');
-          if (i === highlightedLineIndex) {
-            // Highlight the entire line - use inline span that covers the full width
-            html += '<span style="display: block; background-color: #d97706; color: #fef3c7; padding: 0.25rem 0.5rem; margin: 0.125rem 0; border-radius: 0.25rem;">' + line + '</span>';
+        for (var j = 0; j < logLines.length; j++) {
+          var safeLine = escapeHtml(logLines[j] || '');
+          if (highlightMap[j]) {
+            html += '<span style="display: block; background-color: #d97706; color: #fef3c7; padding: 0.25rem 0.5rem; margin: 0.125rem 0; border-radius: 0.25rem;">' + safeLine + '</span>';
           } else {
-            html += line + '\n';
+            html += safeLine + '\n';
           }
         }
         contentEl.innerHTML = html;
       } else {
+        // No suspicious lines detected; show raw logs without highlighting
         contentEl.textContent = logs;
       }
 
       openModal('logsModal');
+    }
+
+    function isSuspiciousLogLine(line, ip) {
+      if (!line) {
+        return false;
+      }
+
+      var containsIP = ip && line.indexOf(ip) !== -1;
+      var lowered = line.toLowerCase();
+
+      // Detect HTTP status codes (>= 300 considered problematic)
+      var statusMatch = line.match(/"[^"]*"\s+(\d{3})\b/);
+      if (!statusMatch) {
+        statusMatch = line.match(/\s(\d{3})\s+(?:\d+|-)/);
+      }
+      var statusCode = statusMatch ? parseInt(statusMatch[1], 10) : NaN;
+      var hasBadStatus = !isNaN(statusCode) && statusCode >= 300;
+
+      // Detect common attack indicators in URLs/payloads
+      var indicators = [
+        '../',
+        '%2e%2e',
+        '%252e%252e',
+        '%24%7b',
+        '${',
+        '/etc/passwd',
+        'select%20',
+        'union%20',
+        'cmd=',
+        'wget',
+        'curl ',
+        'nslookup',
+        '/xmlrpc.php',
+        '/wp-admin',
+        '/cgi-bin',
+        'content-length: 0'
+      ];
+      var hasIndicator = indicators.some(function(ind) {
+        return lowered.indexOf(ind) !== -1;
+      });
+
+      if (containsIP) {
+        return hasBadStatus || hasIndicator;
+      }
+      return (hasBadStatus || hasIndicator) && !ip;
     }
 
     // Function: openManageJailsModal
