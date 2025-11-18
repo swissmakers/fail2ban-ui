@@ -108,6 +108,10 @@
       box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
     
+    body.modal-open {
+      overflow: hidden !important;
+    }
+    
     /* Custom tooltip styling */
     .tooltip {
       position: relative;
@@ -660,7 +664,7 @@
   <!--                        Modal Templates START                        -->
   <!-- ******************************************************************* -->
   <!-- Jail Config Modal -->
-  <div id="jailConfigModal" class="hidden fixed inset-0 overflow-y-auto" style="z-index: 60;">
+  <div id="jailConfigModal" class="hidden fixed inset-0 overflow-hidden" style="z-index: 60;">
     <div class="flex items-center justify-center min-h-screen pt-4 px-2 sm:px-4 pb-20 text-center">
       <div class="fixed inset-0 transition-opacity" aria-hidden="true">
         <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
@@ -668,7 +672,7 @@
       
       <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
       
-      <div class="relative inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all my-4 sm:my-8 align-middle w-full max-w-full" style="max-width: 90vw;">
+      <div class="relative inline-block align-bottom bg-white rounded-lg text-left shadow-xl transform transition-all my-4 sm:my-8 align-middle w-full max-w-full max-h-screen overflow-y-auto" style="max-width: 90vw; max-height: calc(100vh - 2rem);">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1302,13 +1306,36 @@
       refreshData();
     }
 
+    let openModalCount = 0;
+
+    function updateBodyScrollLock() {
+      if (openModalCount > 0) {
+        document.body.classList.add('modal-open');
+      } else {
+        document.body.classList.remove('modal-open');
+      }
+    }
+
     // Close modal
     function closeModal(modalId) {
-      document.getElementById(modalId).classList.add('hidden');
+      var modal = document.getElementById(modalId);
+      if (!modal || modal.classList.contains('hidden')) {
+        return;
+      }
+      modal.classList.add('hidden');
+      openModalCount = Math.max(0, openModalCount - 1);
+      updateBodyScrollLock();
     }
     // Open modal
     function openModal(modalId) {
-      document.getElementById(modalId).classList.remove('hidden');
+      var modal = document.getElementById(modalId);
+      if (!modal || !modal.classList.contains('hidden')) {
+        updateBodyScrollLock();
+        return;
+      }
+      modal.classList.remove('hidden');
+      openModalCount += 1;
+      updateBodyScrollLock();
     }
     // *******************************************************************
 
