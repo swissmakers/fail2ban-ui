@@ -1182,14 +1182,40 @@
 
     // Fetch and display own external IP for webUI
     function displayExternalIP() {
-      fetch('https://api.ipify.org?format=json')
-        .then(res => res.json())
-        .then(data => {
-          document.getElementById('external-ip').textContent = data.ip;
-        })
-        .catch(() => {
-          document.getElementById('external-ip').textContent = 'Unavailable';
-        });
+      const target = document.getElementById('external-ip');
+      if (!target) return;
+
+      const providers = [
+        { url: 'https://api.ipify.org?format=json', extract: data => data.ip },
+        { url: 'https://ipapi.co/json/', extract: data => data && (data.ip || data.ip_address) },
+        { url: 'https://ipv4.jsonip.com/', extract: data => data.ip }
+      ];
+
+      const tryProvider = (index) => {
+        if (index >= providers.length) {
+          target.textContent = 'Unavailable';
+          return;
+        }
+        const provider = providers[index];
+        fetch(provider.url, { headers: { 'Accept': 'application/json' } })
+          .then(res => {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+          })
+          .then(data => {
+            const ip = provider.extract(data);
+            if (ip) {
+              target.textContent = ip;
+            } else {
+              throw new Error('Missing IP');
+            }
+          })
+          .catch(() => {
+            tryProvider(index + 1);
+          });
+      };
+
+      tryProvider(0);
     }
 
     // Function to initialize tooltips
