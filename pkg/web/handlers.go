@@ -298,13 +298,25 @@ func BanInsightsHandler(c *gin.Context) {
 
 	countriesMap, err := storage.CountBanEventsByCountry(ctx, since, serverID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		settings := config.GetSettings()
+		errorMsg := err.Error()
+		if settings.Debug {
+			config.DebugLog("BanInsightsHandler: CountBanEventsByCountry error: %v", err)
+			errorMsg = fmt.Sprintf("CountBanEventsByCountry failed: %v", err)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
 	}
 
 	recurring, err := storage.ListRecurringIPStats(ctx, since, minCount, limit, serverID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		settings := config.GetSettings()
+		errorMsg := err.Error()
+		if settings.Debug {
+			config.DebugLog("BanInsightsHandler: ListRecurringIPStats error: %v", err)
+			errorMsg = fmt.Sprintf("ListRecurringIPStats failed: %v", err)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -698,14 +699,46 @@ LIMIT ?`
 	var results []RecurringIPStat
 	for rows.Next() {
 		var stat RecurringIPStat
-		var lastSeen sql.NullString
-		if err := rows.Scan(&stat.IP, &stat.Country, &stat.Count, &lastSeen); err != nil {
-			return nil, err
+		// First, scan as string to see what format SQLite returns
+		// Then parse it properly
+		var lastSeenStr sql.NullString
+		if err := rows.Scan(&stat.IP, &stat.Country, &stat.Count, &lastSeenStr); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
-		if lastSeen.Valid {
-			if parsed, err := time.Parse(time.RFC3339Nano, lastSeen.String); err == nil {
-				stat.LastSeen = parsed
+
+		if lastSeenStr.Valid && lastSeenStr.String != "" {
+			// Try to parse the datetime string
+			// SQLite stores DATETIME as TEXT, format depends on how it was inserted
+			// The modernc.org/sqlite driver returns MAX(occurred_at) in format:
+			// "2006-01-02 15:04:05.999999999 -0700 MST" (e.g., "2025-11-22 12:17:24.697430041 +0000 UTC")
+			formats := []string{
+				"2006-01-02 15:04:05.999999999 -0700 MST", // Format returned by MAX() in SQLite
+				time.RFC3339Nano,
+				time.RFC3339,
+				"2006-01-02 15:04:05.999999999+00:00",
+				"2006-01-02 15:04:05+00:00",
+				"2006-01-02 15:04:05.999999999",
+				"2006-01-02 15:04:05",
+				"2006-01-02T15:04:05.999999999Z",
+				"2006-01-02T15:04:05Z",
+				"2006-01-02T15:04:05.999999999",
+				"2006-01-02T15:04:05",
 			}
+			parsed := time.Time{} // zero time
+			for _, format := range formats {
+				if t, parseErr := time.Parse(format, lastSeenStr.String); parseErr == nil {
+					parsed = t.UTC()
+					break
+				}
+			}
+			// If still zero, log the actual string for debugging
+			if parsed.IsZero() {
+				log.Printf("ERROR: Could not parse lastSeen datetime '%s' (length: %d) for IP %s. All format attempts failed.", lastSeenStr.String, len(lastSeenStr.String), stat.IP)
+			}
+			stat.LastSeen = parsed
+		} else {
+			// Log when lastSeen is NULL or empty
+			log.Printf("WARNING: lastSeen is NULL or empty for IP %s", stat.IP)
 		}
 		results = append(results, stat)
 	}
