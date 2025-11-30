@@ -787,6 +787,16 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		}
 	}
 
+	// Check if IP is already blocked before attempting action (for block action only)
+	skipLoggingIfAlreadyBlocked := false
+	if action == "block" && settings.AdvancedActions.Integration != "" {
+		active, checkErr := storage.IsPermanentBlockActive(c.Request.Context(), req.IP, settings.AdvancedActions.Integration)
+		if checkErr == nil && active {
+			// IP is already blocked, we'll check the error message after the call
+			skipLoggingIfAlreadyBlocked = true
+		}
+	}
+
 	err := runAdvancedIntegrationAction(
 		c.Request.Context(),
 		action,
@@ -794,8 +804,20 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		settings,
 		server,
 		map[string]any{"manual": true},
+		skipLoggingIfAlreadyBlocked,
 	)
 	if err != nil {
+		// Check if error indicates IP is already blocked - show as info instead of error
+		if skipLoggingIfAlreadyBlocked {
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "already have such entry") ||
+				strings.Contains(errMsg, "already exists") ||
+				strings.Contains(errMsg, "duplicate") {
+				// IP is already blocked, return info message with original error
+				c.JSON(http.StatusOK, gin.H{"message": err.Error(), "info": true})
+				return
+			}
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

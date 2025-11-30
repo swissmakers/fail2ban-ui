@@ -40,12 +40,12 @@ func evaluateAdvancedActions(ctx context.Context, settings config.AppSettings, s
 		"reason":    "automatic_threshold",
 		"count":     count,
 		"threshold": cfg.Threshold,
-	}); err != nil {
+	}, false); err != nil {
 		log.Printf("⚠️ Failed to permanently block %s: %v", ip, err)
 	}
 }
 
-func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settings config.AppSettings, server config.Fail2banServer, details map[string]any) error {
+func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settings config.AppSettings, server config.Fail2banServer, details map[string]any, skipLoggingIfAlreadyBlocked bool) error {
 	cfg := settings.AdvancedActions
 	if cfg.Integration == "" {
 		return fmt.Errorf("no integration configured")
@@ -85,26 +85,29 @@ func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settin
 	}[action]
 
 	message := fmt.Sprintf("%s via %s", strings.Title(action), cfg.Integration)
-	if err != nil {
+	if err != nil && !skipLoggingIfAlreadyBlocked {
 		status = "error"
 		message = err.Error()
 	}
 
-	if details == nil {
-		details = map[string]any{}
-	}
-	details["action"] = action
-	detailsBytes, _ := json.Marshal(details)
-	rec := storage.PermanentBlockRecord{
-		IP:          ip,
-		Integration: cfg.Integration,
-		Status:      status,
-		Message:     message,
-		ServerID:    server.ID,
-		Details:     string(detailsBytes),
-	}
-	if err2 := storage.UpsertPermanentBlock(ctx, rec); err2 != nil {
-		log.Printf("⚠️ Failed to record permanent block entry: %v", err2)
+	// If IP is already blocked, don't update the database entry - leave existing entry as is
+	if !skipLoggingIfAlreadyBlocked {
+		if details == nil {
+			details = map[string]any{}
+		}
+		details["action"] = action
+		detailsBytes, _ := json.Marshal(details)
+		rec := storage.PermanentBlockRecord{
+			IP:          ip,
+			Integration: cfg.Integration,
+			Status:      status,
+			Message:     message,
+			ServerID:    server.ID,
+			Details:     string(detailsBytes),
+		}
+		if err2 := storage.UpsertPermanentBlock(ctx, rec); err2 != nil {
+			log.Printf("⚠️ Failed to record permanent block entry: %v", err2)
+		}
 	}
 
 	return err

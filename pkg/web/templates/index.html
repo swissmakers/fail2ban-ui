@@ -366,7 +366,7 @@
             </div>
             <div class="flex gap-2">
               <button type="button" class="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50" onclick="refreshPermanentBlockLog()" data-i18n="settings.advanced.refresh_log">Refresh Log</button>
-              <button type="button" class="px-3 py-2 text-sm rounded border border-blue-600 text-blue-600 hover:bg-blue-50" onclick="openAdvancedTestModal()" data-i18n="settings.advanced.test_button">Test Integration</button>
+              <button type="button" class="px-3 py-2 text-sm rounded border border-blue-600 text-blue-600 hover:bg-blue-50" onclick="openAdvancedTestModal()" data-i18n="settings.advanced.test_button">Manually Block / Test</button>
             </div>
           </div>
 
@@ -975,7 +975,7 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.advanced.test_title">Test Advanced Integration</h3>
+              <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.advanced.test_title">Manually Block / Test</h3>
               <div class="mt-4 space-y-4">
                 <div>
                   <label for="advancedTestIP" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.test_ip">IP address</label>
@@ -993,7 +993,6 @@
         </div>
         <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
           <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm" onclick="submitAdvancedTest('block')" data-i18n="settings.advanced.test_block">Block IP</button>
-          <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="submitAdvancedTest('unblock')" data-i18n="settings.advanced.test_unblock">Remove IP</button>
           <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('advancedTestModal')" data-i18n="modal.close">Close</button>
         </div>
       </div>
@@ -3468,7 +3467,7 @@
             <td class="px-3 py-2 text-xs text-gray-500">${escapeHtml(block.serverId || '')}</td>
             <td class="px-3 py-2 text-xs text-gray-500">${block.updatedAt ? new Date(block.updatedAt).toLocaleString() : ''}</td>
             <td class="px-3 py-2 text-right">
-              <button class="text-sm text-blue-600 hover:text-blue-800" onclick="advancedUnblockIP('${escapeHtml(block.ip)}')" data-i18n="settings.advanced.unblock_btn">Remove</button>
+              <button type="button" class="text-sm text-blue-600 hover:text-blue-800" onclick="advancedUnblockIP('${escapeHtml(block.ip)}', event)" data-i18n="settings.advanced.unblock_btn">Remove</button>
             </td>
           </tr>`;
       }).join('');
@@ -3537,7 +3536,9 @@
           if (data.error) {
             showToast('Advanced action failed: ' + data.error, 'error');
           } else {
-            showToast(data.message || 'Action completed', 'success');
+            // Check if this is an info message (e.g., IP already blocked)
+            const toastType = data.info ? 'info' : 'success';
+            showToast(data.message || 'Action completed', toastType);
             loadPermanentBlockLog();
           }
         })
@@ -3548,7 +3549,11 @@
         });
     }
 
-    function advancedUnblockIP(ip) {
+    function advancedUnblockIP(ip, event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       if (!ip) return;
       fetch('/api/advanced-actions/test', {
         method: 'POST',
