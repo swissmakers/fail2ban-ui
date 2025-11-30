@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,24 +48,25 @@ func intFromNull(ni sql.NullInt64) int {
 }
 
 type AppSettingsRecord struct {
-	Language           string
-	Port               int
-	Debug              bool
-	CallbackURL        string
-	RestartNeeded      bool
-	AlertCountriesJSON string
-	SMTPHost           string
-	SMTPPort           int
-	SMTPUsername       string
-	SMTPPassword       string
-	SMTPFrom           string
-	SMTPUseTLS         bool
-	BantimeIncrement   bool
-	IgnoreIP           string
-	Bantime            string
-	Findtime           string
-	MaxRetry           int
-	DestEmail          string
+	Language            string
+	Port                int
+	Debug               bool
+	CallbackURL         string
+	RestartNeeded       bool
+	AlertCountriesJSON  string
+	SMTPHost            string
+	SMTPPort            int
+	SMTPUsername        string
+	SMTPPassword        string
+	SMTPFrom            string
+	SMTPUseTLS          bool
+	BantimeIncrement    bool
+	IgnoreIP            string
+	Bantime             string
+	Findtime            string
+	MaxRetry            int
+	DestEmail           string
+	AdvancedActionsJSON string
 }
 
 type ServerRecord struct {
@@ -112,6 +114,18 @@ type RecurringIPStat struct {
 	LastSeen time.Time `json:"lastSeen"`
 }
 
+type PermanentBlockRecord struct {
+	ID          int64     `json:"id"`
+	IP          string    `json:"ip"`
+	Integration string    `json:"integration"`
+	Status      string    `json:"status"`
+	Details     string    `json:"details"`
+	Message     string    `json:"message"`
+	ServerID    string    `json:"serverId"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 // Init initializes the internal storage. Safe to call multiple times.
 func Init(dbPath string) error {
 	initOnce.Do(func() {
@@ -154,17 +168,17 @@ func GetAppSettings(ctx context.Context) (AppSettingsRecord, bool, error) {
 	}
 
 	row := db.QueryRowContext(ctx, `
-SELECT language, port, debug, callback_url, restart_needed, alert_countries, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, ignore_ip, bantime, findtime, maxretry, destemail
+SELECT language, port, debug, callback_url, restart_needed, alert_countries, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, ignore_ip, bantime, findtime, maxretry, destemail, advanced_actions
 FROM app_settings
 WHERE id = 1`)
 
 	var (
-		lang, callback, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail sql.NullString
-		port, smtpPort, maxretry                                                                               sql.NullInt64
-		debug, restartNeeded, smtpTLS, bantimeInc                                                              sql.NullInt64
+		lang, callback, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, advancedActions sql.NullString
+		port, smtpPort, maxretry                                                                                                sql.NullInt64
+		debug, restartNeeded, smtpTLS, bantimeInc                                                                               sql.NullInt64
 	)
 
-	err := row.Scan(&lang, &port, &debug, &callback, &restartNeeded, &alerts, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &ignoreIP, &bantime, &findtime, &maxretry, &destemail)
+	err := row.Scan(&lang, &port, &debug, &callback, &restartNeeded, &alerts, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &advancedActions)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AppSettingsRecord{}, false, nil
 	}
@@ -173,24 +187,25 @@ WHERE id = 1`)
 	}
 
 	rec := AppSettingsRecord{
-		Language:           stringFromNull(lang),
-		Port:               intFromNull(port),
-		Debug:              intToBool(intFromNull(debug)),
-		CallbackURL:        stringFromNull(callback),
-		RestartNeeded:      intToBool(intFromNull(restartNeeded)),
-		AlertCountriesJSON: stringFromNull(alerts),
-		SMTPHost:           stringFromNull(smtpHost),
-		SMTPPort:           intFromNull(smtpPort),
-		SMTPUsername:       stringFromNull(smtpUser),
-		SMTPPassword:       stringFromNull(smtpPass),
-		SMTPFrom:           stringFromNull(smtpFrom),
-		SMTPUseTLS:         intToBool(intFromNull(smtpTLS)),
-		BantimeIncrement:   intToBool(intFromNull(bantimeInc)),
-		IgnoreIP:           stringFromNull(ignoreIP),
-		Bantime:            stringFromNull(bantime),
-		Findtime:           stringFromNull(findtime),
-		MaxRetry:           intFromNull(maxretry),
-		DestEmail:          stringFromNull(destemail),
+		Language:            stringFromNull(lang),
+		Port:                intFromNull(port),
+		Debug:               intToBool(intFromNull(debug)),
+		CallbackURL:         stringFromNull(callback),
+		RestartNeeded:       intToBool(intFromNull(restartNeeded)),
+		AlertCountriesJSON:  stringFromNull(alerts),
+		SMTPHost:            stringFromNull(smtpHost),
+		SMTPPort:            intFromNull(smtpPort),
+		SMTPUsername:        stringFromNull(smtpUser),
+		SMTPPassword:        stringFromNull(smtpPass),
+		SMTPFrom:            stringFromNull(smtpFrom),
+		SMTPUseTLS:          intToBool(intFromNull(smtpTLS)),
+		BantimeIncrement:    intToBool(intFromNull(bantimeInc)),
+		IgnoreIP:            stringFromNull(ignoreIP),
+		Bantime:             stringFromNull(bantime),
+		Findtime:            stringFromNull(findtime),
+		MaxRetry:            intFromNull(maxretry),
+		DestEmail:           stringFromNull(destemail),
+		AdvancedActionsJSON: stringFromNull(advancedActions),
 	}
 
 	return rec, true, nil
@@ -202,9 +217,9 @@ func SaveAppSettings(ctx context.Context, rec AppSettingsRecord) error {
 	}
 	_, err := db.ExecContext(ctx, `
 INSERT INTO app_settings (
-	id, language, port, debug, callback_url, restart_needed, alert_countries, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, ignore_ip, bantime, findtime, maxretry, destemail
+	id, language, port, debug, callback_url, restart_needed, alert_countries, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, ignore_ip, bantime, findtime, maxretry, destemail, advanced_actions
 ) VALUES (
-	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 ) ON CONFLICT(id) DO UPDATE SET
 	language = excluded.language,
 	port = excluded.port,
@@ -223,7 +238,8 @@ INSERT INTO app_settings (
 	bantime = excluded.bantime,
 	findtime = excluded.findtime,
 	maxretry = excluded.maxretry,
-	destemail = excluded.destemail
+	destemail = excluded.destemail,
+	advanced_actions = excluded.advanced_actions
 `, rec.Language,
 		rec.Port,
 		boolToInt(rec.Debug),
@@ -242,6 +258,7 @@ INSERT INTO app_settings (
 		rec.Findtime,
 		rec.MaxRetry,
 		rec.DestEmail,
+		rec.AdvancedActionsJSON,
 	)
 	return err
 }
@@ -566,6 +583,33 @@ WHERE 1=1`
 	return total, nil
 }
 
+// CountBanEventsByIP returns total number of ban events for a specific IP and optional server.
+func CountBanEventsByIP(ctx context.Context, ip, serverID string) (int64, error) {
+	if db == nil {
+		return 0, errors.New("storage not initialised")
+	}
+	if ip == "" {
+		return 0, errors.New("ip is required")
+	}
+
+	query := `
+SELECT COUNT(*)
+FROM ban_events
+WHERE ip = ?`
+	args := []any{ip}
+
+	if serverID != "" {
+		query += " AND server_id = ?"
+		args = append(args, serverID)
+	}
+
+	var total int64
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // CountBanEventsByCountry returns aggregation per country code, optionally filtered by server.
 func CountBanEventsByCountry(ctx context.Context, since time.Time, serverID string) (map[string]int64, error) {
 	if db == nil {
@@ -655,14 +699,46 @@ LIMIT ?`
 	var results []RecurringIPStat
 	for rows.Next() {
 		var stat RecurringIPStat
-		var lastSeen sql.NullString
-		if err := rows.Scan(&stat.IP, &stat.Country, &stat.Count, &lastSeen); err != nil {
-			return nil, err
+		// First, scan as string to see what format SQLite returns
+		// Then parse it properly
+		var lastSeenStr sql.NullString
+		if err := rows.Scan(&stat.IP, &stat.Country, &stat.Count, &lastSeenStr); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
-		if lastSeen.Valid {
-			if parsed, err := time.Parse(time.RFC3339Nano, lastSeen.String); err == nil {
-				stat.LastSeen = parsed
+
+		if lastSeenStr.Valid && lastSeenStr.String != "" {
+			// Try to parse the datetime string
+			// SQLite stores DATETIME as TEXT, format depends on how it was inserted
+			// The modernc.org/sqlite driver returns MAX(occurred_at) in format:
+			// "2006-01-02 15:04:05.999999999 -0700 MST" (e.g., "2025-11-22 12:17:24.697430041 +0000 UTC")
+			formats := []string{
+				"2006-01-02 15:04:05.999999999 -0700 MST", // Format returned by MAX() in SQLite
+				time.RFC3339Nano,
+				time.RFC3339,
+				"2006-01-02 15:04:05.999999999+00:00",
+				"2006-01-02 15:04:05+00:00",
+				"2006-01-02 15:04:05.999999999",
+				"2006-01-02 15:04:05",
+				"2006-01-02T15:04:05.999999999Z",
+				"2006-01-02T15:04:05Z",
+				"2006-01-02T15:04:05.999999999",
+				"2006-01-02T15:04:05",
 			}
+			parsed := time.Time{} // zero time
+			for _, format := range formats {
+				if t, parseErr := time.Parse(format, lastSeenStr.String); parseErr == nil {
+					parsed = t.UTC()
+					break
+				}
+			}
+			// If still zero, log the actual string for debugging
+			if parsed.IsZero() {
+				log.Printf("ERROR: Could not parse lastSeen datetime '%s' (length: %d) for IP %s. All format attempts failed.", lastSeenStr.String, len(lastSeenStr.String), stat.IP)
+			}
+			stat.LastSeen = parsed
+		} else {
+			// Log when lastSeen is NULL or empty
+			log.Printf("WARNING: lastSeen is NULL or empty for IP %s", stat.IP)
 		}
 		results = append(results, stat)
 	}
@@ -695,7 +771,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
 	bantime TEXT,
 	findtime TEXT,
 	maxretry INTEGER,
-	destemail TEXT
+	destemail TEXT,
+	advanced_actions TEXT
 );
 
 CREATE TABLE IF NOT EXISTS servers (
@@ -736,6 +813,21 @@ CREATE TABLE IF NOT EXISTS ban_events (
 
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_id ON ban_events(server_id);
 CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at);
+
+CREATE TABLE IF NOT EXISTS permanent_blocks (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	ip TEXT NOT NULL,
+	integration TEXT NOT NULL,
+	status TEXT NOT NULL,
+	details TEXT,
+	message TEXT,
+	server_id TEXT,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL,
+	UNIQUE(ip, integration)
+);
+
+CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 `
 
 	if _, err := db.ExecContext(ctx, createTable); err != nil {
@@ -744,6 +836,12 @@ CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at)
 
 	// Backfill needs_restart column for existing databases that predate it.
 	if _, err := db.ExecContext(ctx, `ALTER TABLE servers ADD COLUMN needs_restart INTEGER DEFAULT 0`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN advanced_actions TEXT`); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
@@ -761,4 +859,129 @@ func ensureDirectory(path string) error {
 		return nil
 	}
 	return os.MkdirAll(dir, 0o755)
+}
+
+// UpsertPermanentBlock records or updates a permanent block entry.
+func UpsertPermanentBlock(ctx context.Context, rec PermanentBlockRecord) error {
+	if db == nil {
+		return errors.New("storage not initialised")
+	}
+	if rec.IP == "" || rec.Integration == "" {
+		return errors.New("ip and integration are required")
+	}
+	now := time.Now().UTC()
+	if rec.CreatedAt.IsZero() {
+		rec.CreatedAt = now
+	}
+	rec.UpdatedAt = now
+	if rec.Status == "" {
+		rec.Status = "blocked"
+	}
+
+	const query = `
+INSERT INTO permanent_blocks (ip, integration, status, details, message, server_id, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(ip, integration) DO UPDATE SET
+	status = excluded.status,
+	details = excluded.details,
+	message = excluded.message,
+	server_id = excluded.server_id,
+	updated_at = excluded.updated_at`
+
+	_, err := db.ExecContext(ctx, query,
+		rec.IP,
+		rec.Integration,
+		rec.Status,
+		rec.Details,
+		rec.Message,
+		rec.ServerID,
+		rec.CreatedAt.Format(time.RFC3339Nano),
+		rec.UpdatedAt.Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+// GetPermanentBlock retrieves a permanent block entry.
+func GetPermanentBlock(ctx context.Context, ip, integration string) (PermanentBlockRecord, bool, error) {
+	if db == nil {
+		return PermanentBlockRecord{}, false, errors.New("storage not initialised")
+	}
+	if ip == "" || integration == "" {
+		return PermanentBlockRecord{}, false, errors.New("ip and integration are required")
+	}
+
+	row := db.QueryRowContext(ctx, `
+SELECT id, ip, integration, status, details, message, server_id, created_at, updated_at
+FROM permanent_blocks
+WHERE ip = ? AND integration = ?`, ip, integration)
+
+	var rec PermanentBlockRecord
+	var createdAt, updatedAt sql.NullString
+	if err := row.Scan(&rec.ID, &rec.IP, &rec.Integration, &rec.Status, &rec.Details, &rec.Message, &rec.ServerID, &createdAt, &updatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PermanentBlockRecord{}, false, nil
+		}
+		return PermanentBlockRecord{}, false, err
+	}
+	if createdAt.Valid {
+		if ts, err := time.Parse(time.RFC3339Nano, createdAt.String); err == nil {
+			rec.CreatedAt = ts
+		}
+	}
+	if updatedAt.Valid {
+		if ts, err := time.Parse(time.RFC3339Nano, updatedAt.String); err == nil {
+			rec.UpdatedAt = ts
+		}
+	}
+	return rec, true, nil
+}
+
+// ListPermanentBlocks returns recent permanent block entries.
+func ListPermanentBlocks(ctx context.Context, limit int) ([]PermanentBlockRecord, error) {
+	if db == nil {
+		return nil, errors.New("storage not initialised")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	rows, err := db.QueryContext(ctx, `
+SELECT id, ip, integration, status, details, message, server_id, created_at, updated_at
+FROM permanent_blocks
+ORDER BY updated_at DESC
+LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []PermanentBlockRecord
+	for rows.Next() {
+		var rec PermanentBlockRecord
+		var createdAt, updatedAt sql.NullString
+		if err := rows.Scan(&rec.ID, &rec.IP, &rec.Integration, &rec.Status, &rec.Details, &rec.Message, &rec.ServerID, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		if createdAt.Valid {
+			if ts, err := time.Parse(time.RFC3339Nano, createdAt.String); err == nil {
+				rec.CreatedAt = ts
+			}
+		}
+		if updatedAt.Valid {
+			if ts, err := time.Parse(time.RFC3339Nano, updatedAt.String); err == nil {
+				rec.UpdatedAt = ts
+			}
+		}
+		records = append(records, rec)
+	}
+	return records, rows.Err()
+}
+
+// IsPermanentBlockActive returns true when IP is currently blocked by integration.
+func IsPermanentBlockActive(ctx context.Context, ip, integration string) (bool, error) {
+	rec, found, err := GetPermanentBlock(ctx, ip, integration)
+	if err != nil || !found {
+		return false, err
+	}
+	return rec.Status == "blocked", nil
 }

@@ -357,6 +357,106 @@
           </div>
         </div>
 
+        <!-- Advanced Actions -->
+        <div class="bg-white rounded-lg shadow p-6">
+          <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 class="text-lg font-medium text-gray-900 mb-2" data-i18n="settings.advanced.title">Advanced Actions for Recurring Offenders</h3>
+              <p class="text-sm text-gray-500" data-i18n="settings.advanced.description">Automatically add recurring offenders to an external firewall once they hit a specific threshold.</p>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" class="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50" onclick="refreshPermanentBlockLog()" data-i18n="settings.advanced.refresh_log">Refresh Log</button>
+              <button type="button" class="px-3 py-2 text-sm rounded border border-blue-600 text-blue-600 hover:bg-blue-50" onclick="openAdvancedTestModal()" data-i18n="settings.advanced.test_button">Manually Block / Test</button>
+            </div>
+          </div>
+
+          <div class="mt-4 space-y-4">
+            <div class="flex items-center">
+              <input type="checkbox" id="advancedActionsEnabled" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+              <label for="advancedActionsEnabled" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.enable">Enable automatic permanent blocking</label>
+            </div>
+
+            <div>
+              <label for="advancedThreshold" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.threshold">Threshold before permanent block</label>
+              <input type="number" id="advancedThreshold" min="1" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="5">
+              <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.threshold_hint">If an IP is banned at least this many times it will be forwarded to the selected firewall integration.</p>
+            </div>
+
+            <div>
+              <label for="advancedIntegrationSelect" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.integration">Integration</label>
+              <select id="advancedIntegrationSelect" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="" data-i18n="settings.advanced.integration_none">Select integration</option>
+                <option value="mikrotik">Mikrotik</option>
+                <option value="pfsense">pfSense</option>
+              </select>
+              <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.integration_hint">Choose where permanent bans should be synchronized.</p>
+            </div>
+
+            <div id="advancedMikrotikFields" class="hidden space-y-4">
+              <p class="text-sm text-gray-500" data-i18n="settings.advanced.mikrotik.note">Provide SSH credentials and the address list where IPs should be added.</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="mikrotikHost" data-i18n="settings.advanced.mikrotik.host">Host</label>
+                  <input id="mikrotikHost" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="mikrotikPort" data-i18n="settings.advanced.mikrotik.port">Port</label>
+                  <input id="mikrotikPort" type="number" min="1" max="65535" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="22">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="mikrotikUsername" data-i18n="settings.advanced.mikrotik.username">SSH Username</label>
+                  <input id="mikrotikUsername" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="mikrotikPassword" data-i18n="settings.advanced.mikrotik.password">SSH Password</label>
+                  <input id="mikrotikPassword" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="mikrotikSSHKey" data-i18n="settings.advanced.mikrotik.key">SSH Key Path (optional)</label>
+                  <input id="mikrotikSSHKey" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="mikrotikList" data-i18n="settings.advanced.mikrotik.list">Address List Name</label>
+                  <input id="mikrotikList" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="fail2ban-permanent">
+                </div>
+              </div>
+            </div>
+
+            <div id="advancedPfSenseFields" class="hidden space-y-4">
+              <p class="text-sm text-gray-500" data-i18n="settings.advanced.pfsense.note">Requires the pfSense API package. Enter the API credentials and alias to manage.</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseBaseURL" data-i18n="settings.advanced.pfsense.base_url">Base URL</label>
+                  <input id="pfSenseBaseURL" type="url" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="https://firewall.local">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseToken" data-i18n="settings.advanced.pfsense.token">API Token</label>
+                  <input id="pfSenseToken" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseSecret" data-i18n="settings.advanced.pfsense.secret">API Secret</label>
+                  <input id="pfSenseSecret" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseAlias" data-i18n="settings.advanced.pfsense.alias">Alias Name</label>
+                  <input id="pfSenseAlias" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="flex items-center">
+                  <input type="checkbox" id="pfSenseSkipTLS" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                  <label for="pfSenseSkipTLS" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.pfsense.skip_tls">Skip TLS verification (self-signed)</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6">
+            <h4 class="text-md font-semibold text-gray-800 mb-2" data-i18n="settings.advanced.log_title">Permanent Block Log</h4>
+            <div id="permanentBlockLog" class="overflow-x-auto border border-gray-200 rounded-md">
+              <p class="text-sm text-gray-500 p-4" data-i18n="settings.advanced.log_empty">No permanent blocks recorded yet.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Alert Settings Group -->
         <div class="bg-white rounded-lg shadow p-6">
           <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.alert">Alert Settings</h3>
@@ -664,15 +764,11 @@
   <!--                        Modal Templates START                        -->
   <!-- ******************************************************************* -->
   <!-- Jail Config Modal -->
-  <div id="jailConfigModal" class="hidden fixed inset-0 overflow-hidden" style="z-index: 60;">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-2 sm:px-4 pb-20 text-center">
-      <div class="fixed inset-0 transition-opacity" aria-hidden="true">
-        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
-      </div>
+  <div id="jailConfigModal" class="hidden fixed inset-0 z-50 overflow-y-auto" style="z-index: 60;">
+    <div class="relative flex min-h-full w-full items-center justify-center p-2 sm:p-4">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
       
-      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-      
-      <div class="relative inline-block align-bottom bg-white rounded-lg text-left shadow-xl transform transition-all my-4 sm:my-8 align-middle w-full max-w-full max-h-screen overflow-y-auto" style="max-width: 90vw; max-height: calc(100vh - 2rem);">
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all my-4 sm:my-8 max-h-screen overflow-y-auto" style="max-width: 90vw; max-height: calc(100vh - 2rem);">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -714,14 +810,10 @@
 
   <!-- Manage Jails Modal -->
   <div id="manageJailsModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <div class="fixed inset-0 transition-opacity" aria-hidden="true">
-        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
-      </div>
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
       
-      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-      
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-xl sm:w-full">
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1000px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -743,14 +835,10 @@
 
   <!-- Server Manager Modal -->
   <div id="serverManagerModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <div class="fixed inset-0 transition-opacity" aria-hidden="true">
-        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
-      </div>
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full">
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1000px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-6">
           <div class="flex flex-col gap-6">
             <div>
@@ -855,14 +943,10 @@
 
   <!-- Whois Modal -->
   <div id="whoisModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <div class="fixed inset-0 transition-opacity" aria-hidden="true">
-        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
-      </div>
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 800px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -882,16 +966,45 @@
     </div>
   </div>
 
+  <!-- Advanced Actions Test Modal -->
+  <div id="advancedTestModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
+
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 800px;">
+        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <div class="sm:flex sm:items-start">
+            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+              <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.advanced.test_title">Manually Block / Test</h3>
+              <div class="mt-4 space-y-4">
+                <div>
+                  <label for="advancedTestIP" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.test_ip">IP address</label>
+                  <input type="text" id="advancedTestIP" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="203.0.113.10">
+                </div>
+                <div>
+                  <label for="advancedTestServer" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.test_server">Optional server</label>
+                  <select id="advancedTestServer" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="" data-i18n="settings.advanced.test_server_none">Use global integration settings</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
+          <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm" onclick="submitAdvancedTest('block')" data-i18n="settings.advanced.test_block">Block IP</button>
+          <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('advancedTestModal')" data-i18n="modal.close">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Logs Modal -->
   <div id="logsModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <div class="fixed inset-0 transition-opacity" aria-hidden="true">
-        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
-      </div>
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1200px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -916,28 +1029,44 @@
 
   <!-- Ban Insights Modal -->
   <div id="banInsightsModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <div class="fixed inset-0 transition-opacity" aria-hidden="true">
-        <div class="absolute inset-0 bg-gray-500 opacity-75"></div>
-      </div>
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1200px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="logs.modal.insights_title">Ban Insights</h3>
-              <p class="mt-1 text-sm text-gray-500" data-i18n="logs.modal.insights_description">Country distribution and recurring offenders.</p>
+              <h3 class="text-lg leading-6 font-medium text-gray-900 mb-2" data-i18n="logs.modal.insights_title">Ban Insights</h3>
+              <p class="text-sm text-gray-600 mb-4" data-i18n="logs.modal.insights_description">Country distribution and recurring offenders.</p>
+              
+              <!-- Summary Cards -->
+              <div id="insightsSummary" class="grid gap-4 sm:grid-cols-3 mb-6"></div>
+              
+              <!-- Main Content Grid -->
+              <div class="grid gap-6 lg:grid-cols-2">
+                <!-- Country Statistics -->
+                <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div class="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 class="text-base font-semibold text-gray-900" data-i18n="logs.modal.insights_countries">Bans by country</h4>
+                      <p class="text-xs text-gray-500 mt-1" data-i18n="logs.modal.insights_countries_hint">Top origins for the selected time range.</p>
+                    </div>
+                    <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">Geo</span>
+                  </div>
+                  <div id="countryStatsContainer" class="space-y-4 max-h-96 overflow-y-auto"></div>
+                </div>
 
-              <div class="mt-6">
-                <h4 class="text-md font-semibold text-gray-800 mb-2" data-i18n="logs.modal.insights_countries">Bans by country</h4>
-                <div id="countryStatsContainer" class="max-h-64 overflow-y-auto divide-y divide-gray-200"></div>
-              </div>
-
-              <div class="mt-6">
-                <h4 class="text-md font-semibold text-gray-800 mb-2" data-i18n="logs.modal.insights_recurring">Recurring IPs</h4>
-                <div id="recurringIPsContainer" class="max-h-64 overflow-y-auto divide-y divide-gray-200"></div>
+                <!-- Recurring IPs -->
+                <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div class="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 class="text-base font-semibold text-gray-900" data-i18n="logs.modal.insights_recurring">Recurring IPs</h4>
+                      <p class="text-xs text-gray-500 mt-1" data-i18n="logs.modal.insights_recurring_hint">IP addresses repeatedly triggering Fail2ban.</p>
+                    </div>
+                    <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">Watchlist</span>
+                  </div>
+                  <div id="recurringIPsContainer" class="space-y-4 max-h-96 overflow-y-auto"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -1072,14 +1201,40 @@
 
     // Fetch and display own external IP for webUI
     function displayExternalIP() {
-      fetch('https://api.ipify.org?format=json')
-        .then(res => res.json())
-        .then(data => {
-          document.getElementById('external-ip').textContent = data.ip;
-        })
-        .catch(() => {
-          document.getElementById('external-ip').textContent = 'Unavailable';
-        });
+      const target = document.getElementById('external-ip');
+      if (!target) return;
+
+      const providers = [
+        { url: 'https://api.ipify.org?format=json', extract: data => data.ip },
+        { url: 'https://ipapi.co/json/', extract: data => data && (data.ip || data.ip_address) },
+        { url: 'https://ipv4.jsonip.com/', extract: data => data.ip }
+      ];
+
+      const tryProvider = (index) => {
+        if (index >= providers.length) {
+          target.textContent = 'Unavailable';
+          return;
+        }
+        const provider = providers[index];
+        fetch(provider.url, { headers: { 'Accept': 'application/json' } })
+          .then(res => {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+          })
+          .then(data => {
+            const ip = provider.extract(data);
+            if (ip) {
+              target.textContent = ip;
+            } else {
+              throw new Error('Missing IP');
+            }
+          })
+          .catch(() => {
+            tryProvider(index + 1);
+          });
+      };
+
+      tryProvider(0);
     }
 
     // Function to initialize tooltips
@@ -1171,6 +1326,18 @@
           default: return '&#39;';
         }
       });
+    }
+
+    function formatNumber(value) {
+      var num = Number(value);
+      if (!isFinite(num)) {
+        return '0';
+      }
+      try {
+        return num.toLocaleString();
+      } catch (e) {
+        return String(num);
+      }
     }
 
     function withServerParam(url) {
@@ -1815,7 +1982,7 @@
       } else {
         html += ''
           + '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">'
-          + '  <div class="border border-gray-200 rounded-lg p-4 flex flex-col gap-4">'
+          + '  <div class="border border-gray-200 rounded-lg p-4 flex flex-col gap-4 bg-gray-50">'
           + '    <div class="flex items-start justify-between gap-4">'
           + '      <div>'
           + '        <p class="text-sm text-gray-500" data-i18n="logs.overview.total_events">Total stored events</p>'
@@ -1834,7 +2001,7 @@
           + '      </div>'
           + '    </div>'
           + '  </div>'
-          + '  <div class="border border-gray-200 rounded-lg p-4 overflow-x-auto">'
+          + '  <div class="border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">'
           + '    <p class="text-sm text-gray-500 mb-2" data-i18n="logs.overview.per_server">Events per server</p>'
           + '    <table class="min-w-full text-sm">'
           + '      <thead>'
@@ -2775,17 +2942,57 @@
     function openBanInsightsModal() {
       var countriesContainer = document.getElementById('countryStatsContainer');
       var recurringContainer = document.getElementById('recurringIPsContainer');
+      var summaryContainer = document.getElementById('insightsSummary');
+
+      var totals = (latestBanInsights && latestBanInsights.totals) || { overall: 0, today: 0, week: 0 };
+      if (summaryContainer) {
+        var summaryCards = [
+          {
+            label: t('logs.overview.total_events', 'Total stored events'),
+            value: formatNumber(totals.overall || 0),
+            sub: t('logs.modal.total_overall_note', 'Lifetime bans recorded')
+          },
+          {
+            label: t('logs.overview.total_today', 'Today'),
+            value: formatNumber(totals.today || 0),
+            sub: t('logs.modal.total_today_note', 'Last 24 hours')
+          },
+          {
+            label: t('logs.overview.total_week', 'Last 7 days'),
+            value: formatNumber(totals.week || 0),
+            sub: t('logs.modal.total_week_note', 'Weekly activity')
+          }
+        ];
+        summaryContainer.innerHTML = summaryCards.map(function(card) {
+          return ''
+            + '<div class="border border-gray-200 rounded-lg p-4 bg-gray-50">'
+            + '  <p class="text-xs uppercase tracking-wide text-gray-500">' + escapeHtml(card.label) + '</p>'
+            + '  <p class="text-3xl font-semibold text-gray-900 mt-1">' + escapeHtml(card.value) + '</p>'
+            + '  <p class="text-xs text-gray-500 mt-1">' + escapeHtml(card.sub) + '</p>'
+            + '</div>';
+        }).join('');
+      }
 
       var countries = (latestBanInsights && latestBanInsights.countries) || [];
       if (!countries.length) {
         countriesContainer.innerHTML = '<p class="text-sm text-gray-500" data-i18n="logs.modal.insights_countries_empty">No bans recorded for this period.</p>';
       } else {
+        var totalCountries = countries.reduce(function(sum, stat) {
+          return sum + (stat.count || 0);
+        }, 0) || 1;
         var countryHTML = countries.map(function(stat) {
           var label = stat.country || t('logs.overview.country_unknown', 'Unknown');
+          var percent = Math.round(((stat.count || 0) / totalCountries) * 100);
+          percent = Math.min(Math.max(percent, 3), 100);
           return ''
-            + '<div class="flex items-center justify-between py-2">'
-            + '  <span class="font-medium">' + escapeHtml(label) + '</span>'
-            + '  <span class="text-sm text-gray-600">' + (stat.count || 0) + '</span>'
+            + '<div class="space-y-2">'
+            + '  <div class="flex items-center justify-between text-sm font-medium text-gray-800" style="border-bottom: ridge;">'
+            + '    <span>' + escapeHtml(label) + '</span>'
+            + '    <span>' + formatNumber(stat.count || 0) + '</span>'
+            + '  </div>'
+            + '  <div class="w-full bg-gray-200 rounded-full h-2">'
+            + '    <div class="h-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600" style="width:' + percent + '%;"></div>'
+            + '  </div>'
             + '</div>';
         }).join('');
         countriesContainer.innerHTML = countryHTML;
@@ -2799,16 +3006,17 @@
           var countryLabel = stat.country || t('logs.overview.country_unknown', 'Unknown');
           var lastSeenLabel = stat.lastSeen ? formatDateTime(stat.lastSeen) : '—';
           return ''
-            + '<div class="py-2">'
+            + '<div class="rounded-lg bg-white border border-gray-200 shadow-sm p-4">'
             + '  <div class="flex items-center justify-between">'
             + '    <div>'
-            + '      <p class="font-mono text-sm text-gray-900">' + escapeHtml(stat.ip || '—') + '</p>'
-            + '      <p class="text-xs text-gray-500">' + escapeHtml(countryLabel) + '</p>'
+            + '      <p class="font-mono text-base text-gray-900">' + escapeHtml(stat.ip || '—') + '</p>'
+            + '      <p class="text-xs text-gray-500 mt-1">' + escapeHtml(countryLabel) + '</p>'
             + '    </div>'
-            + '    <div class="text-right">'
-            + '      <p class="text-sm font-semibold">' + (stat.count || 0) + '×</p>'
-            + '      <p class="text-xs text-gray-500">' + t('logs.overview.last_seen', 'Last seen') + ': ' + escapeHtml(lastSeenLabel) + '</p>'
-            + '    </div>'
+            + '    <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">' + formatNumber(stat.count || 0) + '×</span>'
+            + '  </div>'
+            + '  <div class="mt-3 flex justify-between text-xs text-gray-500">'
+            + '    <span>' + t('logs.overview.last_seen', 'Last seen') + '</span>'
+            + '    <span>' + escapeHtml(lastSeenLabel) + '</span>'
             + '  </div>'
             + '</div>';
         }).join('');
@@ -2977,6 +3185,9 @@
           document.getElementById('findTime').value = data.findtime || '';
           document.getElementById('maxRetry').value = data.maxretry || '';
           document.getElementById('ignoreIP').value = data.ignoreip || '';
+
+          applyAdvancedActionsSettings(data.advancedActions || {});
+          loadPermanentBlockLog();
         })
         .catch(err => {
           showToast('Error loading settings: ' + err, 'error');
@@ -3015,7 +3226,8 @@
         findtime: document.getElementById('findTime').value.trim(),
         maxretry: parseInt(document.getElementById('maxRetry').value, 10) || 3,
         ignoreip: document.getElementById('ignoreIP').value.trim(),
-        smtp: smtpSettings
+        smtp: smtpSettings,
+        advancedActions: collectAdvancedActionsSettings()
       };
 
       fetch('/api/settings', {
@@ -3162,6 +3374,207 @@
       }
       testResultsEl.innerHTML = html;
       testResultsEl.classList.remove('hidden');
+    }
+
+    function applyAdvancedActionsSettings(cfg) {
+      cfg = cfg || {};
+      document.getElementById('advancedActionsEnabled').checked = !!cfg.enabled;
+      document.getElementById('advancedThreshold').value = cfg.threshold || 5;
+      const integrationSelect = document.getElementById('advancedIntegrationSelect');
+      integrationSelect.value = cfg.integration || '';
+
+      const mk = cfg.mikrotik || {};
+      document.getElementById('mikrotikHost').value = mk.host || '';
+      document.getElementById('mikrotikPort').value = mk.port || 22;
+      document.getElementById('mikrotikUsername').value = mk.username || '';
+      document.getElementById('mikrotikPassword').value = mk.password || '';
+      document.getElementById('mikrotikSSHKey').value = mk.sshKeyPath || '';
+      document.getElementById('mikrotikList').value = mk.addressList || 'fail2ban-permanent';
+
+      const pf = cfg.pfSense || {};
+      document.getElementById('pfSenseBaseURL').value = pf.baseUrl || '';
+      document.getElementById('pfSenseToken').value = pf.apiToken || '';
+      document.getElementById('pfSenseSecret').value = pf.apiSecret || '';
+      document.getElementById('pfSenseAlias').value = pf.alias || '';
+      document.getElementById('pfSenseSkipTLS').checked = !!pf.skipTLSVerify;
+
+      updateAdvancedIntegrationFields();
+    }
+
+    function collectAdvancedActionsSettings() {
+      return {
+        enabled: document.getElementById('advancedActionsEnabled').checked,
+        threshold: parseInt(document.getElementById('advancedThreshold').value, 10) || 5,
+        integration: document.getElementById('advancedIntegrationSelect').value,
+        mikrotik: {
+          host: document.getElementById('mikrotikHost').value.trim(),
+          port: parseInt(document.getElementById('mikrotikPort').value, 10) || 22,
+          username: document.getElementById('mikrotikUsername').value.trim(),
+          password: document.getElementById('mikrotikPassword').value,
+          sshKeyPath: document.getElementById('mikrotikSSHKey').value.trim(),
+          addressList: document.getElementById('mikrotikList').value.trim() || 'fail2ban-permanent',
+        },
+        pfSense: {
+          baseUrl: document.getElementById('pfSenseBaseURL').value.trim(),
+          apiToken: document.getElementById('pfSenseToken').value.trim(),
+          apiSecret: document.getElementById('pfSenseSecret').value.trim(),
+          alias: document.getElementById('pfSenseAlias').value.trim(),
+          skipTLSVerify: document.getElementById('pfSenseSkipTLS').checked,
+        }
+      };
+    }
+
+    function updateAdvancedIntegrationFields() {
+      const selected = document.getElementById('advancedIntegrationSelect').value;
+      document.getElementById('advancedMikrotikFields').classList.toggle('hidden', selected !== 'mikrotik');
+      document.getElementById('advancedPfSenseFields').classList.toggle('hidden', selected !== 'pfsense');
+    }
+
+    function loadPermanentBlockLog() {
+      fetch('/api/advanced-actions/blocks')
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showToast('Error loading permanent block log: ' + data.error, 'error');
+            return;
+          }
+          renderPermanentBlockLog(data.blocks || []);
+        })
+        .catch(err => {
+          showToast('Error loading permanent block log: ' + err, 'error');
+        });
+    }
+
+    function renderPermanentBlockLog(blocks) {
+      const container = document.getElementById('permanentBlockLog');
+      if (!container) return;
+      if (!blocks.length) {
+        container.innerHTML = '<p class="text-sm text-gray-500 p-4" data-i18n="settings.advanced.log_empty">No permanent blocks recorded yet.</p>';
+        if (typeof updateTranslations === 'function') updateTranslations();
+        return;
+      }
+      let rows = blocks.map(block => {
+        const statusClass = block.status === 'blocked'
+          ? 'text-green-600'
+          : (block.status === 'unblocked' ? 'text-gray-500' : 'text-red-600');
+        const message = block.message ? escapeHtml(block.message) : '';
+        return `
+          <tr class="border-t">
+            <td class="px-3 py-2 font-mono text-sm">${escapeHtml(block.ip)}</td>
+            <td class="px-3 py-2 text-sm">${escapeHtml(block.integration)}</td>
+            <td class="px-3 py-2 text-sm ${statusClass}">${escapeHtml(block.status)}</td>
+            <td class="px-3 py-2 text-sm">${message || '&nbsp;'}</td>
+            <td class="px-3 py-2 text-xs text-gray-500">${escapeHtml(block.serverId || '')}</td>
+            <td class="px-3 py-2 text-xs text-gray-500">${block.updatedAt ? new Date(block.updatedAt).toLocaleString() : ''}</td>
+            <td class="px-3 py-2 text-right">
+              <button type="button" class="text-sm text-blue-600 hover:text-blue-800" onclick="advancedUnblockIP('${escapeHtml(block.ip)}', event)" data-i18n="settings.advanced.unblock_btn">Remove</button>
+            </td>
+          </tr>`;
+      }).join('');
+      container.innerHTML = `
+        <table class="min-w-full text-sm">
+          <thead class="bg-gray-50 text-left">
+            <tr>
+              <th class="px-3 py-2" data-i18n="settings.advanced.log_ip">IP</th>
+              <th class="px-3 py-2" data-i18n="settings.advanced.log_integration">Integration</th>
+              <th class="px-3 py-2" data-i18n="settings.advanced.log_status">Status</th>
+              <th class="px-3 py-2" data-i18n="settings.advanced.log_message">Message</th>
+              <th class="px-3 py-2" data-i18n="settings.advanced.log_server">Server</th>
+              <th class="px-3 py-2" data-i18n="settings.advanced.log_updated">Updated</th>
+              <th class="px-3 py-2 text-right" data-i18n="settings.advanced.log_actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      if (typeof updateTranslations === 'function') updateTranslations();
+    }
+
+    function refreshPermanentBlockLog() {
+      loadPermanentBlockLog();
+    }
+
+    function openAdvancedTestModal() {
+      populateAdvancedTestServers();
+      document.getElementById('advancedTestIP').value = '';
+      document.getElementById('advancedTestServer').value = '';
+      openModal('advancedTestModal');
+    }
+
+    function populateAdvancedTestServers() {
+      const select = document.getElementById('advancedTestServer');
+      if (!select) return;
+      const value = select.value;
+      select.innerHTML = '';
+      const baseOption = document.createElement('option');
+      baseOption.value = '';
+      baseOption.textContent = t('settings.advanced.test_server_none', 'Use global integration settings');
+      select.appendChild(baseOption);
+      serversCache.forEach(server => {
+        const opt = document.createElement('option');
+        opt.value = server.id;
+        opt.textContent = server.name || server.id;
+        select.appendChild(opt);
+      });
+      select.value = value;
+    }
+
+    function submitAdvancedTest(action) {
+      const ipValue = document.getElementById('advancedTestIP').value.trim();
+      if (!ipValue) {
+        showToast('Please enter an IP address.', 'info');
+        return;
+      }
+      const serverId = document.getElementById('advancedTestServer').value;
+      showLoading(true);
+      fetch('/api/advanced-actions/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, ip: ipValue, serverId: serverId })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showToast('Advanced action failed: ' + data.error, 'error');
+          } else {
+            // Check if this is an info message (e.g., IP already blocked)
+            const toastType = data.info ? 'info' : 'success';
+            showToast(data.message || 'Action completed', toastType);
+            loadPermanentBlockLog();
+          }
+        })
+        .catch(err => showToast('Advanced action failed: ' + err, 'error'))
+        .finally(() => {
+          showLoading(false);
+          closeModal('advancedTestModal');
+        });
+    }
+
+    function advancedUnblockIP(ip, event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (!ip) return;
+      fetch('/api/advanced-actions/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'unblock', ip: ip })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showToast('Failed to remove IP: ' + data.error, 'error');
+          } else {
+            showToast(data.message || 'IP removed', 'success');
+            loadPermanentBlockLog();
+          }
+        })
+        .catch(err => showToast('Failed to remove IP: ' + err, 'error'));
+    }
+
+    const advancedIntegrationSelect = document.getElementById('advancedIntegrationSelect');
+    if (advancedIntegrationSelect) {
+      advancedIntegrationSelect.addEventListener('change', updateAdvancedIntegrationFields);
     }
 
     // When showing the filter section

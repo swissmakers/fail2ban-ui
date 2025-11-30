@@ -49,13 +49,14 @@ type SMTPSettings struct {
 
 // AppSettings holds the main UI settings and Fail2ban configuration
 type AppSettings struct {
-	Language       string       `json:"language"`
-	Port           int          `json:"port"`
-	Debug          bool         `json:"debug"`
-	RestartNeeded  bool         `json:"restartNeeded"`
-	AlertCountries []string     `json:"alertCountries"`
-	SMTP           SMTPSettings `json:"smtp"`
-	CallbackURL    string       `json:"callbackUrl"`
+	Language        string                `json:"language"`
+	Port            int                   `json:"port"`
+	Debug           bool                  `json:"debug"`
+	RestartNeeded   bool                  `json:"restartNeeded"`
+	AlertCountries  []string              `json:"alertCountries"`
+	SMTP            SMTPSettings          `json:"smtp"`
+	CallbackURL     string                `json:"callbackUrl"`
+	AdvancedActions AdvancedActionsConfig `json:"advancedActions"`
 
 	Servers []Fail2banServer `json:"servers"`
 
@@ -67,6 +68,56 @@ type AppSettings struct {
 	Maxretry         int    `json:"maxretry"`
 	Destemail        string `json:"destemail"`
 	//Sender           string `json:"sender"`
+}
+
+type AdvancedActionsConfig struct {
+	Enabled     bool                        `json:"enabled"`
+	Threshold   int                         `json:"threshold"`
+	Integration string                      `json:"integration"`
+	Mikrotik    MikrotikIntegrationSettings `json:"mikrotik"`
+	PfSense     PfSenseIntegrationSettings  `json:"pfSense"`
+}
+
+type MikrotikIntegrationSettings struct {
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	SSHKeyPath  string `json:"sshKeyPath"`
+	AddressList string `json:"addressList"`
+}
+
+type PfSenseIntegrationSettings struct {
+	BaseURL       string `json:"baseUrl"`
+	APIToken      string `json:"apiToken"`
+	APISecret     string `json:"apiSecret"`
+	Alias         string `json:"alias"`
+	SkipTLSVerify bool   `json:"skipTLSVerify"`
+}
+
+func defaultAdvancedActionsConfig() AdvancedActionsConfig {
+	return AdvancedActionsConfig{
+		Enabled:     false,
+		Threshold:   5,
+		Integration: "",
+		Mikrotik: MikrotikIntegrationSettings{
+			Port:        22,
+			AddressList: "fail2ban-permanent",
+		},
+	}
+}
+
+func normalizeAdvancedActionsConfig(cfg AdvancedActionsConfig) AdvancedActionsConfig {
+	if cfg.Threshold <= 0 {
+		cfg.Threshold = 5
+	}
+	if cfg.Mikrotik.Port <= 0 {
+		cfg.Mikrotik.Port = 22
+	}
+	if cfg.Mikrotik.AddressList == "" {
+		cfg.Mikrotik.AddressList = "fail2ban-permanent"
+	}
+	return cfg
 }
 
 // init paths to key-files
@@ -301,6 +352,12 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 			currentSettings.AlertCountries = countries
 		}
 	}
+	if rec.AdvancedActionsJSON != "" {
+		var adv AdvancedActionsConfig
+		if err := json.Unmarshal([]byte(rec.AdvancedActionsJSON), &adv); err == nil {
+			currentSettings.AdvancedActions = adv
+		}
+	}
 }
 
 func applyServerRecordsLocked(records []storage.ServerRecord) {
@@ -346,25 +403,31 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		return storage.AppSettingsRecord{}, err
 	}
 
+	advancedBytes, err := json.Marshal(currentSettings.AdvancedActions)
+	if err != nil {
+		return storage.AppSettingsRecord{}, err
+	}
+
 	return storage.AppSettingsRecord{
-		Language:           currentSettings.Language,
-		Port:               currentSettings.Port,
-		Debug:              currentSettings.Debug,
-		CallbackURL:        currentSettings.CallbackURL,
-		RestartNeeded:      currentSettings.RestartNeeded,
-		AlertCountriesJSON: string(countryBytes),
-		SMTPHost:           currentSettings.SMTP.Host,
-		SMTPPort:           currentSettings.SMTP.Port,
-		SMTPUsername:       currentSettings.SMTP.Username,
-		SMTPPassword:       currentSettings.SMTP.Password,
-		SMTPFrom:           currentSettings.SMTP.From,
-		SMTPUseTLS:         currentSettings.SMTP.UseTLS,
-		BantimeIncrement:   currentSettings.BantimeIncrement,
-		IgnoreIP:           currentSettings.IgnoreIP,
-		Bantime:            currentSettings.Bantime,
-		Findtime:           currentSettings.Findtime,
-		MaxRetry:           currentSettings.Maxretry,
-		DestEmail:          currentSettings.Destemail,
+		Language:            currentSettings.Language,
+		Port:                currentSettings.Port,
+		Debug:               currentSettings.Debug,
+		CallbackURL:         currentSettings.CallbackURL,
+		RestartNeeded:       currentSettings.RestartNeeded,
+		AlertCountriesJSON:  string(countryBytes),
+		SMTPHost:            currentSettings.SMTP.Host,
+		SMTPPort:            currentSettings.SMTP.Port,
+		SMTPUsername:        currentSettings.SMTP.Username,
+		SMTPPassword:        currentSettings.SMTP.Password,
+		SMTPFrom:            currentSettings.SMTP.From,
+		SMTPUseTLS:          currentSettings.SMTP.UseTLS,
+		BantimeIncrement:    currentSettings.BantimeIncrement,
+		IgnoreIP:            currentSettings.IgnoreIP,
+		Bantime:             currentSettings.Bantime,
+		Findtime:            currentSettings.Findtime,
+		MaxRetry:            currentSettings.Maxretry,
+		DestEmail:           currentSettings.Destemail,
+		AdvancedActionsJSON: string(advancedBytes),
 	}, nil
 }
 
@@ -464,6 +527,11 @@ func setDefaultsLocked() {
 	if currentSettings.IgnoreIP == "" {
 		currentSettings.IgnoreIP = "127.0.0.1/8 ::1"
 	}
+
+	if (currentSettings.AdvancedActions == AdvancedActionsConfig{}) {
+		currentSettings.AdvancedActions = defaultAdvancedActionsConfig()
+	}
+	currentSettings.AdvancedActions = normalizeAdvancedActionsConfig(currentSettings.AdvancedActions)
 
 	normalizeServersLocked()
 }

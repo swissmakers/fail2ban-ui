@@ -20,8 +20,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net"
@@ -29,9 +31,11 @@ import (
 	"net/smtp"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -46,6 +50,32 @@ import (
 type SummaryResponse struct {
 	Jails []fail2ban.JailInfo `json:"jails"`
 }
+
+type emailDetail struct {
+	Label string
+	Value string
+}
+
+var (
+	httpQuotedStatusPattern = regexp.MustCompile(`"[^"]*"\s+(\d{3})\b`)
+	httpPlainStatusPattern  = regexp.MustCompile(`\s(\d{3})\s+(?:\d+|-)`)
+	suspiciousLogIndicators = []string{
+		"select ",
+		"union ",
+		"/etc/passwd",
+		"/xmlrpc.php",
+		"/wp-admin",
+		"/cgi-bin",
+		"cmd=",
+		"wget",
+		"curl ",
+		"nslookup",
+		"content-length: 0",
+		"${",
+	}
+	localeCache     = make(map[string]map[string]string)
+	localeCacheLock sync.RWMutex
+)
 
 func resolveConnector(c *gin.Context) (fail2ban.Connector, error) {
 	serverID := c.Query("serverId")
@@ -268,13 +298,25 @@ func BanInsightsHandler(c *gin.Context) {
 
 	countriesMap, err := storage.CountBanEventsByCountry(ctx, since, serverID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		settings := config.GetSettings()
+		errorMsg := err.Error()
+		if settings.Debug {
+			config.DebugLog("BanInsightsHandler: CountBanEventsByCountry error: %v", err)
+			errorMsg = fmt.Sprintf("CountBanEventsByCountry failed: %v", err)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
 	}
 
 	recurring, err := storage.ListRecurringIPStats(ctx, since, minCount, limit, serverID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		settings := config.GetSettings()
+		errorMsg := err.Error()
+		if settings.Debug {
+			config.DebugLog("BanInsightsHandler: ListRecurringIPStats error: %v", err)
+			errorMsg = fmt.Sprintf("ListRecurringIPStats failed: %v", err)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
 	}
 
@@ -548,6 +590,8 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		log.Printf("⚠️ Failed to record ban event: %v", err)
 	}
 
+	evaluateAdvancedActions(ctx, settings, server, ip)
+
 	// Check if country is in alert list
 	displayCountry := country
 	if displayCountry == "" {
@@ -690,6 +734,94 @@ func ManageJailsHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"jails": jails})
+}
+
+// ListPermanentBlocksHandler exposes the permanent block log.
+func ListPermanentBlocksHandler(c *gin.Context) {
+	limit := 100
+	if limitStr := c.DefaultQuery("limit", "100"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	records, err := storage.ListPermanentBlocks(c.Request.Context(), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"blocks": records})
+}
+
+// AdvancedActionsTestHandler allows manual block/unblock tests.
+func AdvancedActionsTestHandler(c *gin.Context) {
+	var req struct {
+		Action   string `json:"action"`
+		IP       string `json:"ip"`
+		ServerID string `json:"serverId"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+	if req.IP == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ip is required"})
+		return
+	}
+	action := strings.ToLower(req.Action)
+	if action == "" {
+		action = "block"
+	}
+	if action != "block" && action != "unblock" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "action must be block or unblock"})
+		return
+	}
+
+	settings := config.GetSettings()
+	server := config.Fail2banServer{}
+	if req.ServerID != "" {
+		if srv, ok := config.GetServerByID(req.ServerID); ok {
+			server = srv
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "server not found"})
+			return
+		}
+	}
+
+	// Check if IP is already blocked before attempting action (for block action only)
+	skipLoggingIfAlreadyBlocked := false
+	if action == "block" && settings.AdvancedActions.Integration != "" {
+		active, checkErr := storage.IsPermanentBlockActive(c.Request.Context(), req.IP, settings.AdvancedActions.Integration)
+		if checkErr == nil && active {
+			// IP is already blocked, we'll check the error message after the call
+			skipLoggingIfAlreadyBlocked = true
+		}
+	}
+
+	err := runAdvancedIntegrationAction(
+		c.Request.Context(),
+		action,
+		req.IP,
+		settings,
+		server,
+		map[string]any{"manual": true},
+		skipLoggingIfAlreadyBlocked,
+	)
+	if err != nil {
+		// Check if error indicates IP is already blocked - show as info instead of error
+		if skipLoggingIfAlreadyBlocked {
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "already have such entry") ||
+				strings.Contains(errMsg, "already exists") ||
+				strings.Contains(errMsg, "duplicate") {
+				// IP is already blocked, return info message with original error
+				c.JSON(http.StatusOK, gin.H{"message": err.Error(), "info": true})
+				return
+			}
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Action %s completed for %s", action, req.IP)})
 }
 
 // UpdateJailManagementHandler updates the enabled state for each jail.
@@ -892,6 +1024,88 @@ func RestartFail2banHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Fail2ban restarted successfully"})
 }
 
+// loadLocale loads a locale JSON file and returns a map of translations
+func loadLocale(lang string) (map[string]string, error) {
+	localeCacheLock.RLock()
+	if cached, ok := localeCache[lang]; ok {
+		localeCacheLock.RUnlock()
+		return cached, nil
+	}
+	localeCacheLock.RUnlock()
+
+	// Determine locale file path
+	var localePath string
+	_, container := os.LookupEnv("CONTAINER")
+	if container {
+		localePath = fmt.Sprintf("/app/locales/%s.json", lang)
+	} else {
+		localePath = fmt.Sprintf("./internal/locales/%s.json", lang)
+	}
+
+	// Read locale file
+	data, err := os.ReadFile(localePath)
+	if err != nil {
+		// Fallback to English if locale file not found
+		if lang != "en" {
+			return loadLocale("en")
+		}
+		return nil, fmt.Errorf("failed to read locale file: %w", err)
+	}
+
+	var translations map[string]string
+	if err := json.Unmarshal(data, &translations); err != nil {
+		return nil, fmt.Errorf("failed to parse locale file: %w", err)
+	}
+
+	// Cache the translations
+	localeCacheLock.Lock()
+	localeCache[lang] = translations
+	localeCacheLock.Unlock()
+
+	return translations, nil
+}
+
+// getEmailTranslation gets a translation key from the locale, with fallback to English
+func getEmailTranslation(lang, key string) string {
+	translations, err := loadLocale(lang)
+	if err != nil {
+		// Try English as fallback
+		if lang != "en" {
+			translations, err = loadLocale("en")
+			if err != nil {
+				return key // Return key if all else fails
+			}
+		} else {
+			return key
+		}
+	}
+
+	if translation, ok := translations[key]; ok {
+		return translation
+	}
+
+	// Fallback to English if key not found
+	if lang != "en" {
+		enTranslations, err := loadLocale("en")
+		if err == nil {
+			if enTranslation, ok := enTranslations[key]; ok {
+				return enTranslation
+			}
+		}
+	}
+
+	return key
+}
+
+// getEmailStyle returns the email style from environment variable, defaulting to "modern"
+func getEmailStyle() string {
+	style := os.Getenv("emailStyle")
+	if style == "classic" {
+		return "classic"
+	}
+	return "modern"
+}
+
 // *******************************************************************
 // *                 Unified Email Sending Function :                *
 // *******************************************************************
@@ -992,19 +1206,29 @@ func sendSMTPMessage(client *smtp.Client, from, to string, msg []byte) error {
 	return nil
 }
 
-// *******************************************************************
-// *                      sendBanAlert Function :                    *
-// *******************************************************************
-func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
-	subject := fmt.Sprintf("[Fail2Ban] %s: Banned %s from %s", jail, ip, hostname)
+// renderClassicEmailDetails creates paragraph-based details for classic email template
+func renderClassicEmailDetails(details []emailDetail) string {
+	if len(details) == 0 {
+		return `<p>No metadata available.</p>`
+	}
+	var b strings.Builder
+	for _, d := range details {
+		b.WriteString(`<p><span class="label">` + html.EscapeString(d.Label) + `:</span> ` + html.EscapeString(d.Value) + `</p>`)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
 
-	// Improved Responsive HTML Email
-	body := fmt.Sprintf(`<!DOCTYPE html>
+// buildClassicEmailBody creates the classic email template (original design with multilingual support)
+func buildClassicEmailBody(title, intro string, details []emailDetail, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText, supportEmail string) string {
+	detailRows := renderClassicEmailDetails(details)
+	year := time.Now().Year()
+	return fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fail2Ban Alert</title>
+<title>%s</title>
 <style>
     body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
     .container { max-width: 600px; margin: 20px auto; background: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0px 2px 4px rgba(0,0,0,0.1); }
@@ -1016,16 +1240,15 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
     .footer { text-align: center; color: #888; font-size: 12px; padding-top: 10px; border-top: 1px solid #ddd; margin-top: 15px; }
     .label { font-weight: bold; color: #333; }
     pre {
-        background: #222; /* Dark terminal-like background */
-        color: #ddd; /* Light text */
-        font-family: "Courier New", Courier, monospace; /* Monospace font */
-        font-size: 12px; /* Smaller font size */
+        background: #222;
+        color: #ddd;
+        font-family: "Courier New", Courier, monospace;
+        font-size: 12px;
         padding: 10px;
         border-radius: 5px;
-        overflow-x: auto; /* Scroll horizontally if needed */
-        white-space: pre-wrap; /* Preserve line breaks */
+        overflow-x: auto;
+        white-space: pre-wrap;
     }
-    /* Mobile Styles */
     @media screen and (max-width: 600px) {
         .container { width: 90%%; padding: 10px; }
         .header h2 { font-size: 20px; }
@@ -1036,42 +1259,256 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 </head>
 <body>
     <div class="container">
-        <!-- HEADER -->
         <div class="header">
             <img src="https://swissmakers.ch/wp-content/uploads/2023/09/cyber.png" alt="Swissmakers GmbH" width="150" />
-            <h2>🚨 Security Alert from Fail2Ban-UI</h2>
+            <h2>🚨 %s</h2>
         </div>
-
-        <!-- ALERT MESSAGE -->
         <div class="content">
-            <p>A new IP has been banned due to excessive failed login attempts.</p>
-
+            <p>%s</p>
             <div class="details">
-                <p><span class="label">📌 Banned IP:</span> %s</p>
-                <p><span class="label">🛡️ Jail Name:</span> %s</p>
-                <p><span class="label">🏠 Hostname:</span> %s</p>
-                <p><span class="label">🚫 Failed Attempts:</span> %s</p>
-                <p><span class="label">🌍 Country:</span> %s</p>
+                %s
             </div>
-
-            <h3>🔍 More Information about Attacker:</h3>
-            <pre>%s</pre>
-
-            <h3>📄 Server Log Entries:</h3>
-            <pre>%s</pre>
+            <h3>🔍 %s</h3>
+            %s
+            <h3>📄 %s</h3>
+            %s
         </div>
-
-        <!-- FOOTER -->
         <div class="footer">
-            <p>This email was generated automatically by Fail2Ban.</p>
-            <p>For security inquiries, contact <a href="mailto:support@swissmakers.ch">support@swissmakers.ch</a></p>
+            <p>%s</p>
+            <p>For security inquiries, contact <a href="mailto:%s">%s</a></p>
             <p>&copy; %d Swissmakers GmbH. All rights reserved.</p>
         </div>
     </div>
 </body>
-</html>`, ip, jail, hostname, failures, country, whois, logs, time.Now().Year())
+</html>`, html.EscapeString(title), html.EscapeString(title), html.EscapeString(intro), detailRows, html.EscapeString(whoisTitle), whoisHTML, html.EscapeString(logsTitle), logsHTML, html.EscapeString(footerText), html.EscapeString(supportEmail), html.EscapeString(supportEmail), year)
+}
 
-	// Send the email
+// buildModernEmailBody creates the modern responsive email template (new design)
+func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText string) string {
+	detailRows := renderEmailDetails(details)
+	year := strconv.Itoa(time.Now().Year())
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>%s</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; padding:0; background-color:#f6f8fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color:#1f2933; line-height:1.6; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+    .email-wrapper { width:100%%; padding:20px 10px; }
+    .email-container { max-width:640px; margin:0 auto; background:#ffffff; border-radius:20px; box-shadow:0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); overflow:hidden; }
+    .email-header { background:linear-gradient(135deg,#004cff 0%%,#6c2bd9 100%%); color:#ffffff; padding:32px 28px; text-align:center; }
+    .email-header-brand { margin:0 0 8px; font-size:11px; letter-spacing:0.3em; text-transform:uppercase; opacity:0.9; font-weight:600; }
+    .email-header-title { margin:0 0 10px; font-size:26px; font-weight:700; line-height:1.2; }
+    .email-body { padding:36px 28px; }
+    .email-intro { font-size:16px; line-height:1.7; margin:0 0 28px; color:#4b5563; }
+    .email-details-wrapper { background:#f9fafb; border-radius:12px; padding:20px; margin:0 0 32px; border:1px solid #e5e7eb; }
+    .email-details-wrapper p { margin:8px 0; font-size:14px; line-height:1.6; color:#111827; }
+    .email-details-wrapper p:first-child { margin-top:0; }
+    .email-details-wrapper p:last-child { margin-bottom:0; }
+    .email-detail-label { font-weight:700; color:#374151; margin-right:8px; }
+    .email-section { margin:36px 0 0; }
+    .email-section-title { font-size:13px; text-transform:uppercase; letter-spacing:0.1em; color:#6b7280; margin:0 0 16px; font-weight:700; }
+    .email-terminal { background:#111827; color:#f3f4f6; padding:20px; font-family:"SFMono-Regular","Consolas","Liberation Mono","Courier New",monospace; border-radius:12px; font-size:12px; line-height:1.7; white-space:pre-wrap; word-break:break-word; overflow-x:auto; margin:0; }
+    .email-log-stack { background:#0f172a; border-radius:12px; padding:16px; }
+    .email-log-line { font-family:"SFMono-Regular","Consolas","Liberation Mono","Courier New",monospace; font-size:12px; line-height:1.6; color:#cbd5f5; padding:8px 12px; border-radius:8px; margin:0 0 6px; background:rgba(255,255,255,0.05); }
+    .email-log-line:last-child { margin-bottom:0; }
+    .email-log-line-alert { background:rgba(248,113,113,0.25); color:#ffffff; border:1px solid rgba(248,113,113,0.5); }
+    .email-muted { color:#9ca3af; font-size:13px; line-height:1.6; }
+    .email-footer { border-top:1px solid #e5e7eb; padding:24px 28px; font-size:12px; color:#6b7280; text-align:center; background:#fafbfc; }
+    .email-footer-text { margin:0 0 8px; }
+    .email-footer-copyright { margin:0; font-size:11px; color:#9ca3af; }
+    @media only screen and (max-width:600px) {
+      .email-wrapper { padding:12px 8px; }
+      .email-header { padding:24px 20px; }
+      .email-header-title { font-size:22px; }
+      .email-body { padding:28px 20px; }
+      .email-intro { font-size:15px; }
+      .email-details-wrapper { padding:16px; }
+      .email-details-wrapper p { font-size:14px; margin:10px 0; }
+      .email-footer { padding:20px 16px; }
+    }
+    @media only screen and (max-width:480px) {
+      .email-header-title { font-size:20px; }
+      .email-body { padding:24px 16px; }
+      .email-details-wrapper { padding:12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="email-container">
+      <div class="email-header">
+        <p class="email-header-brand">Fail2Ban UI</p>
+        <h1 class="email-header-title">%s</h1>
+      </div>
+      <div class="email-body">
+        <p class="email-intro">%s</p>
+        <div class="email-details-wrapper">
+          %s
+        </div>
+        <div class="email-section">
+          <p class="email-section-title">%s</p>
+          %s
+        </div>
+        <div class="email-section">
+          <p class="email-section-title">%s</p>
+          %s
+        </div>
+      </div>
+      <div class="email-footer">
+        <p class="email-footer-text">%s</p>
+        <p class="email-footer-copyright">© %s Swissmakers GmbH. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`, html.EscapeString(title), html.EscapeString(title), html.EscapeString(intro), detailRows, html.EscapeString(whoisTitle), whoisHTML, html.EscapeString(logsTitle), logsHTML, html.EscapeString(footerText), year)
+}
+
+func renderEmailDetails(details []emailDetail) string {
+	if len(details) == 0 {
+		return `<p class="email-muted">No metadata available.</p>`
+	}
+	var b strings.Builder
+	for _, d := range details {
+		b.WriteString(`<p><span class="email-detail-label">` + html.EscapeString(d.Label) + `:</span> ` + html.EscapeString(d.Value) + `</p>`)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func formatWhoisForEmail(whois string, lang string, isModern bool) string {
+	noDataMsg := getEmailTranslation(lang, "email.whois.no_data")
+	if strings.TrimSpace(whois) == "" {
+		if isModern {
+			return `<p class="email-muted">` + html.EscapeString(noDataMsg) + `</p>`
+		}
+		return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(noDataMsg) + `</pre>`
+	}
+	// Use <pre> to preserve all whitespace and newlines exactly as they are
+	if isModern {
+		return `<pre class="email-terminal">` + html.EscapeString(whois) + `</pre>`
+	}
+	return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(whois) + `</pre>`
+}
+
+func formatLogsForEmail(ip, logs string, lang string, isModern bool) string {
+	noLogsMsg := getEmailTranslation(lang, "email.logs.no_data")
+	if strings.TrimSpace(logs) == "" {
+		if isModern {
+			return `<p class="email-muted">` + html.EscapeString(noLogsMsg) + `</p>`
+		}
+		return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(noLogsMsg) + `</pre>`
+	}
+
+	if isModern {
+		var b strings.Builder
+		b.WriteString(`<div class="email-log-stack">`)
+		lines := strings.Split(logs, "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimRight(line, "\r")
+			if trimmed == "" {
+				continue
+			}
+			class := "email-log-line"
+			if isSuspiciousLogLineEmail(trimmed, ip) {
+				class = "email-log-line email-log-line-alert"
+			}
+			b.WriteString(`<div class="` + class + `">` + html.EscapeString(trimmed) + `</div>`)
+		}
+		b.WriteString(`</div>`)
+		return b.String()
+	}
+
+	// Classic format: simple pre tag
+	return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(logs) + `</pre>`
+}
+
+func isSuspiciousLogLineEmail(line, ip string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	lowered := strings.ToLower(trimmed)
+	containsIP := ip != "" && strings.Contains(trimmed, ip)
+	statusCode := extractStatusCodeFromLine(trimmed)
+	hasBadStatus := statusCode >= 300
+	hasIndicator := false
+	for _, indicator := range suspiciousLogIndicators {
+		if strings.Contains(lowered, indicator) {
+			hasIndicator = true
+			break
+		}
+	}
+	if containsIP {
+		return hasBadStatus || hasIndicator
+	}
+	return (hasBadStatus || hasIndicator) && ip == ""
+}
+
+func extractStatusCodeFromLine(line string) int {
+	if match := httpQuotedStatusPattern.FindStringSubmatch(line); len(match) == 2 {
+		if code, err := strconv.Atoi(match[1]); err == nil {
+			return code
+		}
+	}
+	if match := httpPlainStatusPattern.FindStringSubmatch(line); len(match) == 2 {
+		if code, err := strconv.Atoi(match[1]); err == nil {
+			return code
+		}
+	}
+	return 0
+}
+
+// *******************************************************************
+// *                      sendBanAlert Function :                    *
+// *******************************************************************
+func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
+	lang := settings.Language
+	if lang == "" {
+		lang = "en"
+	}
+
+	// Get translations
+	subject := fmt.Sprintf("[Fail2Ban] %s: %s %s %s %s", jail,
+		getEmailTranslation(lang, "email.ban.subject.banned"),
+		ip,
+		getEmailTranslation(lang, "email.ban.subject.from"),
+		hostname)
+
+	details := []emailDetail{
+		{Label: getEmailTranslation(lang, "email.ban.details.banned_ip"), Value: ip},
+		{Label: getEmailTranslation(lang, "email.ban.details.jail"), Value: jail},
+		{Label: getEmailTranslation(lang, "email.ban.details.hostname"), Value: hostname},
+		{Label: getEmailTranslation(lang, "email.ban.details.failed_attempts"), Value: failures},
+		{Label: getEmailTranslation(lang, "email.ban.details.country"), Value: country},
+		{Label: getEmailTranslation(lang, "email.ban.details.timestamp"), Value: time.Now().UTC().Format(time.RFC3339)},
+	}
+
+	title := getEmailTranslation(lang, "email.ban.title")
+	intro := getEmailTranslation(lang, "email.ban.intro")
+	whoisTitle := getEmailTranslation(lang, "email.ban.whois_title")
+	logsTitle := getEmailTranslation(lang, "email.ban.logs_title")
+	footerText := getEmailTranslation(lang, "email.footer.text")
+	supportEmail := "support@swissmakers.ch"
+
+	// Determine email style
+	emailStyle := getEmailStyle()
+	isModern := emailStyle == "modern"
+
+	whoisHTML := formatWhoisForEmail(whois, lang, isModern)
+	logsHTML := formatLogsForEmail(ip, logs, lang, isModern)
+
+	var body string
+	if isModern {
+		body = buildModernEmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
+	} else {
+		body = buildClassicEmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText, supportEmail)
+	}
+
 	return sendEmail(settings.Destemail, subject, body, settings)
 }
 
@@ -1081,10 +1518,51 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 func TestEmailHandler(c *gin.Context) {
 	settings := config.GetSettings()
 
+	lang := settings.Language
+	if lang == "" {
+		lang = "en"
+	}
+
+	// Get translations
+	testDetails := []emailDetail{
+		{Label: getEmailTranslation(lang, "email.test.details.recipient"), Value: settings.Destemail},
+		{Label: getEmailTranslation(lang, "email.test.details.smtp_host"), Value: settings.SMTP.Host},
+		{Label: getEmailTranslation(lang, "email.test.details.triggered_at"), Value: time.Now().Format(time.RFC1123)},
+	}
+
+	title := getEmailTranslation(lang, "email.test.title")
+	intro := getEmailTranslation(lang, "email.test.intro")
+	whoisTitle := getEmailTranslation(lang, "email.ban.whois_title")
+	logsTitle := getEmailTranslation(lang, "email.ban.logs_title")
+	footerText := getEmailTranslation(lang, "email.footer.text")
+	whoisNoData := getEmailTranslation(lang, "email.test.whois_no_data")
+	supportEmail := "support@swissmakers.ch"
+
+	// Determine email style
+	emailStyle := getEmailStyle()
+	isModern := emailStyle == "modern"
+
+	whoisHTML := `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(whoisNoData) + `</pre>`
+	if isModern {
+		whoisHTML = `<p class="email-muted">` + html.EscapeString(whoisNoData) + `</p>`
+	}
+
+	sampleLogs := getEmailTranslation(lang, "email.test.sample_logs")
+	logsHTML := formatLogsForEmail("", sampleLogs, lang, isModern)
+
+	var testBody string
+	if isModern {
+		testBody = buildModernEmailBody(title, intro, testDetails, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
+	} else {
+		testBody = buildClassicEmailBody(title, intro, testDetails, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText, supportEmail)
+	}
+
+	subject := getEmailTranslation(lang, "email.test.subject")
+
 	err := sendEmail(
 		settings.Destemail,
-		"Test Email from Fail2Ban UI",
-		"This is a test email sent from the Fail2Ban UI to verify SMTP settings.",
+		subject,
+		testBody,
 		settings,
 	)
 

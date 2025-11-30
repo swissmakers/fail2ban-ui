@@ -43,6 +43,8 @@ func RegisterRoutes(r *gin.Engine) {
 		api.GET("/settings", GetSettingsHandler)
 		api.POST("/settings", UpdateSettingsHandler)
 		api.POST("/settings/test-email", TestEmailHandler)
+		api.GET("/advanced-actions/blocks", ListPermanentBlocksHandler)
+		api.POST("/advanced-actions/test", AdvancedActionsTestHandler)
 
 		// Fail2ban servers management
 		api.GET("/servers", ListServersHandler)
