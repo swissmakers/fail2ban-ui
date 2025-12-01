@@ -857,7 +857,25 @@ func GetSettingsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("GetSettingsHandler called (handlers.go)") // entry point
 	s := config.GetSettings()
-	c.JSON(http.StatusOK, s)
+	
+	// Check if PORT environment variable is set
+	envPort, envPortSet := config.GetPortFromEnv()
+	
+	// Create response with PORT env info
+	response := make(map[string]interface{})
+	responseBytes, _ := json.Marshal(s)
+	json.Unmarshal(responseBytes, &response)
+	
+	// Add PORT environment variable information
+	response["portFromEnv"] = envPort
+	response["portEnvSet"] = envPortSet
+	
+	// If PORT env is set, override the port value in response
+	if envPortSet {
+		response["port"] = envPort
+	}
+	
+	c.JSON(http.StatusOK, response)
 }
 
 // UpdateSettingsHandler updates the AppSettings from a JSON body
@@ -874,6 +892,13 @@ func UpdateSettingsHandler(c *gin.Context) {
 		return
 	}
 	config.DebugLog("JSON binding successful, updating settings (handlers.go)")
+
+	// Check if PORT environment variable is set - if so, ignore port changes from request
+	envPort, envPortSet := config.GetPortFromEnv()
+	if envPortSet {
+		// Don't allow port changes when PORT env is set
+		req.Port = envPort
+	}
 
 	oldSettings := config.GetSettings()
 	newSettings, err := config.UpdateSettings(req)

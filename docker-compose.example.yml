@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  fail2ban-ui:
+    # Use pre-built image from registry
+    image: registry.swissmakers.ch/infra/fail2ban-ui:latest
+    
+    # Or build from source (uncomment to use):
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    
+    container_name: fail2ban-ui
+    network_mode: host
+    restart: unless-stopped
+    
+    environment:
+      # Custom port (optional, defaults to 8080)
+      # Change this to use a different port for the web interface
+      - PORT=8080
+    
+    volumes:
+      # Required: Configuration and database storage
+      # Stores SQLite database, application settings, and SSH keys
+      - /opt/podman-fail2ban-ui:/config:Z
+      
+      # Required: Fail2Ban configuration directory
+      # Needed for managing local Fail2Ban instance
+      - /etc/fail2ban:/etc/fail2ban:Z
+      
+      # Required: Fail2Ban socket directory
+      # Needed for local Fail2Ban control socket access
+      - /var/run/fail2ban:/var/run/fail2ban
+      
+      # Optional: System logs (read-only)
+      # Useful for filter testing and log analysis (or if planned to integrate fal2ban directly in this container)
+      - /var/log:/var/log:ro
+      
+      # Optional: GeoIP databases (read-only)
+      # Enables geographic IP analysis features (GeoIP must be installed and configured on the host)
+      - /usr/share/GeoIP:/usr/share/GeoIP:ro
+

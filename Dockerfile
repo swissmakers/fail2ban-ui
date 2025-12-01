@@ -51,7 +51,7 @@ ENV CONTAINER=true
 # Persist config data
 VOLUME ["/config"]
 
-# Expose UI port
+# Expose UI port (default: 8080, can be changed via PORT environment variable)
 EXPOSE 8080
 
 # Run the application as non-root (currently not possible because of fail2ban running as privileged)
