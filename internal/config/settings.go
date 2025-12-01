@@ -495,8 +495,15 @@ func setDefaultsLocked() {
 	} else if currentSettings.Port == 0 {
 		currentSettings.Port = 8080
 	}
+	// Auto-update callback URL if it's empty or still using the old default localhost pattern
 	if currentSettings.CallbackURL == "" {
 		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
+	} else {
+		// If callback URL matches the old default pattern, update it to match the current port
+		oldPattern := regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
+		if oldPattern.MatchString(currentSettings.CallbackURL) {
+			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
+		}
 	}
 	if currentSettings.AlertCountries == nil {
 		currentSettings.AlertCountries = []string{"ALL"}
@@ -1190,6 +1197,18 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	}
 
 	new.CallbackURL = strings.TrimSpace(new.CallbackURL)
+
+	// Auto-update callback URL if port changed and callback URL is still using default localhost pattern
+	oldPort := currentSettings.Port
+	if new.Port != oldPort && new.Port > 0 {
+		// Check if callback URL matches the default localhost pattern
+		oldPattern := regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
+		if oldPattern.MatchString(new.CallbackURL) || new.CallbackURL == "" {
+			// Update to match new port
+			new.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", new.Port)
+		}
+	}
+
 	if len(new.Servers) == 0 && len(currentSettings.Servers) > 0 {
 		new.Servers = make([]Fail2banServer, len(currentSettings.Servers))
 		for i, srv := range currentSettings.Servers {

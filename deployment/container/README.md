@@ -242,11 +242,17 @@ After starting the container, access the web interface and configure your first 
    - **Remote Server**: Add via SSH or API agent connection
 
 3. **Configure Settings**
+   - **Fail2Ban Callback URL**: This URL is used by all Fail2Ban instances to send ban alerts back to Fail2Ban UI
+     - For local deployments: Use the same port as Fail2Ban UI (e.g., `http://127.0.0.1:8080` or your configured port)
+     - For reverse proxy setups: Use your TLS-encrypted endpoint (e.g., `https://fail2ban.example.com`)
+     - The callback URL automatically updates when you change the server port (if using the default localhost pattern)
    - Set up email alerts (optional)
    - Configure language preferences
    - Adjust security settings
 
 > **Note:** The local Fail2Ban service is optional. Fail2Ban UI can manage remote Fail2Ban servers via SSH or API agents without requiring a local Fail2Ban installation in the container.
+
+> **Important:** The Fail2Ban Callback URL must be accessible from all Fail2Ban instances (local and remote) that need to send alerts. If you change the Fail2Ban UI port, ensure the callback URL is updated accordingly.
 
 ---
 

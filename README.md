@@ -386,6 +386,37 @@ go build -o fail2ban-ui ./cmd/server/main.go
 
 ### Configuration
 
+#### Fail2Ban Callback URL
+
+The **Fail2Ban Callback URL** is a critical setting that determines how Fail2Ban instances send ban alerts back to Fail2Ban UI. This URL is embedded in a custom Fail2Ban action file that gets deployed to all managed Fail2Ban instances (local, SSH, and API agent connections).
+
+**How it works:**
+- When a Fail2Ban instance bans an IP, it executes the custom action which sends a POST request to the callback URL (`/api/ban` endpoint)
+- Fail2Ban UI receives these notifications and stores them in the database for monitoring and analysis
+- The callback URL is automatically synchronized with the server port when using the default localhost pattern
+
+**Configuration Guidelines:**
+
+1. **Local Deployments:**
+   - Use the same port as Fail2Ban UI: `http://127.0.0.1:8080` (or your configured port)
+   - The callback URL automatically updates when you change the server port
+   - Example: If Fail2Ban UI runs on port `3080`, use `http://127.0.0.1:3080`
+
+2. **Reverse Proxy Setups:**
+   - Use your TLS-encrypted endpoint: `https://fail2ban.example.com`
+   - Ensure the reverse proxy forwards requests to the correct Fail2Ban UI port
+   - The callback URL must be accessible from all Fail2Ban instances (local and remote)
+
+3. **Port Changes:**
+   - When you change the Fail2Ban UI port (via `PORT` environment variable or UI settings), the callback URL automatically updates if it's using the default localhost pattern
+   - For custom callback URLs (e.g., reverse proxy or custom IP), you must manually update them to match your setup
+
+**Important Notes:**
+- The callback URL must be accessible from all Fail2Ban instances that need to send alerts
+- For remote Fail2Ban instances, ensure network connectivity to the callback URL
+- If using a reverse proxy, configure it to forward `/api/ban` requests to Fail2Ban UI
+- The callback URL is stored in `/etc/fail2ban/action.d/ui-custom-action.conf` on each managed Fail2Ban instance
+
 #### Adding a Local Server
 
 The local connector allows managing Fail2Ban on the same host where Fail2Ban UI runs.

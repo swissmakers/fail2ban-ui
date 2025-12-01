@@ -102,6 +102,7 @@
     "settings.alert": "Alarm-Istellige",
     "settings.callback_url": "Fail2ban Callback-URL",
     "settings.callback_url_placeholder": "http://127.0.0.1:8080",
+    "settings.callback_url_hint": "Diä URL wird vo aune Fail2Ban-Instanze brucht, zum Ban-Payloads a Fail2Ban UI z sende. Für lokali Installatione bruchts de gliich Port wie z Fail2Ban UI (z.B. http://127.0.0.1:8080). Für Reverse-Proxy-Setups sött dr TLS-verschlüssleti Endpunkt wenn müglech brücht wärde (auso z.B. https://fail2ban.example.com).",
     "settings.destination_email": "Ziiu-Email (Alarmempfänger)",
     "settings.destination_email_placeholder": "alerts@swissmakers.ch",
     "settings.alert_countries": "Alarm-Länder",

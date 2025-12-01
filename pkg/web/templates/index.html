@@ -33,162 +33,9 @@
   <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Select2 CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/css/select2.min.css" rel="stylesheet" />
-  <style>
-    /* Loading overlay styling */
-    #loading-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.5);
-      z-index: 9999;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      opacity: 0;
-      transition: opacity 0.4s ease;
-    }
-    
-    #loading-overlay.show {
-      display: flex;
-      opacity: 1;
-    }
-
-    /* Restart banner */
-    #restartBanner {
-      display: none;
-    }
-    
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-    
-    ::-webkit-scrollbar-track {
-      background: #f1f1f1;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-      background: #888;
-      border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-      background: #555;
-    }
-    
-    /* Custom select2 styling to match Tailwind */
-    .select2-container--default .select2-selection--multiple {
-      border: 1px solid #d1d5db;
-      border-radius: 0.375rem;
-      padding: 0.25rem 0.5rem;
-      min-height: 42px;
-    }
-    
-    .select2-container--default .select2-selection--multiple .select2-selection__choice {
-      background-color: #3b82f6;
-      border: 1px solid #3b82f6;
-      color: white;
-      border-radius: 0.25rem;
-      padding: 0 0.5rem;
-    }
-    
-    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
-      color: white;
-      margin-right: 0.25rem;
-    }
-    
-    /* Custom modal styling */
-    .modal-content {
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    }
-    
-    body.modal-open {
-      overflow: hidden !important;
-    }
-    
-    /* Custom tooltip styling */
-    .tooltip {
-      position: relative;
-      display: inline-block;
-    }
-    
-    .tooltip .tooltip-text {
-      visibility: hidden;
-      width: 200px;
-      background-color: #333;
-      color: #fff;
-      text-align: center;
-      border-radius: 6px;
-      padding: 5px;
-      position: absolute;
-      z-index: 1;
-      bottom: 125%;
-      left: 50%;
-      margin-left: -100px;
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-    
-    .tooltip:hover .tooltip-text {
-      visibility: visible;
-      opacity: 1;
-    }
-    
-    /* Custom mark styling for search highlights */
-    mark {
-      background-color: #fef08a;
-      padding: 0.1em 0em 0.1em 0.2em;
-      border-radius: 0.25em;
-    }
-
-    /* Toast notifications */
-    #toast-container {
-      position: fixed;
-      top: 1.5rem;
-      right: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      z-index: 10000;
-      pointer-events: none;
-    }
-
-    .toast {
-      min-width: 240px;
-      max-width: 360px;
-      padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
-      color: #fff;
-      font-weight: 500;
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-      opacity: 0;
-      transform: translateY(-6px);
-      transition: opacity 0.25s ease, transform 0.25s ease;
-    }
-
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    .toast-success {
-      background-color: #047857;
-    }
-
-    .toast-error {
-      background-color: #b91c1c;
-    }
-
-    .toast-info {
-      background-color: #1d4ed8;
-    }
-  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/css/select2.min.css" />
+  <!-- Fail2ban UI CSS -->
+  <link rel="stylesheet" href="/static/fail2ban-ui.css">
 </head>
 
 <body class="bg-gray-50 overflow-y-scroll">
@@ -344,18 +191,20 @@
             <input type="number" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="uiPort"
                    data-i18n-placeholder="settings.server_port_placeholder" placeholder="e.g., 8080" required min="80" max="65535" />
             <p class="mt-1 text-sm text-gray-500" id="portEnvHint" style="display: none;">
-              <span data-i18n="settings.port_env_set">Port is set via PORT environment variable:</span> <span id="portEnvValue"></span>. <span data-i18n="settings.port_env_hint">To change the port via Web UI, remove the PORT environment variable and restart the container.</span>
+              <span data-i18n="settings.port_env_set">Port is set via PORT environment variable:</span>
+              <span id="portEnvValue"></span>. <span data-i18n="settings.port_env_hint">To change the port via Web UI, remove the PORT environment variable and restart the container.</span>
             </p>
-            <p class="mt-1 text-sm text-amber-600" id="portRestartHint" style="display: none;" data-i18n="settings.port_restart_hint">⚠️ Port changes require a container restart to take effect.</p>
+            <p class="text-xs text-gray-500 mt-1" id="portRestartHint" style="display: none;" data-i18n="settings.port_restart_hint">⚠️ Port changes require a container restart to take effect.</p>
           </div>
           <div class="mb-4">
             <label for="callbackURL" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.callback_url">Fail2ban Callback URL</label>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="callbackURL"
                    data-i18n-placeholder="settings.callback_url_placeholder" placeholder="http://127.0.0.1:8080" />
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.callback_url_hint">This URL is used by all Fail2Ban instances to send ban alerts back to Fail2Ban UI. For local deployments, use the same port as Fail2Ban UI (e.g., http://127.0.0.1:8080). For reverse proxy setups, use your TLS-encrypted endpoint (e.g., https://fail2ban.example.com).</p>
           </div>
 
           <!-- Debug Log Output -->
-          <div class="flex items-center">
+          <div class="flex items-center border border-gray-200 rounded-lg p-2 overflow-x-auto bg-gray-50">
             <input type="checkbox" id="debugMode" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out">
             <label for="debugMode" class="ml-2 block text-sm text-gray-700" data-i18n="settings.enable_debug">Enable Debug Log</label>
           </div>
@@ -396,7 +245,7 @@
               <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.integration_hint">Choose where permanent bans should be synchronized.</p>
             </div>
 
-            <div id="advancedMikrotikFields" class="hidden space-y-4">
+            <div id="advancedMikrotikFields" class="hidden border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">
               <p class="text-sm text-gray-500" data-i18n="settings.advanced.mikrotik.note">Provide SSH credentials and the address list where IPs should be added.</p>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -426,7 +275,7 @@
               </div>
             </div>
 
-            <div id="advancedPfSenseFields" class="hidden space-y-4">
+            <div id="advancedPfSenseFields" class="hidden border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">
               <p class="text-sm text-gray-500" data-i18n="settings.advanced.pfsense.note">Requires the pfSense API package. Enter the API credentials and alias to manage.</p>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2">
@@ -3178,7 +3027,24 @@
           }
           
           document.getElementById('debugMode').checked = data.debug || false;
-          document.getElementById('callbackURL').value = data.callbackUrl || '';
+          
+          // Set callback URL and add auto-update listener for port changes
+          const callbackURLInput = document.getElementById('callbackURL');
+          callbackURLInput.value = data.callbackUrl || '';
+          
+          // Auto-update callback URL when port changes (if using default localhost pattern)
+          function updateCallbackURLIfDefault() {
+            const currentPort = parseInt(uiPortInput.value, 10) || 8080;
+            const currentCallbackURL = callbackURLInput.value.trim();
+            // Check if callback URL matches default localhost pattern
+            const defaultPattern = /^http:\/\/127\.0\.0\.1:\d+$/;
+            if (currentCallbackURL === '' || defaultPattern.test(currentCallbackURL)) {
+              callbackURLInput.value = `http://127.0.0.1:${currentPort}`;
+            }
+          }
+          
+          // Add listener to port input to auto-update callback URL
+          uiPortInput.addEventListener('input', updateCallbackURLIfDefault);
 
           document.getElementById('destEmail').value = data.destemail || '';
 
@@ -3241,12 +3107,21 @@
 
       const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);
 
+      // Auto-update callback URL if using default localhost pattern and port changed
+      const callbackURLInput = document.getElementById('callbackURL');
+      let callbackUrl = callbackURLInput.value.trim();
+      const currentPort = parseInt(document.getElementById('uiPort').value, 10) || 8080;
+      const defaultPattern = /^http:\/\/127\.0\.0\.1:\d+$/;
+      if (callbackUrl === '' || defaultPattern.test(callbackUrl)) {
+        callbackUrl = `http://127.0.0.1:${currentPort}`;
+      }
+      
       const settingsData = {
         language: document.getElementById('languageSelect').value,
-        port: parseInt(document.getElementById('uiPort').value, 10) || 8080,
+        port: currentPort,
         debug: document.getElementById('debugMode').checked,
         destemail: document.getElementById('destEmail').value.trim(),
-        callbackUrl: document.getElementById('callbackURL').value.trim(),
+        callbackUrl: callbackUrl,
         alertCountries: selectedCountries.length > 0 ? selectedCountries : ["ALL"],
         bantimeIncrement: document.getElementById('bantimeIncrement').checked,
         bantime: document.getElementById('banTime').value.trim(),

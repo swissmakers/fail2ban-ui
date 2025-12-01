@@ -102,6 +102,7 @@
     "settings.alert": "Alert Settings",
     "settings.callback_url": "Fail2ban Callback URL",
     "settings.callback_url_placeholder": "http://127.0.0.1:8080",
+    "settings.callback_url_hint": "This URL is used by all Fail2Ban instances to send ban alerts back to Fail2Ban UI. For local deployments, use the same port as Fail2Ban UI (e.g., http://127.0.0.1:8080). For reverse proxy setups, use your TLS-encrypted endpoint (e.g., https://fail2ban.example.com).",
     "settings.destination_email": "Destination Email (Alerts Receiver)",
     "settings.destination_email_placeholder": "alerts@swissmakers.ch",
     "settings.alert_countries": "Alert Countries",
