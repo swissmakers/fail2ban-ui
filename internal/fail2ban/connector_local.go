@@ -142,8 +142,14 @@ func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 
 // Reload implements Connector.
 func (lc *LocalConnector) Reload(ctx context.Context) error {
-	if _, err := lc.runFail2banClient(ctx, "reload"); err != nil {
-		return fmt.Errorf("fail2ban reload error: %w", err)
+	out, err := lc.runFail2banClient(ctx, "reload")
+	if err != nil {
+		// Include the output in the error message for better debugging
+		return fmt.Errorf("fail2ban reload error: %w (output: %s)", err, strings.TrimSpace(out))
+	}
+	// Check if output indicates success (fail2ban-client returns "OK" on success)
+	if strings.TrimSpace(out) != "OK" && strings.TrimSpace(out) != "" {
+		config.DebugLog("fail2ban reload output: %s", out)
 	}
 	return nil
 }
@@ -265,6 +271,16 @@ func (lc *LocalConnector) SetJailConfig(ctx context.Context, jail, content strin
 // TestLogpath implements Connector.
 func (lc *LocalConnector) TestLogpath(ctx context.Context, logpath string) ([]string, error) {
 	return TestLogpath(logpath)
+}
+
+// UpdateDefaultSettings implements Connector.
+func (lc *LocalConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
+	return UpdateDefaultSettingsLocal(settings)
+}
+
+// EnsureJailLocalStructure implements Connector.
+func (lc *LocalConnector) EnsureJailLocalStructure(ctx context.Context) error {
+	return config.EnsureJailLocalStructure()
 }
 
 func executeShellCommand(ctx context.Context, command string) (string, error) {

@@ -569,36 +569,127 @@
 
         <!-- Fail2Ban Configuration Group -->
         <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.fail2ban">Fail2Ban Configuration</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.fail2ban">Global Default Fail2Ban Configurations</h3>
+          <p class="text-sm text-gray-600 mb-4" data-i18n="settings.fail2ban.description">These settings will be applied to all enabled Fail2Ban servers and stored in their jail.local [DEFAULT] section.</p>
+
           <!-- Bantime Increment -->
-          <div class="flex items-center mb-4">
-            <input type="checkbox" id="bantimeIncrement" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out" />
-            <label for="bantimeIncrement" class="ml-2 block text-sm text-gray-700" data-i18n="settings.enable_bantime_increment">Enable Bantime Increment</label>
+          <div class="mb-4">
+            <div class="flex items-center mb-2">
+              <input type="checkbox" id="bantimeIncrement" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out" />
+              <label for="bantimeIncrement" class="ml-2 block text-sm font-medium text-gray-700" data-i18n="settings.enable_bantime_increment">Enable Bantime Increment</label>
+            </div>
+            <p class="text-xs text-gray-500 ml-9" data-i18n="settings.enable_bantime_increment.description">If set to true, the bantime will be calculated using the formula: bantime = findtime * (number of failures / maxretry) * (1 + bantime.rndtime).</p>
           </div>
+          
           <!-- Bantime -->
           <div class="mb-4">
             <label for="banTime" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.default_bantime">Default Bantime</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_bantime.description">The number of seconds that a host is banned. Time format: 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1m = 1 month, 1y = 1 year.</p>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="banTime"
                    data-i18n-placeholder="settings.default_bantime_placeholder" placeholder="e.g., 48h" />
           </div>
+
+          <!-- Banaction -->
+          <div class="mb-4">
+            <label for="banaction" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.banaction">Banaction</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.banaction.description">Default banning action (e.g. iptables-multiport, iptables-allports, firewallcmd-multiport, etc). It is used to define action_* variables.</p>
+            <select id="banaction" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="iptables-multiport">iptables-multiport</option>
+              <option value="iptables-allports">iptables-allports</option>
+              <option value="iptables-new">iptables-new</option>
+              <option value="iptables-ipset">iptables-ipset</option>
+              <option value="iptables-ipset-proto4">iptables-ipset-proto4</option>
+              <option value="iptables-ipset-proto6">iptables-ipset-proto6</option>
+              <option value="iptables-ipset-proto6-allports">iptables-ipset-proto6-allports</option>
+              <option value="iptables-multiport-log">iptables-multiport-log</option>
+              <option value="iptables-xt_recent-echo">iptables-xt_recent-echo</option>
+              <option value="firewallcmd-multiport">firewallcmd-multiport</option>
+              <option value="firewallcmd-allports">firewallcmd-allports</option>
+              <option value="firewallcmd-ipset">firewallcmd-ipset</option>
+              <option value="firewallcmd-new">firewallcmd-new</option>
+              <option value="firewallcmd-rich-rules">firewallcmd-rich-rules</option>
+              <option value="firewallcmd-rich-logging">firewallcmd-rich-logging</option>
+              <option value="nftables-multiport">nftables-multiport</option>
+              <option value="nftables-allports">nftables-allports</option>
+              <option value="nftables">nftables</option>
+              <option value="shorewall">shorewall</option>
+              <option value="shorewall-ipset-proto6">shorewall-ipset-proto6</option>
+              <option value="ufw">ufw</option>
+              <option value="pf">pf</option>
+              <option value="bsd-ipfw">bsd-ipfw</option>
+              <option value="ipfw">ipfw</option>
+              <option value="ipfilter">ipfilter</option>
+              <option value="npf">npf</option>
+              <option value="osx-ipfw">osx-ipfw</option>
+              <option value="osx-afctl">osx-afctl</option>
+              <option value="apf">apf</option>
+            </select>
+          </div>
+          
+          <!-- Banaction Allports -->
+          <div class="mb-4">
+            <label for="banactionAllports" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.banaction_allports">Banaction Allports</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.banaction_allports.description">Banning action for all ports (e.g. iptables-allports, firewallcmd-allports, etc). Used when a jail needs to ban all ports instead of specific ones.</p>
+            <select id="banactionAllports" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="iptables-allports">iptables-allports</option>
+              <option value="iptables-multiport">iptables-multiport</option>
+              <option value="iptables-new">iptables-new</option>
+              <option value="iptables-ipset">iptables-ipset</option>
+              <option value="iptables-ipset-proto4">iptables-ipset-proto4</option>
+              <option value="iptables-ipset-proto6">iptables-ipset-proto6</option>
+              <option value="iptables-ipset-proto6-allports">iptables-ipset-proto6-allports</option>
+              <option value="iptables-multiport-log">iptables-multiport-log</option>
+              <option value="iptables-xt_recent-echo">iptables-xt_recent-echo</option>
+              <option value="firewallcmd-allports">firewallcmd-allports</option>
+              <option value="firewallcmd-multiport">firewallcmd-multiport</option>
+              <option value="firewallcmd-ipset">firewallcmd-ipset</option>
+              <option value="firewallcmd-new">firewallcmd-new</option>
+              <option value="firewallcmd-rich-rules">firewallcmd-rich-rules</option>
+              <option value="firewallcmd-rich-logging">firewallcmd-rich-logging</option>
+              <option value="nftables-allports">nftables-allports</option>
+              <option value="nftables-multiport">nftables-multiport</option>
+              <option value="nftables">nftables</option>
+              <option value="shorewall">shorewall</option>
+              <option value="shorewall-ipset-proto6">shorewall-ipset-proto6</option>
+              <option value="ufw">ufw</option>
+              <option value="pf">pf</option>
+              <option value="bsd-ipfw">bsd-ipfw</option>
+              <option value="ipfw">ipfw</option>
+              <option value="ipfilter">ipfilter</option>
+              <option value="npf">npf</option>
+              <option value="osx-ipfw">osx-ipfw</option>
+              <option value="osx-afctl">osx-afctl</option>
+              <option value="apf">apf</option>
+            </select>
+          </div>
+
           <!-- Findtime -->
           <div class="mb-4">
             <label for="findTime" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.default_findtime">Default Findtime</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_findtime.description">A host is banned if it has generated 'maxretry' failures during the last 'findtime' seconds. Time format: 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1m = 1 month, 1y = 1 year.</p>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="findTime"
                    data-i18n-placeholder="settings.default_findtime_placeholder" placeholder="e.g., 30m" />
           </div>
+
           <!-- Max Retry -->
           <div class="mb-4">
             <label for="maxRetry" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.default_max_retry">Default Max Retry</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_max_retry.description">Number of failures before a host gets banned.</p>
             <input type="number" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="maxRetry"
                    data-i18n-placeholder="settings.default_max_retry_placeholder" placeholder="Enter maximum retries" />
           </div>
+
           <!-- Ignore IPs -->
           <div class="mb-4">
-            <label for="ignoreIP" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.ignore_ips">Ignore IPs</label>
-            <textarea class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="ignoreIP" rows="2"
-                      data-i18n-placeholder="settings.ignore_ips_placeholder" placeholder="IPs to ignore, separated by spaces"></textarea>
+            <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.ignore_ips">Ignore IPs</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.ignore_ips.description">Space separated list of IP addresses, CIDR masks or DNS hosts. Fail2ban will not ban a host which matches an address in this list.</p>
+            <div class="border border-gray-300 rounded-md p-2 min-h-[60px] bg-gray-50" id="ignoreIPsContainer">
+              <div id="ignoreIPsTags" class="flex flex-wrap gap-2 mb-2"></div>
+              <input type="text" id="ignoreIPInput" class="w-full border-0 bg-transparent focus:outline-none focus:ring-0 text-sm" 
+                     data-i18n-placeholder="settings.ignore_ips_placeholder" placeholder="Enter IP address and press Enter" />
+            </div>
           </div>
+
         </div>
         <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors" data-i18n="settings.save">Save</button>
       </form>
@@ -3127,7 +3218,7 @@
             showToast("Error saving jail settings: " + data.error, 'error');
             return;
           }
-          showToast(t('jails.manage.save_success', 'Jail settings saved. Please restart Fail2ban.'), 'info');
+          showToast(t('jails.manage.save_success', 'Jail settings saved and fail2ban reloaded.'), 'info');
           return loadServers().then(function() {
             updateRestartBanner();
             return refreshData({ silent: true });
@@ -3395,7 +3486,13 @@
           document.getElementById('banTime').value = data.bantime || '';
           document.getElementById('findTime').value = data.findtime || '';
           document.getElementById('maxRetry').value = data.maxretry || '';
-          document.getElementById('ignoreIP').value = data.ignoreip || '';
+          // Load IgnoreIPs as array
+          const ignoreIPs = data.ignoreips || [];
+          renderIgnoreIPsTags(ignoreIPs);
+          
+          // Load banaction settings
+          document.getElementById('banaction').value = data.banaction || 'iptables-multiport';
+          document.getElementById('banactionAllports').value = data.banactionAllports || 'iptables-allports';
 
           applyAdvancedActionsSettings(data.advancedActions || {});
           loadPermanentBlockLog();
@@ -3445,7 +3542,9 @@
         bantime: document.getElementById('banTime').value.trim(),
         findtime: document.getElementById('findTime').value.trim(),
         maxretry: parseInt(document.getElementById('maxRetry').value, 10) || 3,
-        ignoreip: document.getElementById('ignoreIP').value.trim(),
+        ignoreips: getIgnoreIPsArray(),
+        banaction: document.getElementById('banaction').value,
+        banactionAllports: document.getElementById('banactionAllports').value,
         smtp: smtpSettings,
         advancedActions: collectAdvancedActionsSettings()
       };
@@ -3903,7 +4002,92 @@
           }
         });
       }
+      
+      // Setup IgnoreIPs tag input
+      setupIgnoreIPsInput();
     });
+    
+    //*******************************************************************
+    //*              IgnoreIPs Tag Management Functions :              *
+    //*******************************************************************
+    
+    function renderIgnoreIPsTags(ips) {
+      const container = document.getElementById('ignoreIPsTags');
+      if (!container) return;
+      container.innerHTML = '';
+      if (ips && ips.length > 0) {
+        ips.forEach(function(ip) {
+          if (ip && ip.trim()) {
+            addIgnoreIPTag(ip.trim());
+          }
+        });
+      }
+    }
+    
+    function addIgnoreIPTag(ip) {
+      if (!ip || !ip.trim()) return;
+      
+      const container = document.getElementById('ignoreIPsTags');
+      if (!container) return;
+      
+      const existingTags = Array.from(container.querySelectorAll('.ignore-ip-tag')).map(tag => tag.dataset.ip);
+      if (existingTags.includes(ip.trim())) {
+        return; // Already exists
+      }
+      
+      const tag = document.createElement('span');
+      tag.className = 'ignore-ip-tag inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800';
+      tag.dataset.ip = ip.trim();
+      const escapedIP = escapeHtml(ip.trim());
+      tag.innerHTML = escapedIP + ' <button type="button" class="ml-1 text-blue-600 hover:text-blue-800 focus:outline-none" onclick="removeIgnoreIPTag(\'' + escapedIP.replace(/'/g, "\\'") + '\')">×</button>';
+      container.appendChild(tag);
+      
+      // Clear input
+      const input = document.getElementById('ignoreIPInput');
+      if (input) input.value = '';
+    }
+    
+    function removeIgnoreIPTag(ip) {
+      const container = document.getElementById('ignoreIPsTags');
+      if (!container) return;
+      const escapedIP = escapeHtml(ip);
+      const tag = container.querySelector('.ignore-ip-tag[data-ip="' + escapedIP.replace(/"/g, '&quot;') + '"]');
+      if (tag) {
+        tag.remove();
+      }
+    }
+    
+    function getIgnoreIPsArray() {
+      const container = document.getElementById('ignoreIPsTags');
+      if (!container) return [];
+      const tags = container.querySelectorAll('.ignore-ip-tag');
+      return Array.from(tags).map(tag => tag.dataset.ip).filter(ip => ip && ip.trim());
+    }
+    
+    function setupIgnoreIPsInput() {
+      const input = document.getElementById('ignoreIPInput');
+      if (!input) return;
+      
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ',') {
+          e.preventDefault();
+          const value = input.value.trim();
+          if (value) {
+            // Support space or comma separated IPs
+            const ips = value.split(/[,\s]+/).filter(ip => ip.trim());
+            ips.forEach(ip => addIgnoreIPTag(ip.trim()));
+          }
+        }
+      });
+      
+      input.addEventListener('blur', function(e) {
+        const value = input.value.trim();
+        if (value) {
+          const ips = value.split(/[,\s]+/).filter(ip => ip.trim());
+          ips.forEach(ip => addIgnoreIPTag(ip.trim()));
+        }
+      });
+    }
 
     //*******************************************************************
     //*                 Translation Related Functions :                 *

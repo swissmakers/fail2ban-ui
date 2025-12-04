@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -61,12 +60,14 @@ type AppSettings struct {
 	Servers []Fail2banServer `json:"servers"`
 
 	// Fail2Ban [DEFAULT] section values from jail.local
-	BantimeIncrement bool   `json:"bantimeIncrement"`
-	IgnoreIP         string `json:"ignoreip"`
-	Bantime          string `json:"bantime"`
-	Findtime         string `json:"findtime"`
-	Maxretry         int    `json:"maxretry"`
-	Destemail        string `json:"destemail"`
+	BantimeIncrement  bool     `json:"bantimeIncrement"`
+	IgnoreIPs         []string `json:"ignoreips"` // Changed from string to []string for individual IP management
+	Bantime           string   `json:"bantime"`
+	Findtime          string   `json:"findtime"`
+	Maxretry          int      `json:"maxretry"`
+	Destemail         string   `json:"destemail"`
+	Banaction         string   `json:"banaction"`         // Default banning action
+	BanactionAllports string   `json:"banactionAllports"` // Allports banning action
 	//Sender           string `json:"sender"`
 }
 
@@ -332,7 +333,12 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.CallbackURL = rec.CallbackURL
 	currentSettings.RestartNeeded = rec.RestartNeeded
 	currentSettings.BantimeIncrement = rec.BantimeIncrement
-	currentSettings.IgnoreIP = rec.IgnoreIP
+	// Convert IgnoreIP string to array (backward compatibility)
+	if rec.IgnoreIP != "" {
+		currentSettings.IgnoreIPs = strings.Fields(rec.IgnoreIP)
+	} else {
+		currentSettings.IgnoreIPs = []string{}
+	}
 	currentSettings.Bantime = rec.Bantime
 	currentSettings.Findtime = rec.Findtime
 	currentSettings.Maxretry = rec.MaxRetry
@@ -409,24 +415,27 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 	}
 
 	return storage.AppSettingsRecord{
-		Language:            currentSettings.Language,
-		Port:                currentSettings.Port,
-		Debug:               currentSettings.Debug,
-		CallbackURL:         currentSettings.CallbackURL,
-		RestartNeeded:       currentSettings.RestartNeeded,
-		AlertCountriesJSON:  string(countryBytes),
-		SMTPHost:            currentSettings.SMTP.Host,
-		SMTPPort:            currentSettings.SMTP.Port,
-		SMTPUsername:        currentSettings.SMTP.Username,
-		SMTPPassword:        currentSettings.SMTP.Password,
-		SMTPFrom:            currentSettings.SMTP.From,
-		SMTPUseTLS:          currentSettings.SMTP.UseTLS,
-		BantimeIncrement:    currentSettings.BantimeIncrement,
-		IgnoreIP:            currentSettings.IgnoreIP,
+		Language:           currentSettings.Language,
+		Port:               currentSettings.Port,
+		Debug:              currentSettings.Debug,
+		CallbackURL:        currentSettings.CallbackURL,
+		RestartNeeded:      currentSettings.RestartNeeded,
+		AlertCountriesJSON: string(countryBytes),
+		SMTPHost:           currentSettings.SMTP.Host,
+		SMTPPort:           currentSettings.SMTP.Port,
+		SMTPUsername:       currentSettings.SMTP.Username,
+		SMTPPassword:       currentSettings.SMTP.Password,
+		SMTPFrom:           currentSettings.SMTP.From,
+		SMTPUseTLS:         currentSettings.SMTP.UseTLS,
+		BantimeIncrement:   currentSettings.BantimeIncrement,
+		// Convert IgnoreIPs array to space-separated string for storage
+		IgnoreIP:            strings.Join(currentSettings.IgnoreIPs, " "),
 		Bantime:             currentSettings.Bantime,
 		Findtime:            currentSettings.Findtime,
 		MaxRetry:            currentSettings.Maxretry,
 		DestEmail:           currentSettings.Destemail,
+		Banaction:           currentSettings.Banaction,
+		BanactionAllports:   currentSettings.BanactionAllports,
 		AdvancedActionsJSON: string(advancedBytes),
 	}, nil
 }
@@ -538,8 +547,14 @@ func setDefaultsLocked() {
 	if !currentSettings.SMTP.UseTLS {
 		currentSettings.SMTP.UseTLS = true
 	}
-	if currentSettings.IgnoreIP == "" {
-		currentSettings.IgnoreIP = "127.0.0.1/8 ::1"
+	if len(currentSettings.IgnoreIPs) == 0 {
+		currentSettings.IgnoreIPs = []string{"127.0.0.1/8", "::1"}
+	}
+	if currentSettings.Banaction == "" {
+		currentSettings.Banaction = "iptables-multiport"
+	}
+	if currentSettings.BanactionAllports == "" {
+		currentSettings.BanactionAllports = "iptables-allports"
 	}
 
 	if (currentSettings.AdvancedActions == AdvancedActionsConfig{}) {
@@ -586,7 +601,18 @@ func initializeFromJailFile() error {
 		}
 	}
 	if val, ok := settings["ignoreip"]; ok {
-		currentSettings.IgnoreIP = val
+		// Convert space-separated string to array
+		if val != "" {
+			currentSettings.IgnoreIPs = strings.Fields(val)
+		} else {
+			currentSettings.IgnoreIPs = []string{}
+		}
+	}
+	if val, ok := settings["banaction"]; ok {
+		currentSettings.Banaction = val
+	}
+	if val, ok := settings["banaction_allports"]; ok {
+		currentSettings.BanactionAllports = val
 	}
 	if val, ok := settings["destemail"]; ok {
 		currentSettings.Destemail = val
@@ -695,124 +721,203 @@ func ensureFail2banActionFiles(callbackURL, serverID string) error {
 		return nil
 	}
 
-	if err := setupGeoCustomAction(); err != nil {
-		return err
-	}
-	if err := ensureJailDConfig(); err != nil {
+	// Ensure jail.local has proper structure (banner, DEFAULT, action_mwlg, action override)
+	if err := ensureJailLocalStructure(); err != nil {
 		return err
 	}
 	return writeFail2banAction(callbackURL, serverID)
 }
 
-// setupGeoCustomAction checks and replaces the default action in jail.local with our from fail2ban-UI
-func setupGeoCustomAction() error {
-	DebugLog("Running initial setupGeoCustomAction()") // entry point
-	if err := os.MkdirAll(filepath.Dir(jailFile), 0o755); err != nil {
-		return fmt.Errorf("failed to ensure jail.local directory: %w", err)
-	}
-
-	file, err := os.Open(jailFile)
-	if os.IsNotExist(err) {
-		if _, statErr := os.Stat(defaultJailFile); os.IsNotExist(statErr) {
-			return nil
-		}
-		if copyErr := copyFile(defaultJailFile, jailFile); copyErr != nil {
-			return fmt.Errorf("failed to copy default jail.conf to jail.local: %w", copyErr)
-		}
-		file, err = os.Open(jailFile)
-	}
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	var lines []string
-	actionPattern := regexp.MustCompile(`^\s*action\s*=\s*%(.*?)\s*$`)
-	alreadyModified := false
-	actionFound := false
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Check if we already modified the file (prevent duplicate modifications)
-		if strings.Contains(line, "# Custom Fail2Ban action applied") {
-			alreadyModified = true
-		}
-
-		// Look for an existing action definition
-		if actionPattern.MatchString(line) && !alreadyModified {
-			actionFound = true
-
-			// Comment out the existing action line
-			lines = append(lines, "# "+line)
-
-			// Add our replacement action with a comment marker
-			lines = append(lines, "# Custom Fail2Ban action applied by fail2ban-ui")
-			lines = append(lines, "action = %(action_mwlg)s")
-			continue
-		}
-
-		// Store the original line
-		lines = append(lines, line)
-	}
-
-	// If no action was found, no need to modify the file
-	if !actionFound || alreadyModified {
-		return nil
-	}
-
-	// Write back the modified lines
-	output := strings.Join(lines, "\n")
-	return os.WriteFile(jailFile, []byte(output), 0644)
+// EnsureJailLocalStructure creates or updates jail.local with proper structure:
+// This is exported so connectors can call it.
+func EnsureJailLocalStructure() error {
+	return ensureJailLocalStructure()
 }
 
-// copyFile copies a file from src to dst. If the destination file does not exist, it will be created.
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
+// ensureJailLocalStructure creates or updates jail.local with proper structure:
+// 1. Banner at top warning users not to edit manually
+// 2. [DEFAULT] section with current UI settings
+// 3. action_mwlg configuration
+// 4. action = %(action_mwlg)s at the end
+func ensureJailLocalStructure() error {
+	DebugLog("Running ensureJailLocalStructure()") // entry point
 
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, sourceFile)
-	return err
-}
-
-// ensureJailDConfig checks if the jail.d file exists and creates it if necessary
-func ensureJailDConfig() error {
-	DebugLog("Running initial ensureJailDConfig()") // entry point
-	// Check if the file already exists
-	if _, err := os.Stat(jailDFile); err == nil {
-		// File already exists, do nothing
-		DebugLog("Custom jail.d configuration already exists.")
-		return nil
+	// Check if /etc/fail2ban directory exists (fail2ban must be installed)
+	if _, err := os.Stat(filepath.Dir(jailFile)); os.IsNotExist(err) {
+		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban directory does not exist. Please install fail2ban package first")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(jailDFile), 0o755); err != nil {
-		return fmt.Errorf("failed to ensure jail.d directory: %v", err)
+	// Get current settings
+	settings := GetSettings()
+
+	// Read existing jail.local content if it exists
+	var existingContent string
+	if content, err := os.ReadFile(jailFile); err == nil {
+		existingContent = string(content)
 	}
 
-	// Define the content for the custom jail.d configuration
-	jailDConfig := `[DEFAULT]
-# Custom Fail2Ban action using geo-filter for email alerts
+	// Check if file already has our banner (indicating it's already structured)
+	hasBanner := strings.Contains(existingContent, "Fail2Ban-UI") || strings.Contains(existingContent, "fail2ban-ui")
+	hasActionMwlg := strings.Contains(existingContent, "action_mwlg") && strings.Contains(existingContent, "ui-custom-action")
+	hasActionOverride := strings.Contains(existingContent, "action = %(action_mwlg)s")
 
+	// If file is already properly structured, just ensure DEFAULT section is up to date
+	if hasBanner && hasActionMwlg && hasActionOverride {
+		DebugLog("jail.local already has proper structure, updating DEFAULT section if needed")
+		// Update DEFAULT section values without changing structure
+		return updateJailLocalDefaultSection(settings)
+	}
+
+	// Build the banner
+	banner := `################################################################################
+# Fail2Ban-UI Managed Configuration
+# 
+# WARNING: This file is automatically managed by Fail2Ban-UI.
+# DO NOT EDIT THIS FILE MANUALLY - your changes will be overwritten.
+#
+# This file overrides settings from /etc/fail2ban/jail.conf
+# Custom jail configurations should be placed in /etc/fail2ban/jail.d/
+################################################################################
+
+`
+
+	// Build [DEFAULT] section
+	// Convert IgnoreIPs array to space-separated string
+	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
+	if ignoreIPStr == "" {
+		ignoreIPStr = "127.0.0.1/8 ::1"
+	}
+	// Set default banaction values if not set
+	banaction := settings.Banaction
+	if banaction == "" {
+		banaction = "iptables-multiport"
+	}
+	banactionAllports := settings.BanactionAllports
+	if banactionAllports == "" {
+		banactionAllports = "iptables-allports"
+	}
+	defaultSection := fmt.Sprintf(`[DEFAULT]
+bantime.increment = %t
+ignoreip = %s
+bantime = %s
+findtime = %s
+maxretry = %d
+destemail = %s
+banaction = %s
+banaction_allports = %s
+
+`, settings.BantimeIncrement, ignoreIPStr, settings.Bantime, settings.Findtime, settings.Maxretry, settings.Destemail, banaction, banactionAllports)
+
+	// Build action_mwlg configuration
+	// Note: action_mwlg depends on action_ which depends on banaction (now defined above)
+	// The multi-line format uses indentation for continuation
+	actionMwlgConfig := `# Custom Fail2Ban action using geo-filter for email alerts
 action_mwlg = %(action_)s
              ui-custom-action[sender="%(sender)s", dest="%(destemail)s", logpath="%(logpath)s", chain="%(chain)s"]
+
 `
-	// Write the new configuration file
-	err := os.WriteFile(jailDFile, []byte(jailDConfig), 0644)
+
+	// Build action override (at the end as per user requirements)
+	actionOverride := `# Custom Fail2Ban action applied by fail2ban-ui
+action = %(action_mwlg)s
+`
+
+	// Combine all parts
+	newContent := banner + defaultSection + actionMwlgConfig + actionOverride
+
+	// Write the new content
+	err := os.WriteFile(jailFile, []byte(newContent), 0644)
 	if err != nil {
-		return fmt.Errorf("failed to write jail.d config: %v", err)
+		return fmt.Errorf("failed to write jail.local: %v", err)
 	}
 
-	DebugLog("Created custom jail.d configuration at: %v", jailDFile)
+	DebugLog("Created/updated jail.local with proper structure")
+	return nil
+}
+
+// updateJailLocalDefaultSection updates only the [DEFAULT] section values in jail.local
+// while preserving the banner, action_mwlg, and action override
+func updateJailLocalDefaultSection(settings AppSettings) error {
+	content, err := os.ReadFile(jailFile)
+	if err != nil {
+		return fmt.Errorf("failed to read jail.local: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var outputLines []string
+	inDefault := false
+	defaultUpdated := false
+
+	// Keys to update
+	keysToUpdate := map[string]string{
+		"bantime.increment": fmt.Sprintf("bantime.increment = %t", settings.BantimeIncrement),
+		"ignoreip":          fmt.Sprintf("ignoreip = %s", strings.Join(settings.IgnoreIPs, " ")),
+		"bantime":           fmt.Sprintf("bantime = %s", settings.Bantime),
+		"findtime":          fmt.Sprintf("findtime = %s", settings.Findtime),
+		"maxretry":          fmt.Sprintf("maxretry = %d", settings.Maxretry),
+		"destemail":         fmt.Sprintf("destemail = %s", settings.Destemail),
+	}
+	keysUpdated := make(map[string]bool)
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			sectionName := strings.Trim(trimmed, "[]")
+			if sectionName == "DEFAULT" {
+				inDefault = true
+				outputLines = append(outputLines, line)
+			} else {
+				inDefault = false
+				outputLines = append(outputLines, line)
+			}
+		} else if inDefault {
+			// Check if this line is a key we need to update
+			keyUpdated := false
+			for key, newValue := range keysToUpdate {
+				keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
+				if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
+					outputLines = append(outputLines, newValue)
+					keysUpdated[key] = true
+					keyUpdated = true
+					defaultUpdated = true
+					break
+				}
+			}
+			if !keyUpdated {
+				// Keep the line as-is
+				outputLines = append(outputLines, line)
+			}
+		} else {
+			// Keep lines outside DEFAULT section
+			outputLines = append(outputLines, line)
+		}
+	}
+
+	// Add any missing keys to the DEFAULT section
+	if inDefault {
+		for key, newValue := range keysToUpdate {
+			if !keysUpdated[key] {
+				// Find the DEFAULT section and insert after it
+				for i, outputLine := range outputLines {
+					if strings.TrimSpace(outputLine) == "[DEFAULT]" {
+						outputLines = append(outputLines[:i+1], append([]string{newValue}, outputLines[i+1:]...)...)
+						defaultUpdated = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if defaultUpdated {
+		newContent := strings.Join(outputLines, "\n")
+		if err := os.WriteFile(jailFile, []byte(newContent), 0644); err != nil {
+			return fmt.Errorf("failed to write jail.local: %w", err)
+		}
+		DebugLog("Updated DEFAULT section in jail.local")
+	}
+
 	return nil
 }
 
@@ -820,8 +925,10 @@ action_mwlg = %(action_)s
 func writeFail2banAction(callbackURL, serverID string) error {
 	DebugLog("Running initial writeFail2banAction()") // entry point
 	DebugLog("----------------------------")
-	if err := os.MkdirAll(filepath.Dir(actionFile), 0o755); err != nil {
-		return fmt.Errorf("failed to ensure action.d directory: %w", err)
+
+	// Check if /etc/fail2ban/action.d directory exists (fail2ban must be installed)
+	if _, err := os.Stat(filepath.Dir(actionFile)); os.IsNotExist(err) {
+		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban/action.d directory does not exist. Please install fail2ban package first")
 	}
 
 	actionConfig := BuildFail2banActionConfig(callbackURL, serverID)
@@ -1185,8 +1292,20 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	old := currentSettings
 
 	// If certain fields change, we mark reload needed
+	// Compare IgnoreIPs arrays
+	ignoreIPsChanged := false
+	if len(old.IgnoreIPs) != len(new.IgnoreIPs) {
+		ignoreIPsChanged = true
+	} else {
+		for i := range old.IgnoreIPs {
+			if old.IgnoreIPs[i] != new.IgnoreIPs[i] {
+				ignoreIPsChanged = true
+				break
+			}
+		}
+	}
 	restartTriggered := old.BantimeIncrement != new.BantimeIncrement ||
-		old.IgnoreIP != new.IgnoreIP ||
+		ignoreIPsChanged ||
 		old.Bantime != new.Bantime ||
 		old.Findtime != new.Findtime ||
 		old.Maxretry != new.Maxretry

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -561,4 +562,158 @@ func ExtractFilterFromJailConfig(jailContent string) string {
 		}
 	}
 	return ""
+}
+
+// UpdateDefaultSettingsLocal updates specific keys in the [DEFAULT] section of /etc/fail2ban/jail.local
+// with the provided settings, preserving all other content including the ui-custom-action section.
+// Removes commented lines (starting with #) before applying updates.
+func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
+	config.DebugLog("UpdateDefaultSettingsLocal called")
+	localPath := "/etc/fail2ban/jail.local"
+
+	// Read existing file if it exists
+	var existingContent string
+	if content, err := os.ReadFile(localPath); err == nil {
+		existingContent = string(content)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read jail.local: %w", err)
+	}
+
+	// Remove commented lines (lines starting with #) but preserve:
+	// - Banner lines (containing "Fail2Ban-UI" or "fail2ban-ui")
+	// - action_mwlg and action override lines
+	lines := strings.Split(existingContent, "\n")
+	var uncommentedLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Keep empty lines, banner lines, action_mwlg lines, action override lines, and lines that don't start with #
+		isBanner := strings.Contains(line, "Fail2Ban-UI") || strings.Contains(line, "fail2ban-ui")
+		isActionMwlg := strings.Contains(trimmed, "action_mwlg")
+		isActionOverride := strings.Contains(trimmed, "action = %(action_mwlg)s")
+		if trimmed == "" || !strings.HasPrefix(trimmed, "#") || isBanner || isActionMwlg || isActionOverride {
+			uncommentedLines = append(uncommentedLines, line)
+		}
+	}
+	existingContent = strings.Join(uncommentedLines, "\n")
+
+	// Convert IgnoreIPs array to space-separated string
+	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
+	if ignoreIPStr == "" {
+		ignoreIPStr = "127.0.0.1/8 ::1"
+	}
+	// Set default banaction values if not set
+	banaction := settings.Banaction
+	if banaction == "" {
+		banaction = "iptables-multiport"
+	}
+	banactionAllports := settings.BanactionAllports
+	if banactionAllports == "" {
+		banactionAllports = "iptables-allports"
+	}
+	// Define the keys we want to update
+	keysToUpdate := map[string]string{
+		"bantime.increment":  fmt.Sprintf("bantime.increment = %t", settings.BantimeIncrement),
+		"ignoreip":           fmt.Sprintf("ignoreip = %s", ignoreIPStr),
+		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
+		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
+		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
+		"destemail":          fmt.Sprintf("destemail = %s", settings.Destemail),
+		"banaction":          fmt.Sprintf("banaction = %s", banaction),
+		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllports),
+	}
+
+	// Track which keys we've updated
+	keysUpdated := make(map[string]bool)
+
+	// Parse existing content and update only specific keys in DEFAULT section
+	if existingContent == "" {
+		// File doesn't exist, create new one with DEFAULT section
+		defaultLines := []string{"[DEFAULT]"}
+		for _, key := range []string{"bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"} {
+			defaultLines = append(defaultLines, keysToUpdate[key])
+		}
+		defaultLines = append(defaultLines, "")
+		newContent := strings.Join(defaultLines, "\n")
+		if err := os.WriteFile(localPath, []byte(newContent), 0644); err != nil {
+			return fmt.Errorf("failed to write jail.local: %w", err)
+		}
+		config.DebugLog("Created new jail.local with DEFAULT section")
+		return nil
+	}
+
+	// Parse and update only specific keys in DEFAULT section
+	lines = strings.Split(existingContent, "\n")
+	var outputLines []string
+	inDefault := false
+	defaultSectionFound := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			sectionName := strings.Trim(trimmed, "[]")
+			if sectionName == "DEFAULT" {
+				// Start of DEFAULT section
+				inDefault = true
+				defaultSectionFound = true
+				outputLines = append(outputLines, line)
+			} else {
+				// Other section - stop DEFAULT mode
+				inDefault = false
+				outputLines = append(outputLines, line)
+			}
+		} else if inDefault {
+			// We're in DEFAULT section - check if this line is a key we need to update
+			keyUpdated := false
+			for key, newValue := range keysToUpdate {
+				// Check if this line contains the key (with or without spaces around =)
+				keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
+				if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
+					outputLines = append(outputLines, newValue)
+					keysUpdated[key] = true
+					keyUpdated = true
+					break
+				}
+			}
+			if !keyUpdated {
+				// Keep the line as-is (might be other DEFAULT settings or action_mwlg)
+				outputLines = append(outputLines, line)
+			}
+		} else {
+			// Keep lines outside DEFAULT section (preserves ui-custom-action and other content)
+			outputLines = append(outputLines, line)
+		}
+	}
+
+	// If DEFAULT section wasn't found, create it at the beginning
+	if !defaultSectionFound {
+		defaultLines := []string{"[DEFAULT]"}
+		for _, key := range []string{"bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"} {
+			defaultLines = append(defaultLines, keysToUpdate[key])
+		}
+		defaultLines = append(defaultLines, "")
+		outputLines = append(defaultLines, outputLines...)
+	} else {
+		// Add any missing keys to the DEFAULT section
+		for _, key := range []string{"bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"} {
+			if !keysUpdated[key] {
+				// Find the DEFAULT section and insert after it
+				for i, line := range outputLines {
+					if strings.TrimSpace(line) == "[DEFAULT]" {
+						// Insert after [DEFAULT] header
+						outputLines = append(outputLines[:i+1], append([]string{keysToUpdate[key]}, outputLines[i+1:]...)...)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	newContent := strings.Join(outputLines, "\n")
+	if err := os.WriteFile(localPath, []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to write jail.local: %w", err)
+	}
+
+	config.DebugLog("Updated specific keys in DEFAULT section of jail.local")
+	return nil
 }

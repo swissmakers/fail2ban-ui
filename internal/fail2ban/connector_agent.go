@@ -320,3 +320,40 @@ func (ac *AgentConnector) TestLogpath(ctx context.Context, logpath string) ([]st
 	}
 	return resp.Files, nil
 }
+
+// UpdateDefaultSettings implements Connector.
+func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
+	// Convert IgnoreIPs array to space-separated string
+	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
+	if ignoreIPStr == "" {
+		ignoreIPStr = "127.0.0.1/8 ::1"
+	}
+	// Set default banaction values if not set
+	banaction := settings.Banaction
+	if banaction == "" {
+		banaction = "iptables-multiport"
+	}
+	banactionAllports := settings.BanactionAllports
+	if banactionAllports == "" {
+		banactionAllports = "iptables-allports"
+	}
+	payload := map[string]interface{}{
+		"bantimeIncrement":  settings.BantimeIncrement,
+		"ignoreip":          ignoreIPStr,
+		"bantime":           settings.Bantime,
+		"findtime":          settings.Findtime,
+		"maxretry":          settings.Maxretry,
+		"destemail":         settings.Destemail,
+		"banaction":         banaction,
+		"banactionAllports": banactionAllports,
+	}
+	return ac.put(ctx, "/v1/jails/default-settings", payload, nil)
+}
+
+// EnsureJailLocalStructure implements Connector.
+func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
+	// Call agent API endpoint to ensure jail.local structure
+	// If the endpoint doesn't exist, we'll need to implement it on the agent side
+	// For now, we'll try calling it and handle the error gracefully
+	return ac.post(ctx, "/v1/jails/ensure-structure", nil, nil)
+}

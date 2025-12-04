@@ -591,6 +591,333 @@ fi
 	return matches, nil
 }
 
+// UpdateDefaultSettings implements Connector.
+func (sc *SSHConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
+	jailLocalPath := "/etc/fail2ban/jail.local"
+
+	// Read existing file if it exists
+	existingContent, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
+	if err != nil {
+		// File doesn't exist, create new one
+		existingContent = ""
+	}
+
+	// Remove commented lines (lines starting with #) using sed
+	if existingContent != "" {
+		// Use sed to remove lines starting with # (but preserve empty lines)
+		removeCommentsCmd := fmt.Sprintf("sed '/^[[:space:]]*#/d' %s", jailLocalPath)
+		uncommentedContent, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", removeCommentsCmd})
+		if err == nil {
+			existingContent = uncommentedContent
+		}
+	}
+
+	// Convert IgnoreIPs array to space-separated string
+	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
+	if ignoreIPStr == "" {
+		ignoreIPStr = "127.0.0.1/8 ::1"
+	}
+	// Set default banaction values if not set
+	banactionVal := settings.Banaction
+	if banactionVal == "" {
+		banactionVal = "iptables-multiport"
+	}
+	banactionAllportsVal := settings.BanactionAllports
+	if banactionAllportsVal == "" {
+		banactionAllportsVal = "iptables-allports"
+	}
+	// Define the keys we want to update
+	keysToUpdate := map[string]string{
+		"bantime.increment":  fmt.Sprintf("bantime.increment = %t", settings.BantimeIncrement),
+		"ignoreip":           fmt.Sprintf("ignoreip = %s", ignoreIPStr),
+		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
+		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
+		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
+		"destemail":          fmt.Sprintf("destemail = %s", settings.Destemail),
+		"banaction":          fmt.Sprintf("banaction = %s", banactionVal),
+		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllportsVal),
+	}
+
+	// Parse existing content and update only specific keys in DEFAULT section
+	if existingContent == "" {
+		// File doesn't exist, create new one with DEFAULT section
+		defaultLines := []string{"[DEFAULT]"}
+		for _, key := range []string{"bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail", "banaction", "banaction_allports"} {
+			defaultLines = append(defaultLines, keysToUpdate[key])
+		}
+		defaultLines = append(defaultLines, "")
+		newContent := strings.Join(defaultLines, "\n")
+		cmd := fmt.Sprintf("cat <<'EOF' | tee %s >/dev/null\n%s\nEOF", jailLocalPath, newContent)
+		_, err = sc.runRemoteCommand(ctx, []string{"bash", "-lc", cmd})
+		return err
+	}
+
+	// Use Python script to update only specific keys in DEFAULT section
+	// Preserves banner, action_mwlg, and action override sections
+	// Escape values for shell/Python
+	escapeForShell := func(s string) string {
+		// Escape single quotes for shell
+		return strings.ReplaceAll(s, "'", "'\"'\"'")
+	}
+
+	updateScript := fmt.Sprintf(`python3 <<'PY'
+import re
+
+jail_file = '%s'
+ignore_ip_str = '%s'
+banaction_val = '%s'
+banaction_allports_val = '%s'
+bantime_increment_val = %t
+keys_to_update = {
+    'bantime.increment': 'bantime.increment = ' + str(bantime_increment_val),
+    'ignoreip': 'ignoreip = ' + ignore_ip_str,
+    'bantime': 'bantime = %s',
+    'findtime': 'findtime = %s',
+    'maxretry': 'maxretry = %d',
+    'destemail': 'destemail = %s',
+    'banaction': 'banaction = ' + banaction_val,
+    'banaction_allports': 'banaction_allports = ' + banaction_allports_val
+}
+
+try:
+    with open(jail_file, 'r') as f:
+        lines = f.readlines()
+except FileNotFoundError:
+    lines = []
+
+output_lines = []
+in_default = False
+default_section_found = False
+keys_updated = set()
+
+for line in lines:
+    stripped = line.strip()
+    
+    # Preserve banner lines, action_mwlg lines, and action override lines
+    is_banner = 'Fail2Ban-UI' in line or 'fail2ban-ui' in line
+    is_action_mwlg = 'action_mwlg' in stripped
+    is_action_override = 'action = %%(action_mwlg)s' in stripped
+    
+    if stripped.startswith('[') and stripped.endswith(']'):
+        section_name = stripped.strip('[]')
+        if section_name == "DEFAULT":
+            in_default = True
+            default_section_found = True
+            output_lines.append(line)
+        else:
+            in_default = False
+            output_lines.append(line)
+    elif in_default:
+        # Check if this line is a key we need to update
+        key_updated = False
+        for key, new_value in keys_to_update.items():
+            pattern = r'^\s*' + re.escape(key) + r'\s*='
+            if re.match(pattern, stripped):
+                output_lines.append(new_value + '\n')
+                keys_updated.add(key)
+                key_updated = True
+                break
+        if not key_updated:
+            # Keep the line as-is (might be action_mwlg or other DEFAULT settings)
+            output_lines.append(line)
+    else:
+        # Keep lines outside DEFAULT section (preserves banner, action_mwlg, action override)
+        output_lines.append(line)
+
+# If DEFAULT section wasn't found, create it at the beginning
+if not default_section_found:
+    default_lines = ["[DEFAULT]\n"]
+    for key in ["bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"]:
+        default_lines.append(keys_to_update[key] + "\n")
+    default_lines.append("\n")
+    output_lines = default_lines + output_lines
+else:
+    # Add any missing keys to the DEFAULT section
+    for key in ["bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"]:
+        if key not in keys_updated:
+            # Find the DEFAULT section and insert after it
+            for i, line in enumerate(output_lines):
+                if line.strip() == "[DEFAULT]":
+                    output_lines.insert(i + 1, keys_to_update[key] + "\n")
+                    break
+
+with open(jail_file, 'w') as f:
+    f.writelines(output_lines)
+PY`, escapeForShell(jailLocalPath), escapeForShell(ignoreIPStr), escapeForShell(banactionVal), escapeForShell(banactionAllportsVal), settings.BantimeIncrement, escapeForShell(settings.Bantime), escapeForShell(settings.Findtime), settings.Maxretry, escapeForShell(settings.Destemail))
+
+	_, err = sc.runRemoteCommand(ctx, []string{"bash", "-lc", updateScript})
+	return err
+}
+
+// EnsureJailLocalStructure implements Connector.
+func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
+	jailLocalPath := "/etc/fail2ban/jail.local"
+	settings := config.GetSettings()
+
+	// Convert IgnoreIPs array to space-separated string
+	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
+	if ignoreIPStr == "" {
+		ignoreIPStr = "127.0.0.1/8 ::1"
+	}
+	// Set default banaction values if not set
+	banactionVal := settings.Banaction
+	if banactionVal == "" {
+		banactionVal = "iptables-multiport"
+	}
+	banactionAllportsVal := settings.BanactionAllports
+	if banactionAllportsVal == "" {
+		banactionAllportsVal = "iptables-allports"
+	}
+	// Escape values for shell/Python
+	escapeForShell := func(s string) string {
+		return strings.ReplaceAll(s, "'", "'\"'\"'")
+	}
+
+	// Build the structure using Python script
+	ensureScript := fmt.Sprintf(`python3 <<'PY'
+import os
+import re
+
+jail_file = '%s'
+ignore_ip_str = '%s'
+banaction_val = '%s'
+banaction_allports_val = '%s'
+settings = {
+    'bantime_increment': %t,
+    'ignoreip': ignore_ip_str,
+    'bantime': '%s',
+    'findtime': '%s',
+    'maxretry': %d,
+    'destemail': '%s',
+    'banaction': banaction_val,
+    'banaction_allports': banaction_allports_val
+}
+
+# Check if file already has our banner
+has_banner = False
+has_action_mwlg = False
+has_action_override = False
+
+try:
+    with open(jail_file, 'r') as f:
+        content = f.read()
+        has_banner = 'Fail2Ban-UI' in content or 'fail2ban-ui' in content
+        has_action_mwlg = 'action_mwlg' in content and 'ui-custom-action' in content
+        has_action_override = 'action = %%(action_mwlg)s' in content
+except FileNotFoundError:
+    pass
+
+# If already properly structured, just update DEFAULT section
+if has_banner and has_action_mwlg and has_action_override:
+    try:
+        with open(jail_file, 'r') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        lines = []
+    
+    output_lines = []
+    in_default = False
+    keys_updated = set()
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        if stripped.startswith('[') and stripped.endswith(']'):
+            section_name = stripped.strip('[]')
+            if section_name == "DEFAULT":
+                in_default = True
+                output_lines.append(line)
+            else:
+                in_default = False
+                output_lines.append(line)
+        elif in_default:
+            key_updated = False
+            for key, new_value in [
+                ('bantime.increment', 'bantime.increment = ' + str(settings['bantime_increment'])),
+                ('ignoreip', 'ignoreip = ' + settings['ignoreip']),
+                ('bantime', 'bantime = ' + settings['bantime']),
+                ('findtime', 'findtime = ' + settings['findtime']),
+                ('maxretry', 'maxretry = ' + str(settings['maxretry'])),
+                ('destemail', 'destemail = ' + settings['destemail']),
+                ('banaction', 'banaction = ' + settings['banaction']),
+                ('banaction_allports', 'banaction_allports = ' + settings['banaction_allports']),
+            ]:
+                pattern = r'^\s*' + re.escape(key) + r'\s*='
+                if re.match(pattern, stripped):
+                    output_lines.append(new_value + '\n')
+                    keys_updated.add(key)
+                    key_updated = True
+                    break
+            if not key_updated:
+                output_lines.append(line)
+        else:
+            output_lines.append(line)
+    
+    # Add missing keys
+    if in_default:
+        for key, new_value in [
+            ('bantime.increment', 'bantime.increment = ' + str(settings['bantime_increment'])),
+            ('ignoreip', 'ignoreip = ' + settings['ignoreip']),
+            ('bantime', 'bantime = ' + settings['bantime']),
+            ('findtime', 'findtime = ' + settings['findtime']),
+            ('maxretry', 'maxretry = ' + str(settings['maxretry'])),
+            ('destemail', 'destemail = ' + settings['destemail']),
+        ]:
+            if key not in keys_updated:
+                for i, output_line in enumerate(output_lines):
+                    if output_line.strip() == "[DEFAULT]":
+                        output_lines.insert(i + 1, new_value + '\n')
+                        break
+    
+    with open(jail_file, 'w') as f:
+        f.writelines(output_lines)
+else:
+    # Create new structure
+    banner = """################################################################################
+# Fail2Ban-UI Managed Configuration
+# 
+# WARNING: This file is automatically managed by Fail2Ban-UI.
+# DO NOT EDIT THIS FILE MANUALLY - your changes will be overwritten.
+#
+# This file overrides settings from /etc/fail2ban/jail.conf
+# Custom jail configurations should be placed in /etc/fail2ban/jail.d/
+################################################################################
+
+"""
+    
+    default_section = """[DEFAULT]
+bantime.increment = """ + str(settings['bantime_increment']) + """
+ignoreip = """ + settings['ignoreip'] + """
+bantime = """ + settings['bantime'] + """
+findtime = """ + settings['findtime'] + """
+maxretry = """ + str(settings['maxretry']) + """
+destemail = """ + settings['destemail'] + """
+banaction = """ + settings['banaction'] + """
+banaction_allports = """ + settings['banaction_allports'] + """
+
+"""
+    
+    action_mwlg_config = """# Custom Fail2Ban action using geo-filter for email alerts
+action_mwlg = %%(action_)s
+             ui-custom-action[sender="%%(sender)s", dest="%%(destemail)s", logpath="%%(logpath)s", chain="%%(chain)s"]
+
+"""
+    
+    action_override = """# Custom Fail2Ban action applied by fail2ban-ui
+action = %%(action_mwlg)s
+"""
+    
+    new_content = banner + default_section + action_mwlg_config + action_override
+    
+    with open(jail_file, 'w') as f:
+        f.write(new_content)
+PY`, escapeForShell(jailLocalPath), escapeForShell(ignoreIPStr), escapeForShell(banactionVal), escapeForShell(banactionAllportsVal), settings.BantimeIncrement,
+		escapeForShell(settings.Bantime), escapeForShell(settings.Findtime), settings.Maxretry, escapeForShell(settings.Destemail))
+
+	_, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", ensureScript})
+	return err
+}
+
 // parseJailConfigContent parses jail configuration content and returns JailInfo slice.
 func parseJailConfigContent(content string) []JailInfo {
 	var jails []JailInfo

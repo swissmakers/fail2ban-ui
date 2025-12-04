@@ -433,6 +433,19 @@ func UpsertServerHandler(c *gin.Context) {
 		}
 	}
 
+	// Ensure jail.local structure is properly initialized for newly enabled/added servers
+	if justEnabled || !wasEnabled {
+		conn, err := fail2ban.GetManager().Connector(server.ID)
+		if err == nil {
+			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
+				config.DebugLog("Warning: failed to ensure jail.local structure for server %s: %v", server.Name, err)
+				// Don't fail the request, just log the warning
+			} else {
+				config.DebugLog("Successfully ensured jail.local structure for server %s", server.Name)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"server": server})
 }
 
@@ -833,6 +846,19 @@ func min(a, b int) int {
 	return b
 }
 
+// equalStringSlices compares two string slices for equality
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // TestLogpathHandler tests a logpath and returns matching files
 func TestLogpathHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
@@ -979,7 +1005,7 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 
 // UpdateJailManagementHandler updates the enabled state for each jail.
 // Expected JSON format: { "JailName1": true, "JailName2": false, ... }
-// After updating, the Fail2ban service is restarted.
+// After updating, fail2ban is reloaded to apply the changes.
 func UpdateJailManagementHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("UpdateJailManagementHandler called (handlers.go)") // entry point
@@ -998,11 +1024,17 @@ func UpdateJailManagementHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update jail settings: " + err.Error()})
 		return
 	}
-	if err := config.MarkRestartNeeded(conn.Server().ID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// Reload fail2ban to apply the changes (reload is sufficient for jail enable/disable)
+	if err := conn.Reload(c.Request.Context()); err != nil {
+		config.DebugLog("Warning: failed to reload fail2ban after updating jail settings: %v", err)
+		// Still return success but warn about reload failure
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Jail settings updated successfully, but fail2ban reload failed",
+			"warning": "Please reload fail2ban manually: " + err.Error(),
+		})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Jail settings updated successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "Jail settings updated and fail2ban reloaded successfully"})
 }
 
 // GetSettingsHandler returns the entire AppSettings struct as JSON
@@ -1075,6 +1107,49 @@ func UpdateSettingsHandler(c *gin.Context) {
 		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
 			config.DebugLog("Warning: failed to update some remote action files: %v", err)
 			// Don't fail the request, just log the warning
+		}
+	}
+
+	// Check if Fail2Ban DEFAULT settings changed and push to all enabled servers
+	// Compare IgnoreIPs arrays
+	ignoreIPsChanged := !equalStringSlices(oldSettings.IgnoreIPs, newSettings.IgnoreIPs)
+	defaultSettingsChanged := oldSettings.BantimeIncrement != newSettings.BantimeIncrement ||
+		ignoreIPsChanged ||
+		oldSettings.Bantime != newSettings.Bantime ||
+		oldSettings.Findtime != newSettings.Findtime ||
+		oldSettings.Maxretry != newSettings.Maxretry ||
+		oldSettings.Destemail != newSettings.Destemail ||
+		oldSettings.Banaction != newSettings.Banaction ||
+		oldSettings.BanactionAllports != newSettings.BanactionAllports
+
+	if defaultSettingsChanged {
+		config.DebugLog("Fail2Ban DEFAULT settings changed, pushing to all enabled servers")
+		connectors := fail2ban.GetManager().Connectors()
+		var errors []string
+		for _, conn := range connectors {
+			server := conn.Server()
+			config.DebugLog("Updating DEFAULT settings on server: %s (type: %s)", server.Name, server.Type)
+			if err := conn.UpdateDefaultSettings(c.Request.Context(), newSettings); err != nil {
+				errorMsg := fmt.Sprintf("Failed to update DEFAULT settings on %s: %v", server.Name, err)
+				config.DebugLog("Error: %s", errorMsg)
+				errors = append(errors, errorMsg)
+			} else {
+				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)
+				// Mark server as needing restart
+				if err := config.MarkRestartNeeded(server.ID); err != nil {
+					config.DebugLog("Warning: failed to mark restart needed for %s: %v", server.Name, err)
+				}
+			}
+		}
+		if len(errors) > 0 {
+			config.DebugLog("Some servers failed to update DEFAULT settings: %v", errors)
+			// Don't fail the request, but include warnings in response
+			c.JSON(http.StatusOK, gin.H{
+				"message":       "Settings updated",
+				"restartNeeded": newSettings.RestartNeeded,
+				"warnings":      errors,
+			})
+			return
 		}
 	}
 
@@ -1154,7 +1229,7 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 	newLines := []string{
 		"[DEFAULT]",
 		fmt.Sprintf("bantime.increment = %t", s.BantimeIncrement),
-		fmt.Sprintf("ignoreip = %s", s.IgnoreIP),
+		fmt.Sprintf("ignoreip = %s", strings.Join(s.IgnoreIPs, " ")),
 		fmt.Sprintf("bantime = %s", s.Bantime),
 		fmt.Sprintf("findtime = %s", s.Findtime),
 		fmt.Sprintf("maxretry = %d", s.Maxretry),

@@ -34,6 +34,12 @@ type Connector interface {
 	GetJailConfig(ctx context.Context, jail string) (string, error)
 	SetJailConfig(ctx context.Context, jail, content string) error
 	TestLogpath(ctx context.Context, logpath string) ([]string, error)
+
+	// Default settings operations
+	UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error
+
+	// Jail local structure management
+	EnsureJailLocalStructure(ctx context.Context) error
 }
 
 // Manager orchestrates all connectors for configured Fail2ban servers.
