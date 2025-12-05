@@ -225,6 +225,7 @@
   "servers.form.enabled": "Habilitar conector",
   "servers.form.submit": "Guardar servidor",
   "servers.form.reset": "Restablecer",
+  "servers.form.new_server": "Nuevo servidor",
   "servers.form.success": "Servidor guardado correctamente.",
   "servers.badge.default": "Predeterminado",
   "servers.badge.enabled": "Habilitado",

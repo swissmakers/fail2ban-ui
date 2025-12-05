@@ -731,9 +731,16 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4" style="flex: 1; overflow-y: auto; min-height: 0;">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900">
-                <span data-i18n="modal.filter_config">Filter Config:</span> <span id="modalJailName"></span>
-              </h3>
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">
+                  <span data-i18n="modal.filter_config">Filter Config:</span> <span id="modalJailName"></span>
+                </h3>
+                <button type="button" onclick="closeModal('jailConfigModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
               <div class="mt-4 space-y-4">
                 <!-- Filter Configuration -->
                 <div>
@@ -821,7 +828,14 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="modal.manage_jails_title">Manage Jails</h3>
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="modal.manage_jails_title">Manage Jails</h3>
+                <button type="button" onclick="closeModal('manageJailsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
               <div class="mt-4">
                 <!-- Dynamically filled list of jails with toggle switches -->
                 <div id="jailsList" class="divide-y divide-gray-200"></div>
@@ -845,7 +859,14 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-6">
           <div class="flex flex-col gap-6">
             <div>
-              <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="servers.modal.title">Manage Fail2ban Servers</h3>
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="servers.modal.title">Manage Fail2ban Servers</h3>
+                <button type="button" onclick="closeModal('serverManagerModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
               <p class="mt-1 text-sm text-gray-500" data-i18n="servers.modal.description">
                 Register remote Fail2ban instances and choose how the UI connects to them.
               </p>
@@ -859,7 +880,10 @@
                 </div>
               </div>
               <div>
-                <h4 class="text-md font-semibold text-gray-800 mb-3" data-i18n="servers.modal.form_title">Add or Update Server</h4>
+                <div class="flex items-center justify-between mb-3">
+                  <h4 class="text-md font-semibold text-gray-800" data-i18n="servers.modal.form_title">Add or Update Server</h4>
+                  <button type="button" onclick="resetServerForm()" class="text-sm text-blue-600 hover:text-blue-800 font-medium" data-i18n="servers.form.new_server">New Server</button>
+                </div>
                 <form id="serverForm" class="space-y-4" onsubmit="submitServerForm(event)">
                   <div>
                     <label for="serverName" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.name">Display Name</label>
@@ -953,9 +977,16 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900">
-                <span data-i18n="logs.modal.whois_title">Whois Information</span> - <span id="whoisModalIP"></span>
-              </h3>
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">
+                  <span data-i18n="logs.modal.whois_title">Whois Information</span> - <span id="whoisModalIP"></span>
+                </h3>
+                <button type="button" onclick="closeModal('whoisModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
               <div class="mt-4">
                 <pre id="whoisModalContent" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-900 text-white font-mono text-xs overflow-x-auto" style="max-height: 70vh; white-space: pre-wrap; word-wrap: break-word;"></pre>
               </div>
@@ -978,7 +1009,14 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.advanced.test_title">Manually Block / Test</h3>
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.advanced.test_title">Manually Block / Test</h3>
+                <button type="button" onclick="closeModal('advancedTestModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
               <div class="mt-4 space-y-4">
                 <div>
                   <label for="advancedTestIP" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.test_ip">IP address</label>
@@ -1011,9 +1049,16 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900 mb-2">
-                <span data-i18n="logs.modal.logs_title">Logs</span> - <span id="logsModalIP"></span>
-              </h3>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">
+                  <span data-i18n="logs.modal.logs_title">Logs</span> - <span id="logsModalIP"></span>
+                </h3>
+                <button type="button" onclick="closeModal('logsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
               <p class="text-sm text-gray-600 mb-4">
                 <span data-i18n="logs.modal.jail">Jail:</span> <span id="logsModalJail" class="font-semibold"></span>
               </p>
@@ -1039,7 +1084,14 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 class="text-lg leading-6 font-medium text-gray-900 mb-2" data-i18n="logs.modal.insights_title">Ban Insights</h3>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="logs.modal.insights_title">Ban Insights</h3>
+                <button type="button" onclick="closeModal('banInsightsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
               <p class="text-sm text-gray-600 mb-4" data-i18n="logs.modal.insights_description">Country distribution and recurring offenders.</p>
               
               <!-- Summary Cards -->

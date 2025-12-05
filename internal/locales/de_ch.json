@@ -225,6 +225,7 @@
     "servers.form.enabled": "Connector aktivierä",
     "servers.form.submit": "Server speichere",
     "servers.form.reset": "Zruggsetze",
+    "servers.form.new_server": "Neue Server",
     "servers.form.success": "Server erfolgriich gspeicheret.",
     "servers.badge.default": "Standard",
     "servers.badge.enabled": "Aktiv",

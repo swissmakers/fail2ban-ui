@@ -225,6 +225,7 @@
   "servers.form.enabled": "Activer le connecteur",
   "servers.form.submit": "Enregistrer le serveur",
   "servers.form.reset": "Réinitialiser",
+  "servers.form.new_server": "Nouveau serveur",
   "servers.form.success": "Serveur enregistré avec succès.",
   "servers.badge.default": "Par défaut",
   "servers.badge.enabled": "Activé",
