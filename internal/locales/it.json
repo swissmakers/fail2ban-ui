@@ -236,6 +236,7 @@
   "servers.actions.test": "Verifica connessione",
   "servers.actions.test_success": "Connessione riuscita",
   "servers.actions.test_failure": "Connessione fallita",
+  "servers.actions.restart": "Riavvia Fail2ban",
   "servers.actions.delete": "Elimina",
   "servers.actions.delete_confirm": "Eliminare questo server?",
   "servers.form.select_key": "Seleziona chiave privata",

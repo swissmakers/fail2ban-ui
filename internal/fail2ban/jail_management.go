@@ -113,6 +113,7 @@ func parseJailConfigFile(path string) ([]JailInfo, error) {
 // UpdateJailEnabledStates updates the enabled state for each jail based on the provided updates map.
 // Updates only the corresponding file in /etc/fail2ban/jail.d/ for each jail.
 func UpdateJailEnabledStates(updates map[string]bool) error {
+	config.DebugLog("UpdateJailEnabledStates called with %d updates: %+v", len(updates), updates)
 	jailDPath := "/etc/fail2ban/jail.d"
 
 	// Ensure jail.d directory exists
@@ -122,7 +123,9 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 
 	// Update each jail in its own file
 	for jailName, enabled := range updates {
+		config.DebugLog("Processing jail: %s, enabled: %t", jailName, enabled)
 		jailFilePath := filepath.Join(jailDPath, jailName+".conf")
+		config.DebugLog("Jail file path: %s", jailFilePath)
 
 		// Read existing file if it exists
 		content, err := os.ReadFile(jailFilePath)
@@ -185,9 +188,13 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 
 		// Write updated content
 		newContent := strings.Join(outputLines, "\n")
+		if !strings.HasSuffix(newContent, "\n") {
+			newContent += "\n"
+		}
 		if err := os.WriteFile(jailFilePath, []byte(newContent), 0644); err != nil {
 			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
 		}
+		config.DebugLog("Updated jail %s: enabled = %t (file: %s)", jailName, enabled, jailFilePath)
 	}
 	return nil
 }

@@ -236,6 +236,7 @@
     "servers.actions.test": "Verbindung testen",
     "servers.actions.test_success": "Verbindung erfolgreich",
     "servers.actions.test_failure": "Verbindung fehlgeschlagen",
+    "servers.actions.restart": "Fail2ban neu starten",
     "servers.actions.delete": "Löschen",
     "servers.actions.delete_confirm": "Diesen Servereintrag löschen?",
     "servers.form.select_key": "Privaten Schlüssel auswählen",

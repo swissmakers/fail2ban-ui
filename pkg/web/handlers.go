@@ -1011,19 +1011,29 @@ func UpdateJailManagementHandler(c *gin.Context) {
 	config.DebugLog("UpdateJailManagementHandler called (handlers.go)") // entry point
 	conn, err := resolveConnector(c)
 	if err != nil {
+		config.DebugLog("Error resolving connector: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	var updates map[string]bool
 	if err := c.ShouldBindJSON(&updates); err != nil {
+		config.DebugLog("Error parsing JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
+		return
+	}
+	config.DebugLog("Received jail updates: %+v", updates)
+	if len(updates) == 0 {
+		config.DebugLog("Warning: No jail updates provided")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No jail updates provided"})
 		return
 	}
 	// Update jail configuration file(s) with the new enabled states.
 	if err := conn.UpdateJailEnabledStates(c.Request.Context(), updates); err != nil {
+		config.DebugLog("Error updating jail enabled states: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update jail settings: " + err.Error()})
 		return
 	}
+	config.DebugLog("Successfully updated jail enabled states")
 	// Reload fail2ban to apply the changes (reload is sufficient for jail enable/disable)
 	if err := conn.Reload(c.Request.Context()); err != nil {
 		config.DebugLog("Warning: failed to reload fail2ban after updating jail settings: %v", err)
@@ -1135,9 +1145,12 @@ func UpdateSettingsHandler(c *gin.Context) {
 				errors = append(errors, errorMsg)
 			} else {
 				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)
-				// Mark server as needing restart
-				if err := config.MarkRestartNeeded(server.ID); err != nil {
-					config.DebugLog("Warning: failed to mark restart needed for %s: %v", server.Name, err)
+				// Reload fail2ban to apply the changes
+				if err := conn.Reload(c.Request.Context()); err != nil {
+					config.DebugLog("Warning: failed to reload fail2ban on %s after updating DEFAULT settings: %v", server.Name, err)
+					errors = append(errors, fmt.Sprintf("Settings updated on %s, but reload failed: %v", server.Name, err))
+				} else {
+					config.DebugLog("Successfully reloaded fail2ban on %s", server.Name)
 				}
 			}
 		}
@@ -1146,11 +1159,17 @@ func UpdateSettingsHandler(c *gin.Context) {
 			// Don't fail the request, but include warnings in response
 			c.JSON(http.StatusOK, gin.H{
 				"message":       "Settings updated",
-				"restartNeeded": newSettings.RestartNeeded,
+				"restartNeeded": false, // We reloaded, so no restart needed
 				"warnings":      errors,
 			})
 			return
 		}
+		// Settings were updated and reloaded successfully, no restart needed
+		c.JSON(http.StatusOK, gin.H{
+			"message":       "Settings updated and fail2ban reloaded",
+			"restartNeeded": false, // We reloaded, so no restart needed
+		})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1245,13 +1264,30 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 // RestartFail2banHandler reloads the Fail2ban service
 func RestartFail2banHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("ApplyFail2banSettings called (handlers.go)") // entry point
+	config.DebugLog("RestartFail2banHandler called (handlers.go)") // entry point
 
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	// Check if serverId is provided in query parameter
+	serverID := c.Query("serverId")
+	var conn fail2ban.Connector
+	var err error
+
+	if serverID != "" {
+		// Use specific server
+		manager := fail2ban.GetManager()
+		conn, err = manager.Connector(serverID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Server not found: " + err.Error()})
+			return
+		}
+	} else {
+		// Use default connector from context
+		conn, err = resolveConnector(c)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
+
 	server := conn.Server()
 
 	// Attempt to restart the fail2ban service.

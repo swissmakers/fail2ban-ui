@@ -236,6 +236,7 @@
     "servers.actions.test": "Verbindig teste",
     "servers.actions.test_success": "Verbindig erfolgriich",
     "servers.actions.test_failure": "Verbindig nöd möglich",
+    "servers.actions.restart": "Fail2ban neu starte",
     "servers.actions.delete": "Lösche",
     "servers.actions.delete_confirm": "Dä Servereintrag lösche?",
     "servers.form.select_key": "Priväte Schlissel ufwähle",
