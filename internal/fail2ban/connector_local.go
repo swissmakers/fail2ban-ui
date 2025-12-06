@@ -147,9 +147,18 @@ func (lc *LocalConnector) Reload(ctx context.Context) error {
 		// Include the output in the error message for better debugging
 		return fmt.Errorf("fail2ban reload error: %w (output: %s)", err, strings.TrimSpace(out))
 	}
+
 	// Check if output indicates success (fail2ban-client returns "OK" on success)
-	if strings.TrimSpace(out) != "OK" && strings.TrimSpace(out) != "" {
+	outputTrimmed := strings.TrimSpace(out)
+	if outputTrimmed != "OK" && outputTrimmed != "" {
 		config.DebugLog("fail2ban reload output: %s", out)
+
+		// Check for jail errors in output even when command succeeds
+		// Look for patterns like "Errors in jail 'jailname'. Skipping..."
+		if strings.Contains(out, "Errors in jail") || strings.Contains(out, "Unable to read the filter") {
+			// Return an error that includes the output so handler can parse it
+			return fmt.Errorf("fail2ban reload completed but with errors (output: %s)", strings.TrimSpace(out))
+		}
 	}
 	return nil
 }
@@ -285,6 +294,9 @@ func (lc *LocalConnector) UpdateDefaultSettings(ctx context.Context, settings co
 
 // EnsureJailLocalStructure implements Connector.
 func (lc *LocalConnector) EnsureJailLocalStructure(ctx context.Context) error {
+	// Note: Migration is handled in newConnectorForServer() before
+	// config.EnsureLocalFail2banAction() is called, so migration has already
+	// run by the time this method is called.
 	return config.EnsureJailLocalStructure()
 }
 

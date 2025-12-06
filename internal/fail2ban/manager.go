@@ -169,6 +169,14 @@ func updateConnectorAction(ctx context.Context, conn Connector) error {
 func newConnectorForServer(server config.Fail2banServer) (Connector, error) {
 	switch server.Type {
 	case "local":
+		// IMPORTANT: Run migration FIRST before ensuring structure
+		// This ensures any legacy jails in jail.local are migrated to jail.d/*.local
+		// before ensureJailLocalStructure() overwrites jail.local
+		if err := MigrateJailsFromJailLocal(); err != nil {
+			config.DebugLog("Warning: migration check failed (may be normal if no jails to migrate): %v", err)
+			// Don't fail - continue with ensuring structure
+		}
+
 		if err := config.EnsureLocalFail2banAction(server); err != nil {
 			fmt.Printf("warning: failed to ensure local fail2ban action: %v\n", err)
 		}

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
@@ -464,6 +465,236 @@ func parseJailSections(content string) (map[string]string, string, error) {
 	}
 
 	return sections, defaultContent.String(), scanner.Err()
+}
+
+// parseJailSectionsUncommented parses jail.local content and returns:
+// - map of jail name to jail content (excluding DEFAULT, INCLUDES, and commented sections)
+// - DEFAULT section content (including commented lines)
+// Only extracts non-commented jail sections
+func parseJailSectionsUncommented(content string) (map[string]string, string, error) {
+	sections := make(map[string]string)
+	var defaultContent strings.Builder
+
+	// Sections that should be ignored (not jails)
+	ignoredSections := map[string]bool{
+		"DEFAULT":  true,
+		"INCLUDES": true,
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	var currentSection string
+	var currentContent strings.Builder
+	inDefault := false
+	sectionIsCommented := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Check if this is a section header
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			// Check if the section is commented
+			originalLine := strings.TrimSpace(line)
+			isCommented := strings.HasPrefix(originalLine, "#")
+
+			// Save previous section
+			if currentSection != "" {
+				sectionContent := strings.TrimSpace(currentContent.String())
+				if inDefault {
+					// Always include DEFAULT section content (even if commented)
+					defaultContent.WriteString(sectionContent)
+					if !strings.HasSuffix(sectionContent, "\n") {
+						defaultContent.WriteString("\n")
+					}
+				} else if !ignoredSections[currentSection] && !sectionIsCommented {
+					// Only save non-commented, non-ignored sections
+					sections[currentSection] = sectionContent
+				}
+			}
+
+			// Start new section
+			if isCommented {
+				// Remove the # from the section name
+				sectionName := strings.Trim(trimmed, "[]")
+				if strings.HasPrefix(sectionName, "#") {
+					sectionName = strings.TrimSpace(strings.TrimPrefix(sectionName, "#"))
+				}
+				currentSection = sectionName
+				sectionIsCommented = true
+			} else {
+				currentSection = strings.Trim(trimmed, "[]")
+				sectionIsCommented = false
+			}
+			currentContent.Reset()
+			currentContent.WriteString(line)
+			currentContent.WriteString("\n")
+			inDefault = (currentSection == "DEFAULT")
+		} else {
+			currentContent.WriteString(line)
+			currentContent.WriteString("\n")
+		}
+	}
+
+	// Save final section
+	if currentSection != "" {
+		sectionContent := strings.TrimSpace(currentContent.String())
+		if inDefault {
+			defaultContent.WriteString(sectionContent)
+		} else if !ignoredSections[currentSection] && !sectionIsCommented {
+			// Only save if it's not an ignored section and not commented
+			sections[currentSection] = sectionContent
+		}
+	}
+
+	return sections, defaultContent.String(), scanner.Err()
+}
+
+// MigrateJailsFromJailLocal migrates non-commented jail sections from jail.local to jail.d/*.local files.
+// This should be called when a server is added or enabled to migrate legacy jails.
+func MigrateJailsFromJailLocal() error {
+	localPath := "/etc/fail2ban/jail.local"
+	jailDPath := "/etc/fail2ban/jail.d"
+
+	// Check if jail.local exists
+	if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		return nil // Nothing to migrate
+	}
+
+	// Read jail.local content
+	content, err := os.ReadFile(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to read jail.local: %w", err)
+	}
+
+	// Parse content to extract non-commented sections
+	sections, defaultContent, err := parseJailSectionsUncommented(string(content))
+	if err != nil {
+		return fmt.Errorf("failed to parse jail.local: %w", err)
+	}
+
+	// If no non-commented, non-DEFAULT jails found, nothing to migrate
+	if len(sections) == 0 {
+		config.DebugLog("No jails to migrate from jail.local")
+		return nil
+	}
+
+	// Create backup of jail.local
+	backupPath := localPath + ".backup." + fmt.Sprintf("%d", time.Now().Unix())
+	if err := os.WriteFile(backupPath, content, 0644); err != nil {
+		return fmt.Errorf("failed to create backup: %w", err)
+	}
+	config.DebugLog("Created backup of jail.local at %s", backupPath)
+
+	// Ensure jail.d directory exists
+	if err := os.MkdirAll(jailDPath, 0755); err != nil {
+		return fmt.Errorf("failed to create jail.d directory: %w", err)
+	}
+
+	// Write each jail to its own .local file in jail.d/
+	migratedCount := 0
+	for jailName, jailContent := range sections {
+		// Skip empty jail names
+		if jailName == "" {
+			continue
+		}
+
+		jailFilePath := filepath.Join(jailDPath, jailName+".local")
+
+		// Check if .local file already exists
+		if _, err := os.Stat(jailFilePath); err == nil {
+			// File already exists - skip migration for this jail
+			config.DebugLog("Skipping migration for jail %s: .local file already exists", jailName)
+			continue
+		}
+
+		// Ensure enabled = false is set by default for migrated jails
+		// Check if enabled is already set in the content
+		enabledSet := strings.Contains(jailContent, "enabled") || strings.Contains(jailContent, "Enabled")
+		if !enabledSet {
+			// Add enabled = false at the beginning of the jail section
+			// Find the first line after [jailName]
+			lines := strings.Split(jailContent, "\n")
+			modifiedContent := ""
+			for i, line := range lines {
+				modifiedContent += line + "\n"
+				// After the section header, add enabled = false
+				if i == 0 && strings.HasPrefix(strings.TrimSpace(line), "[") && strings.HasSuffix(strings.TrimSpace(line), "]") {
+					modifiedContent += "enabled = false\n"
+				}
+			}
+			jailContent = modifiedContent
+		} else {
+			// If enabled is set, ensure it's false by replacing any enabled = true
+			jailContent = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`).ReplaceAllString(jailContent, "enabled = false")
+		}
+
+		// Write jail content to .local file
+		if err := os.WriteFile(jailFilePath, []byte(jailContent), 0644); err != nil {
+			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
+		}
+		config.DebugLog("Migrated jail %s to %s (enabled = false)", jailName, jailFilePath)
+		migratedCount++
+	}
+
+	// Only rewrite jail.local if we actually migrated something
+	if migratedCount > 0 {
+		// Rewrite jail.local with only DEFAULT section and commented jails
+		// We need to preserve commented sections, so we'll reconstruct the file
+		newLocalContent := defaultContent
+
+		// Add back commented sections that weren't migrated
+		scanner := bufio.NewScanner(strings.NewReader(string(content)))
+		var inCommentedJail bool
+		var commentedJailContent strings.Builder
+		var commentedJailName string
+		for scanner.Scan() {
+			line := scanner.Text()
+			trimmed := strings.TrimSpace(line)
+
+			if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+				// Check if this is a commented section
+				originalLine := strings.TrimSpace(line)
+				if strings.HasPrefix(originalLine, "#[") {
+					// Save previous commented jail if any
+					if inCommentedJail && commentedJailName != "" {
+						newLocalContent += commentedJailContent.String()
+					}
+					inCommentedJail = true
+					commentedJailContent.Reset()
+					commentedJailName = strings.Trim(trimmed, "[]")
+					if strings.HasPrefix(commentedJailName, "#") {
+						commentedJailName = strings.TrimSpace(strings.TrimPrefix(commentedJailName, "#"))
+					}
+					commentedJailContent.WriteString(line)
+					commentedJailContent.WriteString("\n")
+				} else {
+					// Non-commented section - save previous commented jail if any
+					if inCommentedJail && commentedJailName != "" {
+						newLocalContent += commentedJailContent.String()
+						inCommentedJail = false
+						commentedJailContent.Reset()
+					}
+				}
+			} else if inCommentedJail {
+				commentedJailContent.WriteString(line)
+				commentedJailContent.WriteString("\n")
+			}
+		}
+		// Save final commented jail if any
+		if inCommentedJail && commentedJailName != "" {
+			newLocalContent += commentedJailContent.String()
+		}
+
+		if !strings.HasSuffix(newLocalContent, "\n") {
+			newLocalContent += "\n"
+		}
+		if err := os.WriteFile(localPath, []byte(newLocalContent), 0644); err != nil {
+			return fmt.Errorf("failed to rewrite jail.local: %w", err)
+		}
+		config.DebugLog("Migration completed: moved %d jails to jail.d/", migratedCount)
+	}
+
+	return nil
 }
 
 // parseJailConfigFileOnlyDefault parses only the DEFAULT section from a jail config file.

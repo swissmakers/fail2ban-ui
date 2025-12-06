@@ -1041,6 +1041,51 @@ func getJailNames(jails map[string]bool) []string {
 	return names
 }
 
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// parseJailErrorsFromReloadOutput extracts jail names that have errors from reload output.
+// Looks for patterns like "Errors in jail 'jailname'. Skipping..." or "Unable to read the filter 'filtername'"
+func parseJailErrorsFromReloadOutput(output string) []string {
+	var problematicJails []string
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		// Look for "Errors in jail 'jailname'. Skipping..."
+		if strings.Contains(line, "Errors in jail") && strings.Contains(line, "Skipping") {
+			// Extract jail name between single quotes
+			re := regexp.MustCompile(`Errors in jail '([^']+)'`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				problematicJails = append(problematicJails, matches[1])
+			}
+		}
+		// Also check for filter errors that might indicate jail problems
+		// "Unable to read the filter 'filtername'" - this might be referenced by a jail
+		// Note: Filter errors are often associated with jails, but we primarily track
+		// jail errors directly via "Errors in jail" messages above
+		_ = strings.Contains(line, "Unable to read the filter") // Track for future enhancement
+	}
+
+	// Remove duplicates
+	seen := make(map[string]bool)
+	uniqueJails := []string{}
+	for _, jail := range problematicJails {
+		if !seen[jail] {
+			seen[jail] = true
+			uniqueJails = append(uniqueJails, jail)
+		}
+	}
+
+	return uniqueJails
+}
+
 // After updating, fail2ban is reloaded to apply the changes.
 func UpdateJailManagementHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
@@ -1081,9 +1126,75 @@ func UpdateJailManagementHandler(c *gin.Context) {
 	config.DebugLog("Successfully updated jail enabled states")
 
 	// Reload fail2ban to apply the changes (reload is sufficient for jail enable/disable)
-	if err := conn.Reload(c.Request.Context()); err != nil {
-		config.DebugLog("Error: failed to reload fail2ban after updating jail settings: %v", err)
-		errMsg := err.Error()
+	reloadErr := conn.Reload(c.Request.Context())
+
+	// Check for errors in reload output even if reload "succeeded"
+	var problematicJails []string
+	var detailedErrorOutput string
+	if reloadErr != nil {
+		errMsg := reloadErr.Error()
+		config.DebugLog("Error: failed to reload fail2ban after updating jail settings: %v", reloadErr)
+
+		// Extract output from error message (format: "fail2ban reload completed but with errors (output: ...)")
+		if strings.Contains(errMsg, "(output:") {
+			// Extract the output part
+			outputStart := strings.Index(errMsg, "(output:") + 8
+			outputEnd := strings.LastIndex(errMsg, ")")
+			if outputEnd > outputStart {
+				detailedErrorOutput = errMsg[outputStart:outputEnd]
+				problematicJails = parseJailErrorsFromReloadOutput(detailedErrorOutput)
+			}
+		} else if strings.Contains(errMsg, "output:") {
+			// Alternative format: "fail2ban reload error: ... (output: ...)"
+			outputStart := strings.Index(errMsg, "output:") + 7
+			if outputStart < len(errMsg) {
+				detailedErrorOutput = strings.TrimSpace(errMsg[outputStart:])
+				problematicJails = parseJailErrorsFromReloadOutput(detailedErrorOutput)
+			}
+		}
+
+		// If we found problematic jails, disable them
+		if len(problematicJails) > 0 {
+			config.DebugLog("Found %d problematic jail(s) in reload output: %v", len(problematicJails), problematicJails)
+
+			// Create disable update for problematic jails
+			disableUpdate := make(map[string]bool)
+			for _, jailName := range problematicJails {
+				disableUpdate[jailName] = false
+			}
+
+			// Also disable any jails that were enabled in this request if they're in the problematic list
+			for jailName := range enabledJails {
+				if contains(problematicJails, jailName) {
+					disableUpdate[jailName] = false
+				}
+			}
+
+			if len(disableUpdate) > 0 {
+				if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
+					config.DebugLog("Error disabling problematic jails: %v", disableErr)
+				} else {
+					// Reload again after disabling
+					if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
+						config.DebugLog("Error: failed to reload fail2ban after disabling problematic jails: %v", reloadErr2)
+					}
+				}
+			}
+
+			// Update enabledJails to include problematic jails for response
+			for _, jailName := range problematicJails {
+				enabledJails[jailName] = true
+			}
+		}
+
+		// Update errMsg with detailed error output when debug mode is enabled
+		settings := config.GetSettings()
+		if settings.Debug && detailedErrorOutput != "" {
+			errMsg = fmt.Sprintf("%s\n\nDetailed error output:\n%s", errMsg, detailedErrorOutput)
+		} else if detailedErrorOutput != "" {
+			// Even without debug mode, include basic error info
+			errMsg = fmt.Sprintf("%s (check debug mode for details)", errMsg)
+		}
 
 		// If any jails were enabled in this request and reload failed, disable them all
 		if len(enabledJails) > 0 {
@@ -1106,7 +1217,7 @@ func UpdateJailManagementHandler(c *gin.Context) {
 			}
 
 			// Reload again after disabling
-			if reloadErr := conn.Reload(c.Request.Context()); reloadErr != nil {
+			if reloadErr = conn.Reload(c.Request.Context()); reloadErr != nil {
 				config.DebugLog("Error: failed to reload fail2ban after disabling jails: %v", reloadErr)
 				c.JSON(http.StatusOK, gin.H{
 					"error":        fmt.Sprintf("Failed to reload fail2ban after disabling jails: %v", reloadErr),

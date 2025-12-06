@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
@@ -1241,8 +1242,110 @@ action = %%(action_mwlg)s
 PY`, escapeForShell(jailLocalPath), escapeForShell(ignoreIPStr), escapeForShell(banactionVal), escapeForShell(banactionAllportsVal), escapeForShell(config.JailLocalBanner()), settings.BantimeIncrement,
 		escapeForShell(settings.Bantime), escapeForShell(settings.Findtime), settings.Maxretry, escapeForShell(settings.Destemail))
 
+	// IMPORTANT: Run migration FIRST before ensuring structure
+	// This is because ensureJailLocalStructure may overwrite jail.local,
+	// which would destroy any jail sections that need to be migrated
+	if err := sc.MigrateJailsFromJailLocalRemote(ctx); err != nil {
+		config.DebugLog("Warning: No migration done (may be normal if no jails to migrate): %v", err)
+		// Don't fail - continue with ensuring structure
+	}
+
+	// Then ensure the basic structure
 	_, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", ensureScript})
 	return err
+}
+
+// MigrateJailsFromJailLocalRemote migrates non-commented jail sections from jail.local to jail.d/*.local files on remote system.
+func (sc *SSHConnector) MigrateJailsFromJailLocalRemote(ctx context.Context) error {
+	jailLocalPath := "/etc/fail2ban/jail.local"
+	jailDPath := "/etc/fail2ban/jail.d"
+
+	// Check if jail.local exists
+	checkScript := fmt.Sprintf("test -f %s && echo 'exists' || echo 'notfound'", jailLocalPath)
+	out, err := sc.runRemoteCommand(ctx, []string{"sh", "-c", checkScript})
+	if err != nil || strings.TrimSpace(out) != "exists" {
+		return nil // Nothing to migrate
+	}
+
+	// Read jail.local content
+	content, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
+	if err != nil {
+		return fmt.Errorf("failed to read jail.local: %w", err)
+	}
+
+	// Parse content locally to extract non-commented sections
+	sections, defaultContent, err := parseJailSectionsUncommented(content)
+	if err != nil {
+		return fmt.Errorf("failed to parse jail.local: %w", err)
+	}
+
+	// If no non-commented, non-DEFAULT jails found, nothing to migrate
+	if len(sections) == 0 {
+		config.DebugLog("No jails to migrate from jail.local on remote system")
+		return nil
+	}
+
+	// Create backup
+	backupPath := jailLocalPath + ".backup." + fmt.Sprintf("%d", time.Now().Unix())
+	backupScript := fmt.Sprintf("cp %s %s", jailLocalPath, backupPath)
+	if _, err := sc.runRemoteCommand(ctx, []string{"sh", "-c", backupScript}); err != nil {
+		return fmt.Errorf("failed to create backup: %w", err)
+	}
+	config.DebugLog("Created backup of jail.local at %s on remote system", backupPath)
+
+	// Ensure jail.d directory exists
+	ensureDirScript := fmt.Sprintf("mkdir -p %s", jailDPath)
+	if _, err := sc.runRemoteCommand(ctx, []string{"sh", "-c", ensureDirScript}); err != nil {
+		return fmt.Errorf("failed to create jail.d directory: %w", err)
+	}
+
+	// Write each jail to its own .local file
+	migratedCount := 0
+	for jailName, jailContent := range sections {
+		if jailName == "" {
+			continue
+		}
+
+		jailFilePath := fmt.Sprintf("%s/%s.local", jailDPath, jailName)
+
+		// Check if .local file already exists
+		checkFileScript := fmt.Sprintf("test -f %s && echo 'exists' || echo 'notfound'", jailFilePath)
+		fileOut, err := sc.runRemoteCommand(ctx, []string{"sh", "-c", checkFileScript})
+		if err == nil && strings.TrimSpace(fileOut) == "exists" {
+			config.DebugLog("Skipping migration for jail %s: .local file already exists", jailName)
+			continue
+		}
+
+		// Write jail content to .local file using heredoc
+		// Escape single quotes in content for shell
+		escapedContent := strings.ReplaceAll(jailContent, "'", "'\"'\"'")
+		writeScript := fmt.Sprintf(`cat > %s <<'JAILEOF'
+%s
+JAILEOF
+`, jailFilePath, escapedContent)
+		if _, err := sc.runRemoteCommand(ctx, []string{"bash", "-c", writeScript}); err != nil {
+			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
+		}
+		config.DebugLog("Migrated jail %s to %s on remote system", jailName, jailFilePath)
+		migratedCount++
+	}
+
+	// Only rewrite jail.local if we migrated something
+	if migratedCount > 0 {
+		// Rewrite jail.local with only DEFAULT section
+		// Escape single quotes in defaultContent for shell
+		escapedDefault := strings.ReplaceAll(defaultContent, "'", "'\"'\"'")
+		writeLocalScript := fmt.Sprintf(`cat > %s <<'LOCALEOF'
+%s
+LOCALEOF
+`, jailLocalPath, escapedDefault)
+		if _, err := sc.runRemoteCommand(ctx, []string{"bash", "-c", writeLocalScript}); err != nil {
+			return fmt.Errorf("failed to rewrite jail.local: %w", err)
+		}
+		config.DebugLog("Migration completed on remote system: moved %d jails to jail.d/", migratedCount)
+	}
+
+	return nil
 }
 
 // parseJailConfigContent parses jail configuration content and returns JailInfo slice.
