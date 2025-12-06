@@ -183,21 +183,33 @@ func normalizeLogLines(logLines []string) []string {
 }
 
 // TestFilterLocal tests a filter against log lines using fail2ban-regex
-// Returns the full output of fail2ban-regex command
-func TestFilterLocal(filterName string, logLines []string) (string, error) {
+// Returns the full output of fail2ban-regex command and the filter path used
+// Uses .local file if it exists, otherwise falls back to .conf file
+func TestFilterLocal(filterName string, logLines []string) (string, string, error) {
 	cleaned := normalizeLogLines(logLines)
 	if len(cleaned) == 0 {
-		return "No log lines provided.\n", nil
+		return "No log lines provided.\n", "", nil
 	}
-	filterPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".conf")
-	if _, err := os.Stat(filterPath); err != nil {
-		return "", fmt.Errorf("filter %s not found: %w", filterName, err)
+
+	// Try .local first, then fallback to .conf
+	localPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".local")
+	confPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".conf")
+
+	var filterPath string
+	if _, err := os.Stat(localPath); err == nil {
+		filterPath = localPath
+		config.DebugLog("TestFilterLocal: using .local file: %s", filterPath)
+	} else if _, err := os.Stat(confPath); err == nil {
+		filterPath = confPath
+		config.DebugLog("TestFilterLocal: using .conf file: %s", filterPath)
+	} else {
+		return "", "", fmt.Errorf("filter %s not found (checked both .local and .conf): %w", filterName, err)
 	}
 
 	// Create a temporary log file with all log lines
 	tmpFile, err := os.CreateTemp("", "fail2ban-test-*.log")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temporary log file: %w", err)
+		return "", filterPath, fmt.Errorf("failed to create temporary log file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
@@ -205,7 +217,7 @@ func TestFilterLocal(filterName string, logLines []string) (string, error) {
 	// Write all log lines to the temp file
 	for _, logLine := range cleaned {
 		if _, err := tmpFile.WriteString(logLine + "\n"); err != nil {
-			return "", fmt.Errorf("failed to write to temporary log file: %w", err)
+			return "", filterPath, fmt.Errorf("failed to write to temporary log file: %w", err)
 		}
 	}
 	tmpFile.Close()
@@ -218,5 +230,5 @@ func TestFilterLocal(filterName string, logLines []string) (string, error) {
 
 	// Return the full output regardless of exit code (fail2ban-regex may exit non-zero for no matches)
 	// The output contains useful information even when there are no matches
-	return output, nil
+	return output, filterPath, nil
 }

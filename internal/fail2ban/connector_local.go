@@ -254,7 +254,7 @@ func (lc *LocalConnector) GetFilters(ctx context.Context) ([]string, error) {
 }
 
 // TestFilter implements Connector.
-func (lc *LocalConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, error) {
+func (lc *LocalConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, string, error) {
 	return TestFilterLocal(filterName, logLines)
 }
 

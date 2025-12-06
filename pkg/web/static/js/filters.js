@@ -78,7 +78,7 @@ function testSelectedFilter() {
         showToast('Error testing filter: ' + data.error, 'error');
         return;
       }
-      renderTestResults(data.output || '');
+      renderTestResults(data.output || '', data.filterPath || '');
     })
     .catch(err => {
       showToast('Error testing filter: ' + err, 'error');
@@ -86,9 +86,18 @@ function testSelectedFilter() {
     .finally(() => showLoading(false));
 }
 
-function renderTestResults(output) {
+function renderTestResults(output, filterPath) {
   const testResultsEl = document.getElementById('testResults');
   let html = '<h5 class="text-lg font-medium text-white mb-4" data-i18n="filter_debug.test_results_title">Test Results</h5>';
+  
+  // Show which filter file was used
+  if (filterPath) {
+    html += '<div class="mb-3 p-2 bg-gray-800 rounded text-sm">';
+    html += '<span class="text-gray-400">Used Filter (exact file):</span> ';
+    html += '<span class="text-yellow-300 font-mono">' + escapeHtml(filterPath) + '</span>';
+    html += '</div>';
+  }
+  
   if (!output || output.trim() === '') {
     html += '<p class="text-gray-400" data-i18n="filter_debug.no_matches">No output received.</p>';
   } else {

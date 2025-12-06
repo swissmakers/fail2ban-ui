@@ -278,18 +278,25 @@ func (ac *AgentConnector) GetFilters(ctx context.Context) ([]string, error) {
 }
 
 // TestFilter implements Connector.
-func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, error) {
+func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, string, error) {
 	payload := map[string]any{
 		"filterName": filterName,
 		"logLines":   logLines,
 	}
 	var resp struct {
-		Output string `json:"output"`
+		Output     string `json:"output"`
+		FilterPath string `json:"filterPath"`
 	}
 	if err := ac.post(ctx, "/v1/filters/test", payload, &resp); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return resp.Output, nil
+	// If agent doesn't return filterPath, construct it (agent should handle .local priority)
+	filterPath := resp.FilterPath
+	if filterPath == "" {
+		// Default to .conf path (agent should handle .local priority on its side)
+		filterPath = fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
+	}
+	return resp.Output, filterPath, nil
 }
 
 // GetJailConfig implements Connector.

@@ -28,7 +28,7 @@ type Connector interface {
 
 	// Filter operations
 	GetFilters(ctx context.Context) ([]string, error)
-	TestFilter(ctx context.Context, filterName string, logLines []string) (string, error)
+	TestFilter(ctx context.Context, filterName string, logLines []string) (output string, filterPath string, err error)
 
 	// Jail configuration operations
 	GetJailConfig(ctx context.Context, jail string) (string, error)

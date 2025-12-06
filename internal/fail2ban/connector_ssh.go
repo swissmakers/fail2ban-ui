@@ -579,46 +579,85 @@ func (sc *SSHConnector) GetFilters(ctx context.Context) ([]string, error) {
 }
 
 // TestFilter implements Connector.
-func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, error) {
+func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, string, error) {
 	cleaned := normalizeLogLines(logLines)
 	if len(cleaned) == 0 {
-		return "No log lines provided.\n", nil
+		return "No log lines provided.\n", "", nil
 	}
 
 	// Sanitize filter name to prevent path traversal
 	filterName = strings.TrimSpace(filterName)
 	if filterName == "" {
-		return "", fmt.Errorf("filter name cannot be empty")
+		return "", "", fmt.Errorf("filter name cannot be empty")
 	}
 	// Remove any path components
 	filterName = strings.ReplaceAll(filterName, "/", "")
 	filterName = strings.ReplaceAll(filterName, "..", "")
 
-	filterPath := fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
+	// Try .local first, then fallback to .conf
+	localPath := fmt.Sprintf("/etc/fail2ban/filter.d/%s.local", filterName)
+	confPath := fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
 
 	const heredocMarker = "F2B_FILTER_TEST_LOG"
 	logContent := strings.Join(cleaned, "\n")
 
 	script := fmt.Sprintf(`
 set -e
-FILTER_PATH=%[1]q
-if [ ! -f "$FILTER_PATH" ]; then
-  echo "Filter not found: $FILTER_PATH" >&2
+LOCAL_PATH=%[1]q
+CONF_PATH=%[2]q
+FILTER_PATH=""
+if [ -f "$LOCAL_PATH" ]; then
+  FILTER_PATH="$LOCAL_PATH"
+elif [ -f "$CONF_PATH" ]; then
+  FILTER_PATH="$CONF_PATH"
+else
+  echo "Filter not found: checked both $LOCAL_PATH and $CONF_PATH" >&2
   exit 1
 fi
+echo "FILTER_PATH:$FILTER_PATH"
 TMPFILE=$(mktemp /tmp/fail2ban-test-XXXXXX.log)
 trap 'rm -f "$TMPFILE"' EXIT
-cat <<'%[2]s' > "$TMPFILE"
+cat <<'%[3]s' > "$TMPFILE"
+%[4]s
 %[3]s
-%[2]s
 fail2ban-regex "$TMPFILE" "$FILTER_PATH" || true
-`, filterPath, heredocMarker, logContent)
+`, localPath, confPath, heredocMarker, logContent)
 
 	out, err := sc.runRemoteCommand(ctx, []string{"bash", "-lc", script})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return out, nil
+
+	// Extract filter path from output (it's on the first line with FILTER_PATH: prefix)
+	lines := strings.Split(out, "\n")
+	var filterPath string
+	var outputLines []string
+	foundPathMarker := false
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "FILTER_PATH:") {
+			filterPath = strings.TrimPrefix(line, "FILTER_PATH:")
+			filterPath = strings.TrimSpace(filterPath)
+			foundPathMarker = true
+			// Skip this line from the output
+			continue
+		}
+		outputLines = append(outputLines, line)
+	}
+
+	// If we didn't find FILTER_PATH marker, try to determine it
+	if !foundPathMarker || filterPath == "" {
+		// Check which file exists remotely
+		localOut, localErr := sc.runRemoteCommand(ctx, []string{"test", "-f", localPath, "&&", "echo", localPath, "||", "echo", ""})
+		if localErr == nil && strings.TrimSpace(localOut) != "" {
+			filterPath = strings.TrimSpace(localOut)
+		} else {
+			filterPath = confPath
+		}
+	}
+
+	output := strings.Join(outputLines, "\n")
+	return output, filterPath, nil
 }
 
 // GetJailConfig implements Connector.
