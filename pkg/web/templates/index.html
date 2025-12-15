@@ -220,6 +220,16 @@
             <p class="text-xs text-gray-500 mt-1" data-i18n="settings.callback_url_hint">This URL is used by all Fail2Ban instances to send ban alerts back to Fail2Ban UI. For local deployments, use the same port as Fail2Ban UI (e.g., http://127.0.0.1:8080). For reverse proxy setups, use your TLS-encrypted endpoint (e.g., https://fail2ban.example.com).</p>
           </div>
 
+          <div class="mb-4">
+            <div class="flex items-center justify-between mb-2">
+              <label for="callbackSecret" class="block text-sm font-medium text-gray-700" data-i18n="settings.callback_secret">Fail2ban Callback URL Secret</label>
+              <a href="#" id="toggleCallbackSecretLink" class="text-sm text-blue-600 hover:text-blue-800 underline" onclick="toggleCallbackSecretVisibility(); return false;">show secret</a>
+            </div>
+            <input type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 cursor-not-allowed" id="callbackSecret" readonly
+                   data-i18n-placeholder="settings.callback_secret_placeholder" placeholder="Auto-generated 42-character secret" />
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.callback_secret.description">This secret is automatically generated and used to authenticate ban notification requests. It is included in the fail2ban action configuration.</p>
+          </div>
+
           <!-- Debug Log Output -->
           <div class="flex items-center border border-gray-200 rounded-lg p-2 overflow-x-auto bg-gray-50">
             <input type="checkbox" id="debugMode" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out">

@@ -61,9 +61,10 @@ func (ac *AgentConnector) Server() config.Fail2banServer {
 }
 
 func (ac *AgentConnector) ensureAction(ctx context.Context) error {
+	settings := config.GetSettings()
 	payload := map[string]any{
 		"name":        "ui-custom-action",
-		"config":      config.BuildFail2banActionConfig(config.GetCallbackURL(), ac.server.ID),
+		"config":      config.BuildFail2banActionConfig(config.GetCallbackURL(), ac.server.ID, settings.CallbackSecret),
 		"callbackUrl": config.GetCallbackURL(),
 		"setDefault":  true,
 	}

@@ -48,6 +48,19 @@ function loadSettings() {
       // Set callback URL and add auto-update listener for port changes
       const callbackURLInput = document.getElementById('callbackURL');
       callbackURLInput.value = data.callbackUrl || '';
+      const callbackSecretInput = document.getElementById('callbackSecret');
+      const toggleLink = document.getElementById('toggleCallbackSecretLink');
+      if (callbackSecretInput) {
+        callbackSecretInput.value = data.callbackSecret || '';
+        // Reset to password type when loading
+        if (callbackSecretInput.type === 'text') {
+          callbackSecretInput.type = 'password';
+        }
+        // Update link text
+        if (toggleLink) {
+          toggleLink.textContent = 'show secret';
+        }
+      }
       
       // Auto-update callback URL when port changes (if using default localhost pattern)
       function updateCallbackURLIfDefault() {
@@ -159,6 +172,7 @@ function saveSettings(event) {
     debug: document.getElementById('debugMode').checked,
     destemail: document.getElementById('destEmail').value.trim(),
     callbackUrl: callbackUrl,
+    callbackSecret: document.getElementById('callbackSecret').value.trim(),
     alertCountries: selectedCountries.length > 0 ? selectedCountries : ["ALL"],
     bantimeIncrement: document.getElementById('bantimeIncrement').checked,
     defaultJailEnable: document.getElementById('defaultJailEnable').checked,
@@ -426,5 +440,17 @@ function advancedUnblockIP(ip, event) {
 const advancedIntegrationSelect = document.getElementById('advancedIntegrationSelect');
 if (advancedIntegrationSelect) {
   advancedIntegrationSelect.addEventListener('change', updateAdvancedIntegrationFields);
+}
+
+// Toggle callback secret visibility
+function toggleCallbackSecretVisibility() {
+  const input = document.getElementById('callbackSecret');
+  const link = document.getElementById('toggleCallbackSecretLink');
+  
+  if (!input || !link) return;
+  
+  const isPassword = input.type === 'password';
+  input.type = isPassword ? 'text' : 'password';
+  link.textContent = isPassword ? 'hide secret' : 'show secret';
 }
 

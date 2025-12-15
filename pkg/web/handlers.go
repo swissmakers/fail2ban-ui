@@ -19,6 +19,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -171,6 +172,31 @@ func UnbanIPHandler(c *gin.Context) {
 
 // BanNotificationHandler processes incoming ban notifications from Fail2Ban.
 func BanNotificationHandler(c *gin.Context) {
+	// Validate callback secret
+	settings := config.GetSettings()
+	providedSecret := c.GetHeader("X-Callback-Secret")
+	expectedSecret := settings.CallbackSecret
+
+	// Use constant-time comparison to prevent timing attacks
+	if expectedSecret == "" {
+		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
+		return
+	}
+
+	if providedSecret == "" {
+		log.Printf("⚠️ Missing X-Callback-Secret header in request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing X-Callback-Secret header"})
+		return
+	}
+
+	// Constant-time comparison
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
+		return
+	}
+
 	var request struct {
 		ServerID string `json:"serverId"`
 		IP       string `json:"ip" binding:"required"`

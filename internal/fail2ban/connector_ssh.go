@@ -244,7 +244,8 @@ func (sc *SSHConnector) FetchBanEvents(ctx context.Context, limit int) ([]BanEve
 
 func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 	callbackURL := config.GetCallbackURL()
-	actionConfig := config.BuildFail2banActionConfig(callbackURL, sc.server.ID)
+	settings := config.GetSettings()
+	actionConfig := config.BuildFail2banActionConfig(callbackURL, sc.server.ID, settings.CallbackSecret)
 	payload := base64.StdEncoding.EncodeToString([]byte(actionConfig))
 	script := strings.ReplaceAll(sshEnsureActionScript, "__PAYLOAD__", payload)
 	// Base64 encode the entire script to avoid shell escaping issues
