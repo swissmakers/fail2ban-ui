@@ -73,8 +73,12 @@ func main() {
 		router.Static("/static", "./pkg/web/static")
 	}
 
+	// Initialize WebSocket hub
+	wsHub := web.NewHub()
+	go wsHub.Run()
+
 	// Register all application routes, including the static files and templates.
-	web.RegisterRoutes(router)
+	web.RegisterRoutes(router, wsHub)
 
 	// Check if LOTR mode is active
 	isLOTRMode := isLOTRModeActive(settings.AlertCountries)

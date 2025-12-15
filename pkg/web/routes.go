@@ -21,7 +21,9 @@ import (
 )
 
 // RegisterRoutes sets up the routes for the Fail2ban UI.
-func RegisterRoutes(r *gin.Engine) {
+func RegisterRoutes(r *gin.Engine, hub *Hub) {
+	// Set the global WebSocket hub
+	SetWebSocketHub(hub)
 
 	// Render the dashboard
 	r.GET("/", IndexHandler)
@@ -72,5 +74,8 @@ func RegisterRoutes(r *gin.Engine) {
 		api.GET("/events/bans", ListBanEventsHandler)
 		api.GET("/events/bans/stats", BanStatisticsHandler)
 		api.GET("/events/bans/insights", BanInsightsHandler)
+
+		// WebSocket endpoint
+		api.GET("/ws", WebSocketHandler(hub))
 	}
 }

@@ -156,6 +156,148 @@ mark {
     background-color: #d97706;
 }
 
+.toast-ban-event {
+    background-color: #7f1d1d;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.toast-ban-event:hover {
+    background-color: #991b1b;
+    transform: translateY(-2px);
+    box-shadow: 0 15px 20px -3px rgba(0, 0, 0, 0.15);
+}
+
+/* Backend Status Indicator */
+#backendStatus {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    margin-left: 5px;
+    border-radius: 0.25rem;
+    /* background-color: rgba(255, 255, 255, 0.1); */
+    transition: background-color 0.2s ease;
+}
+
+#backendStatus:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+#statusDot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    display: inline-block;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    animation: pulse 2s infinite;
+}
+
+#statusDot.bg-green-500 {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    animation: pulseGreen 2s infinite;
+}
+
+#statusDot.bg-yellow-500 {
+    box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7);
+    animation: pulseYellow 2s infinite;
+}
+
+#statusDot.bg-red-500 {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    animation: pulseRed 2s infinite;
+}
+
+#statusDot.bg-gray-400 {
+    animation: none;
+}
+
+#statusText {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+}
+
+@keyframes pulseGreen {
+    0% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    }
+}
+
+@keyframes pulseYellow {
+    0% {
+        box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 4px rgba(234, 179, 8, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(234, 179, 8, 0);
+    }
+}
+
+@keyframes pulseRed {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 4px rgba(239, 68, 68, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+}
+
+/* Clock Display */
+#clockDisplay {
+    display: flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.25rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: background-color 0.2s ease;
+}
+
+#clockDisplay:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+#clockTime {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    letter-spacing: 0.05em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    #backendStatus {
+        padding: 0.125rem 0.375rem;
+    }
+    
+    #statusText {
+        font-size: 0.625rem;
+    }
+    
+    #clockDisplay {
+        padding: 0.125rem 0.5rem;
+    }
+    
+    #clockTime {
+        font-size: 0.75rem;
+    }
+}
+
 #advancedMikrotikFields, #advancedPfSenseFields {
     padding: 10px;
 }

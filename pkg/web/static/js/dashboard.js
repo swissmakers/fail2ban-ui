@@ -74,11 +74,81 @@ function fetchBanEventsData() {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       latestBanEvents = data && data.events ? data.events : [];
+      // Track the last event ID to prevent duplicates from WebSocket
+      if (latestBanEvents.length > 0 && wsManager) {
+        wsManager.lastBanEventId = latestBanEvents[0].id;
+      }
     })
     .catch(function(err) {
       console.error('Error fetching ban events:', err);
       latestBanEvents = latestBanEvents || [];
     });
+}
+
+// Add new ban event from WebSocket
+function addBanEventFromWebSocket(event) {
+  // Check if event already exists (prevent duplicates)
+  // Only check by ID if both events have IDs
+  var exists = false;
+  if (event.id) {
+    exists = latestBanEvents.some(function(e) {
+      return e.id === event.id;
+    });
+  } else {
+    // If no ID, check by IP, jail, and occurredAt timestamp
+    exists = latestBanEvents.some(function(e) {
+      return e.ip === event.ip && 
+             e.jail === event.jail && 
+             e.occurredAt === event.occurredAt;
+    });
+  }
+  
+  if (!exists) {
+    console.log('Adding new ban event from WebSocket:', event);
+    
+    // Prepend to the beginning of the array
+    latestBanEvents.unshift(event);
+    // Keep only the last 200 events
+    if (latestBanEvents.length > 200) {
+      latestBanEvents = latestBanEvents.slice(0, 200);
+    }
+    
+    // Show toast notification first
+    if (typeof showBanEventToast === 'function') {
+      showBanEventToast(event);
+    }
+    
+    // Refresh dashboard data (summary, stats, insights) and re-render
+    refreshDashboardData();
+  } else {
+    console.log('Skipping duplicate ban event:', event);
+  }
+}
+
+// Refresh dashboard data when new ban event arrives via WebSocket
+function refreshDashboardData() {
+  // Refresh ban statistics and insights in the background
+  // Also refresh summary if we have a server selected
+  var enabledServers = serversCache.filter(function(s) { return s.enabled; });
+  var summaryPromise;
+  if (serversCache.length && enabledServers.length && currentServerId) {
+    summaryPromise = fetchSummaryData();
+  } else {
+    summaryPromise = Promise.resolve();
+  }
+  
+  Promise.all([
+    summaryPromise,
+    fetchBanStatisticsData(),
+    fetchBanInsightsData()
+  ]).then(function() {
+    // Re-render the dashboard to show updated stats
+    renderDashboard();
+  }).catch(function(err) {
+    console.error('Error refreshing dashboard data:', err);
+    // Still re-render even if refresh fails
+    renderDashboard();
+  });
 }
 
 function fetchBanInsightsData() {

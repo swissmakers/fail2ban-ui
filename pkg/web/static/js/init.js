@@ -5,6 +5,38 @@ window.addEventListener('DOMContentLoaded', function() {
   showLoading(true);
   displayExternalIP();
   
+  // Initialize header components (clock and status indicator)
+  if (typeof initHeader === 'function') {
+    initHeader();
+  }
+  
+  // Initialize WebSocket connection and register ban event handler
+  function registerBanEventHandler() {
+    if (typeof wsManager !== 'undefined' && wsManager) {
+      wsManager.onBanEvent(function(event) {
+        if (typeof addBanEventFromWebSocket === 'function') {
+          addBanEventFromWebSocket(event);
+        }
+      });
+      return true;
+    }
+    return false;
+  }
+  
+  if (!registerBanEventHandler()) {
+    // Wait for WebSocket manager to be available
+    var wsCheckInterval = setInterval(function() {
+      if (registerBanEventHandler()) {
+        clearInterval(wsCheckInterval);
+      }
+    }, 100);
+    
+    // Stop checking after 5 seconds
+    setTimeout(function() {
+      clearInterval(wsCheckInterval);
+    }, 5000);
+  }
+  
   // Check LOTR mode on page load to apply immediately
   fetch('/api/settings')
     .then(res => res.json())
@@ -114,4 +146,3 @@ window.addEventListener('DOMContentLoaded', function() {
     }
   });
 });
-

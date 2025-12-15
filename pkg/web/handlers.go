@@ -46,6 +46,14 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
+// wsHub is the global WebSocket hub instance
+var wsHub *Hub
+
+// SetWebSocketHub sets the global WebSocket hub instance
+func SetWebSocketHub(hub *Hub) {
+	wsHub = hub
+}
+
 // SummaryResponse is what we return from /api/summary
 type SummaryResponse struct {
 	Jails []fail2ban.JailInfo `json:"jails"`
@@ -601,6 +609,11 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 	}
 	if err := storage.RecordBanEvent(ctx, event); err != nil {
 		log.Printf("⚠️ Failed to record ban event: %v", err)
+	}
+
+	// Broadcast ban event to WebSocket clients
+	if wsHub != nil {
+		wsHub.BroadcastBanEvent(event)
 	}
 
 	evaluateAdvancedActions(ctx, settings, server, ip)

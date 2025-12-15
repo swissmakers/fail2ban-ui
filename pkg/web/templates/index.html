@@ -75,12 +75,19 @@
           <div class="flex-shrink-0">
             <span class="text-xl font-bold">Fail2ban UI</span>
           </div>
+          <div id="backendStatus" class="ml-4 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-gray-400" id="statusDot"></span>
+            <span id="statusText" class="text-xs">Connecting...</span>
+          </div>
         </div>
         <div class="hidden md:block">
-          <div class="ml-10 flex items-baseline space-x-4">
+          <div class="ml-10 flex items-baseline space-x-4 items-center">
             <a href="#" onclick="showSection('dashboardSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.dashboard">Dashboard</a>
             <a href="#" onclick="showSection('filterSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
             <a href="#" onclick="showSection('settingsSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
+            <div id="clockDisplay" class="ml-4 text-sm font-mono">
+              <span id="clockTime">--:--:--</span>
+            </div>
           </div>
         </div>
         <div class="md:hidden">
@@ -1163,6 +1170,8 @@
   <script src="/static/js/jails.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/filters.js"></script>
+  <script src="/static/js/websocket.js"></script>
+  <script src="/static/js/header.js"></script>
   <script src="/static/js/lotr.js"></script>
   <script src="/static/js/init.js"></script>
 </body>

@@ -451,7 +451,7 @@ INSERT INTO ban_events (
 	server_id, server_name, jail, ip, country, hostname, failures, whois, logs, occurred_at, created_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := db.ExecContext(
+	result, err := db.ExecContext(
 		ctx,
 		query,
 		record.ServerID,
@@ -466,7 +466,17 @@ INSERT INTO ban_events (
 		record.OccurredAt.UTC(),
 		record.CreatedAt.UTC(),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Get the inserted ID
+	id, err := result.LastInsertId()
+	if err == nil {
+		record.ID = id
+	}
+
+	return nil
 }
 
 // ListBanEvents returns ban events ordered by creation date descending.

@@ -18,6 +18,13 @@ function showLoading(show) {
 function showToast(message, type) {
   var container = document.getElementById('toast-container');
   if (!container || !message) return;
+  
+  // Handle ban event objects
+  if (typeof message === 'object' && message.type === 'ban_event') {
+    showBanEventToast(message.data || message);
+    return;
+  }
+  
   var toast = document.createElement('div');
   var variant = type || 'info';
   toast.className = 'toast toast-' + variant;
@@ -26,6 +33,60 @@ function showToast(message, type) {
   requestAnimationFrame(function() {
     toast.classList.add('show');
   });
+  setTimeout(function() {
+    toast.classList.remove('show');
+    setTimeout(function() {
+      toast.remove();
+    }, 300);
+  }, 5000);
+}
+
+// Show toast for ban event
+function showBanEventToast(event) {
+  var container = document.getElementById('toast-container');
+  if (!container || !event) return;
+  
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-ban-event';
+  
+  var ip = event.ip || 'Unknown IP';
+  var jail = event.jail || 'Unknown Jail';
+  var server = event.serverName || event.serverId || 'Unknown Server';
+  var country = event.country || 'UNKNOWN';
+  
+  toast.innerHTML = ''
+    + '<div class="flex items-start gap-3">'
+    + '  <div class="flex-shrink-0 mt-1">'
+    + '    <i class="fas fa-shield-alt text-red-500"></i>'
+    + '  </div>'
+    + '  <div class="flex-1 min-w-0">'
+    + '    <div class="font-semibold text-sm">New Block Detected</div>'
+    + '    <div class="text-sm mt-1">'
+    + '      <span class="font-mono font-semibold">' + escapeHtml(ip) + '</span>'
+    + '      <span class="text-gray-500"> banned in </span>'
+    + '      <span class="font-semibold">' + escapeHtml(jail) + '</span>'
+    + '    </div>'
+    + '    <div class="text-xs text-gray-400 mt-1">'
+    + '      ' + escapeHtml(server) + ' • ' + escapeHtml(country)
+    + '    </div>'
+    + '  </div>'
+    + '</div>';
+  
+  // Add click handler to scroll to ban events table
+  toast.addEventListener('click', function() {
+    var logSection = document.getElementById('logOverviewSection');
+    if (logSection) {
+      logSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+  
+  toast.style.cursor = 'pointer';
+  container.appendChild(toast);
+  
+  requestAnimationFrame(function() {
+    toast.classList.add('show');
+  });
+  
   setTimeout(function() {
     toast.classList.remove('show');
     setTimeout(function() {
