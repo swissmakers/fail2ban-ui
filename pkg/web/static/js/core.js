@@ -63,7 +63,7 @@ function showBanEventToast(event) {
     + '    <div class="font-semibold text-sm">New Block Detected</div>'
     + '    <div class="text-sm mt-1">'
     + '      <span class="font-mono font-semibold">' + escapeHtml(ip) + '</span>'
-    + '      <span class="text-gray-500"> banned in </span>'
+    + '      <span> banned in </span>'
     + '      <span class="font-semibold">' + escapeHtml(jail) + '</span>'
     + '    </div>'
     + '    <div class="text-xs text-gray-400 mt-1">'

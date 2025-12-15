@@ -1,6 +1,18 @@
 // Settings page functions for Fail2ban UI
 "use strict";
 
+// Handle GeoIP provider change
+function onGeoIPProviderChange(provider) {
+  const dbPathContainer = document.getElementById('geoipDatabasePathContainer');
+  if (dbPathContainer) {
+    if (provider === 'maxmind') {
+      dbPathContainer.style.display = 'block';
+    } else {
+      dbPathContainer.style.display = 'none';
+    }
+  }
+}
+
 function loadSettings() {
   showLoading(true);
   fetch('/api/settings')
@@ -83,6 +95,13 @@ function loadSettings() {
 
       document.getElementById('bantimeIncrement').checked = data.bantimeIncrement || false;
       document.getElementById('defaultJailEnable').checked = data.defaultJailEnable || false;
+      
+      // GeoIP settings
+      const geoipProvider = data.geoipProvider || 'builtin';
+      document.getElementById('geoipProvider').value = geoipProvider;
+      onGeoIPProviderChange(geoipProvider);
+      document.getElementById('geoipDatabasePath').value = data.geoipDatabasePath || '/usr/share/GeoIP/GeoLite2-Country.mmdb';
+      document.getElementById('maxLogLines').value = data.maxLogLines || 50;
       document.getElementById('banTime').value = data.bantime || '';
       document.getElementById('findTime').value = data.findtime || '';
       document.getElementById('maxRetry').value = data.maxretry || '';
@@ -149,6 +168,9 @@ function saveSettings(event) {
     ignoreips: getIgnoreIPsArray(),
     banaction: document.getElementById('banaction').value,
     banactionAllports: document.getElementById('banactionAllports').value,
+    geoipProvider: document.getElementById('geoipProvider').value || 'builtin',
+    geoipDatabasePath: document.getElementById('geoipDatabasePath').value || '/usr/share/GeoIP/GeoLite2-Country.mmdb',
+    maxLogLines: parseInt(document.getElementById('maxLogLines').value, 10) || 50,
     smtp: smtpSettings,
     advancedActions: collectAdvancedActionsSettings()
   };

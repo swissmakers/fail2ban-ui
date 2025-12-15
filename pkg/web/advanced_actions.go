@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/integrations"
@@ -84,7 +86,7 @@ func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settin
 		"unblock": "unblocked",
 	}[action]
 
-	message := fmt.Sprintf("%s via %s", strings.Title(action), cfg.Integration)
+	message := fmt.Sprintf("%s via %s", cases.Title(language.English).String(action), cfg.Integration)
 	if err != nil && !skipLoggingIfAlreadyBlocked {
 		status = "error"
 		message = err.Error()

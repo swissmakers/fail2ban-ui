@@ -70,6 +70,11 @@ type AppSettings struct {
 	Banaction         string   `json:"banaction"`         // Default banning action
 	BanactionAllports string   `json:"banactionAllports"` // Allports banning action
 	//Sender           string `json:"sender"`
+
+	// GeoIP and Whois settings
+	GeoIPProvider     string `json:"geoipProvider"`     // "maxmind" or "builtin"
+	GeoIPDatabasePath string `json:"geoipDatabasePath"` // Path to MaxMind database (optional)
+	MaxLogLines       int    `json:"maxLogLines"`       // Maximum log lines to include (default: 50)
 }
 
 type AdvancedActionsConfig struct {
@@ -172,9 +177,8 @@ actionban = /usr/bin/curl -X POST __CALLBACK_URL__/api/ban \
                  --arg jail '<name>' \
                  --arg hostname '<fq-hostname>' \
                  --arg failures '<failures>' \
-                 --arg whois "$(whois <ip> || echo 'missing whois program')" \
                  --arg logs "$(tac <logpath> | grep <grepopts> -wF <ip>)" \
-                 '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, whois: $whois, logs: $logs}')"
+                 '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
 
 [Init]
 
@@ -458,6 +462,9 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		Banaction:           currentSettings.Banaction,
 		BanactionAllports:   currentSettings.BanactionAllports,
 		AdvancedActionsJSON: string(advancedBytes),
+		GeoIPProvider:       currentSettings.GeoIPProvider,
+		GeoIPDatabasePath:   currentSettings.GeoIPDatabasePath,
+		MaxLogLines:         currentSettings.MaxLogLines,
 	}, nil
 }
 
@@ -576,6 +583,15 @@ func setDefaultsLocked() {
 	}
 	if currentSettings.BanactionAllports == "" {
 		currentSettings.BanactionAllports = "iptables-allports"
+	}
+	if currentSettings.GeoIPProvider == "" {
+		currentSettings.GeoIPProvider = "builtin"
+	}
+	if currentSettings.GeoIPDatabasePath == "" {
+		currentSettings.GeoIPDatabasePath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
+	}
+	if currentSettings.MaxLogLines == 0 {
+		currentSettings.MaxLogLines = 50
 	}
 
 	if (currentSettings.AdvancedActions == AdvancedActionsConfig{}) {

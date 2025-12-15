@@ -177,7 +177,7 @@ func BanNotificationHandler(c *gin.Context) {
 		Jail     string `json:"jail" binding:"required"`
 		Hostname string `json:"hostname"`
 		Failures string `json:"failures"`
-		Whois    string `json:"whois"`
+		Whois    string `json:"whois"` // Optional for backward compatibility
 		Logs     string `json:"logs"`
 	}
 
@@ -585,14 +585,41 @@ func TestServerHandler(c *gin.Context) {
 
 // HandleBanNotification processes Fail2Ban notifications, checks geo-location, stores the event, and sends alerts.
 func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
-	// Load settings to get alert countries
+	// Load settings to get alert countries and GeoIP provider
 	settings := config.GetSettings()
 
-	// Lookup the country for the given IP
-	country, err := lookupCountry(ip)
+	// Perform whois lookup if not provided (backward compatibility)
+	var whoisData string
+	var err error
+	if whois == "" || whois == "missing whois program" {
+		log.Printf("Performing whois lookup for IP %s", ip)
+		whoisData, err = lookupWhois(ip)
+		if err != nil {
+			log.Printf("⚠️ Whois lookup failed for IP %s: %v", ip, err)
+			whoisData = ""
+		}
+	} else {
+		log.Printf("Using provided whois data for IP %s", ip)
+		whoisData = whois
+	}
+
+	// Filter logs to show relevant lines
+	filteredLogs := filterRelevantLogs(logs, ip, settings.MaxLogLines)
+
+	// Lookup the country for the given IP using configured provider
+	country, err := lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
 	if err != nil {
 		log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
-		country = ""
+		// Try to extract country from whois as fallback
+		if whoisData != "" {
+			country = extractCountryFromWhois(whoisData)
+			if country != "" {
+				log.Printf("Extracted country %s from whois data for IP %s", country, ip)
+			}
+		}
+		if country == "" {
+			country = ""
+		}
 	}
 
 	event := storage.BanEventRecord{
@@ -603,8 +630,8 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		Country:    country,
 		Hostname:   hostname,
 		Failures:   failures,
-		Whois:      whois,
-		Logs:       logs,
+		Whois:      whoisData,
+		Logs:       filteredLogs,
 		OccurredAt: time.Now().UTC(),
 	}
 	if err := storage.RecordBanEvent(ctx, event); err != nil {
@@ -630,7 +657,7 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 	}
 
 	// Send email notification
-	if err := sendBanAlert(ip, jail, hostname, failures, whois, logs, country, settings); err != nil {
+	if err := sendBanAlert(ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
 		log.Printf("❌ Failed to send alert email: %v", err)
 		return err
 	}
@@ -639,8 +666,29 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 	return nil
 }
 
-// lookupCountry finds the country ISO code for a given IP using MaxMind GeoLite2 database.
-func lookupCountry(ip string) (string, error) {
+// lookupCountry finds the country ISO code for a given IP using the configured provider.
+func lookupCountry(ip, provider, dbPath string) (string, error) {
+	switch provider {
+	case "builtin":
+		return lookupCountryBuiltin(ip)
+	case "maxmind", "":
+		// Default to maxmind if empty
+		if dbPath == "" {
+			dbPath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
+		}
+		return lookupCountryMaxMind(ip, dbPath)
+	default:
+		// Unknown provider, try maxmind as fallback
+		log.Printf("Unknown GeoIP provider '%s', falling back to MaxMind", provider)
+		if dbPath == "" {
+			dbPath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
+		}
+		return lookupCountryMaxMind(ip, dbPath)
+	}
+}
+
+// lookupCountryMaxMind finds the country ISO code using MaxMind GeoLite2 database.
+func lookupCountryMaxMind(ip, dbPath string) (string, error) {
 	// Convert the IP string to net.IP
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
@@ -648,9 +696,9 @@ func lookupCountry(ip string) (string, error) {
 	}
 
 	// Open the GeoIP database
-	db, err := maxminddb.Open("/usr/share/GeoIP/GeoLite2-Country.mmdb")
+	db, err := maxminddb.Open(dbPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open GeoIP database: %w", err)
+		return "", fmt.Errorf("failed to open GeoIP database at %s: %w", dbPath, err)
 	}
 	defer db.Close()
 
@@ -668,6 +716,150 @@ func lookupCountry(ip string) (string, error) {
 
 	// Return the country code
 	return record.Country.ISOCode, nil
+}
+
+// lookupCountryBuiltin finds the country ISO code using ip-api.com free API.
+func lookupCountryBuiltin(ip string) (string, error) {
+	// Convert the IP string to net.IP to validate
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return "", fmt.Errorf("invalid IP address: %s", ip)
+	}
+
+	// Use ip-api.com free API (no account needed, rate limited to 45 requests/minute)
+	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=countryCode", ip)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to query ip-api.com: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ip-api.com returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		CountryCode string `json:"countryCode"`
+		Status      string `json:"status"`
+		Message     string `json:"message"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if result.Status == "fail" {
+		return "", fmt.Errorf("ip-api.com error: %s", result.Message)
+	}
+
+	return result.CountryCode, nil
+}
+
+// filterRelevantLogs filters log lines to show the most relevant ones that caused the block.
+func filterRelevantLogs(logs, ip string, maxLines int) string {
+	if logs == "" {
+		return ""
+	}
+
+	if maxLines <= 0 {
+		maxLines = 50 // Default
+	}
+
+	lines := strings.Split(logs, "\n")
+	if len(lines) <= maxLines {
+		return logs // Return as-is if within limit
+	}
+
+	// Priority indicators for relevant log lines
+	priorityPatterns := []string{
+		"denied", "deny", "forbidden", "unauthorized", "failed", "failure",
+		"error", "403", "404", "401", "500", "502", "503",
+		"invalid", "rejected", "blocked", "ban",
+	}
+
+	// Score each line based on relevance
+	type scoredLine struct {
+		line  string
+		score int
+		index int
+	}
+
+	scored := make([]scoredLine, len(lines))
+	for i, line := range lines {
+		lineLower := strings.ToLower(line)
+		score := 0
+
+		// Check if line contains the IP
+		if strings.Contains(line, ip) {
+			score += 10
+		}
+
+		// Check for priority patterns
+		for _, pattern := range priorityPatterns {
+			if strings.Contains(lineLower, pattern) {
+				score += 5
+			}
+		}
+
+		// Recent lines get higher score (lines at the end are more recent)
+		score += (len(lines) - i) / 10
+
+		scored[i] = scoredLine{
+			line:  line,
+			score: score,
+			index: i,
+		}
+	}
+
+	// Sort by score (descending)
+	for i := 0; i < len(scored)-1; i++ {
+		for j := i + 1; j < len(scored); j++ {
+			if scored[i].score < scored[j].score {
+				scored[i], scored[j] = scored[j], scored[i]
+			}
+		}
+	}
+
+	// Take top N lines and sort by original index to maintain chronological order
+	selected := scored[:maxLines]
+	for i := 0; i < len(selected)-1; i++ {
+		for j := i + 1; j < len(selected); j++ {
+			if selected[i].index > selected[j].index {
+				selected[i], selected[j] = selected[j], selected[i]
+			}
+		}
+	}
+
+	// Build result
+	result := make([]string, len(selected))
+	for i, s := range selected {
+		result[i] = s.line
+	}
+
+	// Remove duplicate consecutive lines
+	filtered := []string{}
+	lastLine := ""
+	for _, line := range result {
+		if line != lastLine {
+			filtered = append(filtered, line)
+			lastLine = line
+		}
+	}
+
+	return strings.Join(filtered, "\n")
 }
 
 // shouldAlertForCountry checks if an IP’s country is in the allowed alert list.

@@ -1,7 +1,7 @@
 # =========================================
 #  STAGE 1: Build Fail2Ban UI Binary
 # =========================================
-FROM golang:1.23 AS builder
+FROM golang:1.24 AS builder
 
 WORKDIR /app
 
