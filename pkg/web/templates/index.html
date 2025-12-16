@@ -341,9 +341,24 @@
         <div class="bg-white rounded-lg shadow p-6">
           <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.alert">Alert Settings</h3>
 
+          <!-- Email Alert Preferences -->
           <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.email_alerts">Email Alert Preferences</label>
+            <div class="space-y-2">
+              <label class="flex items-center">
+                <input type="checkbox" id="emailAlertsForBans" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" onchange="updateEmailFieldsState()">
+                <span class="ml-2 text-sm text-gray-700" data-i18n="settings.email_alerts_for_bans">Enable email alerts for bans</span>
+              </label>
+              <label class="flex items-center">
+                <input type="checkbox" id="emailAlertsForUnbans" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" onchange="updateEmailFieldsState()">
+                <span class="ml-2 text-sm text-gray-700" data-i18n="settings.email_alerts_for_unbans">Enable email alerts for unbans</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="mb-4" id="emailFieldsContainer">
             <label for="destEmail" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.destination_email">Destination Email (Alerts Receiver)</label>
-            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="destEmail"
+            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
                    data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch" />
             <p class="text-xs text-red-600 mt-1 hidden" id="destEmailError"></p>
           </div>
@@ -579,40 +594,40 @@
         </div>
 
         <!-- SMTP Configuration Group -->
-        <div class="bg-white rounded-lg shadow p-6">
+        <div class="bg-white rounded-lg shadow p-6" id="smtpFieldsContainer">
           <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.smtp">SMTP Configuration</h3>
           <div class="mb-4">
             <label for="smtpHost" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_host">SMTP Host</label>
-            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="smtpHost"
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpHost"
                    data-i18n-placeholder="settings.smtp_host_placeholder" placeholder="e.g., smtp.gmail.com" required />
           </div>
           <div class="mb-4">
             <label for="smtpPort" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_port">SMTP Port</label>
-            <select id="smtpPort" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <select id="smtpPort" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
               <option value="587" selected>587 (Recommended - STARTTLS)</option>
               <option value="465" disabled>465 (Not Supported)</option>
             </select>
           </div>
           <div class="mb-4">
             <label for="smtpUsername" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_username">SMTP Username</label>
-            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="smtpUsername"
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpUsername"
                    data-i18n-placeholder="settings.smtp_username_placeholder" placeholder="e.g., user@example.com" required />
           </div>
           <div class="mb-4">
             <label for="smtpPassword" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_password">SMTP Password</label>
-            <input type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="smtpPassword"
+            <input type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpPassword"
                    data-i18n-placeholder="settings.smtp_password_placeholder" placeholder="Enter SMTP Password" required />
           </div>
           <div class="mb-4">
             <label for="smtpFrom" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_sender">Sender Email</label>
-            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="smtpFrom"
+            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpFrom"
                    data-i18n-placeholder="settings.smtp_sender_placeholder" placeholder="noreply@swissmakers.ch" required />
           </div>
           <div class="flex items-center mb-4">
-            <input type="checkbox" id="smtpUseTLS" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out">
+            <input type="checkbox" id="smtpUseTLS" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
             <label for="smtpUseTLS" class="ml-2 block text-sm text-gray-700" data-i18n="settings.smtp_tls">Use TLS (Recommended)</label>
           </div>
-          <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="sendTestEmail()" data-i18n="settings.send_test_email">Send Test Email</button>
+          <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed" onclick="sendTestEmail()" id="sendTestEmailBtn" data-i18n="settings.send_test_email">Send Test Email</button>
         </div>
 
         <!-- Fail2Ban Configuration Group -->

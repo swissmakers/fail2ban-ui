@@ -69,6 +69,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// Handle Fail2Ban notifications
 		api.POST("/ban", BanNotificationHandler)
+		api.POST("/unban", UnbanNotificationHandler)
 
 		// Internal database overview
 		api.GET("/events/bans", ListBanEventsHandler)

@@ -48,32 +48,40 @@ func intFromNull(ni sql.NullInt64) int {
 }
 
 type AppSettingsRecord struct {
-	Language            string
-	Port                int
-	Debug               bool
-	CallbackURL         string
-	RestartNeeded       bool
-	AlertCountriesJSON  string
-	SMTPHost            string
-	SMTPPort            int
-	SMTPUsername        string
-	SMTPPassword        string
-	SMTPFrom            string
-	SMTPUseTLS          bool
-	BantimeIncrement    bool
-	DefaultJailEnable   bool
-	IgnoreIP            string // Stored as space-separated string, converted to array in AppSettings
-	Bantime             string
-	Findtime            string
-	MaxRetry            int
-	DestEmail           string
-	Banaction           string
-	BanactionAllports   string
+	// Basic app settings
+	Language      string
+	Port          int
+	Debug         bool
+	RestartNeeded bool
+	// Callback settings
+	CallbackURL    string
+	CallbackSecret string
+	// Alert settings
+	AlertCountriesJSON   string
+	EmailAlertsForBans   bool
+	EmailAlertsForUnbans bool
+	// SMTP settings
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPUseTLS   bool
+	// Fail2Ban DEFAULT settings
+	BantimeIncrement  bool
+	DefaultJailEnable bool
+	IgnoreIP          string // Stored as space-separated string, converted to array in AppSettings
+	Bantime           string
+	Findtime          string
+	MaxRetry          int
+	DestEmail         string
+	Banaction         string
+	BanactionAllports string
+	// Advanced features
 	AdvancedActionsJSON string
 	GeoIPProvider       string
 	GeoIPDatabasePath   string
 	MaxLogLines         int
-	CallbackSecret      string
 }
 
 type ServerRecord struct {
@@ -97,7 +105,7 @@ type ServerRecord struct {
 	UpdatedAt    time.Time
 }
 
-// BanEventRecord represents a single ban event stored in the internal database.
+// BanEventRecord represents a single ban or unban event stored in the internal database.
 type BanEventRecord struct {
 	ID         int64     `json:"id"`
 	ServerID   string    `json:"serverId"`
@@ -109,6 +117,7 @@ type BanEventRecord struct {
 	Failures   string    `json:"failures"`
 	Whois      string    `json:"whois"`
 	Logs       string    `json:"logs"`
+	EventType  string    `json:"eventType"`
 	OccurredAt time.Time `json:"occurredAt"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
@@ -175,17 +184,17 @@ func GetAppSettings(ctx context.Context) (AppSettingsRecord, bool, error) {
 	}
 
 	row := db.QueryRowContext(ctx, `
-SELECT language, port, debug, callback_url, restart_needed, alert_countries, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, callback_secret
+SELECT language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines
 FROM app_settings
 WHERE id = 1`)
 
 	var (
-		lang, callback, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, advancedActions, geoipProvider, geoipDatabasePath, callbackSecret sql.NullString
+		lang, callback, callbackSecret, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, advancedActions, geoipProvider, geoipDatabasePath sql.NullString
 		port, smtpPort, maxretry, maxLogLines                                                                                                                                                                   sql.NullInt64
-		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn                                                                                                                                                sql.NullInt64
+		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans                                                                                                      sql.NullInt64
 	)
 
-	err := row.Scan(&lang, &port, &debug, &callback, &restartNeeded, &alerts, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines, &callbackSecret)
+	err := row.Scan(&lang, &port, &debug, &restartNeeded, &callback, &callbackSecret, &alerts, &emailAlertsForBans, &emailAlertsForUnbans, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AppSettingsRecord{}, false, nil
 	}
@@ -194,32 +203,40 @@ WHERE id = 1`)
 	}
 
 	rec := AppSettingsRecord{
-		Language:            stringFromNull(lang),
-		Port:                intFromNull(port),
-		Debug:               intToBool(intFromNull(debug)),
-		CallbackURL:         stringFromNull(callback),
-		RestartNeeded:       intToBool(intFromNull(restartNeeded)),
-		AlertCountriesJSON:  stringFromNull(alerts),
-		SMTPHost:            stringFromNull(smtpHost),
-		SMTPPort:            intFromNull(smtpPort),
-		SMTPUsername:        stringFromNull(smtpUser),
-		SMTPPassword:        stringFromNull(smtpPass),
-		SMTPFrom:            stringFromNull(smtpFrom),
-		SMTPUseTLS:          intToBool(intFromNull(smtpTLS)),
-		BantimeIncrement:    intToBool(intFromNull(bantimeInc)),
-		DefaultJailEnable:   intToBool(intFromNull(defaultJailEn)),
-		IgnoreIP:            stringFromNull(ignoreIP),
-		Bantime:             stringFromNull(bantime),
-		Findtime:            stringFromNull(findtime),
-		MaxRetry:            intFromNull(maxretry),
-		DestEmail:           stringFromNull(destemail),
-		Banaction:           stringFromNull(banaction),
-		BanactionAllports:   stringFromNull(banactionAllports),
+		// Basic app settings
+		Language:      stringFromNull(lang),
+		Port:          intFromNull(port),
+		Debug:         intToBool(intFromNull(debug)),
+		RestartNeeded: intToBool(intFromNull(restartNeeded)),
+		// Callback settings
+		CallbackURL:    stringFromNull(callback),
+		CallbackSecret: stringFromNull(callbackSecret),
+		// Alert settings
+		AlertCountriesJSON:   stringFromNull(alerts),
+		EmailAlertsForBans:   intToBool(intFromNull(emailAlertsForBans)),
+		EmailAlertsForUnbans: intToBool(intFromNull(emailAlertsForUnbans)),
+		// SMTP settings
+		SMTPHost:     stringFromNull(smtpHost),
+		SMTPPort:     intFromNull(smtpPort),
+		SMTPUsername: stringFromNull(smtpUser),
+		SMTPPassword: stringFromNull(smtpPass),
+		SMTPFrom:     stringFromNull(smtpFrom),
+		SMTPUseTLS:   intToBool(intFromNull(smtpTLS)),
+		// Fail2Ban DEFAULT settings
+		BantimeIncrement:  intToBool(intFromNull(bantimeInc)),
+		DefaultJailEnable: intToBool(intFromNull(defaultJailEn)),
+		IgnoreIP:          stringFromNull(ignoreIP),
+		Bantime:           stringFromNull(bantime),
+		Findtime:          stringFromNull(findtime),
+		MaxRetry:          intFromNull(maxretry),
+		DestEmail:         stringFromNull(destemail),
+		Banaction:         stringFromNull(banaction),
+		BanactionAllports: stringFromNull(banactionAllports),
+		// Advanced features
 		AdvancedActionsJSON: stringFromNull(advancedActions),
 		GeoIPProvider:       stringFromNull(geoipProvider),
 		GeoIPDatabasePath:   stringFromNull(geoipDatabasePath),
 		MaxLogLines:         intFromNull(maxLogLines),
-		CallbackSecret:      stringFromNull(callbackSecret),
 	}
 
 	return rec, true, nil
@@ -231,16 +248,19 @@ func SaveAppSettings(ctx context.Context, rec AppSettingsRecord) error {
 	}
 	_, err := db.ExecContext(ctx, `
 INSERT INTO app_settings (
-	id, language, port, debug, callback_url, restart_needed, alert_countries, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, callback_secret
+	id, language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines
 ) VALUES (
-	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 ) ON CONFLICT(id) DO UPDATE SET
 	language = excluded.language,
 	port = excluded.port,
 	debug = excluded.debug,
-	callback_url = excluded.callback_url,
 	restart_needed = excluded.restart_needed,
+	callback_url = excluded.callback_url,
+	callback_secret = excluded.callback_secret,
 	alert_countries = excluded.alert_countries,
+	email_alerts_for_bans = excluded.email_alerts_for_bans,
+	email_alerts_for_unbans = excluded.email_alerts_for_unbans,
 	smtp_host = excluded.smtp_host,
 	smtp_port = excluded.smtp_port,
 	smtp_username = excluded.smtp_username,
@@ -259,14 +279,16 @@ INSERT INTO app_settings (
 	advanced_actions = excluded.advanced_actions,
 	geoip_provider = excluded.geoip_provider,
 	geoip_database_path = excluded.geoip_database_path,
-	max_log_lines = excluded.max_log_lines,
-	callback_secret = excluded.callback_secret
+	max_log_lines = excluded.max_log_lines
 `, rec.Language,
 		rec.Port,
 		boolToInt(rec.Debug),
-		rec.CallbackURL,
 		boolToInt(rec.RestartNeeded),
+		rec.CallbackURL,
+		rec.CallbackSecret,
 		rec.AlertCountriesJSON,
+		boolToInt(rec.EmailAlertsForBans),
+		boolToInt(rec.EmailAlertsForUnbans),
 		rec.SMTPHost,
 		rec.SMTPPort,
 		rec.SMTPUsername,
@@ -286,7 +308,6 @@ INSERT INTO app_settings (
 		rec.GeoIPProvider,
 		rec.GeoIPDatabasePath,
 		rec.MaxLogLines,
-		rec.CallbackSecret,
 	)
 	return err
 }
@@ -462,10 +483,16 @@ func RecordBanEvent(ctx context.Context, record BanEventRecord) error {
 		record.OccurredAt = now
 	}
 
+	// Default to 'ban' if event type is not set
+	eventType := record.EventType
+	if eventType == "" {
+		eventType = "ban"
+	}
+
 	const query = `
 INSERT INTO ban_events (
-	server_id, server_name, jail, ip, country, hostname, failures, whois, logs, occurred_at, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := db.ExecContext(
 		ctx,
@@ -479,6 +506,7 @@ INSERT INTO ban_events (
 		record.Failures,
 		record.Whois,
 		record.Logs,
+		eventType,
 		record.OccurredAt.UTC(),
 		record.CreatedAt.UTC(),
 	)
@@ -500,7 +528,7 @@ func ListBanEvents(ctx context.Context, serverID string, limit int, since time.T
 	}
 
 	baseQuery := `
-SELECT id, server_id, server_name, jail, ip, country, hostname, failures, whois, logs, occurred_at, created_at
+SELECT id, server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
 FROM ban_events
 WHERE 1=1`
 
@@ -526,6 +554,7 @@ WHERE 1=1`
 	var results []BanEventRecord
 	for rows.Next() {
 		var rec BanEventRecord
+		var eventType sql.NullString
 		if err := rows.Scan(
 			&rec.ID,
 			&rec.ServerID,
@@ -537,10 +566,17 @@ WHERE 1=1`
 			&rec.Failures,
 			&rec.Whois,
 			&rec.Logs,
+			&eventType,
 			&rec.OccurredAt,
 			&rec.CreatedAt,
 		); err != nil {
 			return nil, err
+		}
+		// Default to 'ban' if event_type is NULL (for backward compatibility)
+		if eventType.Valid {
+			rec.EventType = eventType.String
+		} else {
+			rec.EventType = "ban"
 		}
 		results = append(results, rec)
 	}
@@ -786,18 +822,26 @@ func ensureSchema(ctx context.Context) error {
 	const createTable = `
 CREATE TABLE IF NOT EXISTS app_settings (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
+	-- Basic app settings
 	language TEXT,
 	port INTEGER,
 	debug INTEGER,
-	callback_url TEXT,
 	restart_needed INTEGER,
+	-- Callback settings
+	callback_url TEXT,
+	callback_secret TEXT,
+	-- Alert settings
 	alert_countries TEXT,
+	email_alerts_for_bans INTEGER DEFAULT 1,
+	email_alerts_for_unbans INTEGER DEFAULT 0,
+	-- SMTP settings
 	smtp_host TEXT,
 	smtp_port INTEGER,
 	smtp_username TEXT,
 	smtp_password TEXT,
 	smtp_from TEXT,
 	smtp_use_tls INTEGER,
+	-- Fail2Ban DEFAULT settings
 	bantime_increment INTEGER,
 	default_jail_enable INTEGER,
 	ignore_ip TEXT,
@@ -807,11 +851,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
 	destemail TEXT,
 	banaction TEXT,
 	banaction_allports TEXT,
+	-- Advanced features
 	advanced_actions TEXT,
 	geoip_provider TEXT,
 	geoip_database_path TEXT,
-	max_log_lines INTEGER,
-	callback_secret TEXT
+	max_log_lines INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS servers (
@@ -846,6 +890,7 @@ CREATE TABLE IF NOT EXISTS ban_events (
 	failures TEXT,
 	whois TEXT,
 	logs TEXT,
+	event_type TEXT NOT NULL DEFAULT 'ban',
 	occurred_at DATETIME NOT NULL,
 	created_at DATETIME NOT NULL
 );
@@ -873,69 +918,16 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 		return err
 	}
 
-	// Backfill needs_restart column for existing databases that predate it.
-	if _, err := db.ExecContext(ctx, `ALTER TABLE servers ADD COLUMN needs_restart INTEGER DEFAULT 0`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-
-	// Backfill banaction columns for existing databases that predate them.
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN banaction TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN banaction_allports TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN advanced_actions TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-
-	// Add geoip_provider column
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN geoip_provider TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-
-	// Add geoip_database_path column
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN geoip_database_path TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-
-	// Add max_log_lines column
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN max_log_lines INTEGER`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-
-	// Add callback_secret column
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN callback_secret TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-
-	// Set default values for new columns if they are NULL
-	if _, err := db.ExecContext(ctx, `UPDATE app_settings SET geoip_provider = 'maxmind' WHERE geoip_provider IS NULL`); err != nil {
-		log.Printf("Warning: Failed to set default value for geoip_provider: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `UPDATE app_settings SET geoip_database_path = '/usr/share/GeoIP/GeoLite2-Country.mmdb' WHERE geoip_database_path IS NULL`); err != nil {
-		log.Printf("Warning: Failed to set default value for geoip_database_path: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, `UPDATE app_settings SET max_log_lines = 50 WHERE max_log_lines IS NULL OR max_log_lines = 0`); err != nil {
-		log.Printf("Warning: Failed to set default value for max_log_lines: %v", err)
-	}
+	// NOTE: Database migrations for feature releases
+	// For this version, we start with a fresh schema. Future feature releases
+	// that require database schema changes should add migration logic here.
+	// Example migration pattern:
+	//   if _, err := db.ExecContext(ctx, `ALTER TABLE table_name ADD COLUMN new_column TYPE DEFAULT value`); err != nil {
+	//     if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+	//       return err
+	//     }
+	//   }
+	_ = strings.Contains // Keep strings import for migration example above
 
 	return nil
 }

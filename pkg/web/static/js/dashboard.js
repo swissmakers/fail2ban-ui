@@ -85,7 +85,7 @@ function fetchBanEventsData() {
     });
 }
 
-// Add new ban event from WebSocket
+// Add new ban or unban event from WebSocket
 function addBanEventFromWebSocket(event) {
   // Check if event already exists (prevent duplicates)
   // Only check by ID if both events have IDs
@@ -95,16 +95,21 @@ function addBanEventFromWebSocket(event) {
       return e.id === event.id;
     });
   } else {
-    // If no ID, check by IP, jail, and occurredAt timestamp
+    // If no ID, check by IP, jail, eventType, and occurredAt timestamp
     exists = latestBanEvents.some(function(e) {
       return e.ip === event.ip && 
              e.jail === event.jail && 
+             e.eventType === event.eventType &&
              e.occurredAt === event.occurredAt;
     });
   }
   
   if (!exists) {
-    console.log('Adding new ban event from WebSocket:', event);
+    // Ensure eventType is set (default to 'ban' for backward compatibility)
+    if (!event.eventType) {
+      event.eventType = 'ban';
+    }
+    console.log('Adding new event from WebSocket:', event);
     
     // Prepend to the beginning of the array
     latestBanEvents.unshift(event);
@@ -121,7 +126,7 @@ function addBanEventFromWebSocket(event) {
     // Refresh dashboard data (summary, stats, insights) and re-render
     refreshDashboardData();
   } else {
-    console.log('Skipping duplicate ban event:', event);
+    console.log('Skipping duplicate event:', event);
   }
 }
 
@@ -453,9 +458,8 @@ function unbanIP(jail, ip) {
     .then(function(data) {
       if (data.error) {
         showToast("Error unbanning IP: " + data.error, 'error');
-      } else {
-        showToast(data.message || "IP unbanned successfully", 'success');
       }
+      // Don't show success toast here - the WebSocket unban event will show a proper toast
       return refreshData({ silent: true });
     })
     .catch(function(err) {
@@ -761,12 +765,19 @@ function renderLogOverviewContent() {
       if (event.ip && recurringMap[event.ip]) {
         ipCell += ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">' + t('logs.badge.recurring', 'Recurring') + '</span>';
       }
+      var eventType = event.eventType || 'ban';
+      var eventTypeBadge = '';
+      if (eventType === 'unban') {
+        eventTypeBadge = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Unban</span>';
+      } else {
+        eventTypeBadge = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Ban</span>';
+      }
       html += ''
         + '      <tr class="hover:bg-gray-50">'
         + '        <td class="px-2 py-2 whitespace-nowrap">' + escapeHtml(formatDateTime(event.occurredAt || event.createdAt)) + '</td>'
         + '        <td class="px-2 py-2 whitespace-nowrap">' + serverCell + '</td>'
         + '        <td class="hidden sm:table-cell px-2 py-2 whitespace-nowrap">' + jailCell + '</td>'
-        + '        <td class="px-2 py-2 whitespace-nowrap">' + ipCell + '</td>'
+        + '        <td class="px-2 py-2 whitespace-nowrap">' + ipCell + eventTypeBadge + '</td>'
         + '        <td class="hidden md:table-cell px-2 py-2 whitespace-nowrap">' + escapeHtml(event.country || '—') + '</td>'
         + '        <td class="px-2 py-2 whitespace-nowrap">'
         + '          <div class="flex gap-2">'

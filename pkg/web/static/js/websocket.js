@@ -93,6 +93,9 @@ class WebSocketManager {
       case 'ban_event':
         this.handleBanEvent(message.data);
         break;
+      case 'unban_event':
+        this.handleBanEvent(message.data); // Use same handler for unban events
+        break;
       case 'heartbeat':
         this.handleHeartbeat(message);
         break;

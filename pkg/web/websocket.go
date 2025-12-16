@@ -169,6 +169,25 @@ func (h *Hub) BroadcastBanEvent(event storage.BanEventRecord) {
 	}
 }
 
+// BroadcastUnbanEvent broadcasts an unban event to all connected clients
+func (h *Hub) BroadcastUnbanEvent(event storage.BanEventRecord) {
+	message := map[string]interface{}{
+		"type": "unban_event",
+		"data": event,
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Error marshaling unban event: %v", err)
+		return
+	}
+
+	select {
+	case h.broadcast <- data:
+	default:
+		log.Printf("Broadcast channel full, dropping unban event")
+	}
+}
+
 // readPump pumps messages from the WebSocket connection to the hub
 func (c *Client) readPump() {
 	defer func() {

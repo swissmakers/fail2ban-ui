@@ -261,6 +261,81 @@ func BanNotificationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Ban notification processed successfully"})
 }
 
+// UnbanNotificationHandler processes incoming unban notifications from Fail2Ban.
+func UnbanNotificationHandler(c *gin.Context) {
+	// Validate callback secret
+	settings := config.GetSettings()
+	providedSecret := c.GetHeader("X-Callback-Secret")
+	expectedSecret := settings.CallbackSecret
+
+	// Use constant-time comparison to prevent timing attacks
+	if expectedSecret == "" {
+		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
+		return
+	}
+
+	if providedSecret == "" {
+		log.Printf("⚠️ Missing X-Callback-Secret header in request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing X-Callback-Secret header"})
+		return
+	}
+
+	// Constant-time comparison
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
+		return
+	}
+
+	var request struct {
+		ServerID string `json:"serverId"`
+		IP       string `json:"ip" binding:"required"`
+		Jail     string `json:"jail" binding:"required"`
+		Hostname string `json:"hostname"`
+	}
+
+	body, _ := io.ReadAll(c.Request.Body)
+	config.DebugLog("📩 Incoming Unban Notification: %s\n", string(body))
+
+	// Rebind body so Gin can parse it again
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	// Parse JSON request body
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var verr validator.ValidationErrors
+		if errors.As(err, &verr) {
+			for _, fe := range verr {
+				log.Printf("❌ Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
+			}
+		} else {
+			log.Printf("❌ JSON parsing error: %v", err)
+		}
+		log.Printf("Raw JSON: %s", string(body))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	log.Printf("✅ Parsed Unban Request - IP: %s, Jail: %s, Hostname: %s",
+		request.IP, request.Jail, request.Hostname)
+
+	server, err := resolveServerForNotification(request.ServerID, request.Hostname)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Handle the Fail2Ban notification
+	if err := HandleUnbanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, "", ""); err != nil {
+		log.Printf("❌ Failed to process unban notification: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process unban notification: " + err.Error()})
+		return
+	}
+
+	// Respond with success
+	c.JSON(http.StatusOK, gin.H{"message": "Unban notification processed successfully"})
+}
+
 // ListBanEventsHandler returns stored ban events from the internal database.
 func ListBanEventsHandler(c *gin.Context) {
 	serverID := c.Query("serverId")
@@ -658,6 +733,7 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		Failures:   failures,
 		Whois:      whoisData,
 		Logs:       filteredLogs,
+		EventType:  "ban",
 		OccurredAt: time.Now().UTC(),
 	}
 	if err := storage.RecordBanEvent(ctx, event); err != nil {
@@ -682,6 +758,12 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		return nil
 	}
 
+	// Check if email alerts for bans are enabled
+	if !settings.EmailAlertsForBans {
+		log.Printf("❌ Email alerts for bans are disabled. No alert sent for IP %s", ip)
+		return nil
+	}
+
 	// Send email notification
 	if err := sendBanAlert(ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
 		log.Printf("❌ Failed to send alert email: %v", err)
@@ -689,6 +771,93 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 	}
 
 	log.Printf("✅ Email alert sent for banned IP %s (%s)", ip, displayCountry)
+	return nil
+}
+
+// HandleUnbanNotification processes Fail2Ban unban notifications, stores the event, and sends alerts.
+func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string) error {
+	// Load settings to get alert countries and GeoIP provider
+	settings := config.GetSettings()
+
+	// Perform whois lookup if not provided
+	var whoisData string
+	var err error
+	if whois == "" || whois == "missing whois program" {
+		log.Printf("Performing whois lookup for IP %s", ip)
+		whoisData, err = lookupWhois(ip)
+		if err != nil {
+			log.Printf("⚠️ Whois lookup failed for IP %s: %v", ip, err)
+			whoisData = ""
+		}
+	} else {
+		log.Printf("Using provided whois data for IP %s", ip)
+		whoisData = whois
+	}
+
+	// Lookup the country for the given IP if not provided
+	if country == "" {
+		country, err = lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
+		if err != nil {
+			log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
+			// Try to extract country from whois as fallback
+			if whoisData != "" {
+				country = extractCountryFromWhois(whoisData)
+				if country != "" {
+					log.Printf("Extracted country %s from whois data for IP %s", country, ip)
+				}
+			}
+			if country == "" {
+				country = ""
+			}
+		}
+	}
+
+	event := storage.BanEventRecord{
+		ServerID:   server.ID,
+		ServerName: server.Name,
+		Jail:       jail,
+		IP:         ip,
+		Country:    country,
+		Hostname:   hostname,
+		Failures:   "",
+		Whois:      whoisData,
+		Logs:       "",
+		EventType:  "unban",
+		OccurredAt: time.Now().UTC(),
+	}
+	if err := storage.RecordBanEvent(ctx, event); err != nil {
+		log.Printf("⚠️ Failed to record unban event: %v", err)
+	}
+
+	// Broadcast unban event to WebSocket clients
+	if wsHub != nil {
+		wsHub.BroadcastUnbanEvent(event)
+	}
+
+	// Check if email alerts for unbans are enabled
+	if !settings.EmailAlertsForUnbans {
+		log.Printf("❌ Email alerts for unbans are disabled. No alert sent for IP %s", ip)
+		return nil
+	}
+
+	// Check if country is in alert list
+	displayCountry := country
+	if displayCountry == "" {
+		displayCountry = "UNKNOWN"
+	}
+
+	if !shouldAlertForCountry(country, settings.AlertCountries) {
+		log.Printf("❌ IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
+		return nil
+	}
+
+	// Send email notification
+	if err := sendUnbanAlert(ip, jail, hostname, whoisData, country, settings); err != nil {
+		log.Printf("❌ Failed to send unban alert email: %v", err)
+		return err
+	}
+
+	log.Printf("✅ Email alert sent for unbanned IP %s (%s)", ip, displayCountry)
 	return nil
 }
 
@@ -2320,7 +2489,11 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 	// Get translations
 	var subject string
 	if isLOTRMode {
-		subject = fmt.Sprintf("[Middle-earth] The Dark Lord's Servant Has Been Banished: %s from %s", ip, hostname)
+		subject = fmt.Sprintf("[Middle-earth] %s: %s %s %s",
+			getEmailTranslation(lang, "lotr.email.title"),
+			ip,
+			getEmailTranslation(lang, "email.ban.subject.from"),
+			hostname)
 	} else {
 		subject = fmt.Sprintf("[Fail2Ban] %s: %s %s %s %s", jail,
 			getEmailTranslation(lang, "email.ban.subject.banned"),
@@ -2337,19 +2510,10 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 	var title, intro, whoisTitle, logsTitle, footerText string
 	if isLOTRMode {
 		title = getEmailTranslation(lang, "lotr.email.title")
-		if title == "lotr.email.title" {
-			title = "A Dark Servant Has Been Banished"
-		}
 		intro = getEmailTranslation(lang, "lotr.email.intro")
-		if intro == "lotr.email.intro" {
-			intro = "The guardians of Middle-earth have detected a threat and banished it from the realm."
-		}
 		whoisTitle = getEmailTranslation(lang, "email.ban.whois_title")
 		logsTitle = getEmailTranslation(lang, "email.ban.logs_title")
 		footerText = getEmailTranslation(lang, "lotr.email.footer")
-		if footerText == "lotr.email.footer" {
-			footerText = "May the servers be protected. One ban to rule them all."
-		}
 	} else {
 		title = getEmailTranslation(lang, "email.ban.title")
 		intro = getEmailTranslation(lang, "email.ban.intro")
@@ -2364,34 +2528,15 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 	if isLOTRMode {
 		// Transform labels to LOTR terminology
 		bannedIPLabel := getEmailTranslation(lang, "lotr.email.details.dark_servant_location")
-		if bannedIPLabel == "lotr.email.details.dark_servant_location" {
-			bannedIPLabel = "The Dark Servant's Location"
-		}
 		jailLabel := getEmailTranslation(lang, "lotr.email.details.realm_protection")
-		if jailLabel == "lotr.email.details.realm_protection" {
-			jailLabel = "The Realm of Protection"
-		}
 		countryLabelKey := getEmailTranslation(lang, "lotr.email.details.origins")
 		var countryLabel string
-		if countryLabelKey == "lotr.email.details.origins" {
-			// Use default English format
-			if country != "" {
-				countryLabel = fmt.Sprintf("Origins from the %s Lands", country)
-			} else {
-				countryLabel = "Origins from Unknown Lands"
-			}
+		if country != "" {
+			countryLabel = fmt.Sprintf("%s %s", countryLabelKey, country)
 		} else {
-			// Use translated label and append country
-			if country != "" {
-				countryLabel = fmt.Sprintf("%s %s", countryLabelKey, country)
-			} else {
-				countryLabel = fmt.Sprintf("%s Unknown", countryLabelKey)
-			}
+			countryLabel = fmt.Sprintf("%s Unknown", countryLabelKey)
 		}
 		timestampLabel := getEmailTranslation(lang, "lotr.email.details.banished_at")
-		if timestampLabel == "lotr.email.details.banished_at" {
-			timestampLabel = "Banished at the"
-		}
 
 		details = []emailDetail{
 			{Label: bannedIPLabel, Value: ip},
@@ -2423,6 +2568,87 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 		body = buildModernEmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
 	} else {
 		body = buildClassicEmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText, supportEmail)
+	}
+
+	return sendEmail(settings.Destemail, subject, body, settings)
+}
+
+// *******************************************************************
+// *                    sendUnbanAlert Function :                    *
+// *******************************************************************
+func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.AppSettings) error {
+	lang := settings.Language
+	if lang == "" {
+		lang = "en"
+	}
+
+	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
+
+	// Get translations
+	var subject string
+	if isLOTRMode {
+		subject = fmt.Sprintf("[Middle-earth] %s: %s %s %s",
+			getEmailTranslation(lang, "lotr.email.unban.title"),
+			ip,
+			getEmailTranslation(lang, "email.unban.subject.from"),
+			hostname)
+	} else {
+		subject = fmt.Sprintf("[Fail2Ban] %s: %s %s %s %s", jail,
+			getEmailTranslation(lang, "email.unban.subject.unbanned"),
+			ip,
+			getEmailTranslation(lang, "email.unban.subject.from"),
+			hostname)
+	}
+
+	// Determine email style and LOTR mode
+	emailStyle := getEmailStyle()
+	isModern := emailStyle == "modern"
+
+	// Get translations - use LOTR translations if in LOTR mode
+	var title, intro, whoisTitle, footerText string
+	if isLOTRMode {
+		title = getEmailTranslation(lang, "lotr.email.unban.title")
+		intro = getEmailTranslation(lang, "lotr.email.unban.intro")
+		whoisTitle = getEmailTranslation(lang, "email.ban.whois_title")
+		footerText = getEmailTranslation(lang, "lotr.email.footer")
+	} else {
+		title = getEmailTranslation(lang, "email.unban.title")
+		intro = getEmailTranslation(lang, "email.unban.intro")
+		whoisTitle = getEmailTranslation(lang, "email.ban.whois_title")
+		footerText = getEmailTranslation(lang, "email.footer.text")
+	}
+	supportEmail := "support@swissmakers.ch"
+
+	// Format details - use shared keys for common fields, LOTR-specific only for restored_ip
+	var details []emailDetail
+	if isLOTRMode {
+		details = []emailDetail{
+			{Label: getEmailTranslation(lang, "lotr.email.unban.details.restored_ip"), Value: ip},
+			{Label: getEmailTranslation(lang, "email.unban.details.jail"), Value: jail},
+			{Label: getEmailTranslation(lang, "email.unban.details.hostname"), Value: hostname},
+			{Label: getEmailTranslation(lang, "email.unban.details.country"), Value: country},
+			{Label: getEmailTranslation(lang, "email.unban.details.timestamp"), Value: time.Now().UTC().Format(time.RFC3339)},
+		}
+	} else {
+		details = []emailDetail{
+			{Label: getEmailTranslation(lang, "email.unban.details.unbanned_ip"), Value: ip},
+			{Label: getEmailTranslation(lang, "email.unban.details.jail"), Value: jail},
+			{Label: getEmailTranslation(lang, "email.unban.details.hostname"), Value: hostname},
+			{Label: getEmailTranslation(lang, "email.unban.details.country"), Value: country},
+			{Label: getEmailTranslation(lang, "email.unban.details.timestamp"), Value: time.Now().UTC().Format(time.RFC3339)},
+		}
+	}
+
+	whoisHTML := formatWhoisForEmail(whois, lang, isModern)
+
+	var body string
+	if isLOTRMode {
+		// Use LOTR-themed email template
+		body = buildLOTREmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText)
+	} else if isModern {
+		body = buildModernEmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText)
+	} else {
+		body = buildClassicEmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText, supportEmail)
 	}
 
 	return sendEmail(settings.Destemail, subject, body, settings)

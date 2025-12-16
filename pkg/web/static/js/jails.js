@@ -260,7 +260,7 @@ function openManageJailsModal() {
         const jsEscapedJailName = jail.jailName.replace(/'/g, "\\'");
         return ''
           + '<div class="flex items-center justify-between gap-3 p-3 bg-gray-50">'
-          + '  <span class="text-sm font-medium flex-1">' + escapedJailName + '</span>'
+          + '  <span class="text-sm font-medium flex-1 text-gray-900">' + escapedJailName + '</span>'
           + '  <div class="flex items-center gap-3">'
           + '    <button'
           + '      type="button"'
@@ -282,7 +282,7 @@ function openManageJailsModal() {
           + '        class="w-11 h-6 bg-gray-200 rounded-full peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:bg-blue-600 transition-colors"'
           + '      ></div>'
           + '      <span'
-          + '        class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"'
+          + '        class="absolute left-1 top-1/2 -translate-y-1/2 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"'
           + '      ></span>'
           + '    </label>'
           + '  </div>'

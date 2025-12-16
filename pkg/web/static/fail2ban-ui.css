@@ -26,6 +26,10 @@
     display: none;
 }
 
+#serverManagerList {
+    min-height: 480px;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
     width: 8px;
@@ -164,6 +168,18 @@ mark {
 
 .toast-ban-event:hover {
     background-color: #991b1b;
+    transform: translateY(-2px);
+    box-shadow: 0 15px 20px -3px rgba(0, 0, 0, 0.15);
+}
+
+.toast-unban-event {
+    background-color: #14532d;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.toast-unban-event:hover {
+    background-color: #166534;
     transform: translateY(-2px);
     box-shadow: 0 15px 20px -3px rgba(0, 0, 0, 0.15);
 }

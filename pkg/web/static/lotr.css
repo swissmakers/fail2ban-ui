@@ -419,8 +419,40 @@ body.lotr-mode .bg-gray-50 {
 }
 
 body.lotr-mode .text-blue-600 {
-  color: var(--lotr-gold);
+  color: var(--lotr-gold) !important;
   font-weight: 600;
+}
+
+/* Text colors in LOTR mode for better visibility */
+body.lotr-mode .bg-gray-50 .text-gray-900,
+body.lotr-mode .bg-gray-50 .text-sm,
+body.lotr-mode .bg-gray-50 .text-sm.font-medium {
+  color: var(--lotr-text-dark) !important;
+}
+
+/* Open insights button styling */
+body.lotr-mode .border-blue-200 {
+  border-color: var(--lotr-gold) !important;
+}
+
+body.lotr-mode .hover\:bg-blue-50:hover {
+  background-color: rgba(212, 175, 55, 0.1) !important;
+}
+
+/* Logpath results styling */
+body.lotr-mode #logpathResults,
+body.lotr-mode pre#logpathResults {
+  background: var(--lotr-warm-parchment) !important;
+  color: var(--lotr-text-dark) !important;
+  border: 2px solid var(--lotr-stone-gray) !important;
+}
+
+body.lotr-mode #logpathResults.text-red-600 {
+  color: var(--lotr-fire-red) !important;
+}
+
+body.lotr-mode #logpathResults.text-yellow-600 {
+  color: var(--lotr-dark-gold) !important;
 }
 
 /* Tables */
@@ -570,10 +602,69 @@ body.lotr-mode .select2-container--default .select2-selection--multiple .select2
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+body.lotr-mode .select2-container--default .select2-selection--multiple > .select2-selection--inline > input.select2-search__field {
+  border: none !important;
+  box-shadow: none !important;
+}
+
 body.lotr-mode .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
   color: var(--lotr-text-dark) !important;
   font-weight: 700;
   margin-right: 6px;
+}
+
+/* Select2 Dropdown Results Styling */
+body.lotr-mode .select2-results__options {
+  background: var(--lotr-warm-parchment) !important;
+  border: 2px solid var(--lotr-stone-gray) !important;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+body.lotr-mode .select2-results__option {
+  background: transparent !important;
+  color: var(--lotr-text-dark) !important;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--lotr-stone-gray);
+}
+
+body.lotr-mode .select2-results__option:last-child {
+  border-bottom: none;
+}
+
+body.lotr-mode .select2-results__option--highlighted,
+body.lotr-mode .select2-results__option[aria-selected="true"] {
+  background: linear-gradient(135deg, var(--lotr-gold) 0%, var(--lotr-dark-gold) 100%) !important;
+  color: var(--lotr-text-dark) !important;
+  font-weight: 600;
+}
+
+body.lotr-mode .select2-results__option--highlighted[aria-selected="true"] {
+  background: linear-gradient(135deg, var(--lotr-bright-gold) 0%, var(--lotr-gold) 100%) !important;
+}
+
+/* Ignore IP Tags Styling */
+body.lotr-mode .ignore-ip-tag {
+  background: linear-gradient(135deg, var(--lotr-warm-parchment) 0%, var(--lotr-dark-parchment) 100%) !important;
+  color: var(--lotr-text-dark) !important;
+  border: 2px solid var(--lotr-stone-gray) !important;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+body.lotr-mode .ignore-ip-tag button {
+  color: var(--lotr-text-dark) !important;
+  font-weight: 700;
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 0 2px;
+  transition: all 0.2s ease;
+}
+
+body.lotr-mode .ignore-ip-tag button:hover {
+  color: var(--lotr-fire-red) !important;
+  transform: scale(1.2);
+  text-shadow: 0 0 4px rgba(193, 18, 31, 0.5);
 }
 
 /* Scrollbar Styling */
@@ -742,6 +833,52 @@ body.lotr-mode input[type="radio"] {
   height: 20px;
   accent-color: var(--lotr-gold);
   cursor: pointer;
+}
+
+/* Toggle Switch Styling for LOTR Mode */
+body.lotr-mode label.inline-flex.relative.items-center.cursor-pointer {
+  position: relative;
+  align-items: center;
+}
+
+/* Toggle switch track - default state */
+body.lotr-mode label.inline-flex.relative.items-center.cursor-pointer > div.w-11 {
+  background: var(--lotr-stone-gray) !important;
+  border: 2px solid var(--lotr-brown) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+  position: relative;
+}
+
+/* Toggle switch track - checked state (using peer-checked) */
+body.lotr-mode label.inline-flex.relative.items-center.cursor-pointer input.peer:checked ~ div {
+  background: linear-gradient(135deg, var(--lotr-bright-gold) 0%, var(--lotr-gold) 100%) !important;
+  border-color: var(--lotr-gold) !important;
+  box-shadow: 
+    0 0 10px rgba(212, 175, 55, 0.5),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Toggle switch focus ring */
+body.lotr-mode label.inline-flex.relative.items-center.cursor-pointer input.peer:focus ~ div {
+  box-shadow: 
+    0 0 0 4px rgba(212, 175, 55, 0.3),
+    inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Toggle switch thumb (the circle) - properly centered */
+body.lotr-mode label.inline-flex.relative.items-center.cursor-pointer > span.absolute {
+  background: var(--lotr-parchment) !important;
+  border: 2px solid var(--lotr-brown) !important;
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 2px rgba(255, 255, 255, 0.5) !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  margin-top: 0 !important;
+}
+
+body.lotr-mode label.inline-flex.relative.items-center.cursor-pointer input.peer:checked ~ span {
+  transform: translateX(1.25rem) translateY(-50%) !important;
 }
 
 /* Labels */

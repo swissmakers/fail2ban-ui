@@ -46,24 +46,29 @@ function showBanEventToast(event) {
   var container = document.getElementById('toast-container');
   if (!container || !event) return;
   
+  var isUnban = event.eventType === 'unban';
   var toast = document.createElement('div');
-  toast.className = 'toast toast-ban-event';
+  toast.className = isUnban ? 'toast toast-unban-event' : 'toast toast-ban-event';
   
   var ip = event.ip || 'Unknown IP';
   var jail = event.jail || 'Unknown Jail';
   var server = event.serverName || event.serverId || 'Unknown Server';
   var country = event.country || 'UNKNOWN';
   
+  var title = isUnban ? t('toast.unban.title', 'IP unblocked') : t('toast.ban.title', 'New block occurred');
+  var action = isUnban ? t('toast.unban.action', 'unblocked from') : t('toast.ban.action', 'banned in');
+  var icon = isUnban ? 'fas fa-check-circle text-green-400' : 'fas fa-shield-alt text-red-500';
+  
   toast.innerHTML = ''
     + '<div class="flex items-start gap-3">'
     + '  <div class="flex-shrink-0 mt-1">'
-    + '    <i class="fas fa-shield-alt text-red-500"></i>'
+    + '    <i class="' + icon + '"></i>'
     + '  </div>'
     + '  <div class="flex-1 min-w-0">'
-    + '    <div class="font-semibold text-sm">New block occurred</div>'
+    + '    <div class="font-semibold text-sm">' + title + '</div>'
     + '    <div class="text-sm mt-1">'
     + '      <span class="font-mono font-semibold">' + escapeHtml(ip) + '</span>'
-    + '      <span> banned in </span>'
+    + '      <span> ' + action + ' </span>'
     + '      <span class="font-semibold">' + escapeHtml(jail) + '</span>'
     + '    </div>'
     + '    <div class="text-xs text-gray-400 mt-1">'

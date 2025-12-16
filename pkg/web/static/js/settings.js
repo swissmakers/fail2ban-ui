@@ -13,6 +13,32 @@ function onGeoIPProviderChange(provider) {
   }
 }
 
+// Update email fields state based on checkbox preferences
+function updateEmailFieldsState() {
+  const emailAlertsForBans = document.getElementById('emailAlertsForBans').checked;
+  const emailAlertsForUnbans = document.getElementById('emailAlertsForUnbans').checked;
+  const emailEnabled = emailAlertsForBans || emailAlertsForUnbans;
+
+  // Get all email-related fields
+  const emailFields = [
+    document.getElementById('destEmail'),
+    document.getElementById('smtpHost'),
+    document.getElementById('smtpPort'),
+    document.getElementById('smtpUsername'),
+    document.getElementById('smtpPassword'),
+    document.getElementById('smtpFrom'),
+    document.getElementById('smtpUseTLS'),
+    document.getElementById('sendTestEmailBtn')
+  ];
+
+  // Enable/disable all email fields
+  emailFields.forEach(field => {
+    if (field) {
+      field.disabled = !emailEnabled;
+    }
+  });
+}
+
 function loadSettings() {
   showLoading(true);
   fetch('/api/settings')
@@ -77,6 +103,11 @@ function loadSettings() {
       uiPortInput.addEventListener('input', updateCallbackURLIfDefault);
 
       document.getElementById('destEmail').value = data.destemail || '';
+
+      // Load email alert preferences
+      document.getElementById('emailAlertsForBans').checked = data.emailAlertsForBans !== undefined ? data.emailAlertsForBans : true;
+      document.getElementById('emailAlertsForUnbans').checked = data.emailAlertsForUnbans !== undefined ? data.emailAlertsForUnbans : false;
+      updateEmailFieldsState();
 
       const select = document.getElementById('alertCountries');
       for (let i = 0; i < select.options.length; i++) {
@@ -174,6 +205,8 @@ function saveSettings(event) {
     callbackUrl: callbackUrl,
     callbackSecret: document.getElementById('callbackSecret').value.trim(),
     alertCountries: selectedCountries.length > 0 ? selectedCountries : ["ALL"],
+    emailAlertsForBans: document.getElementById('emailAlertsForBans').checked,
+    emailAlertsForUnbans: document.getElementById('emailAlertsForUnbans').checked,
     bantimeIncrement: document.getElementById('bantimeIncrement').checked,
     defaultJailEnable: document.getElementById('defaultJailEnable').checked,
     bantime: document.getElementById('banTime').value.trim(),

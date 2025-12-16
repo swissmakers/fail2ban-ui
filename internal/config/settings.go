@@ -77,6 +77,10 @@ type AppSettings struct {
 	GeoIPProvider     string `json:"geoipProvider"`     // "maxmind" or "builtin"
 	GeoIPDatabasePath string `json:"geoipDatabasePath"` // Path to MaxMind database (optional)
 	MaxLogLines       int    `json:"maxLogLines"`       // Maximum log lines to include (default: 50)
+
+	// Email alert preferences
+	EmailAlertsForBans   bool `json:"emailAlertsForBans"`   // Enable email alerts for ban events (default: true)
+	EmailAlertsForUnbans bool `json:"emailAlertsForUnbans"` // Enable email alerts for unban events (default: false)
 }
 
 type AdvancedActionsConfig struct {
@@ -132,9 +136,7 @@ func normalizeAdvancedActionsConfig(cfg AdvancedActionsConfig) AdvancedActionsCo
 // init paths to key-files
 const (
 	settingsFile              = "fail2ban-ui-settings.json" // this file is created, relatively to where the app was started
-	defaultJailFile           = "/etc/fail2ban/jail.conf"
-	jailFile                  = "/etc/fail2ban/jail.local" // Path to jail.local (to override conf-values from jail.conf)
-	jailDFile                 = "/etc/fail2ban/jail.d/ui-custom-action.conf"
+	jailFile                  = "/etc/fail2ban/jail.local"
 	actionFile                = "/etc/fail2ban/action.d/ui-custom-action.conf"
 	actionCallbackPlaceholder = "__CALLBACK_URL__"
 	actionServerIDPlaceholder = "__SERVER_ID__"
@@ -183,6 +185,18 @@ actionban = /usr/bin/curl -X POST __CALLBACK_URL__/api/ban \
                  --arg failures '<failures>' \
                  --arg logs "$(tac <logpath> | grep <grepopts> -wF <ip>)" \
                  '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
+
+# Option: actionunban
+# This executes a cURL request to notify our API when an IP is unbanned.
+
+actionunban = /usr/bin/curl -X POST __CALLBACK_URL__/api/unban \
+     -H "Content-Type: application/json" \
+     -H "X-Callback-Secret: __CALLBACK_SECRET__" \
+     -d "$(jq -n --arg serverId '__SERVER_ID__' \
+                 --arg ip '<ip>' \
+                 --arg jail '<name>' \
+                 --arg hostname '<fq-hostname>' \
+                 '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname}')"
 
 [Init]
 
@@ -396,6 +410,8 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.GeoIPDatabasePath = rec.GeoIPDatabasePath
 	currentSettings.MaxLogLines = rec.MaxLogLines
 	currentSettings.CallbackSecret = rec.CallbackSecret
+	currentSettings.EmailAlertsForBans = rec.EmailAlertsForBans
+	currentSettings.EmailAlertsForUnbans = rec.EmailAlertsForUnbans
 }
 
 func applyServerRecordsLocked(records []storage.ServerRecord) {
@@ -447,33 +463,41 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 	}
 
 	return storage.AppSettingsRecord{
-		Language:           currentSettings.Language,
-		Port:               currentSettings.Port,
-		Debug:              currentSettings.Debug,
-		CallbackURL:        currentSettings.CallbackURL,
-		RestartNeeded:      currentSettings.RestartNeeded,
-		AlertCountriesJSON: string(countryBytes),
-		SMTPHost:           currentSettings.SMTP.Host,
-		SMTPPort:           currentSettings.SMTP.Port,
-		SMTPUsername:       currentSettings.SMTP.Username,
-		SMTPPassword:       currentSettings.SMTP.Password,
-		SMTPFrom:           currentSettings.SMTP.From,
-		SMTPUseTLS:         currentSettings.SMTP.UseTLS,
-		BantimeIncrement:   currentSettings.BantimeIncrement,
-		DefaultJailEnable:  currentSettings.DefaultJailEnable,
+		// Basic app settings
+		Language:      currentSettings.Language,
+		Port:          currentSettings.Port,
+		Debug:         currentSettings.Debug,
+		RestartNeeded: currentSettings.RestartNeeded,
+		// Callback settings
+		CallbackURL:    currentSettings.CallbackURL,
+		CallbackSecret: currentSettings.CallbackSecret,
+		// Alert settings
+		AlertCountriesJSON:   string(countryBytes),
+		EmailAlertsForBans:   currentSettings.EmailAlertsForBans,
+		EmailAlertsForUnbans: currentSettings.EmailAlertsForUnbans,
+		// SMTP settings
+		SMTPHost:     currentSettings.SMTP.Host,
+		SMTPPort:     currentSettings.SMTP.Port,
+		SMTPUsername: currentSettings.SMTP.Username,
+		SMTPPassword: currentSettings.SMTP.Password,
+		SMTPFrom:     currentSettings.SMTP.From,
+		SMTPUseTLS:   currentSettings.SMTP.UseTLS,
+		// Fail2Ban DEFAULT settings
+		BantimeIncrement:  currentSettings.BantimeIncrement,
+		DefaultJailEnable: currentSettings.DefaultJailEnable,
 		// Convert IgnoreIPs array to space-separated string for storage
-		IgnoreIP:            strings.Join(currentSettings.IgnoreIPs, " "),
-		Bantime:             currentSettings.Bantime,
-		Findtime:            currentSettings.Findtime,
-		MaxRetry:            currentSettings.Maxretry,
-		DestEmail:           currentSettings.Destemail,
-		Banaction:           currentSettings.Banaction,
-		BanactionAllports:   currentSettings.BanactionAllports,
+		IgnoreIP:          strings.Join(currentSettings.IgnoreIPs, " "),
+		Bantime:           currentSettings.Bantime,
+		Findtime:          currentSettings.Findtime,
+		MaxRetry:          currentSettings.Maxretry,
+		DestEmail:         currentSettings.Destemail,
+		Banaction:         currentSettings.Banaction,
+		BanactionAllports: currentSettings.BanactionAllports,
+		// Advanced features
 		AdvancedActionsJSON: string(advancedBytes),
 		GeoIPProvider:       currentSettings.GeoIPProvider,
 		GeoIPDatabasePath:   currentSettings.GeoIPDatabasePath,
 		MaxLogLines:         currentSettings.MaxLogLines,
-		CallbackSecret:      currentSettings.CallbackSecret,
 	}, nil
 }
 
@@ -531,6 +555,18 @@ func setDefaultsLocked() {
 	if currentSettings.Language == "" {
 		currentSettings.Language = "en"
 	}
+
+	// Set email alert defaults
+	if !currentSettings.EmailAlertsForBans && !currentSettings.EmailAlertsForUnbans {
+		// Check if it is uninitialized by checking if we have other initialized values
+		// If we have a callback secret or port set, it means we've loaded from storage, so we don't override
+		if currentSettings.CallbackSecret == "" && currentSettings.Port == 0 {
+			// Uninitialized so we set defaults
+			currentSettings.EmailAlertsForBans = true
+			currentSettings.EmailAlertsForUnbans = false
+		}
+	}
+
 	// Check for PORT environment variable first - it always takes priority
 	if portEnv := os.Getenv("PORT"); portEnv != "" {
 		if port, err := strconv.Atoi(portEnv); err == nil && port > 0 && port <= 65535 {
