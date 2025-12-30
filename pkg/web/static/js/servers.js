@@ -206,7 +206,7 @@ function resetServerForm() {
   document.getElementById('serverName').value = '';
   document.getElementById('serverType').value = 'local';
   document.getElementById('serverHost').value = '';
-  document.getElementById('serverPort').value = '';
+  document.getElementById('serverPort').value = '22';
   document.getElementById('serverSocket').value = '/var/run/fail2ban/fail2ban.sock';
   document.getElementById('serverLogPath').value = '/var/log/fail2ban.log';
   document.getElementById('serverHostname').value = '';

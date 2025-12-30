@@ -221,7 +221,7 @@ mark {
 }
 
 #statusDot.bg-red-500 {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 0 0 rgb(163 44 44);
     animation: pulseRed 2s infinite;
 }
 
@@ -419,4 +419,15 @@ button.bg-red-500, button.bg-red-600 {
 
 button.bg-red-500:hover, button.bg-red-600:hover {
     background-color: rgb(220 38 38);
+}
+
+/* Green color classes */
+.bg-green-100 {
+    --tw-bg-opacity: 1;
+    background-color: rgb(220 252 231 / var(--tw-bg-opacity, 1));
+}
+
+.text-green-800 {
+    --tw-text-opacity: 1;
+    color: rgb(22 101 52 / var(--tw-text-opacity, 1));
 }

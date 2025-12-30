@@ -1079,7 +1079,7 @@
                   </div>
                   <div data-server-fields="ssh agent">
                     <label for="serverPort" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.port">Port</label>
-                    <input type="number" id="serverPort" min="1" max="65535" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.port_placeholder" placeholder="22">
+                    <input type="number" id="serverPort" min="1" max="65535" value="22" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.port_placeholder" placeholder="22">
                   </div>
                   <div data-server-fields="local ssh">
                     <label for="serverSocket" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.socket_path">Fail2ban Socket Path</label>
@@ -1095,11 +1095,16 @@
                   </div>
                   <div data-server-fields="ssh">
                     <label for="serverSSHUser" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.ssh_user">SSH User</label>
-                    <input type="text" id="serverSSHUser" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_user_placeholder" placeholder="root">
+                    <input type="text" id="serverSSHUser" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_user_placeholder" placeholder="sa_fail2ban">
                   </div>
                   <div data-server-fields="ssh">
                     <label for="serverSSHKey" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.ssh_key">SSH Private Key Path</label>
-                    <input type="text" id="serverSSHKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_key_placeholder" placeholder="~/.ssh/id_rsa">
+                    <input type="text" id="serverSSHKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_key_placeholder" placeholder="/config/.ssh/id_rsa">
+                    <p class="mt-1 text-sm text-gray-500" data-i18n="servers.form.ssh_key_help">
+                      Place your SSH private key in the <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">/config/.ssh/</code> directory (mounted config volume). 
+                      The key file must have permissions <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">600</code> (chmod 600).
+                      Example: <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">/config/.ssh/id_rsa</code>
+                    </p>
                   </div>
                   <div data-server-fields="ssh">
                     <label for="serverSSHKeySelect" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.select_key">Select Private Key</label>
