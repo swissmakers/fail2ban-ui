@@ -669,7 +669,7 @@ func CountBanEventsByIP(ctx context.Context, ip, serverID string) (int64, error)
 	query := `
 SELECT COUNT(*)
 FROM ban_events
-WHERE ip = ?`
+WHERE ip = ? AND (event_type = 'ban' OR event_type IS NULL)`
 	args := []any{ip}
 
 	if serverID != "" {
@@ -743,7 +743,7 @@ func ListRecurringIPStats(ctx context.Context, since time.Time, minCount, limit 
 	query := `
 SELECT ip, COALESCE(country, '') AS country, COUNT(*) AS cnt, MAX(occurred_at) AS last_seen
 FROM ban_events
-WHERE ip != ''`
+WHERE ip != '' AND (event_type = 'ban' OR event_type IS NULL)`
 	args := []any{}
 
 	if serverID != "" {
