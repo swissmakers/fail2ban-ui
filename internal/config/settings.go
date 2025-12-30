@@ -385,6 +385,8 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.Findtime = rec.Findtime
 	currentSettings.Maxretry = rec.MaxRetry
 	currentSettings.Destemail = rec.DestEmail
+	currentSettings.Banaction = rec.Banaction
+	currentSettings.BanactionAllports = rec.BanactionAllports
 	currentSettings.SMTP = SMTPSettings{
 		Host:     rec.SMTPHost,
 		Port:     rec.SMTPPort,
