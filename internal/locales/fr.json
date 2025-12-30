@@ -275,6 +275,8 @@
   "servers.actions.test_success": "Connexion réussie",
   "servers.actions.test_failure": "Échec de la connexion",
   "servers.actions.restart": "Redémarrer Fail2ban",
+  "servers.actions.reload": "Recharger Fail2ban",
+  "servers.actions.reload_tooltip": "Pour les connecteurs locaux, seul un rechargement de la configuration est possible via la connexion socket. Le conteneur ne peut pas redémarrer le service Fail2ban en utilisant systemctl. Pour effectuer un redémarrage complet, exécutez 'systemctl restart fail2ban' directement sur le système hôte.",
   "servers.actions.delete": "Supprimer",
   "servers.actions.delete_confirm": "Supprimer ce serveur ?",
   "servers.form.select_key": "Sélectionner la clé privée",

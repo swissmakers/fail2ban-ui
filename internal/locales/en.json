@@ -275,6 +275,8 @@
     "servers.actions.test_success": "Connection successful",
     "servers.actions.test_failure": "Connection failed",
     "servers.actions.restart": "Restart Fail2ban",
+    "servers.actions.reload": "Reload Fail2ban",
+    "servers.actions.reload_tooltip": "For local connectors, only a configuration reload is possible via the socket connection. The container cannot restart the Fail2ban service using systemctl. To perform a full restart, run 'systemctl restart fail2ban' directly on the host system.",
     "servers.actions.delete": "Delete",
     "servers.actions.delete_confirm": "Delete this server entry?",
     "servers.form.select_key": "Select Private Key",

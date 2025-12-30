@@ -189,7 +189,9 @@ function renderServerManagerList() {
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="editServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.edit">Edit</button>'
       + (server.isDefault ? '' : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="makeDefaultServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.set_default">Set default</button>')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="setServerEnabled(\'' + escapeHtml(server.id) + '\',' + (server.enabled ? 'false' : 'true') + ')" data-i18n="' + (server.enabled ? 'servers.actions.disable' : 'servers.actions.enable') + '">' + (server.enabled ? 'Disable' : 'Enable') + '</button>'
-      + (server.enabled ? '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.restart">Restart Fail2ban</button>' : '')
+      + (server.enabled ? (server.type === 'local' 
+        ? '<button class="text-sm text-blue-600 hover:text-blue-800 relative group" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" title="" data-i18n-title="servers.actions.reload_tooltip">Reload Fail2ban</button>'
+        : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.restart">Restart Fail2ban</button>') : '')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="testServerConnection(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.test">Test connection</button>'
       + '      <button class="text-sm text-red-600 hover:text-red-800" onclick="deleteServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.delete">Delete</button>'
       + '    </div>'
@@ -198,7 +200,21 @@ function renderServerManagerList() {
   }).join('');
 
   list.innerHTML = html;
-  if (typeof updateTranslations === 'function') updateTranslations();
+  if (typeof updateTranslations === 'function') {
+    updateTranslations();
+    // Set tooltip text for reload buttons after translations are updated
+    setTimeout(function() {
+      serversCache.forEach(function(server) {
+        if (server.enabled && server.type === 'local') {
+          var buttons = list.querySelectorAll('button[data-i18n="servers.actions.reload"]');
+          buttons.forEach(function(btn) {
+            var tooltipText = t('servers.actions.reload_tooltip', 'For local connectors, only a configuration reload is possible via the socket connection. The container cannot restart the Fail2ban service using systemctl. To perform a full restart, run \'systemctl restart fail2ban\' directly on the host system.');
+            btn.setAttribute('title', tooltipText);
+          });
+        }
+      });
+    }, 100);
+  }
 }
 
 function resetServerForm() {
@@ -531,7 +547,12 @@ function restartFail2banServer(serverId) {
     showToast("No server selected", 'error');
     return;
   }
-  if (!confirm("Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban on this server now? This will take some time.")) return;
+  var server = serversCache.find(function(s) { return s.id === serverId; });
+  var isLocal = server && server.type === 'local';
+  var confirmMsg = isLocal
+    ? "Reload Fail2ban configuration on this server now? This will reload the configuration without restarting the service."
+    : "Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban on this server now? This will take some time.";
+  if (!confirm(confirmMsg)) return;
   showLoading(true);
   fetch('/api/fail2ban/restart?serverId=' + encodeURIComponent(serverId), {
     method: 'POST',

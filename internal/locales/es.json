@@ -275,6 +275,8 @@
   "servers.actions.test_success": "Conexión exitosa",
   "servers.actions.test_failure": "Conexión fallida",
   "servers.actions.restart": "Reiniciar Fail2ban",
+  "servers.actions.reload": "Recargar Fail2ban",
+  "servers.actions.reload_tooltip": "Para los conectores locales, solo es posible recargar la configuración a través de la conexión socket. El contenedor no puede reiniciar el servicio Fail2ban usando systemctl. Para realizar un reinicio completo, ejecute 'systemctl restart fail2ban' directamente en el sistema host.",
   "servers.actions.delete": "Eliminar",
   "servers.actions.delete_confirm": "¿Eliminar este servidor?",
   "servers.form.select_key": "Seleccionar clave privada",

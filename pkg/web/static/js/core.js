@@ -225,7 +225,8 @@ function initializeSearch() {
 function updateRestartBanner() {
   var banner = document.getElementById('restartBanner');
   if (!banner) return;
-  if (currentServer && currentServer.restartNeeded) {
+  // Don't show restart banner for local connectors - they only reload, not restart
+  if (currentServer && currentServer.restartNeeded && currentServer.type !== 'local') {
     banner.style.display = 'block';
   } else {
     banner.style.display = 'none';

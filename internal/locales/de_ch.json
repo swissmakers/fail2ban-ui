@@ -275,6 +275,8 @@
     "servers.actions.test_success": "Verbindig erfolgriich",
     "servers.actions.test_failure": "Verbindig nöd möglich",
     "servers.actions.restart": "Fail2ban neu starte",
+    "servers.actions.reload": "Fail2ban neu lade",
+    "servers.actions.reload_tooltip": "Für lokali Connectors isch nur es Neulade vo de Konfiguration über d Socket-Verbindig möglich. Dr Container cha dr Fail2ban-Dienst nid mit systemctl neu starte. Für en vollständige Neustart füehre Sie 'systemctl restart fail2ban' direkt uf em Host-System us.",
     "servers.actions.delete": "Lösche",
     "servers.actions.delete_confirm": "Dä Servereintrag lösche?",
     "servers.form.select_key": "Priväte Schlissel ufwähle",

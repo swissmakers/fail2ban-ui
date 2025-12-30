@@ -275,6 +275,8 @@
     "servers.actions.test_success": "Verbindung erfolgreich",
     "servers.actions.test_failure": "Verbindung fehlgeschlagen",
     "servers.actions.restart": "Fail2ban neu starten",
+    "servers.actions.reload": "Fail2ban neu laden",
+    "servers.actions.reload_tooltip": "Für lokale Connectors ist nur ein Neuladen der Konfiguration über die Socket-Verbindung möglich. Der Container kann den Fail2ban-Dienst nicht mit systemctl neu starten. Für einen vollständigen Neustart führen Sie 'systemctl restart fail2ban' direkt auf dem Host-System aus.",
     "servers.actions.delete": "Löschen",
     "servers.actions.delete_confirm": "Diesen Servereintrag löschen?",
     "servers.form.select_key": "Privaten Schlüssel auswählen",
