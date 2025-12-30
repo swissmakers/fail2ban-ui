@@ -24,11 +24,13 @@ function loadFilters() {
         }
       }
       select.innerHTML = '';
+      const deleteBtn = document.getElementById('deleteFilterBtn');
       if (!data.filters || data.filters.length === 0) {
         const opt = document.createElement('option');
         opt.value = '';
         opt.textContent = 'No Filters Found';
         select.appendChild(opt);
+        if (deleteBtn) deleteBtn.disabled = true;
       } else {
         data.filters.forEach(f => {
           const opt = document.createElement('option');
@@ -36,6 +38,14 @@ function loadFilters() {
           opt.textContent = f;
           select.appendChild(opt);
         });
+        // Add change listener if not already added
+        if (!select.hasAttribute('data-listener-added')) {
+          select.setAttribute('data-listener-added', 'true');
+          select.addEventListener('change', function() {
+            if (deleteBtn) deleteBtn.disabled = !select.value;
+          });
+        }
+        if (deleteBtn) deleteBtn.disabled = !select.value;
       }
     })
     .catch(err => {
@@ -122,11 +132,115 @@ function showFilterSection() {
     document.getElementById('logLinesTextarea').value = '';
     testResultsEl.innerHTML = '';
     testResultsEl.classList.add('hidden');
+    document.getElementById('deleteFilterBtn').disabled = true;
     return;
   }
   loadFilters();
   testResultsEl.innerHTML = '';
   testResultsEl.classList.add('hidden');
   document.getElementById('logLinesTextarea').value = '';
+  // Add change listener to enable/disable delete button
+  const filterSelect = document.getElementById('filterSelect');
+  const deleteBtn = document.getElementById('deleteFilterBtn');
+  filterSelect.addEventListener('change', function() {
+    deleteBtn.disabled = !filterSelect.value;
+  });
+}
+
+function openCreateFilterModal() {
+  document.getElementById('newFilterName').value = '';
+  document.getElementById('newFilterContent').value = '';
+  openModal('createFilterModal');
+}
+
+function createFilter() {
+  const filterName = document.getElementById('newFilterName').value.trim();
+  const content = document.getElementById('newFilterContent').value.trim();
+  
+  if (!filterName) {
+    showToast('Filter name is required', 'error');
+    return;
+  }
+  
+  showLoading(true);
+  fetch(withServerParam('/api/filters'), {
+    method: 'POST',
+    headers: serverHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      filterName: filterName,
+      content: content
+    })
+  })
+    .then(function(res) {
+      if (!res.ok) {
+        return res.json().then(function(data) {
+          throw new Error(data.error || 'Server returned ' + res.status);
+        });
+      }
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.error) {
+        showToast('Error creating filter: ' + data.error, 'error');
+        return;
+      }
+      closeModal('createFilterModal');
+      showToast(data.message || 'Filter created successfully', 'success');
+      // Reload filters
+      loadFilters();
+    })
+    .catch(function(err) {
+      console.error('Error creating filter:', err);
+      showToast('Error creating filter: ' + (err.message || err), 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}
+
+function deleteFilter() {
+  const filterName = document.getElementById('filterSelect').value;
+  if (!filterName) {
+    showToast('Please select a filter to delete', 'info');
+    return;
+  }
+  
+  if (!confirm('Are you sure you want to delete the filter "' + escapeHtml(filterName) + '"? This action cannot be undone.')) {
+    return;
+  }
+  
+  showLoading(true);
+  fetch(withServerParam('/api/filters/' + encodeURIComponent(filterName)), {
+    method: 'DELETE',
+    headers: serverHeaders()
+  })
+    .then(function(res) {
+      if (!res.ok) {
+        return res.json().then(function(data) {
+          throw new Error(data.error || 'Server returned ' + res.status);
+        });
+      }
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.error) {
+        showToast('Error deleting filter: ' + data.error, 'error');
+        return;
+      }
+      showToast(data.message || 'Filter deleted successfully', 'success');
+      // Reload filters
+      loadFilters();
+      // Clear test results
+      document.getElementById('testResults').innerHTML = '';
+      document.getElementById('testResults').classList.add('hidden');
+      document.getElementById('logLinesTextarea').value = '';
+    })
+    .catch(function(err) {
+      console.error('Error deleting filter:', err);
+      showToast('Error deleting filter: ' + (err.message || err), 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
 }
 

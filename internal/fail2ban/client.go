@@ -80,8 +80,10 @@ func ReloadFail2ban() error {
 	return conn.Reload(context.Background())
 }
 
-// RestartFail2ban restarts the Fail2ban service using the provided server or default connector.
-func RestartFail2ban(serverID string) error {
+// RestartFail2ban restarts (or reloads) the Fail2ban service using the
+// provided server or default connector and returns a mode string describing
+// what actually happened ("restart" or "reload").
+func RestartFail2ban(serverID string) (string, error) {
 	manager := GetManager()
 	var (
 		conn Connector
@@ -93,7 +95,17 @@ func RestartFail2ban(serverID string) error {
 		conn, err = manager.DefaultConnector()
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
-	return conn.Restart(context.Background())
+	// If the connector supports a detailed restart mode, use it. Otherwise
+	// fall back to a plain Restart() and assume "restart".
+	if withMode, ok := conn.(interface {
+		RestartWithMode(ctx context.Context) (string, error)
+	}); ok {
+		return withMode.RestartWithMode(context.Background())
+	}
+	if err := conn.Restart(context.Background()); err != nil {
+		return "", err
+	}
+	return "restart", nil
 }

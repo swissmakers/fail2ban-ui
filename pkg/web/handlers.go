@@ -551,6 +551,28 @@ func UpsertServerHandler(c *gin.Context) {
 				// Don't fail the request, just log the warning
 			} else {
 				config.DebugLog("Successfully ensured jail.local structure for server %s", server.Name)
+
+				// If the server was just enabled, try to restart fail2ban and perform a basic health check.
+				if justEnabled {
+					if err := conn.Restart(c.Request.Context()); err != nil {
+						// Surface restart failures to the UI so the user sees that the service did not restart.
+						msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
+						config.DebugLog("Warning: %s", msg)
+						c.JSON(http.StatusInternalServerError, gin.H{
+							"error":  msg,
+							"server": server,
+						})
+						return
+					} else {
+						// Basic health check: attempt to fetch jail infos, which runs fail2ban-client status.
+						if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
+							config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
+							// Again, we log instead of failing the request to avoid breaking existing flows.
+						} else {
+							config.DebugLog("Fail2ban service appears healthy on server %s after restart", server.Name)
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1094,66 +1116,51 @@ func GetJailFilterConfigHandler(c *gin.Context) {
 	config.DebugLog("Connector resolved: %s", conn.Server().Name)
 
 	var filterCfg string
+	var filterFilePath string
 	var jailCfg string
-	var jailCfgLoaded bool
+	var jailFilePath string
 	var filterErr error
 
-	// First, try to load filter config using jail name
-	config.DebugLog("Loading filter config for jail: %s", jail)
-	filterCfg, filterErr = conn.GetFilterConfig(c.Request.Context(), jail)
-	if filterErr != nil {
-		config.DebugLog("Failed to load filter config with jail name, trying to find filter from jail config: %v", filterErr)
-
-		// Load jail config first to check for custom filter directive
-		var jailErr error
-		jailCfg, jailErr = conn.GetJailConfig(c.Request.Context(), jail)
-		if jailErr != nil {
-			config.DebugLog("Failed to load jail config: %v", jailErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load filter config: " + filterErr.Error() + ". Also failed to load jail config: " + jailErr.Error()})
-			return
-		}
-		jailCfgLoaded = true
-		config.DebugLog("Jail config loaded, length: %d", len(jailCfg))
-
-		// Extract filter name from jail config
-		filterName := fail2ban.ExtractFilterFromJailConfig(jailCfg)
-		if filterName == "" {
-			config.DebugLog("No filter directive found in jail config")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load filter config: " + filterErr.Error() + ". No filter directive found in jail config."})
-			return
-		}
-
-		config.DebugLog("Found filter directive in jail config: %s, trying to load that filter", filterName)
-		// Try loading the filter specified in jail config
-		filterCfg, filterErr = conn.GetFilterConfig(c.Request.Context(), filterName)
-		if filterErr != nil {
-			config.DebugLog("Failed to load filter config for %s: %v", filterName, filterErr)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": fmt.Sprintf("Failed to load filter config. Tried '%s' (jail name) and '%s' (from jail config), both failed. Last error: %v", jail, filterName, filterErr),
-			})
-			return
-		}
-		config.DebugLog("Successfully loaded filter config for %s (from jail config directive)", filterName)
+	// Always load jail config first to determine which filter to load
+	config.DebugLog("Loading jail config for jail: %s", jail)
+	var jailErr error
+	jailCfg, jailFilePath, jailErr = conn.GetJailConfig(c.Request.Context(), jail)
+	if jailErr != nil {
+		config.DebugLog("Failed to load jail config: %v", jailErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load jail config: " + jailErr.Error()})
+		return
 	}
-	config.DebugLog("Filter config loaded, length: %d", len(filterCfg))
+	config.DebugLog("Jail config loaded, length: %d, file: %s", len(jailCfg), jailFilePath)
 
-	// Load jail config if not already loaded
-	if !jailCfgLoaded {
-		config.DebugLog("Loading jail config for jail: %s", jail)
-		var jailErr error
-		jailCfg, jailErr = conn.GetJailConfig(c.Request.Context(), jail)
-		if jailErr != nil {
-			config.DebugLog("Failed to load jail config: %v", jailErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load jail config: " + jailErr.Error()})
-			return
-		}
-		config.DebugLog("Jail config loaded, length: %d", len(jailCfg))
+	// Extract filter name from jail config, or use jail name as fallback
+	filterName := fail2ban.ExtractFilterFromJailConfig(jailCfg)
+	if filterName == "" {
+		// No filter directive found, use jail name as filter name (default behavior)
+		filterName = jail
+		config.DebugLog("No filter directive found in jail config, using jail name as filter name: %s", filterName)
+	} else {
+		config.DebugLog("Found filter directive in jail config: %s", filterName)
+	}
+
+	// Load filter config using the determined filter name
+	config.DebugLog("Loading filter config for filter: %s", filterName)
+	filterCfg, filterFilePath, filterErr = conn.GetFilterConfig(c.Request.Context(), filterName)
+	if filterErr != nil {
+		config.DebugLog("Failed to load filter config for %s: %v", filterName, filterErr)
+		// Don't fail completely - allow editing even if filter doesn't exist yet
+		config.DebugLog("Continuing without filter config (filter may not exist yet)")
+		filterCfg = ""
+		filterFilePath = ""
+	} else {
+		config.DebugLog("Filter config loaded, length: %d, file: %s", len(filterCfg), filterFilePath)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"jail":       jail,
-		"filter":     filterCfg,
-		"jailConfig": jailCfg,
+		"jail":           jail,
+		"filter":         filterCfg,
+		"filterFilePath": filterFilePath,
+		"jailConfig":     jailCfg,
+		"jailFilePath":   jailFilePath,
 	})
 }
 
@@ -1197,15 +1204,47 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 		config.DebugLog("Jail preview (first 100 chars): %s", req.Jail[:min(100, len(req.Jail))])
 	}
 
-	// Save filter config
+	// Save filter config - use original filter name, not the one from the new jail config
 	if req.Filter != "" {
-		config.DebugLog("Saving filter config for jail: %s", jail)
-		if err := conn.SetFilterConfig(c.Request.Context(), jail, req.Filter); err != nil {
+		// Load the original jail config to determine which filter was originally loaded
+		originalJailCfg, _, err := conn.GetJailConfig(c.Request.Context(), jail)
+		if err != nil {
+			config.DebugLog("Failed to load original jail config to determine filter name: %v", err)
+			// Fallback: extract from new jail config
+			originalJailCfg = req.Jail
+		}
+
+		// Extract the ORIGINAL filter name (the one that was loaded when the modal opened)
+		originalFilterName := fail2ban.ExtractFilterFromJailConfig(originalJailCfg)
+		if originalFilterName == "" {
+			// No filter directive found in original config, use jail name as filter name (default behavior)
+			originalFilterName = jail
+			config.DebugLog("No filter directive found in original jail config, using jail name as filter name: %s", originalFilterName)
+		} else {
+			config.DebugLog("Found original filter directive in jail config: %s", originalFilterName)
+		}
+
+		// Extract the NEW filter name from the updated jail config
+		newFilterName := fail2ban.ExtractFilterFromJailConfig(req.Jail)
+		if newFilterName == "" {
+			newFilterName = jail
+		}
+
+		// If the filter name changed, save to the ORIGINAL filter name (not the new one)
+		// This prevents overwriting a different filter with the old filter's content
+		if originalFilterName != newFilterName {
+			config.DebugLog("Filter name changed from %s to %s, saving filter to original name: %s", originalFilterName, newFilterName, originalFilterName)
+		} else {
+			config.DebugLog("Filter name unchanged: %s", originalFilterName)
+		}
+
+		config.DebugLog("Saving filter config for filter: %s", originalFilterName)
+		if err := conn.SetFilterConfig(c.Request.Context(), originalFilterName, req.Filter); err != nil {
 			config.DebugLog("Failed to save filter config: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save filter config: " + err.Error()})
 			return
 		}
-		config.DebugLog("Filter config saved successfully")
+		config.DebugLog("Filter config saved successfully to filter: %s", originalFilterName)
 	} else {
 		config.DebugLog("No filter config provided, skipping")
 	}
@@ -1285,7 +1324,7 @@ func TestLogpathHandler(c *gin.Context) {
 		config.DebugLog("Using logpath from request body: %s", originalLogpath)
 	} else {
 		// Fall back to reading from saved jail config
-		jailCfg, err := conn.GetJailConfig(c.Request.Context(), jail)
+		jailCfg, _, err := conn.GetJailConfig(c.Request.Context(), jail)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load jail config: " + err.Error()})
 			return
@@ -1657,6 +1696,78 @@ func UpdateJailManagementHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Jail settings updated and fail2ban reloaded successfully"})
 }
 
+// CreateJailHandler creates a new jail.
+func CreateJailHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("CreateJailHandler called (handlers.go)")
+
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		JailName string `json:"jailName" binding:"required"`
+		Content  string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
+		return
+	}
+
+	// Validate jail name
+	if err := fail2ban.ValidateJailName(req.JailName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// If no content provided, create minimal jail config
+	if req.Content == "" {
+		req.Content = fmt.Sprintf("[%s]\nenabled = false\n", req.JailName)
+	}
+
+	// Create the jail
+	if err := conn.CreateJail(c.Request.Context(), req.JailName, req.Content); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create jail: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' created successfully", req.JailName)})
+}
+
+// DeleteJailHandler deletes a jail.
+func DeleteJailHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("DeleteJailHandler called (handlers.go)")
+
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	jailName := c.Param("jail")
+	if jailName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Jail name is required"})
+		return
+	}
+
+	// Validate jail name
+	if err := fail2ban.ValidateJailName(jailName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Delete the jail
+	if err := conn.DeleteJail(c.Request.Context(), jailName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete jail: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' deleted successfully", jailName)})
+}
+
 // GetSettingsHandler returns the entire AppSettings struct as JSON
 func GetSettingsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
@@ -1849,6 +1960,78 @@ func TestFilterHandler(c *gin.Context) {
 	})
 }
 
+// CreateFilterHandler creates a new filter.
+func CreateFilterHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("CreateFilterHandler called (handlers.go)")
+
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		FilterName string `json:"filterName" binding:"required"`
+		Content    string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
+		return
+	}
+
+	// Validate filter name
+	if err := fail2ban.ValidateFilterName(req.FilterName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// If no content provided, create empty filter
+	if req.Content == "" {
+		req.Content = fmt.Sprintf("# Filter: %s\n", req.FilterName)
+	}
+
+	// Create the filter
+	if err := conn.CreateFilter(c.Request.Context(), req.FilterName, req.Content); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create filter: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' created successfully", req.FilterName)})
+}
+
+// DeleteFilterHandler deletes a filter.
+func DeleteFilterHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("DeleteFilterHandler called (handlers.go)")
+
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	filterName := c.Param("filter")
+	if filterName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Filter name is required"})
+		return
+	}
+
+	// Validate filter name
+	if err := fail2ban.ValidateFilterName(filterName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Delete the filter
+	if err := conn.DeleteFilter(c.Request.Context(), filterName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete filter: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' deleted successfully", filterName)})
+}
+
 // ApplyFail2banSettings updates /etc/fail2ban/jail.local [DEFAULT] with our JSON
 func ApplyFail2banSettings(jailLocalPath string) error {
 	config.DebugLog("----------------------------")
@@ -1905,27 +2088,28 @@ func RestartFail2banHandler(c *gin.Context) {
 
 	server := conn.Server()
 
-	// Attempt to restart the fail2ban service.
-	restartErr := fail2ban.RestartFail2ban(server.ID)
-	if restartErr != nil {
-		// Check if running inside a container.
-		if _, container := os.LookupEnv("CONTAINER"); container && server.Type == "local" {
-			// In a container, the restart command may fail (since fail2ban runs on the host).
-			// Log the error and continue, so we can mark the restart as done.
-			log.Printf("Warning: restart failed inside container (expected behavior): %v", restartErr)
-		} else {
-			// On the host, a restart error is not acceptable.
-			c.JSON(http.StatusInternalServerError, gin.H{"error": restartErr.Error()})
-			return
-		}
+	// Attempt to restart the fail2ban service via the connector.
+	// Any error here means the service was not restarted, so we surface it to the UI.
+	mode, err := fail2ban.RestartFail2ban(server.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
-	// Only call MarkRestartDone if we either successfully restarted the service or we are in a container.
+	// Only call MarkRestartDone if we successfully restarted the service.
 	if err := config.MarkRestartDone(server.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Fail2ban restarted successfully"})
+	msg := "Fail2ban service restarted successfully"
+	if mode == "reload" {
+		msg = "Fail2ban configuration reloaded successfully (no systemd service restart)"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": msg,
+		"mode":    mode,
+		"server":  server,
+	})
 }
 
 // loadLocale loads a locale JSON file and returns a map of translations

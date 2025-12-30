@@ -18,7 +18,7 @@ type Connector interface {
 	UnbanIP(ctx context.Context, jail, ip string) error
 	Reload(ctx context.Context) error
 	Restart(ctx context.Context) error
-	GetFilterConfig(ctx context.Context, jail string) (string, error)
+	GetFilterConfig(ctx context.Context, jail string) (string, string, error) // Returns (config, filePath, error)
 	SetFilterConfig(ctx context.Context, jail, content string) error
 	FetchBanEvents(ctx context.Context, limit int) ([]BanEvent, error)
 
@@ -31,7 +31,7 @@ type Connector interface {
 	TestFilter(ctx context.Context, filterName string, logLines []string) (output string, filterPath string, err error)
 
 	// Jail configuration operations
-	GetJailConfig(ctx context.Context, jail string) (string, error)
+	GetJailConfig(ctx context.Context, jail string) (string, string, error) // Returns (config, filePath, error)
 	SetJailConfig(ctx context.Context, jail, content string) error
 	TestLogpath(ctx context.Context, logpath string) ([]string, error)
 	TestLogpathWithResolution(ctx context.Context, logpath string) (originalPath, resolvedPath string, files []string, err error)
@@ -41,6 +41,12 @@ type Connector interface {
 
 	// Jail local structure management
 	EnsureJailLocalStructure(ctx context.Context) error
+
+	// Jail and filter creation/deletion
+	CreateJail(ctx context.Context, jailName, content string) error
+	DeleteJail(ctx context.Context, jailName string) error
+	CreateFilter(ctx context.Context, filterName, content string) error
+	DeleteFilter(ctx context.Context, filterName string) error
 }
 
 // Manager orchestrates all connectors for configured Fail2ban servers.
@@ -173,12 +179,11 @@ func newConnectorForServer(server config.Fail2banServer) (Connector, error) {
 		// This ensures any legacy jails in jail.local are migrated to jail.d/*.local
 		// before ensureJailLocalStructure() overwrites jail.local
 		if err := MigrateJailsFromJailLocal(); err != nil {
-			config.DebugLog("Warning: migration check failed (may be normal if no jails to migrate): %v", err)
-			// Don't fail - continue with ensuring structure
+			return nil, fmt.Errorf("failed to initialise local fail2ban connector for %s: %w", server.Name, err)
 		}
 
 		if err := config.EnsureLocalFail2banAction(server); err != nil {
-			fmt.Printf("warning: failed to ensure local fail2ban action: %v\n", err)
+			return nil, fmt.Errorf("failed to ensure local fail2ban action for %s: %w", server.Name, err)
 		}
 		return NewLocalConnector(server), nil
 	case "ssh":

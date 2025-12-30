@@ -157,6 +157,9 @@ function renderServerManagerList() {
     var defaultBadge = server.isDefault
       ? '<span class="ml-2 text-xs font-semibold text-blue-600" data-i18n="servers.badge.default">Default</span>'
       : '';
+    var restartBadge = server.restartNeeded
+      ? '<span class="ml-2 text-xs font-semibold text-yellow-600" data-i18n="servers.badge.restart_needed">Restart required</span>'
+      : '';
     var descriptor = [];
     if (server.type) {
       descriptor.push(server.type.toUpperCase());
@@ -178,7 +181,7 @@ function renderServerManagerList() {
       + '<div class="border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">'
       + '  <div class="flex items-center justify-between">'
       + '    <div>'
-      + '      <p class="font-semibold text-gray-800 flex items-center">' + escapeHtml(server.name || server.id) + defaultBadge + statusBadge + '</p>'
+      + '      <p class="font-semibold text-gray-800 flex items-center">' + escapeHtml(server.name || server.id) + defaultBadge + statusBadge + restartBadge + '</p>'
       + '      <p class="text-sm text-gray-500">' + escapeHtml(meta || server.id) + '</p>'
       +        tags
       + '    </div>'
@@ -203,7 +206,7 @@ function resetServerForm() {
   document.getElementById('serverName').value = '';
   document.getElementById('serverType').value = 'local';
   document.getElementById('serverHost').value = '';
-  document.getElementById('serverPort').value = '';
+  document.getElementById('serverPort').value = '22';
   document.getElementById('serverSocket').value = '/var/run/fail2ban/fail2ban.sock';
   document.getElementById('serverLogPath').value = '/var/log/fail2ban.log';
   document.getElementById('serverHostname').value = '';
@@ -540,9 +543,18 @@ function restartFail2banServer(serverId) {
         showToast("Failed to restart Fail2ban: " + data.error, 'error');
         return;
       }
+      var mode = data.mode || 'restart';
+      var key, fallback;
+      if (mode === 'reload') {
+        key = 'restart_banner.reload_success';
+        fallback = 'Fail2ban configuration reloaded successfully';
+      } else {
+        key = 'restart_banner.restart_success';
+        fallback = 'Fail2ban service restarted and passed health check';
+      }
       return loadServers().then(function() {
         updateRestartBanner();
-        showToast(t('restart_banner.success', 'Fail2ban restart triggered'), 'success');
+        showToast(t(key, fallback), 'success');
         return refreshData({ silent: true });
       });
     })

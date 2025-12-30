@@ -153,6 +153,12 @@ func Init(dbPath string) error {
 			return
 		}
 
+		// Ensure .ssh directory exists (for SSH key storage)
+		if err := ensureSSHDirectory(); err != nil {
+			// Log but don't fail - .ssh directory creation is not critical
+			log.Printf("Warning: failed to ensure .ssh directory: %v", err)
+		}
+
 		var err error
 		db, err = sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout=5000", dbPath))
 		if err != nil {
@@ -663,7 +669,7 @@ func CountBanEventsByIP(ctx context.Context, ip, serverID string) (int64, error)
 	query := `
 SELECT COUNT(*)
 FROM ban_events
-WHERE ip = ?`
+WHERE ip = ? AND (event_type = 'ban' OR event_type IS NULL)`
 	args := []any{ip}
 
 	if serverID != "" {
@@ -737,7 +743,7 @@ func ListRecurringIPStats(ctx context.Context, since time.Time, minCount, limit 
 	query := `
 SELECT ip, COALESCE(country, '') AS country, COUNT(*) AS cnt, MAX(occurred_at) AS last_seen
 FROM ban_events
-WHERE ip != ''`
+WHERE ip != '' AND (event_type = 'ban' OR event_type IS NULL)`
 	args := []any{}
 
 	if serverID != "" {
@@ -941,6 +947,31 @@ func ensureDirectory(path string) error {
 		return nil
 	}
 	return os.MkdirAll(dir, 0o755)
+}
+
+// ensureSSHDirectory ensures the .ssh directory exists for SSH key storage.
+// In containers, this is /config/.ssh, on the host it's ~/.ssh
+func ensureSSHDirectory() error {
+	var sshDir string
+	// Check if running inside a container
+	if _, container := os.LookupEnv("CONTAINER"); container {
+		// In container, use /config/.ssh
+		sshDir = "/config/.ssh"
+	} else {
+		// On host, use ~/.ssh
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		sshDir = filepath.Join(home, ".ssh")
+	}
+
+	// Create directory with proper permissions (0700 for .ssh)
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create .ssh directory at %s: %w", sshDir, err)
+	}
+
+	return nil
 }
 
 // UpsertPermanentBlock records or updates a permanent block entry.

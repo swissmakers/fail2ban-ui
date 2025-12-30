@@ -16,6 +16,13 @@ class WebSocketManager {
     this.statusCallbacks = [];
     this.banEventCallbacks = [];
     
+    // Connection metrics for tooltip
+    this.connectedAt = null;
+    this.lastHeartbeatAt = null;
+    this.messageCount = 0;
+    this.totalReconnects = 0;
+    this.initialConnection = true;
+    
     // Get WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
@@ -38,6 +45,11 @@ class WebSocketManager {
       this.ws.onopen = () => {
         this.isConnecting = false;
         this.isConnected = true;
+        this.connectedAt = new Date();
+        if (!this.initialConnection) {
+          this.totalReconnects++;
+        }
+        this.initialConnection = false;
         this.reconnectAttempts = 0;
         this.reconnectDelay = 1000;
         this.updateStatus('connected', 'Connected');
@@ -47,6 +59,7 @@ class WebSocketManager {
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          this.messageCount++;
           this.handleMessage(message);
         } catch (err) {
           console.error('Error parsing WebSocket message:', err);
@@ -133,6 +146,7 @@ class WebSocketManager {
 
   handleHeartbeat(message) {
     // Update status to show backend is healthy
+    this.lastHeartbeatAt = new Date();
     if (this.isConnected) {
       this.updateStatus('connected', 'Connected');
     }
@@ -186,6 +200,46 @@ class WebSocketManager {
 
   isHealthy() {
     return this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  formatDuration(seconds) {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}m ${secs}s`;
+    }
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${mins}m`;
+  }
+
+  getConnectionInfo() {
+    if (!this.isConnected || !this.connectedAt) {
+      return null;
+    }
+    
+    const now = new Date();
+    const duration = Math.floor((now - this.connectedAt) / 1000);
+    const durationStr = this.formatDuration(duration);
+    
+    const lastHeartbeat = this.lastHeartbeatAt 
+      ? Math.floor((now - this.lastHeartbeatAt) / 1000)
+      : null;
+    const heartbeatStr = lastHeartbeat !== null 
+      ? (lastHeartbeat < 60 ? `${lastHeartbeat}s ago` : `${Math.floor(lastHeartbeat / 60)}m ago`)
+      : 'Never';
+    
+    const protocol = this.wsUrl.startsWith('wss:') ? 'WSS (Secure)' : 'WS';
+    
+    return {
+      duration: durationStr,
+      lastHeartbeat: heartbeatStr,
+      url: this.wsUrl,
+      messages: this.messageCount,
+      reconnects: this.totalReconnects,
+      protocol: protocol
+    };
   }
 }
 

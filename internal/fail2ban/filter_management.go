@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -29,10 +30,11 @@ import (
 )
 
 // GetFilterConfig returns the filter configuration using the default connector.
-func GetFilterConfig(jail string) (string, error) {
+// Returns (config, filePath, error)
+func GetFilterConfig(jail string) (string, string, error) {
 	conn, err := GetManager().DefaultConnector()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	return conn.GetFilterConfig(context.Background(), jail)
 }
@@ -47,8 +49,7 @@ func SetFilterConfig(jail, newContent string) error {
 }
 
 // ensureFilterLocalFile ensures that a .local file exists for the given filter.
-// If .local doesn't exist, it copies from .conf if available.
-// Returns error if neither .local nor .conf exists (filters must have base .conf).
+// If .local doesn't exist, it copies from .conf if available, or creates an empty file.
 func ensureFilterLocalFile(filterName string) error {
 	// Validate filter name - must not be empty
 	filterName = strings.TrimSpace(filterName)
@@ -80,16 +81,22 @@ func ensureFilterLocalFile(filterName string) error {
 		return nil
 	}
 
-	// Neither exists, return error (filters must have base .conf)
-	return fmt.Errorf("filter .conf file does not exist: %s (filters must have a base .conf file)", confPath)
+	// Neither exists, create empty .local file
+	config.DebugLog("Neither .local nor .conf exists for filter %s, creating empty .local file", filterName)
+	if err := os.WriteFile(localPath, []byte(""), 0644); err != nil {
+		return fmt.Errorf("failed to create empty filter .local file %s: %w", localPath, err)
+	}
+	config.DebugLog("Successfully created empty filter .local file: %s", localPath)
+	return nil
 }
 
 // readFilterConfigWithFallback reads filter config from .local first, then falls back to .conf.
-func readFilterConfigWithFallback(filterName string) (string, error) {
+// Returns (content, filePath, error)
+func readFilterConfigWithFallback(filterName string) (string, string, error) {
 	// Validate filter name - must not be empty
 	filterName = strings.TrimSpace(filterName)
 	if filterName == "" {
-		return "", fmt.Errorf("filter name cannot be empty")
+		return "", "", fmt.Errorf("filter name cannot be empty")
 	}
 
 	filterDPath := "/etc/fail2ban/filter.d"
@@ -99,22 +106,23 @@ func readFilterConfigWithFallback(filterName string) (string, error) {
 	// Try .local first
 	if content, err := os.ReadFile(localPath); err == nil {
 		config.DebugLog("Reading filter config from .local: %s", localPath)
-		return string(content), nil
+		return string(content), localPath, nil
 	}
 
 	// Fallback to .conf
 	if content, err := os.ReadFile(confPath); err == nil {
 		config.DebugLog("Reading filter config from .conf: %s", confPath)
-		return string(content), nil
+		return string(content), confPath, nil
 	}
 
-	// Neither exists, return error
-	return "", fmt.Errorf("filter config not found: neither %s nor %s exists", localPath, confPath)
+	// Neither exists, return error with .local path (will be created on save)
+	return "", localPath, fmt.Errorf("filter config not found: neither %s nor %s exists", localPath, confPath)
 }
 
 // GetFilterConfigLocal reads a filter configuration from the local filesystem.
 // Prefers .local over .conf files.
-func GetFilterConfigLocal(jail string) (string, error) {
+// Returns (content, filePath, error)
+func GetFilterConfigLocal(jail string) (string, string, error) {
 	return readFilterConfigWithFallback(jail)
 }
 
@@ -134,40 +142,203 @@ func SetFilterConfigLocal(jail, newContent string) error {
 	return nil
 }
 
-// GetFiltersLocal returns a list of filter names from /etc/fail2ban/filter.d
-// Returns unique filter names from both .conf and .local files (prefers .local if both exist)
-func GetFiltersLocal() ([]string, error) {
-	dir := "/etc/fail2ban/filter.d"
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read filter directory: %w", err)
+// ValidateFilterName validates a filter name format.
+// Returns an error if the name is invalid (empty, contains invalid characters, or is reserved).
+func ValidateFilterName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("filter name cannot be empty")
 	}
-	filterMap := make(map[string]bool)
+
+	// Check for invalid characters (only alphanumeric, dash, underscore allowed)
+	invalidChars := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+	if invalidChars.MatchString(name) {
+		return fmt.Errorf("filter name '%s' contains invalid characters. Only alphanumeric characters, dashes, and underscores are allowed", name)
+	}
+
+	return nil
+}
+
+// ListFilterFiles lists all filter files in the specified directory.
+// Returns full paths to .local and .conf files.
+func ListFilterFiles(directory string) ([]string, error) {
+	var files []string
+
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read filter directory %s: %w", directory, err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		// Skip hidden files and invalid names
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+
+		// Only include .local and .conf files
+		if strings.HasSuffix(name, ".local") || strings.HasSuffix(name, ".conf") {
+			fullPath := filepath.Join(directory, name)
+			files = append(files, fullPath)
+		}
+	}
+
+	return files, nil
+}
+
+// DiscoverFiltersFromFiles discovers all filters from the filesystem.
+// Reads from /etc/fail2ban/filter.d/ directory, preferring .local files over .conf files.
+// Returns unique filter names.
+func DiscoverFiltersFromFiles() ([]string, error) {
+	filterDPath := "/etc/fail2ban/filter.d"
+
+	// Check if directory exists
+	if _, err := os.Stat(filterDPath); os.IsNotExist(err) {
+		// Directory doesn't exist, return empty list
+		return []string{}, nil
+	}
+
+	// List all filter files
+	files, err := ListFilterFiles(filterDPath)
+	if err != nil {
+		return nil, err
+	}
+
+	filterMap := make(map[string]bool)      // Track unique filter names
+	processedFiles := make(map[string]bool) // Track base names to avoid duplicates
 
 	// First pass: collect all .local files (these take precedence)
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".local") {
-			name := strings.TrimSuffix(entry.Name(), ".local")
-			filterMap[name] = true
+	for _, filePath := range files {
+		if !strings.HasSuffix(filePath, ".local") {
+			continue
 		}
+
+		filename := filepath.Base(filePath)
+		baseName := strings.TrimSuffix(filename, ".local")
+		if baseName == "" {
+			continue
+		}
+
+		// Skip if we've already processed this base name
+		if processedFiles[baseName] {
+			continue
+		}
+
+		processedFiles[baseName] = true
+		filterMap[baseName] = true
 	}
 
 	// Second pass: collect .conf files that don't have corresponding .local files
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".conf") {
-			name := strings.TrimSuffix(entry.Name(), ".conf")
-			if !filterMap[name] {
-				filterMap[name] = true
-			}
+	for _, filePath := range files {
+		if !strings.HasSuffix(filePath, ".conf") {
+			continue
 		}
+
+		filename := filepath.Base(filePath)
+		baseName := strings.TrimSuffix(filename, ".conf")
+		if baseName == "" {
+			continue
+		}
+
+		// Skip if we've already processed a .local file with the same base name
+		if processedFiles[baseName] {
+			continue
+		}
+
+		processedFiles[baseName] = true
+		filterMap[baseName] = true
 	}
 
+	// Convert map to sorted slice
 	var filters []string
 	for name := range filterMap {
 		filters = append(filters, name)
 	}
 	sort.Strings(filters)
+
 	return filters, nil
+}
+
+// CreateFilter creates a new filter in filter.d/{name}.local.
+// If the filter already exists, it will be overwritten.
+func CreateFilter(filterName, content string) error {
+	if err := ValidateFilterName(filterName); err != nil {
+		return err
+	}
+
+	filterDPath := "/etc/fail2ban/filter.d"
+	localPath := filepath.Join(filterDPath, filterName+".local")
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filterDPath, 0755); err != nil {
+		return fmt.Errorf("failed to create filter.d directory: %w", err)
+	}
+
+	// Write the file
+	if err := os.WriteFile(localPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to create filter file %s: %w", localPath, err)
+	}
+
+	config.DebugLog("Created filter file: %s", localPath)
+	return nil
+}
+
+// DeleteFilter deletes a filter's .local and .conf files from filter.d/ if they exist.
+// Both files are deleted to ensure complete removal of the filter configuration.
+func DeleteFilter(filterName string) error {
+	if err := ValidateFilterName(filterName); err != nil {
+		return err
+	}
+
+	filterDPath := "/etc/fail2ban/filter.d"
+	localPath := filepath.Join(filterDPath, filterName+".local")
+	confPath := filepath.Join(filterDPath, filterName+".conf")
+
+	var deletedFiles []string
+	var lastErr error
+
+	// Delete .local file if it exists
+	if _, err := os.Stat(localPath); err == nil {
+		if err := os.Remove(localPath); err != nil {
+			lastErr = fmt.Errorf("failed to delete filter file %s: %w", localPath, err)
+		} else {
+			deletedFiles = append(deletedFiles, localPath)
+			config.DebugLog("Deleted filter file: %s", localPath)
+		}
+	}
+
+	// Delete .conf file if it exists
+	if _, err := os.Stat(confPath); err == nil {
+		if err := os.Remove(confPath); err != nil {
+			lastErr = fmt.Errorf("failed to delete filter file %s: %w", confPath, err)
+		} else {
+			deletedFiles = append(deletedFiles, confPath)
+			config.DebugLog("Deleted filter file: %s", confPath)
+		}
+	}
+
+	// If no files were deleted and no error occurred, it means neither file existed
+	if len(deletedFiles) == 0 && lastErr == nil {
+		return fmt.Errorf("filter file %s or %s does not exist", localPath, confPath)
+	}
+
+	// Return the last error if any occurred
+	if lastErr != nil {
+		return lastErr
+	}
+
+	return nil
+}
+
+// GetFiltersLocal returns a list of filter names from /etc/fail2ban/filter.d
+// Returns unique filter names from both .conf and .local files (prefers .local if both exist)
+// This is the canonical implementation - now uses DiscoverFiltersFromFiles()
+func GetFiltersLocal() ([]string, error) {
+	return DiscoverFiltersFromFiles()
 }
 
 func normalizeLogLines(logLines []string) []string {

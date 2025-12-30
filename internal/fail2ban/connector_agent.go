@@ -109,14 +109,30 @@ func (ac *AgentConnector) Restart(ctx context.Context) error {
 	return ac.post(ctx, "/v1/actions/restart", nil, nil)
 }
 
-func (ac *AgentConnector) GetFilterConfig(ctx context.Context, jail string) (string, error) {
+// RestartWithMode restarts the remote agent-managed Fail2ban service and
+// always reports mode "restart". Any error is propagated to the caller.
+func (ac *AgentConnector) RestartWithMode(ctx context.Context) (string, error) {
+	if err := ac.Restart(ctx); err != nil {
+		return "restart", err
+	}
+	return "restart", nil
+}
+
+func (ac *AgentConnector) GetFilterConfig(ctx context.Context, jail string) (string, string, error) {
 	var resp struct {
-		Config string `json:"config"`
+		Config   string `json:"config"`
+		FilePath string `json:"filePath"`
 	}
 	if err := ac.get(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(jail)), &resp); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return resp.Config, nil
+	// If agent doesn't return filePath, construct it (agent should handle .local priority)
+	filePath := resp.FilePath
+	if filePath == "" {
+		// Default to .local path (agent should handle .local priority on its side)
+		filePath = fmt.Sprintf("/etc/fail2ban/filter.d/%s.local", jail)
+	}
+	return resp.Config, filePath, nil
 }
 
 func (ac *AgentConnector) SetFilterConfig(ctx context.Context, jail, content string) error {
@@ -181,6 +197,14 @@ func (ac *AgentConnector) post(ctx context.Context, endpoint string, payload any
 
 func (ac *AgentConnector) put(ctx context.Context, endpoint string, payload any, out any) error {
 	req, err := ac.newRequest(ctx, http.MethodPut, endpoint, payload)
+	if err != nil {
+		return err
+	}
+	return ac.do(req, out)
+}
+
+func (ac *AgentConnector) delete(ctx context.Context, endpoint string, out any) error {
+	req, err := ac.newRequest(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
 	}
@@ -301,14 +325,21 @@ func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, log
 }
 
 // GetJailConfig implements Connector.
-func (ac *AgentConnector) GetJailConfig(ctx context.Context, jail string) (string, error) {
+func (ac *AgentConnector) GetJailConfig(ctx context.Context, jail string) (string, string, error) {
 	var resp struct {
-		Config string `json:"config"`
+		Config   string `json:"config"`
+		FilePath string `json:"filePath"`
 	}
 	if err := ac.get(ctx, fmt.Sprintf("/v1/jails/%s/config", url.PathEscape(jail)), &resp); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return resp.Config, nil
+	// If agent doesn't return filePath, construct it (agent should handle .local priority)
+	filePath := resp.FilePath
+	if filePath == "" {
+		// Default to .local path (agent should handle .local priority on its side)
+		filePath = fmt.Sprintf("/etc/fail2ban/jail.d/%s.local", jail)
+	}
+	return resp.Config, filePath, nil
 }
 
 // SetJailConfig implements Connector.
@@ -405,4 +436,32 @@ func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
 	// If the endpoint doesn't exist, we'll need to implement it on the agent side
 	// For now, we'll try calling it and handle the error gracefully
 	return ac.post(ctx, "/v1/jails/ensure-structure", nil, nil)
+}
+
+// CreateJail implements Connector.
+func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content string) error {
+	payload := map[string]interface{}{
+		"name":    jailName,
+		"content": content,
+	}
+	return ac.post(ctx, "/v1/jails", payload, nil)
+}
+
+// DeleteJail implements Connector.
+func (ac *AgentConnector) DeleteJail(ctx context.Context, jailName string) error {
+	return ac.delete(ctx, fmt.Sprintf("/v1/jails/%s", jailName), nil)
+}
+
+// CreateFilter implements Connector.
+func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content string) error {
+	payload := map[string]interface{}{
+		"name":    filterName,
+		"content": content,
+	}
+	return ac.post(ctx, "/v1/filters", payload, nil)
+}
+
+// DeleteFilter implements Connector.
+func (ac *AgentConnector) DeleteFilter(ctx context.Context, filterName string) error {
+	return ac.delete(ctx, fmt.Sprintf("/v1/filters/%s", filterName), nil)
 }

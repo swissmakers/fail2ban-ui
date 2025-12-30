@@ -56,6 +56,22 @@ function openJailConfigModal(jailName) {
       filterTextArea.value = data.filter || '';
       jailTextArea.value = data.jailConfig || '';
       
+      // Display file paths if available
+      var filterFilePathEl = document.getElementById('filterFilePath');
+      var jailFilePathEl = document.getElementById('jailFilePath');
+      if (filterFilePathEl && data.filterFilePath) {
+        filterFilePathEl.textContent = data.filterFilePath;
+        filterFilePathEl.style.display = 'block';
+      } else if (filterFilePathEl) {
+        filterFilePathEl.style.display = 'none';
+      }
+      if (jailFilePathEl && data.jailFilePath) {
+        jailFilePathEl.textContent = data.jailFilePath;
+        jailFilePathEl.style.display = 'block';
+      } else if (jailFilePathEl) {
+        jailFilePathEl.style.display = 'none';
+      }
+
       // Check if logpath is set in jail config and show test button
       updateLogpathButtonVisibility();
       
@@ -267,9 +283,17 @@ function openManageJailsModal() {
           + '      onclick="openJailConfigModal(\'' + jsEscapedJailName + '\')"'
           + '      class="text-xs px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors whitespace-nowrap"'
           + '      data-i18n="modal.filter_config_edit"'
-          + '      title="' + escapeHtml(t('modal.filter_config_edit', 'Edit Filter')) + '"'
+          + '      title="' + escapeHtml(t('modal.filter_config_edit', 'Edit Filter / Jail')) + '"'
           + '    >'
-          + escapeHtml(t('modal.filter_config_edit', 'Edit Filter'))
+          + escapeHtml(t('modal.filter_config_edit', 'Edit Filter / Jail'))
+          + '    </button>'
+          + '    <button'
+          + '      type="button"'
+          + '      onclick="deleteJail(\'' + jsEscapedJailName + '\')"'
+          + '      class="text-xs px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors whitespace-nowrap"'
+          + '      title="' + escapeHtml(t('modal.delete_jail', 'Delete Jail')) + '"'
+          + '    >'
+          + '      <i class="fas fa-trash"></i>'
           + '    </button>'
           + '    <label class="inline-flex relative items-center cursor-pointer">'
           + '      <input'
@@ -425,6 +449,155 @@ function saveManageJailsSingle(checkbox) {
       showToast("Error saving jail settings: " + (err.message || err), 'error');
       // Revert checkbox state on error
       checkbox.checked = !isEnabled;
+    });
+}
+
+function openCreateJailModal() {
+  document.getElementById('newJailName').value = '';
+  document.getElementById('newJailContent').value = '';
+  const filterSelect = document.getElementById('newJailFilter');
+  if (filterSelect) {
+    filterSelect.value = '';
+  }
+  
+  // Load filters into dropdown
+  showLoading(true);
+  fetch(withServerParam('/api/filters'), {
+    headers: serverHeaders()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (filterSelect) {
+        filterSelect.innerHTML = '<option value="">-- Select a filter --</option>';
+        if (data.filters && data.filters.length > 0) {
+          data.filters.forEach(filter => {
+            const opt = document.createElement('option');
+            opt.value = filter;
+            opt.textContent = filter;
+            filterSelect.appendChild(opt);
+          });
+        }
+      }
+      openModal('createJailModal');
+    })
+    .catch(err => {
+      console.error('Error loading filters:', err);
+      openModal('createJailModal');
+    })
+    .finally(() => showLoading(false));
+}
+
+function updateJailConfigFromFilter() {
+  const filterSelect = document.getElementById('newJailFilter');
+  const jailNameInput = document.getElementById('newJailName');
+  const contentTextarea = document.getElementById('newJailContent');
+  
+  if (!filterSelect || !contentTextarea) return;
+  
+  const selectedFilter = filterSelect.value;
+  
+  if (!selectedFilter) {
+    return;
+  }
+  
+  // Auto-fill jail name if empty
+  if (jailNameInput && !jailNameInput.value.trim()) {
+    jailNameInput.value = selectedFilter;
+  }
+  
+  // Auto-populate jail config
+  const jailName = (jailNameInput && jailNameInput.value.trim()) || selectedFilter;
+  const config = `[${jailName}]
+enabled = false
+filter = ${selectedFilter}
+logpath = /var/log/auth.log
+maxretry = 5
+bantime = 3600
+findtime = 600`;
+  
+  contentTextarea.value = config;
+}
+
+function createJail() {
+  const jailName = document.getElementById('newJailName').value.trim();
+  const content = document.getElementById('newJailContent').value.trim();
+  
+  if (!jailName) {
+    showToast('Jail name is required', 'error');
+    return;
+  }
+  
+  showLoading(true);
+  fetch(withServerParam('/api/jails'), {
+    method: 'POST',
+    headers: serverHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      jailName: jailName,
+      content: content
+    })
+  })
+    .then(function(res) {
+      if (!res.ok) {
+        return res.json().then(function(data) {
+          throw new Error(data.error || 'Server returned ' + res.status);
+        });
+      }
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.error) {
+        showToast('Error creating jail: ' + data.error, 'error');
+        return;
+      }
+      closeModal('createJailModal');
+      showToast(data.message || 'Jail created successfully', 'success');
+      // Reload the manage jails modal
+      openManageJailsModal();
+    })
+    .catch(function(err) {
+      console.error('Error creating jail:', err);
+      showToast('Error creating jail: ' + (err.message || err), 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}
+
+function deleteJail(jailName) {
+  if (!confirm('Are you sure you want to delete the jail "' + escapeHtml(jailName) + '"? This action cannot be undone.')) {
+    return;
+  }
+  
+  showLoading(true);
+  fetch(withServerParam('/api/jails/' + encodeURIComponent(jailName)), {
+    method: 'DELETE',
+    headers: serverHeaders()
+  })
+    .then(function(res) {
+      if (!res.ok) {
+        return res.json().then(function(data) {
+          throw new Error(data.error || 'Server returned ' + res.status);
+        });
+      }
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.error) {
+        showToast('Error deleting jail: ' + data.error, 'error');
+        return;
+      }
+      showToast(data.message || 'Jail deleted successfully', 'success');
+      // Reload the manage jails modal
+      openManageJailsModal();
+      // Refresh dashboard
+      refreshData({ silent: true });
+    })
+    .catch(function(err) {
+      console.error('Error deleting jail:', err);
+      showToast('Error deleting jail: ' + (err.message || err), 'error');
+    })
+    .finally(function() {
+      showLoading(false);
     });
 }
 

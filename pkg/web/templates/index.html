@@ -73,7 +73,7 @@
       <div class="flex items-center justify-between h-16">
         <div class="flex items-center">
           <div class="flex-shrink-0">
-            <span class="text-xl font-bold">Fail2ban UI</span>
+            <a href="/" class="text-xl font-bold hover:text-blue-200 transition-colors cursor-pointer">Fail2ban UI</a>
           </div>
           <div id="backendStatus" class="ml-4 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-gray-400" id="statusDot"></span>
@@ -157,10 +157,16 @@
       <div id="filterNotice" class="hidden mb-4 text-sm text-yellow-700 bg-yellow-100 border border-yellow-200 rounded px-4 py-3"></div>
 
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <!-- Dropdown of available jail/filters -->
-        <div class="mb-4">
-          <label for="filterSelect" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="filter_debug.select_filter">Select a Filter</label>
-          <select id="filterSelect" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+        <div class="mb-4 flex justify-between items-end">
+          <div class="flex-1 mr-4">
+            <label for="filterSelect" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="filter_debug.select_filter">Select a Filter</label>
+            <div class="flex gap-2">
+              <select id="filterSelect" class="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+              <button type="button" onclick="deleteFilter()" id="deleteFilterBtn" class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled title="Delete selected filter">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Textarea for log lines to test -->
@@ -811,7 +817,10 @@
               <div class="mt-4 space-y-4">
                 <!-- Filter Configuration -->
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.filter_config_label">Filter Configuration</label>
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-gray-700" data-i18n="modal.filter_config_label">Filter Configuration</label>
+                    <span id="filterFilePath" class="text-xs text-gray-500 font-mono" style="display: none;"></span>
+                  </div>
                   <div class="relative" style="position: relative;">
                     <textarea id="filterConfigTextarea"
                       class="w-full border border-gray-700 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-96 font-mono text-sm bg-gray-900 text-white resize-none overflow-auto"
@@ -841,7 +850,10 @@
                 
                 <!-- Jail Configuration -->
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.jail_config_label">Jail Configuration</label>
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-gray-700" data-i18n="modal.jail_config_label">Jail Configuration</label>
+                    <span id="jailFilePath" class="text-xs text-gray-500 font-mono" style="display: none;"></span>
+                  </div>
                   <div class="relative" style="position: relative;">
                     <textarea id="jailConfigTextarea"
                       class="w-full border border-gray-700 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm bg-gray-900 text-white resize-none overflow-auto"
@@ -904,6 +916,16 @@
                 </button>
               </div>
               <div class="mt-4">
+                <div class="mb-4 flex justify-end gap-2">
+                  <button type="button" onclick="openCreateFilterModal()" class="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-700 transition-colors">
+                    <i class="fas fa-plus"></i>
+                    <span data-i18n="modal.create_filter">Create New Filter</span>
+                  </button>
+                  <button type="button" onclick="openCreateJailModal()" class="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-md hover:bg-gray-700 transition-colors">
+                    <i class="fas fa-plus"></i>
+                    <span data-i18n="modal.create_jail">Create New Jail</span>
+                  </button>
+                </div>
                 <!-- Dynamically filled list of jails with toggle switches -->
                 <div id="jailsList" class="divide-y divide-gray-200"></div>
               </div>
@@ -912,6 +934,93 @@
         </div>
         <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
           <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('manageJailsModal')" data-i18n="modal.close">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Jail Modal -->
+  <div id="createJailModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
+      
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 600px;">
+        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <div class="sm:flex sm:items-start">
+            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="modal.create_jail_title">Create New Jail</h3>
+                <button type="button" onclick="closeModal('createJailModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div class="mt-4">
+                <div class="mb-4">
+                  <label for="newJailName" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.jail_name">Jail Name</label>
+                  <input type="text" id="newJailName" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., sshd" />
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="modal.jail_name_hint">Only alphanumeric characters, dashes, and underscores are allowed.</p>
+                </div>
+                <div class="mb-4">
+                  <label for="newJailFilter" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.jail_filter">Filter (optional)</label>
+                  <select id="newJailFilter" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="updateJailConfigFromFilter()">
+                    <option value="">-- Select a filter --</option>
+                  </select>
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="modal.jail_filter_hint">Selecting a filter will auto-populate the jail configuration.</p>
+                </div>
+                <div class="mb-4">
+                  <label for="newJailContent" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.jail_config">Jail Configuration</label>
+                  <textarea id="newJailContent" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40 font-mono text-sm" placeholder="[jailname]&#10;enabled = false&#10;port = ssh&#10;filter = sshd&#10;logpath = /var/log/auth.log"></textarea>
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="modal.jail_config_hint">Jail configuration will be auto-populated when you select a filter.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+          <button type="button" onclick="createJail()" class="mt-3 w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" data-i18n="modal.create">Create</button>
+          <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('createJailModal')" data-i18n="modal.cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Filter Modal -->
+  <div id="createFilterModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
+      
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 600px;">
+        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <div class="sm:flex sm:items-start">
+            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="modal.create_filter_title">Create New Filter</h3>
+                <button type="button" onclick="closeModal('createFilterModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div class="mt-4">
+                <div class="mb-4">
+                  <label for="newFilterName" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.filter_name">Filter Name</label>
+                  <input type="text" id="newFilterName" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., myfilter" />
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="modal.filter_name_hint">Only alphanumeric characters, dashes, and underscores are allowed.</p>
+                </div>
+                <div class="mb-4">
+                  <label for="newFilterContent" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.filter_config">Filter Configuration (optional)</label>
+                  <textarea id="newFilterContent" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40 font-mono text-sm" placeholder="# Filter: myfilter&#10;[Definition]&#10;failregex = ^.*Failed login.*$"></textarea>
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="modal.filter_config_hint">If left empty, an empty filter file will be created.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+          <button type="button" onclick="createFilter()" class="mt-3 w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" data-i18n="modal.create">Create</button>
+          <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('createFilterModal')" data-i18n="modal.cancel">Cancel</button>
         </div>
       </div>
     </div>
@@ -970,7 +1079,7 @@
                   </div>
                   <div data-server-fields="ssh agent">
                     <label for="serverPort" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.port">Port</label>
-                    <input type="number" id="serverPort" min="1" max="65535" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.port_placeholder" placeholder="22">
+                    <input type="number" id="serverPort" min="1" max="65535" value="22" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.port_placeholder" placeholder="22">
                   </div>
                   <div data-server-fields="local ssh">
                     <label for="serverSocket" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.socket_path">Fail2ban Socket Path</label>
@@ -986,11 +1095,16 @@
                   </div>
                   <div data-server-fields="ssh">
                     <label for="serverSSHUser" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.ssh_user">SSH User</label>
-                    <input type="text" id="serverSSHUser" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_user_placeholder" placeholder="root">
+                    <input type="text" id="serverSSHUser" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_user_placeholder" placeholder="sa_fail2ban">
                   </div>
                   <div data-server-fields="ssh">
                     <label for="serverSSHKey" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.ssh_key">SSH Private Key Path</label>
-                    <input type="text" id="serverSSHKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_key_placeholder" placeholder="~/.ssh/id_rsa">
+                    <input type="text" id="serverSSHKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.ssh_key_placeholder" placeholder="/config/.ssh/id_rsa">
+                    <p class="mt-1 text-sm text-gray-500" data-i18n="servers.form.ssh_key_help">
+                      Place your SSH private key in the <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">/config/.ssh/</code> directory (mounted config volume). 
+                      The key file must have permissions <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">600</code> (chmod 600).
+                      Example: <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">/config/.ssh/id_rsa</code>
+                    </p>
                   </div>
                   <div data-server-fields="ssh">
                     <label for="serverSSHKeySelect" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.select_key">Select Private Key</label>
