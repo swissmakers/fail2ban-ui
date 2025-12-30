@@ -222,6 +222,7 @@ The Fail2Ban UI container requires several volume mounts to function properly. B
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `8080` | Port number for the web interface |
+| `BIND_ADDRESS` | `0.0.0.0` | IP address to bind the web interface to. Useful when running with host networking to prevent exposing the web UI to unprotected networks. Set to a specific IP (e.g., `127.0.0.1` or a specific interface IP) to restrict access. |
 | `CONTAINER` | `true` | Automatically set by the container (do not override) |
 
 ### First Launch Configuration

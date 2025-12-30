@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1394,6 +1395,22 @@ func GetPortFromEnv() (int, bool) {
 		return port, true
 	}
 	return 0, false
+}
+
+// GetBindAddressFromEnv returns the BIND_ADDRESS environment variable value if set, and whether it's set
+// If not set, returns "0.0.0.0" as the default bind address
+// Validates that the address is a valid IP address format
+func GetBindAddressFromEnv() (string, bool) {
+	bindAddrEnv := os.Getenv("BIND_ADDRESS")
+	if bindAddrEnv == "" {
+		return "0.0.0.0", false
+	}
+	// Validate that it's a valid IP address format using net.ParseIP
+	if ip := net.ParseIP(bindAddrEnv); ip != nil {
+		return bindAddrEnv, true
+	}
+	// Invalid format, return default
+	return "0.0.0.0", false
 }
 
 func GetSettings() AppSettings {

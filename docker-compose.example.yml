@@ -14,9 +14,13 @@ services:
     network_mode: host
 
     environment:
-      # Change this to use a different port for the web interface (defaults is 8080)
+      # Optional: Change this to use a different port for the web interface (defaults is 8080)
       - PORT=8080
-
+      # Optional: Bind to a specific IP address (default: 0.0.0.0)
+      # This is useful when running with host networking to prevent exposing
+      # the web UI to unprotected networks. Set to a specific IP (e.g., 127.0.0.1
+      # or a specific interface IP) to restrict access.
+      # - BIND_ADDRESS=127.0.0.1
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
       - /opt/podman-fail2ban-ui:/config:Z

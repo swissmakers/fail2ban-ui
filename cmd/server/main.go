@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -59,6 +60,10 @@ func main() {
 	router := gin.Default()
 	serverPort := strconv.Itoa(int(settings.Port))
 
+	// Get bind address from environment variable, defaulting to 0.0.0.0
+	bindAddress, _ := config.GetBindAddressFromEnv()
+	serverAddr := net.JoinHostPort(bindAddress, serverPort)
+
 	// Load HTML templates depending on whether the application is running inside a container.
 	_, container := os.LookupEnv("CONTAINER")
 	if container {
@@ -82,17 +87,17 @@ func main() {
 
 	// Check if LOTR mode is active
 	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
-	printWelcomeBanner(serverPort, isLOTRMode)
+	printWelcomeBanner(bindAddress, serverPort, isLOTRMode)
 	if isLOTRMode {
 		log.Println("--- Middle-earth Security Realm activated ---")
 		log.Println("🎭 LOTR Mode: The guardians of Middle-earth stand ready!")
 	} else {
 		log.Println("--- Fail2Ban-UI started in", gin.Mode(), "mode ---")
 	}
-	log.Println("Server listening on port", serverPort, ".")
+	log.Printf("Server listening on %s:%s.\n", bindAddress, serverPort)
 
-	// Start the server on port 8080.
-	if err := router.Run(":" + serverPort); err != nil {
+	// Start the server on the configured address and port.
+	if err := router.Run(serverAddr); err != nil {
 		log.Fatalf("Could not start server: %v\n", err)
 	}
 }
@@ -110,7 +115,7 @@ func isLOTRModeActive(alertCountries []string) bool {
 }
 
 // printWelcomeBanner prints the Tux banner with startup info.
-func printWelcomeBanner(appPort string, isLOTRMode bool) {
+func printWelcomeBanner(bindAddress, appPort string, isLOTRMode bool) {
 	greeting := getGreeting()
 
 	if isLOTRMode {
@@ -128,11 +133,11 @@ Middle-earth Security Realm - LOTR Mode Activated
 ⚔️  The guardians of Middle-earth stand ready!  ⚔️
 Developers:   https://swissmakers.ch
 Mode:         %s
-Listening on: http://0.0.0.0:%s
+Listening on: http://%s:%s
 ══════════════════════════════════════════════════
 
 `
-		fmt.Printf(lotrBanner, greeting, gin.Mode(), appPort)
+		fmt.Printf(lotrBanner, greeting, gin.Mode(), bindAddress, appPort)
 	} else {
 		const tuxBanner = `
       .--.
@@ -147,11 +152,11 @@ Fail2Ban UI - A Swissmade Management Interface
 ----------------------------------------------
 Developers:   https://swissmakers.ch
 Mode:         %s
-Listening on: http://0.0.0.0:%s
+Listening on: http://%s:%s
 ----------------------------------------------
 
 `
-		fmt.Printf(tuxBanner, greeting, gin.Mode(), appPort)
+		fmt.Printf(tuxBanner, greeting, gin.Mode(), bindAddress, appPort)
 	}
 }
 
