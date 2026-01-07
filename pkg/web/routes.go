@@ -32,6 +32,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 	{
 		api.GET("/summary", SummaryHandler)
 		api.POST("/jails/:jail/unban/:ip", UnbanIPHandler)
+		api.POST("/jails/:jail/ban/:ip", BanIPHandler)
 
 		// Routes for jail-filter management (TODO: rename API-call)
 		api.GET("/jails/:jail/config", GetJailFilterConfigHandler)

@@ -170,6 +170,29 @@ func UnbanIPHandler(c *gin.Context) {
 	})
 }
 
+// BanIPHandler bans a given IP in a specific jail.
+func BanIPHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("BanIPHandler called (handlers.go)") // entry point
+	jail := c.Param("jail")
+	ip := c.Param("ip")
+
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := conn.BanIP(c.Request.Context(), jail, ip); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	fmt.Println(ip + " in jail " + jail + " banned successfully.")
+	c.JSON(http.StatusOK, gin.H{
+		"message": "IP banned successfully",
+	})
+}
+
 // BanNotificationHandler processes incoming ban notifications from Fail2Ban.
 func BanNotificationHandler(c *gin.Context) {
 	// Validate callback secret

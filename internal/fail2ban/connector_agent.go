@@ -101,6 +101,11 @@ func (ac *AgentConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 	return ac.post(ctx, fmt.Sprintf("/v1/jails/%s/unban", url.PathEscape(jail)), payload, nil)
 }
 
+func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
+	payload := map[string]string{"ip": ip}
+	return ac.post(ctx, fmt.Sprintf("/v1/jails/%s/ban", url.PathEscape(jail)), payload, nil)
+}
+
 func (ac *AgentConnector) Reload(ctx context.Context) error {
 	return ac.post(ctx, "/v1/actions/reload", nil, nil)
 }

@@ -441,6 +441,24 @@ function toggleBannedList(hiddenId, buttonId) {
   }
 }
 
+function toggleManualBlockSection() {
+  var container = document.getElementById('manualBlockFormContainer');
+  var icon = document.getElementById('manualBlockToggleIcon');
+  if (!container || !icon) {
+    return;
+  }
+  var isHidden = container.classList.contains("hidden");
+  if (isHidden) {
+    container.classList.remove("hidden");
+    icon.classList.remove("fa-chevron-down");
+    icon.classList.add("fa-chevron-up");
+  } else {
+    container.classList.add("hidden");
+    icon.classList.remove("fa-chevron-up");
+    icon.classList.add("fa-chevron-down");
+  }
+}
+
 function unbanIP(jail, ip) {
   const confirmMsg = isLOTRModeActive 
     ? 'Restore ' + ip + ' to the realm from ' + jail + '?'
@@ -468,6 +486,75 @@ function unbanIP(jail, ip) {
     .finally(function() {
       showLoading(false);
     });
+}
+
+function banIP(jail, ip) {
+  const confirmMsg = isLOTRModeActive 
+    ? 'Banish ' + ip + ' from the realm in ' + jail + '?'
+    : 'Block IP ' + ip + ' in jail ' + jail + '?';
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+  showLoading(true);
+  var url = '/api/jails/' + encodeURIComponent(jail) + '/ban/' + encodeURIComponent(ip);
+  fetch(withServerParam(url), {
+    method: 'POST',
+    headers: serverHeaders()
+  })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) {
+        showToast("Error blocking IP: " + data.error, 'error');
+      } else {
+        showToast(t('dashboard.manual_block.success', 'IP blocked successfully'), 'success');
+        return refreshData({ silent: true });
+      }
+    })
+    .catch(function(err) {
+      showToast("Error: " + err, 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}
+
+function handleManualBlock() {
+  var jailSelect = document.getElementById('blockJailSelect');
+  var ipInput = document.getElementById('blockIPInput');
+  
+  if (!jailSelect || !ipInput) {
+    return;
+  }
+  
+  var jail = jailSelect.value;
+  var ip = ipInput.value.trim();
+  
+  if (!jail) {
+    showToast(t('dashboard.manual_block.jail_required', 'Please select a jail'), 'error');
+    jailSelect.focus();
+    return;
+  }
+  
+  if (!ip) {
+    showToast(t('dashboard.manual_block.ip_required', 'Please enter an IP address'), 'error');
+    ipInput.focus();
+    return;
+  }
+  
+  // Basic IP validation
+  var ipv4Pattern = /^([0-9]{1,3}\.){3}[0-9]{1,3}$/;
+  var ipv6Pattern = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+  if (!ipv4Pattern.test(ip) && !ipv6Pattern.test(ip)) {
+    showToast(t('dashboard.manual_block.invalid_ip', 'Please enter a valid IP address'), 'error');
+    ipInput.focus();
+    return;
+  }
+  
+  banIP(jail, ip);
+  
+  // Clear form after submission
+  ipInput.value = '';
+  jailSelect.value = '';
 }
 
 function renderDashboard() {
@@ -588,6 +675,56 @@ function renderDashboard() {
     }
 
     html += '</div>'; // close overview card
+  }
+
+  // Manual Block IP Section
+  if (summary && summary.jails && summary.jails.length > 0) {
+    var enabledJails = summary.jails.filter(function(j) { return j.enabled !== false; });
+    if (enabledJails.length > 0) {
+      html += ''
+        + '<div class="bg-white rounded-lg shadow p-6 mb-6">'
+        + '  <div class="cursor-pointer hover:bg-gray-50 -m-6 p-6 rounded-lg transition-colors" onclick="toggleManualBlockSection()">'
+        + '    <div class="flex items-center justify-between">'
+        + '      <div class="flex-1">'
+        + '        <h3 class="text-lg font-medium text-gray-900 mb-2" data-i18n="dashboard.manual_block.title">Manual Block IP</h3>'
+        + '        <p class="text-sm text-gray-500" data-i18n="dashboard.manual_block.subtitle">Manually block an IP address in a specific jail.</p>'
+        + '        <p class="text-xs text-gray-400 mt-1" data-i18n="dashboard.manual_block.expand_hint">Click to expand and block an IP address</p>'
+        + '      </div>'
+        + '      <div class="ml-4">'
+        + '        <i id="manualBlockToggleIcon" class="fas fa-chevron-down text-gray-400 transition-transform"></i>'
+        + '      </div>'
+        + '    </div>'
+        + '  </div>'
+        + '  <div id="manualBlockFormContainer" class="hidden mt-4">'
+        + '    <form id="manualBlockForm" onsubmit="return false;">'
+        + '      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">'
+        + '        <div>'
+        + '          <label for="blockJailSelect" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="dashboard.manual_block.jail_label">Select Jail</label>'
+        + '          <select id="blockJailSelect" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" required>'
+        + '            <option value="" data-i18n="dashboard.manual_block.jail_placeholder">Choose a jail...</option>';
+      
+      enabledJails.forEach(function(jail) {
+        html += '            <option value="' + escapeHtml(jail.jailName) + '">' + escapeHtml(jail.jailName) + '</option>';
+      });
+      
+      html += ''
+        + '          </select>'
+        + '        </div>'
+        + '        <div>'
+        + '          <label for="blockIPInput" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="dashboard.manual_block.ip_label">IP Address</label>'
+        + '          <input type="text" id="blockIPInput" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="dashboard.manual_block.ip_placeholder" placeholder="e.g., 88.76.21.123" pattern="^([0-9]{1,3}\\.){3}[0-9]{1,3}$|^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$" required>'
+        + '        </div>'
+        + '        <div class="flex items-end">'
+        + '          <button type="button" onclick="handleManualBlock()" class="w-full bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors flex items-center justify-center gap-2">'
+        + '            <i class="fas fa-ban"></i>'
+        + '            <span data-i18n="dashboard.manual_block.button">Block IP</span>'
+        + '          </button>'
+        + '        </div>'
+        + '      </div>'
+        + '    </form>'
+        + '  </div>'
+        + '</div>';
+    }
   }
 
   html += '<div id="logOverview">' + renderLogOverviewContent() + '</div>';

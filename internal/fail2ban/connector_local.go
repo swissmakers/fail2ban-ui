@@ -140,6 +140,15 @@ func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 	return nil
 }
 
+// BanIP implements Connector.
+func (lc *LocalConnector) BanIP(ctx context.Context, jail, ip string) error {
+	args := []string{"set", jail, "banip", ip}
+	if _, err := lc.runFail2banClient(ctx, args...); err != nil {
+		return fmt.Errorf("error banning IP %s in jail %s: %w", ip, jail, err)
+	}
+	return nil
+}
+
 // Reload implements Connector.
 func (lc *LocalConnector) Reload(ctx context.Context) error {
 	out, err := lc.runFail2banClient(ctx, "reload")
