@@ -187,6 +187,11 @@ func (sc *SSHConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 	return err
 }
 
+func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
+	_, err := sc.runFail2banCommand(ctx, "set", jail, "banip", ip)
+	return err
+}
+
 func (sc *SSHConnector) Reload(ctx context.Context) error {
 	_, err := sc.runFail2banCommand(ctx, "reload")
 	return err

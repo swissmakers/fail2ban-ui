@@ -16,6 +16,7 @@ type Connector interface {
 	GetJailInfos(ctx context.Context) ([]JailInfo, error)
 	GetBannedIPs(ctx context.Context, jail string) ([]string, error)
 	UnbanIP(ctx context.Context, jail, ip string) error
+	BanIP(ctx context.Context, jail, ip string) error
 	Reload(ctx context.Context) error
 	Restart(ctx context.Context) error
 	GetFilterConfig(ctx context.Context, jail string) (string, string, error) // Returns (config, filePath, error)
