@@ -250,12 +250,16 @@ Comprehensive settings management for alerts, advanced banning, and system prefe
 
 **Option A: Using Pre-built Image**
 
-Pull and run the official image:
+Pull and run the official image from Docker Hub:
 ```bash
-# Pull the image
-podman pull registry.swissmakers.ch/infra/fail2ban-ui:latest
+# Pull the image from Docker Hub (default)
+podman pull swissmakers/fail2ban-ui:latest
 # or with Docker:
-docker pull registry.swissmakers.ch/infra/fail2ban-ui:latest
+docker pull swissmakers/fail2ban-ui:latest
+
+# Alternative: Pull from Swissmakers registry (fallback)
+# podman pull registry.swissmakers.ch/infra/fail2ban-ui:latest
+# docker pull registry.swissmakers.ch/infra/fail2ban-ui:latest
 
 # Run the container
 podman run -d \
@@ -265,7 +269,7 @@ podman run -d \
   -v /etc/fail2ban:/etc/fail2ban:Z \
   -v /var/log:/var/log:ro \
   -v /var/run/fail2ban:/var/run/fail2ban \
-  registry.swissmakers.ch/infra/fail2ban-ui:latest
+  swissmakers/fail2ban-ui:latest
 ```
 
 **Option B: Build from Source**
@@ -320,7 +324,7 @@ podman run -d \
   -v /etc/fail2ban:/etc/fail2ban:Z \
   -v /var/log:/var/log:ro \
   -v /var/run/fail2ban:/var/run/fail2ban \
-  registry.swissmakers.ch/infra/fail2ban-ui:latest
+  swissmakers/fail2ban-ui:latest
 ```
 
 Access the web interface at `http://localhost:3080`.
