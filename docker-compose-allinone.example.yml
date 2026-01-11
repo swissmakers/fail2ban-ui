@@ -26,8 +26,12 @@ services:
     restart: unless-stopped
 
   fail2ban-ui:
-    image: registry.swissmakers.ch/infra/fail2ban-ui:latest
-    #image: localhost/fail2ban-ui:dev
+    # Use pre-built image from Docker Hub (default)
+    image: swissmakers/fail2ban-ui:latest
+    # Alternative: Use Swissmakers registry (fallback)
+    # image: registry.swissmakers.ch/infra/fail2ban-ui:latest
+    # Or build from source (uncomment to use):
+    # image: localhost/fail2ban-ui:dev
     container_name: fail2ban-ui
     privileged: true # needed because the fail2ban-ui container needs to modify the fail2ban config owned by root inside the linuxserver-fail2ban container
     network_mode: host

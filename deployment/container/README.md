@@ -19,7 +19,14 @@ A comprehensive guide for building and deploying Fail2Ban UI using containers (D
 
 ### Using Pre-built Image
 
-**Pull the official image:**
+**Pull the official image from Docker Hub (default):**
+```bash
+podman pull swissmakers/fail2ban-ui:latest
+# or with Docker:
+docker pull swissmakers/fail2ban-ui:latest
+```
+
+**Alternative: Pull from Swissmakers registry (fallback):**
 ```bash
 podman pull registry.swissmakers.ch/infra/fail2ban-ui:latest
 # or with Docker:
@@ -35,7 +42,7 @@ podman run -d \
   -v /etc/fail2ban:/etc/fail2ban:Z \
   -v /var/log:/var/log:ro \
   -v /var/run/fail2ban:/var/run/fail2ban \
-  registry.swissmakers.ch/infra/fail2ban-ui:latest
+  swissmakers/fail2ban-ui:latest
 ```
 
 Access the web interface at `http://localhost:8080` (or your configured port).
@@ -262,8 +269,11 @@ For easier management, you can use Docker Compose. Create a `docker-compose.yml`
 ```yaml
 services:
   fail2ban-ui:
-    # Use pre-built image from registry
-    image: registry.swissmakers.ch/infra/fail2ban-ui:latest
+    # Use pre-built image from Docker Hub (default)
+    image: swissmakers/fail2ban-ui:latest
+
+    # Alternative: Use Swissmakers registry (fallback)
+    # image: registry.swissmakers.ch/infra/fail2ban-ui:latest
 
     # Or build from source (uncomment to use):
     # build:

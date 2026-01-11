@@ -146,7 +146,7 @@ ExecStart=/usr/bin/podman run --rm \
     -v /etc/fail2ban:/etc/fail2ban:Z \
     -v /var/log:/var/log:ro \
     -v /var/run/fail2ban:/var/run/fail2ban \
-    registry.swissmakers.ch/infra/fail2ban-ui:latest
+    swissmakers/fail2ban-ui:latest
 Restart=always
 RestartSec=10s
 
