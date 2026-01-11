@@ -3,6 +3,8 @@
 # =========================================
 FROM golang:1.24 AS builder
 
+ARG TARGETARCH
+
 WORKDIR /app
 
 # Copy module files and download dependencies first
@@ -13,7 +15,10 @@ RUN go mod download
 COPY . .
 
 # Build Go application (as static binary)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o fail2ban-ui ./cmd/server/main.go
+RUN CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=${TARGETARCH} \
+    go build -o fail2ban-ui ./cmd/server/main.go
 
 # ===================================
 #  STAGE 2: Standalone UI Version
