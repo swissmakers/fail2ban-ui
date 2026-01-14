@@ -275,25 +275,48 @@ function sendTestEmail() {
 
 function applyAdvancedActionsSettings(cfg) {
   cfg = cfg || {};
-  document.getElementById('advancedActionsEnabled').checked = !!cfg.enabled;
-  document.getElementById('advancedThreshold').value = cfg.threshold || 5;
+  const enabledEl = document.getElementById('advancedActionsEnabled');
+  if (enabledEl) enabledEl.checked = !!cfg.enabled;
+  const thresholdEl = document.getElementById('advancedThreshold');
+  if (thresholdEl) thresholdEl.value = cfg.threshold || 5;
   const integrationSelect = document.getElementById('advancedIntegrationSelect');
-  integrationSelect.value = cfg.integration || '';
+  if (integrationSelect) integrationSelect.value = cfg.integration || '';
 
   const mk = cfg.mikrotik || {};
-  document.getElementById('mikrotikHost').value = mk.host || '';
-  document.getElementById('mikrotikPort').value = mk.port || 22;
-  document.getElementById('mikrotikUsername').value = mk.username || '';
-  document.getElementById('mikrotikPassword').value = mk.password || '';
-  document.getElementById('mikrotikSSHKey').value = mk.sshKeyPath || '';
-  document.getElementById('mikrotikList').value = mk.addressList || 'fail2ban-permanent';
+  const mkHost = document.getElementById('mikrotikHost');
+  if (mkHost) mkHost.value = mk.host || '';
+  const mkPort = document.getElementById('mikrotikPort');
+  if (mkPort) mkPort.value = mk.port || 22;
+  const mkUser = document.getElementById('mikrotikUsername');
+  if (mkUser) mkUser.value = mk.username || '';
+  const mkPass = document.getElementById('mikrotikPassword');
+  if (mkPass) mkPass.value = mk.password || '';
+  const mkKey = document.getElementById('mikrotikSSHKey');
+  if (mkKey) mkKey.value = mk.sshKeyPath || '';
+  const mkList = document.getElementById('mikrotikList');
+  if (mkList) mkList.value = mk.addressList || 'fail2ban-permanent';
 
   const pf = cfg.pfSense || {};
-  document.getElementById('pfSenseBaseURL').value = pf.baseUrl || '';
-  document.getElementById('pfSenseToken').value = pf.apiToken || '';
-  document.getElementById('pfSenseSecret').value = pf.apiSecret || '';
-  document.getElementById('pfSenseAlias').value = pf.alias || '';
-  document.getElementById('pfSenseSkipTLS').checked = !!pf.skipTLSVerify;
+  const pfURL = document.getElementById('pfSenseBaseURL');
+  if (pfURL) pfURL.value = pf.baseUrl || '';
+  const pfToken = document.getElementById('pfSenseToken');
+  if (pfToken) pfToken.value = pf.apiToken || '';
+  const pfAlias = document.getElementById('pfSenseAlias');
+  if (pfAlias) pfAlias.value = pf.alias || '';
+  const pfTLS = document.getElementById('pfSenseSkipTLS');
+  if (pfTLS) pfTLS.checked = !!pf.skipTLSVerify;
+
+  const opn = cfg.opnsense || {};
+  const opnURL = document.getElementById('opnsenseBaseURL');
+  if (opnURL) opnURL.value = opn.baseUrl || '';
+  const opnKey = document.getElementById('opnsenseKey');
+  if (opnKey) opnKey.value = opn.apiKey || '';
+  const opnSecret = document.getElementById('opnsenseSecret');
+  if (opnSecret) opnSecret.value = opn.apiSecret || '';
+  const opnAlias = document.getElementById('opnsenseAlias');
+  if (opnAlias) opnAlias.value = opn.alias || '';
+  const opnTLS = document.getElementById('opnsenseSkipTLS');
+  if (opnTLS) opnTLS.checked = !!opn.skipTLSVerify;
 
   updateAdvancedIntegrationFields();
 }
@@ -314,9 +337,15 @@ function collectAdvancedActionsSettings() {
     pfSense: {
       baseUrl: document.getElementById('pfSenseBaseURL').value.trim(),
       apiToken: document.getElementById('pfSenseToken').value.trim(),
-      apiSecret: document.getElementById('pfSenseSecret').value.trim(),
       alias: document.getElementById('pfSenseAlias').value.trim(),
       skipTLSVerify: document.getElementById('pfSenseSkipTLS').checked,
+    },
+    opnsense: {
+      baseUrl: document.getElementById('opnsenseBaseURL').value.trim(),
+      apiKey: document.getElementById('opnsenseKey').value.trim(),
+      apiSecret: document.getElementById('opnsenseSecret').value.trim(),
+      alias: document.getElementById('opnsenseAlias').value.trim(),
+      skipTLSVerify: document.getElementById('opnsenseSkipTLS').checked,
     }
   };
 }
@@ -325,6 +354,7 @@ function updateAdvancedIntegrationFields() {
   const selected = document.getElementById('advancedIntegrationSelect').value;
   document.getElementById('advancedMikrotikFields').classList.toggle('hidden', selected !== 'mikrotik');
   document.getElementById('advancedPfSenseFields').classList.toggle('hidden', selected !== 'pfsense');
+  document.getElementById('advancedOPNsenseFields').classList.toggle('hidden', selected !== 'opnsense');
 }
 
 function loadPermanentBlockLog() {
@@ -391,28 +421,8 @@ function refreshPermanentBlockLog() {
 }
 
 function openAdvancedTestModal() {
-  populateAdvancedTestServers();
   document.getElementById('advancedTestIP').value = '';
-  document.getElementById('advancedTestServer').value = '';
   openModal('advancedTestModal');
-}
-
-function populateAdvancedTestServers() {
-  const select = document.getElementById('advancedTestServer');
-  if (!select) return;
-  const value = select.value;
-  select.innerHTML = '';
-  const baseOption = document.createElement('option');
-  baseOption.value = '';
-  baseOption.textContent = t('settings.advanced.test_server_none', 'Use global integration settings');
-  select.appendChild(baseOption);
-  serversCache.forEach(server => {
-    const opt = document.createElement('option');
-    opt.value = server.id;
-    opt.textContent = server.name || server.id;
-    select.appendChild(opt);
-  });
-  select.value = value;
 }
 
 function submitAdvancedTest(action) {
@@ -421,12 +431,11 @@ function submitAdvancedTest(action) {
     showToast('Please enter an IP address.', 'info');
     return;
   }
-  const serverId = document.getElementById('advancedTestServer').value;
   showLoading(true);
   fetch('/api/advanced-actions/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: action, ip: ipValue, serverId: serverId })
+    body: JSON.stringify({ action: action, ip: ipValue })
   })
     .then(res => res.json())
     .then(data => {
