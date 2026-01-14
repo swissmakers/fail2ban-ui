@@ -60,6 +60,8 @@ type AppSettingsRecord struct {
 	AlertCountriesJSON   string
 	EmailAlertsForBans   bool
 	EmailAlertsForUnbans bool
+	// Console output settings
+	ConsoleOutput bool
 	// SMTP settings
 	SMTPHost     string
 	SMTPPort     int
@@ -190,17 +192,17 @@ func GetAppSettings(ctx context.Context) (AppSettingsRecord, bool, error) {
 	}
 
 	row := db.QueryRowContext(ctx, `
-SELECT language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines
+SELECT language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output
 FROM app_settings
 WHERE id = 1`)
 
 	var (
 		lang, callback, callbackSecret, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, advancedActions, geoipProvider, geoipDatabasePath sql.NullString
 		port, smtpPort, maxretry, maxLogLines                                                                                                                                                                   sql.NullInt64
-		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans                                                                                                      sql.NullInt64
+		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans, consoleOutput                                                                                      sql.NullInt64
 	)
 
-	err := row.Scan(&lang, &port, &debug, &restartNeeded, &callback, &callbackSecret, &alerts, &emailAlertsForBans, &emailAlertsForUnbans, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines)
+	err := row.Scan(&lang, &port, &debug, &restartNeeded, &callback, &callbackSecret, &alerts, &emailAlertsForBans, &emailAlertsForUnbans, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines, &consoleOutput)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AppSettingsRecord{}, false, nil
 	}
@@ -243,6 +245,8 @@ WHERE id = 1`)
 		GeoIPProvider:       stringFromNull(geoipProvider),
 		GeoIPDatabasePath:   stringFromNull(geoipDatabasePath),
 		MaxLogLines:         intFromNull(maxLogLines),
+		// Console output settings
+		ConsoleOutput: intToBool(intFromNull(consoleOutput)),
 	}
 
 	return rec, true, nil
@@ -254,9 +258,9 @@ func SaveAppSettings(ctx context.Context, rec AppSettingsRecord) error {
 	}
 	_, err := db.ExecContext(ctx, `
 INSERT INTO app_settings (
-	id, language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines
+	id, language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output
 ) VALUES (
-	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 ) ON CONFLICT(id) DO UPDATE SET
 	language = excluded.language,
 	port = excluded.port,
@@ -285,7 +289,8 @@ INSERT INTO app_settings (
 	advanced_actions = excluded.advanced_actions,
 	geoip_provider = excluded.geoip_provider,
 	geoip_database_path = excluded.geoip_database_path,
-	max_log_lines = excluded.max_log_lines
+	max_log_lines = excluded.max_log_lines,
+	console_output = excluded.console_output
 `, rec.Language,
 		rec.Port,
 		boolToInt(rec.Debug),
@@ -314,7 +319,7 @@ INSERT INTO app_settings (
 		rec.GeoIPProvider,
 		rec.GeoIPDatabasePath,
 		rec.MaxLogLines,
-	)
+		boolToInt(rec.ConsoleOutput))
 	return err
 }
 
@@ -861,7 +866,9 @@ CREATE TABLE IF NOT EXISTS app_settings (
 	advanced_actions TEXT,
 	geoip_provider TEXT,
 	geoip_database_path TEXT,
-	max_log_lines INTEGER
+	max_log_lines INTEGER,
+	-- Console output settings
+	console_output INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS servers (
@@ -933,6 +940,13 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 	//       return err
 	//     }
 	//   }
+	
+	// Migration: Add console_output column if it doesn't exist
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN console_output INTEGER DEFAULT 0`); err != nil {
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
 	_ = strings.Contains // Keep strings import for migration example above
 
 	return nil

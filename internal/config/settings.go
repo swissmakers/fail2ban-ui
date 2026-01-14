@@ -82,6 +82,9 @@ type AppSettings struct {
 	// Email alert preferences
 	EmailAlertsForBans   bool `json:"emailAlertsForBans"`   // Enable email alerts for ban events (default: true)
 	EmailAlertsForUnbans bool `json:"emailAlertsForUnbans"` // Enable email alerts for unban events (default: false)
+
+	// Console output preferences
+	ConsoleOutput bool `json:"consoleOutput"` // Enable console output in web UI (default: false)
 }
 
 type AdvancedActionsConfig struct {
@@ -425,6 +428,7 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.CallbackSecret = rec.CallbackSecret
 	currentSettings.EmailAlertsForBans = rec.EmailAlertsForBans
 	currentSettings.EmailAlertsForUnbans = rec.EmailAlertsForUnbans
+	currentSettings.ConsoleOutput = rec.ConsoleOutput
 }
 
 func applyServerRecordsLocked(records []storage.ServerRecord) {
@@ -511,6 +515,8 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		GeoIPProvider:       currentSettings.GeoIPProvider,
 		GeoIPDatabasePath:   currentSettings.GeoIPDatabasePath,
 		MaxLogLines:         currentSettings.MaxLogLines,
+		// Console output settings
+		ConsoleOutput: currentSettings.ConsoleOutput,
 	}, nil
 }
 
@@ -1529,9 +1535,31 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	}
 	DebugLog("New settings applied: %v", currentSettings) // Log settings applied
 
+	// Update console log enabled state if it changed
+	if old.ConsoleOutput != new.ConsoleOutput {
+		// Import web package to update console log state
+		// We'll handle this via a callback or direct call
+		updateConsoleLogState(new.ConsoleOutput)
+	}
+
 	if err := persistAllLocked(); err != nil {
 		fmt.Println("Error saving settings:", err)
 		return currentSettings, err
 	}
 	return currentSettings, nil
+}
+
+// updateConsoleLogState updates the console log writer enabled state
+// This is called from UpdateSettings when console output setting changes
+var updateConsoleLogStateFunc func(bool)
+
+// SetUpdateConsoleLogStateFunc sets the callback function to update console log state
+func SetUpdateConsoleLogStateFunc(fn func(bool)) {
+	updateConsoleLogStateFunc = fn
+}
+
+func updateConsoleLogState(enabled bool) {
+	if updateConsoleLogStateFunc != nil {
+		updateConsoleLogStateFunc(enabled)
+	}
 }

@@ -15,6 +15,7 @@ class WebSocketManager {
     this.lastBanEventId = null;
     this.statusCallbacks = [];
     this.banEventCallbacks = [];
+    this.consoleLogCallbacks = [];
     
     // Connection metrics for tooltip
     this.connectedAt = null;
@@ -58,11 +59,20 @@ class WebSocketManager {
 
       this.ws.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data);
-          this.messageCount++;
-          this.handleMessage(message);
+          // WebSocket may send multiple JSON messages separated by newlines
+          // Split by newlines and parse each message separately
+          const messages = event.data.split('\n').filter(line => line.trim().length > 0);
+          for (const messageText of messages) {
+            try {
+              const message = JSON.parse(messageText);
+              this.messageCount++;
+              this.handleMessage(message);
+            } catch (parseErr) {
+              console.error('Error parsing individual WebSocket message:', parseErr, 'Raw:', messageText);
+            }
+          }
         } catch (err) {
-          console.error('Error parsing WebSocket message:', err);
+          console.error('Error processing WebSocket message:', err);
         }
       };
 
@@ -112,8 +122,24 @@ class WebSocketManager {
       case 'heartbeat':
         this.handleHeartbeat(message);
         break;
+      case 'console_log':
+        this.handleConsoleLog(message);
+        break;
       default:
         console.log('Unknown message type:', message.type);
+    }
+  }
+
+  handleConsoleLog(message) {
+    // Notify all registered console log callbacks
+    if (this.consoleLogCallbacks) {
+      this.consoleLogCallbacks.forEach(callback => {
+        try {
+          callback(message.message, message.time);
+        } catch (err) {
+          console.error('Error in console log callback:', err);
+        }
+      });
     }
   }
 
@@ -168,6 +194,13 @@ class WebSocketManager {
 
   onBanEvent(callback) {
     this.banEventCallbacks.push(callback);
+  }
+
+  onConsoleLog(callback) {
+    if (!this.consoleLogCallbacks) {
+      this.consoleLogCallbacks = [];
+    }
+    this.consoleLogCallbacks.push(callback);
   }
 
   disconnect() {

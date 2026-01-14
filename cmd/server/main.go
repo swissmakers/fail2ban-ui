@@ -82,6 +82,15 @@ func main() {
 	wsHub := web.NewHub()
 	go wsHub.Run()
 
+	// Setup console log writer to capture stdout and send via WebSocket
+	web.SetupConsoleLogWriter(wsHub)
+	// Update enabled state based on current settings
+	web.UpdateConsoleLogEnabled()
+	// Register callback to update console log state when settings change
+	config.SetUpdateConsoleLogStateFunc(func(enabled bool) {
+		web.SetConsoleLogEnabled(enabled)
+	})
+
 	// Register all application routes, including the static files and templates.
 	web.RegisterRoutes(router, wsHub)
 

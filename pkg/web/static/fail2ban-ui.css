@@ -462,6 +462,11 @@ button.bg-red-500:hover, button.bg-red-600:hover {
     color: rgb(107 114 128);
 }
 
+/* Console output text colors */
+.text-gray-100 {
+    color: #f3f4f6;
+}
+
 #wsTooltip .border-gray-700 {
     border-color: rgb(55 65 81);
 }
