@@ -314,7 +314,7 @@ mark {
     }
 }
 
-#advancedMikrotikFields, #advancedPfSenseFields {
+#advancedMikrotikFields, #advancedPfSenseFields, #advancedOPNsenseFields {
     padding: 10px;
 }
 

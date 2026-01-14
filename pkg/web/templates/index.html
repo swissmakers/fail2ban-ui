@@ -274,6 +274,7 @@
                 <option value="" data-i18n="settings.advanced.integration_none">Select integration</option>
                 <option value="mikrotik">Mikrotik</option>
                 <option value="pfsense">pfSense</option>
+                <option value="opnsense">OPNsense</option>
               </select>
               <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.integration_hint">Choose where permanent bans should be synchronized.</p>
             </div>
@@ -309,19 +310,21 @@
             </div>
 
             <div id="advancedPfSenseFields" class="hidden border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">
-              <p class="text-sm text-gray-500" data-i18n="settings.advanced.pfsense.note">Requires the pfSense API package. Enter the API credentials and alias to manage.</p>
+              <p class="text-sm text-gray-500 mb-3" data-i18n="settings.advanced.pfsense.note">Requires the pfSense REST API package. Enter the API key and alias to manage.</p>
+              <div class="mb-3 text-sm">
+                <a href="https://github.com/jaredhendrickson13/pfsense-api/releases" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline" data-i18n="settings.advanced.pfsense.install_link">Install REST API Package</a>
+                <span class="text-gray-500 mx-2">•</span>
+                <a href="https://pfrest.org/AUTHENTICATION_AND_AUTHORIZATION/" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline" data-i18n="settings.advanced.pfsense.api_key_setup">Setup API Key</a>
+              </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2">
                   <label class="block text-sm font-medium text-gray-700" for="pfSenseBaseURL" data-i18n="settings.advanced.pfsense.base_url">Base URL</label>
                   <input id="pfSenseBaseURL" type="url" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="https://firewall.local">
                 </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700" for="pfSenseToken" data-i18n="settings.advanced.pfsense.token">API Token</label>
-                  <input id="pfSenseToken" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700" for="pfSenseSecret" data-i18n="settings.advanced.pfsense.secret">API Secret</label>
-                  <input id="pfSenseSecret" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseToken" data-i18n="settings.advanced.pfsense.token">API Key</label>
+                  <input id="pfSenseToken" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key from System > REST API > Keys">
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.pfsense.token_hint">Generate in System > REST API > Keys in pfSense webConfigurator</p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700" for="pfSenseAlias" data-i18n="settings.advanced.pfsense.alias">Alias Name</label>
@@ -330,6 +333,37 @@
                 <div class="flex items-center">
                   <input type="checkbox" id="pfSenseSkipTLS" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
                   <label for="pfSenseSkipTLS" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.pfsense.skip_tls">Skip TLS verification (self-signed)</label>
+                </div>
+              </div>
+            </div>
+
+            <div id="advancedOPNsenseFields" class="hidden border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">
+              <p class="text-sm text-gray-500 mb-3" data-i18n="settings.advanced.opnsense.note">Enter the OPNsense API credentials and alias to manage.</p>
+              <div class="mb-3 text-sm">
+                <a href="https://docs.opnsense.org/development/api.html" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline" data-i18n="settings.advanced.opnsense.api_docs">API Documentation</a>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700" for="opnsenseBaseURL" data-i18n="settings.advanced.opnsense.base_url">Base URL</label>
+                  <input id="opnsenseBaseURL" type="url" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="https://firewall.local">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="opnsenseKey" data-i18n="settings.advanced.opnsense.key">API Key</label>
+                  <input id="opnsenseKey" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key">
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.key_hint">Generate in System > Access > Users > API Keys</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="opnsenseSecret" data-i18n="settings.advanced.opnsense.secret">API Secret</label>
+                  <input id="opnsenseSecret" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API secret">
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.secret_hint">Generate together with API key</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="opnsenseAlias" data-i18n="settings.advanced.opnsense.alias">Alias Name</label>
+                  <input id="opnsenseAlias" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="flex items-center">
+                  <input type="checkbox" id="opnsenseSkipTLS" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                  <label for="opnsenseSkipTLS" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.opnsense.skip_tls">Skip TLS verification (self-signed)</label>
                 </div>
               </div>
             </div>
@@ -1202,12 +1236,6 @@
                 <div>
                   <label for="advancedTestIP" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.test_ip">IP address</label>
                   <input type="text" id="advancedTestIP" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="203.0.113.10">
-                </div>
-                <div>
-                  <label for="advancedTestServer" class="block text-sm font-medium text-gray-700" data-i18n="settings.advanced.test_server">Optional server</label>
-                  <select id="advancedTestServer" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="" data-i18n="settings.advanced.test_server_none">Use global integration settings</option>
-                  </select>
                 </div>
               </div>
             </div>

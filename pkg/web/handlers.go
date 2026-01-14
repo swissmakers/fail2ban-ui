@@ -1424,9 +1424,8 @@ func ListPermanentBlocksHandler(c *gin.Context) {
 // AdvancedActionsTestHandler allows manual block/unblock tests.
 func AdvancedActionsTestHandler(c *gin.Context) {
 	var req struct {
-		Action   string `json:"action"`
-		IP       string `json:"ip"`
-		ServerID string `json:"serverId"`
+		Action string `json:"action"`
+		IP     string `json:"ip"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
@@ -1449,7 +1448,7 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 
 	// Check if integration is configured
 	if settings.AdvancedActions.Integration == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration (MikroTik or pfSense) in Advanced Actions settings first"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration (MikroTik, pfSense, or OPNsense) in Advanced Actions settings first"})
 		return
 	}
 
@@ -1466,15 +1465,8 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		return
 	}
 
+	// Advanced actions work globally, not per server
 	server := config.Fail2banServer{}
-	if req.ServerID != "" {
-		if srv, ok := config.GetServerByID(req.ServerID); ok {
-			server = srv
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "server not found"})
-			return
-		}
-	}
 
 	// Check if IP is already blocked before attempting action (for block action only)
 	skipLoggingIfAlreadyBlocked := false
