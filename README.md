@@ -252,7 +252,7 @@ Comprehensive settings management for alerts, advanced banning, and system prefe
 
 Pull and run the official image from Docker Hub:
 ```bash
-# Pull the image from Docker Hub (default)
+# Pull the image with podman from Docker Hub (default)
 podman pull swissmakers/fail2ban-ui:latest
 # or with Docker:
 docker pull swissmakers/fail2ban-ui:latest
@@ -328,6 +328,24 @@ podman run -d \
 ```
 
 Access the web interface at `http://localhost:3080`.
+
+**Disable External IP Lookup** (Privacy)
+
+By default, the web UI displays your external IP address by querying external services. For privacy reasons, you can disable this feature using the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable:
+
+```bash
+podman run -d \
+  --name fail2ban-ui \
+  --network=host \
+  -e DISABLE_EXTERNAL_IP_LOOKUP=true \
+  -v /opt/podman-fail2ban-ui:/config:Z \
+  -v /etc/fail2ban:/etc/fail2ban:Z \
+  -v /var/log:/var/log:ro \
+  -v /var/run/fail2ban:/var/run/fail2ban \
+  swissmakers/fail2ban-ui:latest
+```
+
+When set, the "Your ext. IP:" display will be completely hidden and no external IP lookup requests will be made.
 
 **Volume Mounts Explained**
 
@@ -468,6 +486,10 @@ The **Fail2Ban Callback URL** is a critical setting that determines how Fail2Ban
 
 3. **Port Changes:**
    - When you change the Fail2Ban UI port (via `PORT` environment variable or UI settings), the callback URL automatically updates if it's using the default localhost pattern
+
+**Privacy Settings**
+
+- **External IP Lookup**: By default, the web UI displays your external IP address. To disable this feature for privacy reasons, set the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable to `true` or `1`. This will hide the "Your ext. IP:" display and prevent any external IP lookup requests.
    - For custom callback URLs (e.g., reverse proxy or custom IP), you must manually update them to match your setup
 
 **Important Notes:**

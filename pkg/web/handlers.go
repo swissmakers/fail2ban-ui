@@ -44,6 +44,7 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
+	"github.com/swissmakers/fail2ban-ui/internal/integrations"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
@@ -1117,9 +1118,14 @@ func shouldAlertForCountry(country string, alertCountries []string) bool {
 
 // IndexHandler serves the HTML page
 func IndexHandler(c *gin.Context) {
+	// Check if external IP lookup is disabled via environment variable
+	// Default is enabled (false means enabled, true means disabled)
+	disableExternalIP := os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "true" || os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "1"
+
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"timestamp": time.Now().Format(time.RFC1123),
-		"version":   time.Now().Unix(),
+		"timestamp":         time.Now().Format(time.RFC1123),
+		"version":           time.Now().Unix(),
+		"disableExternalIP": disableExternalIP,
 	})
 }
 
@@ -1423,9 +1429,8 @@ func ListPermanentBlocksHandler(c *gin.Context) {
 // AdvancedActionsTestHandler allows manual block/unblock tests.
 func AdvancedActionsTestHandler(c *gin.Context) {
 	var req struct {
-		Action   string `json:"action"`
-		IP       string `json:"ip"`
-		ServerID string `json:"serverId"`
+		Action string `json:"action"`
+		IP     string `json:"ip"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
@@ -1445,15 +1450,28 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 	}
 
 	settings := config.GetSettings()
-	server := config.Fail2banServer{}
-	if req.ServerID != "" {
-		if srv, ok := config.GetServerByID(req.ServerID); ok {
-			server = srv
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "server not found"})
-			return
-		}
+
+	// Check if integration is configured
+	if settings.AdvancedActions.Integration == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration (MikroTik, pfSense, or OPNsense) in Advanced Actions settings first"})
+		return
 	}
+
+	// Verify integration exists
+	integration, ok := integrations.Get(settings.AdvancedActions.Integration)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration %s not found or not registered", settings.AdvancedActions.Integration)})
+		return
+	}
+
+	// Validate integration configuration
+	if err := integration.Validate(settings.AdvancedActions); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration configuration is invalid: %v", err)})
+		return
+	}
+
+	// Advanced actions work globally, not per server
+	server := config.Fail2banServer{}
 
 	// Check if IP is already blocked before attempting action (for block action only)
 	skipLoggingIfAlreadyBlocked := false

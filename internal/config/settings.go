@@ -90,6 +90,7 @@ type AdvancedActionsConfig struct {
 	Integration string                      `json:"integration"`
 	Mikrotik    MikrotikIntegrationSettings `json:"mikrotik"`
 	PfSense     PfSenseIntegrationSettings  `json:"pfSense"`
+	OPNsense    OPNsenseIntegrationSettings `json:"opnsense"`
 }
 
 type MikrotikIntegrationSettings struct {
@@ -104,6 +105,14 @@ type MikrotikIntegrationSettings struct {
 type PfSenseIntegrationSettings struct {
 	BaseURL       string `json:"baseUrl"`
 	APIToken      string `json:"apiToken"`
+	APISecret     string `json:"apiSecret"`
+	Alias         string `json:"alias"`
+	SkipTLSVerify bool   `json:"skipTLSVerify"`
+}
+
+type OPNsenseIntegrationSettings struct {
+	BaseURL       string `json:"baseUrl"`
+	APIKey        string `json:"apiKey"`
 	APISecret     string `json:"apiSecret"`
 	Alias         string `json:"alias"`
 	SkipTLSVerify bool   `json:"skipTLSVerify"`

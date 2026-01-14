@@ -97,7 +97,18 @@ func (m *mikrotikIntegration) runCommand(req Request, command string) error {
 	address := net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", port))
 	client, err := ssh.Dial("tcp", address, clientCfg)
 	if err != nil {
-		return fmt.Errorf("failed to connect to mikrotik: %w", err)
+		// Provide more specific error messages for common connection issues
+		if netErr, ok := err.(net.Error); ok {
+			if netErr.Timeout() {
+				return fmt.Errorf("connection to mikrotik at %s timed out: %w", address, err)
+			}
+		}
+		if opErr, ok := err.(*net.OpError); ok {
+			if opErr.Err != nil {
+				return fmt.Errorf("failed to connect to mikrotik at %s: %v (check host, port %d, and network connectivity)", address, opErr.Err, port)
+			}
+		}
+		return fmt.Errorf("failed to connect to mikrotik at %s: %w (check host, port %d, username, and credentials)", address, err, port)
 	}
 	defer client.Close()
 

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -30,8 +31,8 @@ func (p *pfSenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	if cfg.PfSense.BaseURL == "" {
 		return fmt.Errorf("pfSense base URL is required")
 	}
-	if cfg.PfSense.APIToken == "" || cfg.PfSense.APISecret == "" {
-		return fmt.Errorf("pfSense API token and secret are required")
+	if cfg.PfSense.APIToken == "" {
+		return fmt.Errorf("pfSense API key is required")
 	}
 	if cfg.PfSense.Alias == "" {
 		return fmt.Errorf("pfSense alias is required")
@@ -71,7 +72,7 @@ func (p *pfSenseIntegration) callAPI(req Request, action string, payload map[str
 		return fmt.Errorf("failed to encode pfSense payload: %w", err)
 	}
 
-	apiURL := strings.TrimSuffix(cfg.BaseURL, "/") + "/api/v1/firewall/alias/ip"
+	apiURL := strings.TrimSuffix(cfg.BaseURL, "/") + "/api/v2/firewall/alias/ip"
 
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
@@ -92,21 +93,38 @@ func (p *pfSenseIntegration) callAPI(req Request, action string, payload map[str
 		return fmt.Errorf("failed to create pfSense request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-API-Key", cfg.APIToken)
-	httpReq.Header.Set("X-API-Secret", cfg.APISecret)
+	// pfSense REST API v2 uses KeyAuth with x-api-key header only
+	httpReq.Header.Set("x-api-key", cfg.APIToken)
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("pfSense request failed: %w", err)
+		// Provide more specific error messages for connection issues
+		if netErr, ok := err.(interface {
+			Timeout() bool
+			Error() string
+		}); ok && netErr.Timeout() {
+			return fmt.Errorf("pfSense API request to %s timed out: %w", apiURL, err)
+		}
+		return fmt.Errorf("pfSense API request to %s failed: %w (check base URL, network connectivity, and API credentials)", apiURL, err)
 	}
 	defer resp.Body.Close()
 
+	// Read response body for better error messages
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyStr := strings.TrimSpace(string(bodyBytes))
+
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("pfSense request failed: status %s", resp.Status)
+		if bodyStr != "" {
+			return fmt.Errorf("pfSense API request failed: status %s, response: %s", resp.Status, bodyStr)
+		}
+		return fmt.Errorf("pfSense API request failed: status %s (check API credentials and alias name)", resp.Status)
 	}
 
 	if req.Logger != nil {
 		req.Logger("%s API call succeeded", reqLogger)
+		if bodyStr != "" {
+			req.Logger("%s API response: %s", reqLogger, bodyStr)
+		}
 	}
 	return nil
 }

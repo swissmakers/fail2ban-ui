@@ -19,7 +19,7 @@ A comprehensive guide for building and deploying Fail2Ban UI using containers (D
 
 ### Using Pre-built Image
 
-**Pull the official image from Docker Hub (default):**
+**Pull the official image with podman from Docker Hub (default):**
 ```bash
 podman pull swissmakers/fail2ban-ui:latest
 # or with Docker:
