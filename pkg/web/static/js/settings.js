@@ -70,6 +70,15 @@ function loadSettings() {
       }
       
       document.getElementById('debugMode').checked = data.debug || false;
+      const consoleOutputEl = document.getElementById('consoleOutput');
+      if (consoleOutputEl) {
+        consoleOutputEl.checked = data.consoleOutput || false;
+        // Mark that console was enabled on load (settings were already saved)
+        if (typeof wasConsoleEnabledOnLoad !== 'undefined') {
+          wasConsoleEnabledOnLoad = consoleOutputEl.checked;
+        }
+        toggleConsoleOutput(false); // false = not a user click, loading from saved settings
+      }
       
       // Set callback URL and add auto-update listener for port changes
       const callbackURLInput = document.getElementById('callbackURL');
@@ -201,6 +210,7 @@ function saveSettings(event) {
     language: document.getElementById('languageSelect').value,
     port: currentPort,
     debug: document.getElementById('debugMode').checked,
+    consoleOutput: document.getElementById('consoleOutput') ? document.getElementById('consoleOutput').checked : false,
     destemail: document.getElementById('destEmail').value.trim(),
     callbackUrl: callbackUrl,
     callbackSecret: document.getElementById('callbackSecret').value.trim(),

@@ -73,6 +73,26 @@ type Hub struct {
 	mu sync.RWMutex
 }
 
+// BroadcastConsoleLog broadcasts a console log message to all connected clients
+func (h *Hub) BroadcastConsoleLog(message string) {
+	logMsg := map[string]interface{}{
+		"type":    "console_log",
+		"message": message,
+		"time":    time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := json.Marshal(logMsg)
+	if err != nil {
+		log.Printf("Error marshaling console log: %v", err)
+		return
+	}
+
+	select {
+	case h.broadcast <- data:
+	default:
+		// Channel full, drop message
+	}
+}
+
 // NewHub creates a new WebSocket hub
 func NewHub() *Hub {
 	return &Hub{
