@@ -3,7 +3,10 @@
 
 window.addEventListener('DOMContentLoaded', function() {
   showLoading(true);
-  displayExternalIP();
+  // Only display external IP if the element exists (not disabled via template variable)
+  if (document.getElementById('external-ip')) {
+    displayExternalIP();
+  }
   
   // Initialize header components (clock and status indicator)
   if (typeof initHeader === 'function') {

@@ -116,10 +116,12 @@
         </div>
         <div class="flex flex-col sm:flex-row sm:items-center gap-3">
           <div id="serverSelectorContainer" class="min-w-[220px]"></div>
+          {{if not .disableExternalIP}}
           <div class="text-sm text-gray-500 sm:ml-2">
             <span data-i18n="dashboard.external_ip">Your ext. IP:</span>
             <span id="external-ip" class="font-medium text-blue-600 hover:underline cursor-pointer">Loading…</span>
           </div>
+          {{end}}
           <div class="flex flex-col sm:flex-row gap-3">
             <button class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
               onclick="openServerManager()">

@@ -1118,9 +1118,14 @@ func shouldAlertForCountry(country string, alertCountries []string) bool {
 
 // IndexHandler serves the HTML page
 func IndexHandler(c *gin.Context) {
+	// Check if external IP lookup is disabled via environment variable
+	// Default is enabled (false means enabled, true means disabled)
+	disableExternalIP := os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "true" || os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "1"
+
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"timestamp": time.Now().Format(time.RFC1123),
-		"version":   time.Now().Unix(),
+		"timestamp":         time.Now().Format(time.RFC1123),
+		"version":           time.Now().Unix(),
+		"disableExternalIP": disableExternalIP,
 	})
 }
 
