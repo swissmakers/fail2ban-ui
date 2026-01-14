@@ -252,7 +252,7 @@ Comprehensive settings management for alerts, advanced banning, and system prefe
 
 Pull and run the official image from Docker Hub:
 ```bash
-# Pull the image from Docker Hub (default)
+# Pull the image with podman from Docker Hub (default)
 podman pull swissmakers/fail2ban-ui:latest
 # or with Docker:
 docker pull swissmakers/fail2ban-ui:latest

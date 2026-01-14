@@ -44,6 +44,7 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
+	"github.com/swissmakers/fail2ban-ui/internal/integrations"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
@@ -1445,6 +1446,26 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 	}
 
 	settings := config.GetSettings()
+
+	// Check if integration is configured
+	if settings.AdvancedActions.Integration == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration (MikroTik or pfSense) in Advanced Actions settings first"})
+		return
+	}
+
+	// Verify integration exists
+	integration, ok := integrations.Get(settings.AdvancedActions.Integration)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration %s not found or not registered", settings.AdvancedActions.Integration)})
+		return
+	}
+
+	// Validate integration configuration
+	if err := integration.Validate(settings.AdvancedActions); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration configuration is invalid: %v", err)})
+		return
+	}
+
 	server := config.Fail2banServer{}
 	if req.ServerID != "" {
 		if srv, ok := config.GetServerByID(req.ServerID); ok {

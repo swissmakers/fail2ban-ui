@@ -71,7 +71,7 @@ func (p *pfSenseIntegration) callAPI(req Request, action string, payload map[str
 		return fmt.Errorf("failed to encode pfSense payload: %w", err)
 	}
 
-	apiURL := strings.TrimSuffix(cfg.BaseURL, "/") + "/api/v1/firewall/alias/ip"
+	apiURL := strings.TrimSuffix(cfg.BaseURL, "/") + "/api/v2/firewall/alias/ip"
 
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
