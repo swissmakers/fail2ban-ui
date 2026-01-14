@@ -11,15 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU (binfmt) for multi-arch builds
-        run: |
-          podman run --privileged --rm docker.io/tonistiigi/binfmt --install all
-
-      - name: Set up Podman buildx
-        run: |
-          podman buildx create --use --name multiarch-builder || true
-          podman buildx inspect --bootstrap
-
       - name: Login to Swissmakers Registry
         if: ${{ secrets.HARBOR_REGISTRY && secrets.HARBOR_USERNAME && secrets.HARBOR_PASSWORD }}
         env:
@@ -30,16 +21,21 @@ jobs:
           mkdir -p "$HOME/.config/containers"
           echo "$ROBOT_PASS" | podman login --username "$ROBOT_USER" --password-stdin "$REGISTRY"
 
-      - name: Build & push multi-arch image to Swissmakers Registry
+      - name: Build & tag for Swissmakers Registry
         env:
           REG:  ${{ secrets.HARBOR_REGISTRY }}
           PROJ: ${{ secrets.HARBOR_PROJECT }}
         run: |
-          podman buildx build \
-            --platform linux/amd64,linux/arm64 \
-            -t $REG/$PROJ/fail2ban-ui:${{ github.sha }} \
-            -t $REG/$PROJ/fail2ban-ui:latest \
-            --push .
+          podman build -t $REG/$PROJ/fail2ban-ui:${{ github.sha }} .
+          podman tag  $REG/$PROJ/fail2ban-ui:${{ github.sha }} $REG/$PROJ/fail2ban-ui:latest
+
+      - name: Push to Swissmakers Registry
+        env:
+          REG:  ${{ secrets.HARBOR_REGISTRY }}
+          PROJ: ${{ secrets.HARBOR_PROJECT }}
+        run: |
+          podman push $REG/$PROJ/fail2ban-ui:${{ github.sha }}
+          podman push $REG/$PROJ/fail2ban-ui:latest
 
       - name: Login to Docker Hub
         if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
@@ -49,7 +45,7 @@ jobs:
         run: |
           echo "$DH_TOKEN" | podman login docker.io --username "$DH_USER" --password-stdin
 
-      - name: Re-tag & push multi-arch image to Docker Hub
+      - name: Re-tag the build image for Docker Hub
         if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
         env:
           REG:  ${{ secrets.HARBOR_REGISTRY }}
@@ -57,10 +53,14 @@ jobs:
           DH_NS: ${{ secrets.DOCKERHUB_USERNAME }}
           DH_REPO: fail2ban-ui
         run: |
-          podman pull $REG/$PROJ/fail2ban-ui:${{ github.sha }} --all
-          
           podman tag $REG/$PROJ/fail2ban-ui:${{ github.sha }} docker.io/$DH_NS/$DH_REPO:${{ github.sha }}
-          podman tag $REG/$PROJ/fail2ban-ui:latest docker.io/$DH_NS/$DH_REPO:latest
-          
+          podman tag $REG/$PROJ/fail2ban-ui:${{ github.sha }} docker.io/$DH_NS/$DH_REPO:latest
+
+      - name: Push to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
+        env:
+          DH_NS: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_REPO: fail2ban-ui
+        run: |
           podman push docker.io/$DH_NS/$DH_REPO:${{ github.sha }}
           podman push docker.io/$DH_NS/$DH_REPO:latest
