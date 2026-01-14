@@ -11,10 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-        with:
-          platforms: all
+      - name: Set up QEMU (binfmt) for multi-arch builds
+        run: |
+          podman run --privileged --rm docker.io/tonistiigi/binfmt --install all
 
       - name: Set up Podman buildx
         run: |
