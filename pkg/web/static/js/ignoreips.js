@@ -68,14 +68,14 @@ function setupIgnoreIPsInput() {
   const input = document.getElementById('ignoreIPInput');
   if (!input) return;
   
-  // Prevent typing invalid characters - only allow valid IP/hostname characters
+  // Allow spaces for space-separated lists, but validate on paste/enter/blur
   let lastValue = '';
   input.addEventListener('input', function(e) {
-    // Filter out invalid characters but allow valid IP/hostname characters
-    // Allow: 0-9, a-z, A-Z, :, ., /, -, _ (for hostnames)
+    // Allow spaces for space-separated lists
+    // Allow: 0-9, a-z, A-Z, :, ., /, -, _, space (for space-separated lists)
     let value = this.value;
-    // Remove any characters that aren't valid for IPs/hostnames
-    const filtered = value.replace(/[^0-9a-zA-Z:.\/\-_]/g, '');
+    // Remove any characters that aren't valid for IPs/hostnames or spaces
+    const filtered = value.replace(/[^0-9a-zA-Z:.\/\-\_\s]/g, '');
     if (value !== filtered) {
       this.value = filtered;
     }
@@ -100,6 +100,22 @@ function setupIgnoreIPsInput() {
       const ips = value.split(/[,\s]+/).filter(ip => ip.trim());
       ips.forEach(ip => addIgnoreIPTag(ip.trim()));
     }
+  });
+  
+  // Handle paste events to automatically process space-separated lists
+  input.addEventListener('paste', function(e) {
+    // Allow default paste behavior first
+    setTimeout(() => {
+      const value = input.value.trim();
+      if (value) {
+        // Check if pasted content contains spaces (likely a space-separated list)
+        if (value.includes(' ') || value.includes(',')) {
+          const ips = value.split(/[,\s]+/).filter(ip => ip.trim());
+          ips.forEach(ip => addIgnoreIPTag(ip.trim()));
+          input.value = ''; // Clear input after processing
+        }
+      }
+    }, 0);
   });
 }
 
