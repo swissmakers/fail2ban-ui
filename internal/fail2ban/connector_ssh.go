@@ -966,8 +966,163 @@ func (sc *SSHConnector) GetFilters(ctx context.Context) ([]string, error) {
 	return filters, nil
 }
 
+// resolveFilterIncludesRemote resolves filter includes by reading included files from remote server
+// This is similar to resolveFilterIncludes but reads files via SSH instead of local filesystem
+func (sc *SSHConnector) resolveFilterIncludesRemote(ctx context.Context, filterContent string, filterDPath string, currentFilterName string) (string, error) {
+	lines := strings.Split(filterContent, "\n")
+	var beforeFiles []string
+	var afterFiles []string
+	var inIncludesSection bool
+	var mainContent strings.Builder
+
+	// Parse the filter content to find [INCLUDES] section
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for [INCLUDES] section
+		if strings.HasPrefix(trimmed, "[INCLUDES]") {
+			inIncludesSection = true
+			continue
+		}
+
+		// Check for end of [INCLUDES] section (next section starts)
+		if inIncludesSection && strings.HasPrefix(trimmed, "[") {
+			inIncludesSection = false
+		}
+
+		// Parse before and after directives
+		if inIncludesSection {
+			if strings.HasPrefix(strings.ToLower(trimmed), "before") {
+				parts := strings.SplitN(trimmed, "=", 2)
+				if len(parts) == 2 {
+					file := strings.TrimSpace(parts[1])
+					if file != "" {
+						beforeFiles = append(beforeFiles, file)
+					}
+				}
+				continue
+			}
+			if strings.HasPrefix(strings.ToLower(trimmed), "after") {
+				parts := strings.SplitN(trimmed, "=", 2)
+				if len(parts) == 2 {
+					file := strings.TrimSpace(parts[1])
+					if file != "" {
+						afterFiles = append(afterFiles, file)
+					}
+				}
+				continue
+			}
+		}
+
+		// Collect main content (everything except [INCLUDES] section)
+		if !inIncludesSection {
+			if i > 0 {
+				mainContent.WriteString("\n")
+			}
+			mainContent.WriteString(line)
+		}
+	}
+
+	// Extract variables from main filter content first
+	mainContentStr := mainContent.String()
+	mainVariables := extractVariablesFromContent(mainContentStr)
+
+	// Build combined content: before files + main filter + after files
+	var combined strings.Builder
+
+	// Helper function to read remote file
+	readRemoteFilterFile := func(baseName string) (string, error) {
+		localPath := filepath.Join(filterDPath, baseName+".local")
+		confPath := filepath.Join(filterDPath, baseName+".conf")
+
+		// Try .local first
+		content, err := sc.readRemoteFile(ctx, localPath)
+		if err == nil {
+			config.DebugLog("Loading included filter file from .local: %s", localPath)
+			return content, nil
+		}
+
+		// Fallback to .conf
+		content, err = sc.readRemoteFile(ctx, confPath)
+		if err == nil {
+			config.DebugLog("Loading included filter file from .conf: %s", confPath)
+			return content, nil
+		}
+
+		return "", fmt.Errorf("could not load included filter file '%s' or '%s'", localPath, confPath)
+	}
+
+	// Load and append before files, removing duplicates that exist in main filter
+	for _, fileName := range beforeFiles {
+		// Remove any existing extension to get base name
+		baseName := fileName
+		if strings.HasSuffix(baseName, ".local") {
+			baseName = strings.TrimSuffix(baseName, ".local")
+		} else if strings.HasSuffix(baseName, ".conf") {
+			baseName = strings.TrimSuffix(baseName, ".conf")
+		}
+
+		// Skip if this is the same filter (avoid self-inclusion)
+		if baseName == currentFilterName {
+			config.DebugLog("Skipping self-inclusion of filter '%s' in before files", baseName)
+			continue
+		}
+
+		contentStr, err := readRemoteFilterFile(baseName)
+		if err != nil {
+			config.DebugLog("Warning: %v", err)
+			continue // Skip if file doesn't exist
+		}
+
+		// Remove variables from included file that are defined in main filter (main filter takes precedence)
+		cleanedContent := removeDuplicateVariables(contentStr, mainVariables)
+		combined.WriteString(cleanedContent)
+		if !strings.HasSuffix(cleanedContent, "\n") {
+			combined.WriteString("\n")
+		}
+		combined.WriteString("\n")
+	}
+
+	// Append main filter content (unchanged - this is what the user is editing)
+	combined.WriteString(mainContentStr)
+	if !strings.HasSuffix(mainContentStr, "\n") {
+		combined.WriteString("\n")
+	}
+
+	// Load and append after files, also removing duplicates that exist in main filter
+	for _, fileName := range afterFiles {
+		// Remove any existing extension to get base name
+		baseName := fileName
+		if strings.HasSuffix(baseName, ".local") {
+			baseName = strings.TrimSuffix(baseName, ".local")
+		} else if strings.HasSuffix(baseName, ".conf") {
+			baseName = strings.TrimSuffix(baseName, ".conf")
+		}
+
+		// Note: Self-inclusion in "after" directive is intentional in fail2ban
+		// (e.g., after = apache-common.local is standard pattern for .local files)
+		// So we always load it, even if it's the same filter name
+
+		contentStr, err := readRemoteFilterFile(baseName)
+		if err != nil {
+			config.DebugLog("Warning: %v", err)
+			continue // Skip if file doesn't exist
+		}
+
+		// Remove variables from included file that are defined in main filter (main filter takes precedence)
+		cleanedContent := removeDuplicateVariables(contentStr, mainVariables)
+		combined.WriteString("\n")
+		combined.WriteString(cleanedContent)
+		if !strings.HasSuffix(cleanedContent, "\n") {
+			combined.WriteString("\n")
+		}
+	}
+
+	return combined.String(), nil
+}
+
 // TestFilter implements Connector.
-func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, string, error) {
+func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (string, string, error) {
 	cleaned := normalizeLogLines(logLines)
 	if len(cleaned) == 0 {
 		return "No log lines provided.\n", "", nil
@@ -989,9 +1144,52 @@ func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLi
 	confPath := filepath.Join(fail2banPath, "filter.d", filterName+".conf")
 
 	const heredocMarker = "F2B_FILTER_TEST_LOG"
+	const filterContentMarker = "F2B_FILTER_CONTENT"
 	logContent := strings.Join(cleaned, "\n")
 
-	script := fmt.Sprintf(`
+	var script string
+	if filterContent != "" {
+		// Resolve filter includes locally (same approach as local connector)
+		// This avoids complex Python scripts and heredoc issues
+		filterDPath := filepath.Join(fail2banPath, "filter.d")
+
+		// First, we need to create a remote-aware version of resolveFilterIncludes
+		// that can read included files from the remote server
+		resolvedContent, err := sc.resolveFilterIncludesRemote(ctx, filterContent, filterDPath, filterName)
+		if err != nil {
+			config.DebugLog("Warning: failed to resolve filter includes remotely, using original content: %v", err)
+			resolvedContent = filterContent
+		}
+
+		// Ensure it ends with a newline for proper parsing
+		if !strings.HasSuffix(resolvedContent, "\n") {
+			resolvedContent += "\n"
+		}
+
+		// Base64 encode resolved filter content to avoid any heredoc/escaping issues
+		resolvedContentB64 := base64.StdEncoding.EncodeToString([]byte(resolvedContent))
+
+		// Simple script: just write the resolved content to temp file and test
+		script = fmt.Sprintf(`
+set -e
+TMPFILTER=$(mktemp /tmp/fail2ban-filter-XXXXXX.conf)
+trap 'rm -f "$TMPFILTER"' EXIT
+
+# Write resolved filter content to temp file using base64 decode
+echo '%[1]s' | base64 -d > "$TMPFILTER"
+
+FILTER_PATH="$TMPFILTER"
+echo "FILTER_PATH:$FILTER_PATH"
+TMPFILE=$(mktemp /tmp/fail2ban-test-XXXXXX.log)
+trap 'rm -f "$TMPFILE" "$TMPFILTER"' EXIT
+cat <<'%[2]s' > "$TMPFILE"
+%[3]s
+%[2]s
+fail2ban-regex "$TMPFILE" "$FILTER_PATH" || true
+`, resolvedContentB64, heredocMarker, logContent)
+	} else {
+		// Use existing filter file
+		script = fmt.Sprintf(`
 set -e
 LOCAL_PATH=%[1]q
 CONF_PATH=%[2]q
@@ -1012,6 +1210,7 @@ cat <<'%[3]s' > "$TMPFILE"
 %[3]s
 fail2ban-regex "$TMPFILE" "$FILTER_PATH" || true
 `, localPath, confPath, heredocMarker, logContent)
+	}
 
 	out, err := sc.runRemoteCommand(ctx, []string{script})
 	if err != nil {

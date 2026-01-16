@@ -163,6 +163,18 @@
           </div>
         </div>
 
+        <!-- Textarea for filter content (readonly by default, editable with Edit button) -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label for="filterContentTextarea" class="block text-sm font-medium text-gray-700" data-i18n="filter_debug.filter_content">Filter Content</label>
+            <button type="button" id="editFilterContentBtn" onclick="toggleFilterContentEdit()" class="text-sm px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 hidden" data-i18n="filter_debug.edit_filter">Edit</button>
+          </div>
+          <p class="text-xs text-gray-500 mb-2" data-i18n="filter_debug.filter_content_hint_readonly">Filter content is shown read-only. Click 'Edit' to modify for testing. Changes are temporary and not saved.</p>
+          <p class="text-xs text-gray-500 mb-2 hidden" id="filterContentHintEditable" data-i18n="filter_debug.filter_content_hint">Edit the filter regex below for testing. Changes are temporary and not saved.</p>
+          <textarea id="filterContentTextarea" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40 font-mono text-sm bg-gray-50"
+                    placeholder="Filter content will appear here when a filter is selected..." readonly></textarea>
+        </div>
+
         <!-- Textarea for log lines to test -->
         <div class="mb-4">
           <label for="logLinesTextarea" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="filter_debug.log_lines">Log Lines</label>

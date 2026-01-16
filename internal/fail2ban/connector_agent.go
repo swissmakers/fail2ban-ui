@@ -308,10 +308,13 @@ func (ac *AgentConnector) GetFilters(ctx context.Context) ([]string, error) {
 }
 
 // TestFilter implements Connector.
-func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, string, error) {
+func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (string, string, error) {
 	payload := map[string]any{
 		"filterName": filterName,
 		"logLines":   logLines,
+	}
+	if filterContent != "" {
+		payload["filterContent"] = filterContent
 	}
 	var resp struct {
 		Output     string `json:"output"`
