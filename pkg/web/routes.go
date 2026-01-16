@@ -62,6 +62,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// Filter debugger endpoints
 		api.GET("/filters", ListFiltersHandler)
+		api.GET("/filters/:filter/content", GetFilterContentHandler)
 		api.POST("/filters/test", TestFilterHandler)
 		api.POST("/filters", CreateFilterHandler)
 		api.DELETE("/filters/:filter", DeleteFilterHandler)

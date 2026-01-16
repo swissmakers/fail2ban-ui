@@ -1982,6 +1982,31 @@ func ListFiltersHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"filters": filters})
 }
 
+func GetFilterContentHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("GetFilterContentHandler called (handlers.go)")
+	filterName := c.Param("filter")
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	content, filePath, err := conn.GetFilterConfig(c.Request.Context(), filterName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get filter content: " + err.Error()})
+		return
+	}
+
+	// Remove comments for display in Filter Debug page only
+	content = fail2ban.RemoveComments(content)
+
+	c.JSON(http.StatusOK, gin.H{
+		"content":    content,
+		"filterPath": filePath,
+	})
+}
+
 func TestFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("TestFilterHandler called (handlers.go)") // entry point
@@ -1991,15 +2016,16 @@ func TestFilterHandler(c *gin.Context) {
 		return
 	}
 	var req struct {
-		FilterName string   `json:"filterName"`
-		LogLines   []string `json:"logLines"`
+		FilterName    string   `json:"filterName"`
+		LogLines      []string `json:"logLines"`
+		FilterContent string   `json:"filterContent"` // Optional: if provided, use this instead of reading from file
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 		return
 	}
 
-	output, filterPath, err := conn.TestFilter(c.Request.Context(), req.FilterName, req.LogLines)
+	output, filterPath, err := conn.TestFilter(c.Request.Context(), req.FilterName, req.LogLines, req.FilterContent)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to test filter: " + err.Error()})
 		return

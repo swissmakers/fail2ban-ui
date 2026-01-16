@@ -312,8 +312,8 @@ func (lc *LocalConnector) GetFilters(ctx context.Context) ([]string, error) {
 }
 
 // TestFilter implements Connector.
-func (lc *LocalConnector) TestFilter(ctx context.Context, filterName string, logLines []string) (string, string, error) {
-	return TestFilterLocal(filterName, logLines)
+func (lc *LocalConnector) TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (string, string, error) {
+	return TestFilterLocal(filterName, logLines, filterContent)
 }
 
 // GetJailConfig implements Connector.

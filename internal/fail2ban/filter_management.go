@@ -90,6 +90,33 @@ func ensureFilterLocalFile(filterName string) error {
 	return nil
 }
 
+// RemoveComments removes all lines that start with # (comments) from filter content
+// and trims leading/trailing empty newlines
+// This is exported for use in handlers that need to display filter content without comments
+func RemoveComments(content string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip lines that start with # (comments)
+		if !strings.HasPrefix(trimmed, "#") {
+			result = append(result, line)
+		}
+	}
+
+	// Remove leading empty lines
+	for len(result) > 0 && strings.TrimSpace(result[0]) == "" {
+		result = result[1:]
+	}
+
+	// Remove trailing empty lines
+	for len(result) > 0 && strings.TrimSpace(result[len(result)-1]) == "" {
+		result = result[:len(result)-1]
+	}
+
+	return strings.Join(result, "\n")
+}
+
 // readFilterConfigWithFallback reads filter config from .local first, then falls back to .conf.
 // Returns (content, filePath, error)
 func readFilterConfigWithFallback(filterName string) (string, string, error) {
@@ -353,28 +380,322 @@ func normalizeLogLines(logLines []string) []string {
 	return cleaned
 }
 
+// extractVariablesFromContent extracts variable names from [DEFAULT] section of filter content
+func extractVariablesFromContent(content string) map[string]bool {
+	variables := make(map[string]bool)
+	lines := strings.Split(content, "\n")
+	inDefaultSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for [DEFAULT] section
+		if strings.HasPrefix(trimmed, "[DEFAULT]") {
+			inDefaultSection = true
+			continue
+		}
+
+		// Check for end of [DEFAULT] section (next section starts)
+		if inDefaultSection && strings.HasPrefix(trimmed, "[") {
+			inDefaultSection = false
+			continue
+		}
+
+		// Extract variable name from [DEFAULT] section
+		if inDefaultSection && !strings.HasPrefix(trimmed, "#") && strings.Contains(trimmed, "=") {
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) == 2 {
+				varName := strings.TrimSpace(parts[0])
+				if varName != "" {
+					variables[varName] = true
+				}
+			}
+		}
+	}
+
+	return variables
+}
+
+// removeDuplicateVariables removes variable definitions from included content that already exist in main filter
+func removeDuplicateVariables(includedContent string, mainVariables map[string]bool) string {
+	lines := strings.Split(includedContent, "\n")
+	var result strings.Builder
+	inDefaultSection := false
+	removedCount := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		originalLine := line
+
+		// Check for [DEFAULT] section
+		if strings.HasPrefix(trimmed, "[DEFAULT]") {
+			inDefaultSection = true
+			result.WriteString(originalLine)
+			result.WriteString("\n")
+			continue
+		}
+
+		// Check for end of [DEFAULT] section (next section starts)
+		if inDefaultSection && strings.HasPrefix(trimmed, "[") {
+			inDefaultSection = false
+			result.WriteString(originalLine)
+			result.WriteString("\n")
+			continue
+		}
+
+		// In [DEFAULT] section, check if variable already exists in main filter
+		if inDefaultSection && !strings.HasPrefix(trimmed, "#") && strings.Contains(trimmed, "=") {
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) == 2 {
+				varName := strings.TrimSpace(parts[0])
+				if mainVariables[varName] {
+					// Skip this line - variable will be defined in main filter (takes precedence)
+					removedCount++
+					config.DebugLog("Removing variable '%s' from included file (will be overridden by main filter)", varName)
+					continue
+				}
+			}
+		}
+
+		result.WriteString(originalLine)
+		result.WriteString("\n")
+	}
+
+	if removedCount > 0 {
+		config.DebugLog("Removed %d variable definitions from included file (overridden by main filter)", removedCount)
+	}
+
+	return result.String()
+}
+
+// resolveFilterIncludes parses the filter content to find [INCLUDES] section
+// and loads the included files, combining them with the main filter content.
+// Returns: combined content with before files + main filter + after files
+// Duplicate variables in main filter are removed if they exist in included files
+// currentFilterName: name of the current filter being tested (to avoid self-inclusion)
+func resolveFilterIncludes(filterContent string, filterDPath string, currentFilterName string) (string, error) {
+	lines := strings.Split(filterContent, "\n")
+	var beforeFiles []string
+	var afterFiles []string
+	var inIncludesSection bool
+	var mainContent strings.Builder
+
+	// Parse the filter content to find [INCLUDES] section
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for [INCLUDES] section
+		if strings.HasPrefix(trimmed, "[INCLUDES]") {
+			inIncludesSection = true
+			continue
+		}
+
+		// Check for end of [INCLUDES] section (next section starts)
+		if inIncludesSection && strings.HasPrefix(trimmed, "[") {
+			inIncludesSection = false
+		}
+
+		// Parse before and after directives
+		if inIncludesSection {
+			if strings.HasPrefix(strings.ToLower(trimmed), "before") {
+				parts := strings.SplitN(trimmed, "=", 2)
+				if len(parts) == 2 {
+					file := strings.TrimSpace(parts[1])
+					if file != "" {
+						beforeFiles = append(beforeFiles, file)
+					}
+				}
+				continue
+			}
+			if strings.HasPrefix(strings.ToLower(trimmed), "after") {
+				parts := strings.SplitN(trimmed, "=", 2)
+				if len(parts) == 2 {
+					file := strings.TrimSpace(parts[1])
+					if file != "" {
+						afterFiles = append(afterFiles, file)
+					}
+				}
+				continue
+			}
+		}
+
+		// Collect main content (everything except [INCLUDES] section)
+		if !inIncludesSection {
+			if i > 0 {
+				mainContent.WriteString("\n")
+			}
+			mainContent.WriteString(line)
+		}
+	}
+
+	// Extract variables from main filter content first
+	mainContentStr := mainContent.String()
+	mainVariables := extractVariablesFromContent(mainContentStr)
+
+	// Build combined content: before files + main filter + after files
+	var combined strings.Builder
+
+	// Load and append before files, removing duplicates that exist in main filter
+	for _, fileName := range beforeFiles {
+		// Remove any existing extension to get base name
+		baseName := fileName
+		if strings.HasSuffix(baseName, ".local") {
+			baseName = strings.TrimSuffix(baseName, ".local")
+		} else if strings.HasSuffix(baseName, ".conf") {
+			baseName = strings.TrimSuffix(baseName, ".conf")
+		}
+
+		// Skip if this is the same filter (avoid self-inclusion)
+		if baseName == currentFilterName {
+			config.DebugLog("Skipping self-inclusion of filter '%s' in before files", baseName)
+			continue
+		}
+
+		// Always try .local first, then .conf (matching fail2ban's behavior)
+		localPath := filepath.Join(filterDPath, baseName+".local")
+		confPath := filepath.Join(filterDPath, baseName+".conf")
+
+		var content []byte
+		var err error
+		var filePath string
+
+		// Try .local first
+		if content, err = os.ReadFile(localPath); err == nil {
+			filePath = localPath
+			config.DebugLog("Loading included filter file from .local: %s", filePath)
+		} else if content, err = os.ReadFile(confPath); err == nil {
+			filePath = confPath
+			config.DebugLog("Loading included filter file from .conf: %s", filePath)
+		} else {
+			config.DebugLog("Warning: could not load included filter file '%s' or '%s': %v", localPath, confPath, err)
+			continue // Skip if neither file exists
+		}
+
+		contentStr := string(content)
+		// Remove variables from included file that are defined in main filter (main filter takes precedence)
+		cleanedContent := removeDuplicateVariables(contentStr, mainVariables)
+		combined.WriteString(cleanedContent)
+		if !strings.HasSuffix(cleanedContent, "\n") {
+			combined.WriteString("\n")
+		}
+		combined.WriteString("\n")
+	}
+
+	// Append main filter content (unchanged - this is what the user is editing)
+	combined.WriteString(mainContentStr)
+	if !strings.HasSuffix(mainContentStr, "\n") {
+		combined.WriteString("\n")
+	}
+
+	// Load and append after files, also removing duplicates that exist in main filter
+	for _, fileName := range afterFiles {
+		// Remove any existing extension to get base name
+		baseName := fileName
+		if strings.HasSuffix(baseName, ".local") {
+			baseName = strings.TrimSuffix(baseName, ".local")
+		} else if strings.HasSuffix(baseName, ".conf") {
+			baseName = strings.TrimSuffix(baseName, ".conf")
+		}
+
+		// Note: Self-inclusion in "after" directive is intentional in fail2ban
+		// (e.g., after = apache-common.local is standard pattern for .local files)
+		// So we always load it, even if it's the same filter name
+
+		// Always try .local first, then .conf (matching fail2ban's behavior)
+		localPath := filepath.Join(filterDPath, baseName+".local")
+		confPath := filepath.Join(filterDPath, baseName+".conf")
+
+		var content []byte
+		var err error
+		var filePath string
+
+		// Try .local first
+		if content, err = os.ReadFile(localPath); err == nil {
+			filePath = localPath
+			config.DebugLog("Loading included filter file from .local: %s", filePath)
+		} else if content, err = os.ReadFile(confPath); err == nil {
+			filePath = confPath
+			config.DebugLog("Loading included filter file from .conf: %s", filePath)
+		} else {
+			config.DebugLog("Warning: could not load included filter file '%s' or '%s': %v", localPath, confPath, err)
+			continue // Skip if neither file exists
+		}
+
+		contentStr := string(content)
+		// Remove variables from included file that are defined in main filter (main filter takes precedence)
+		cleanedContent := removeDuplicateVariables(contentStr, mainVariables)
+		combined.WriteString("\n")
+		combined.WriteString(cleanedContent)
+		if !strings.HasSuffix(cleanedContent, "\n") {
+			combined.WriteString("\n")
+		}
+	}
+
+	return combined.String(), nil
+}
+
 // TestFilterLocal tests a filter against log lines using fail2ban-regex
 // Returns the full output of fail2ban-regex command and the filter path used
 // Uses .local file if it exists, otherwise falls back to .conf file
-func TestFilterLocal(filterName string, logLines []string) (string, string, error) {
+// If filterContent is provided, it creates a temporary filter file and uses that instead
+func TestFilterLocal(filterName string, logLines []string, filterContent string) (string, string, error) {
 	cleaned := normalizeLogLines(logLines)
 	if len(cleaned) == 0 {
 		return "No log lines provided.\n", "", nil
 	}
 
-	// Try .local first, then fallback to .conf
-	localPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".local")
-	confPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".conf")
-
 	var filterPath string
-	if _, err := os.Stat(localPath); err == nil {
-		filterPath = localPath
-		config.DebugLog("TestFilterLocal: using .local file: %s", filterPath)
-	} else if _, err := os.Stat(confPath); err == nil {
-		filterPath = confPath
-		config.DebugLog("TestFilterLocal: using .conf file: %s", filterPath)
+	var tempFilterFile *os.File
+	var err error
+
+	// If custom filter content is provided, create a temporary filter file
+	if filterContent != "" {
+		tempFilterFile, err = os.CreateTemp("", "fail2ban-filter-*.conf")
+		if err != nil {
+			return "", "", fmt.Errorf("failed to create temporary filter file: %w", err)
+		}
+		defer os.Remove(tempFilterFile.Name())
+		defer tempFilterFile.Close()
+
+		// Resolve filter includes to get complete filter content with all dependencies
+		filterDPath := "/etc/fail2ban/filter.d"
+		contentToWrite, err := resolveFilterIncludes(filterContent, filterDPath, filterName)
+		if err != nil {
+			config.DebugLog("Warning: failed to resolve filter includes, using original content: %v", err)
+			contentToWrite = filterContent
+		}
+
+		// Ensure it ends with a newline for proper parsing
+		if !strings.HasSuffix(contentToWrite, "\n") {
+			contentToWrite += "\n"
+		}
+
+		if _, err := tempFilterFile.WriteString(contentToWrite); err != nil {
+			return "", "", fmt.Errorf("failed to write temporary filter file: %w", err)
+		}
+
+		// Ensure the file is synced to disk
+		if err := tempFilterFile.Sync(); err != nil {
+			return "", "", fmt.Errorf("failed to sync temporary filter file: %w", err)
+		}
+
+		tempFilterFile.Close()
+		filterPath = tempFilterFile.Name()
+		config.DebugLog("TestFilterLocal: using custom filter content from temporary file: %s (size: %d bytes, includes resolved: %v)", filterPath, len(contentToWrite), err == nil)
 	} else {
-		return "", "", fmt.Errorf("filter %s not found (checked both .local and .conf): %w", filterName, err)
+		// Try .local first, then fallback to .conf
+		localPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".local")
+		confPath := filepath.Join("/etc/fail2ban/filter.d", filterName+".conf")
+
+		if _, err := os.Stat(localPath); err == nil {
+			filterPath = localPath
+			config.DebugLog("TestFilterLocal: using .local file: %s", filterPath)
+		} else if _, err := os.Stat(confPath); err == nil {
+			filterPath = confPath
+			config.DebugLog("TestFilterLocal: using .conf file: %s", filterPath)
+		} else {
+			return "", "", fmt.Errorf("filter %s not found (checked both .local and .conf): %w", filterName, err)
+		}
 	}
 
 	// Create a temporary log file with all log lines

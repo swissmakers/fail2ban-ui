@@ -43,9 +43,28 @@ function loadFilters() {
           select.setAttribute('data-listener-added', 'true');
           select.addEventListener('change', function() {
             if (deleteBtn) deleteBtn.disabled = !select.value;
+            // Load filter content when a filter is selected
+            if (select.value) {
+              loadFilterContent(select.value);
+            } else {
+              const filterContentTextarea = document.getElementById('filterContentTextarea');
+              const editBtn = document.getElementById('editFilterContentBtn');
+              if (filterContentTextarea) {
+                filterContentTextarea.value = '';
+                filterContentTextarea.readOnly = true;
+                filterContentTextarea.classList.add('bg-gray-50');
+                filterContentTextarea.classList.remove('bg-white');
+              }
+              if (editBtn) editBtn.classList.add('hidden');
+              updateFilterContentHints(false);
+            }
           });
         }
         if (deleteBtn) deleteBtn.disabled = !select.value;
+        // If a filter is already selected (e.g., first one by default), load its content
+        if (select.value) {
+          loadFilterContent(select.value);
+        }
       }
     })
     .catch(err => {
@@ -54,9 +73,93 @@ function loadFilters() {
     .finally(() => showLoading(false));
 }
 
+function loadFilterContent(filterName) {
+  const filterContentTextarea = document.getElementById('filterContentTextarea');
+  const editBtn = document.getElementById('editFilterContentBtn');
+  if (!filterContentTextarea) return;
+
+  showLoading(true);
+  fetch(withServerParam('/api/filters/' + encodeURIComponent(filterName) + '/content'), {
+    headers: serverHeaders()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        showToast('Error loading filter content: ' + data.error, 'error');
+        filterContentTextarea.value = '';
+        filterContentTextarea.readOnly = true;
+        if (editBtn) editBtn.classList.add('hidden');
+        updateFilterContentHints(false);
+        return;
+      }
+      filterContentTextarea.value = data.content || '';
+      filterContentTextarea.readOnly = true; // Keep it readonly by default
+      filterContentTextarea.classList.add('bg-gray-50');
+      filterContentTextarea.classList.remove('bg-white');
+      if (editBtn) editBtn.classList.remove('hidden');
+      updateFilterContentHints(false);
+    })
+    .catch(err => {
+      showToast('Error loading filter content: ' + err, 'error');
+      filterContentTextarea.value = '';
+      filterContentTextarea.readOnly = true;
+      if (editBtn) editBtn.classList.add('hidden');
+      updateFilterContentHints(false);
+    })
+    .finally(() => showLoading(false));
+}
+
+function toggleFilterContentEdit() {
+  const filterContentTextarea = document.getElementById('filterContentTextarea');
+  const editBtn = document.getElementById('editFilterContentBtn');
+  if (!filterContentTextarea) return;
+
+  if (filterContentTextarea.readOnly) {
+    // Make editable
+    filterContentTextarea.readOnly = false;
+    filterContentTextarea.classList.remove('bg-gray-50');
+    filterContentTextarea.classList.add('bg-white');
+    if (editBtn) {
+      editBtn.textContent = t('filter_debug.cancel_edit', 'Cancel');
+      editBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+      editBtn.classList.add('bg-gray-600', 'hover:bg-gray-700');
+    }
+    updateFilterContentHints(true);
+  } else {
+    // Make readonly
+    filterContentTextarea.readOnly = true;
+    filterContentTextarea.classList.add('bg-gray-50');
+    filterContentTextarea.classList.remove('bg-white');
+    if (editBtn) {
+      editBtn.textContent = t('filter_debug.edit_filter', 'Edit');
+      editBtn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+      editBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+    }
+    updateFilterContentHints(false);
+  }
+}
+
+function updateFilterContentHints(isEditable) {
+  const readonlyHint = document.querySelector('p[data-i18n="filter_debug.filter_content_hint_readonly"]');
+  const editableHint = document.getElementById('filterContentHintEditable');
+  
+  if (isEditable) {
+    if (readonlyHint) readonlyHint.classList.add('hidden');
+    if (editableHint) editableHint.classList.remove('hidden');
+  } else {
+    if (readonlyHint) readonlyHint.classList.remove('hidden');
+    if (editableHint) editableHint.classList.add('hidden');
+  }
+  
+  if (typeof updateTranslations === 'function') {
+    updateTranslations();
+  }
+}
+
 function testSelectedFilter() {
   const filterName = document.getElementById('filterSelect').value;
   const lines = document.getElementById('logLinesTextarea').value.split('\n').filter(line => line.trim() !== '');
+  const filterContentTextarea = document.getElementById('filterContentTextarea');
   
   if (!filterName) {
     showToast('Please select a filter.', 'info');
@@ -74,13 +177,24 @@ function testSelectedFilter() {
   testResultsEl.innerHTML = '';
 
   showLoading(true);
+  const requestBody = {
+    filterName: filterName,
+    logLines: lines
+  };
+  
+  // Only include filter content if textarea is editable (not readonly)
+  // If readonly, test the original filter from server
+  if (filterContentTextarea && !filterContentTextarea.readOnly) {
+    const filterContent = filterContentTextarea.value.trim();
+    if (filterContent) {
+      requestBody.filterContent = filterContent;
+    }
+  }
+
   fetch(withServerParam('/api/filters/test'), {
     method: 'POST',
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({
-      filterName: filterName,
-      logLines: lines
-    })
+    body: JSON.stringify(requestBody)
   })
     .then(res => res.json())
     .then(data => {
@@ -122,6 +236,7 @@ function renderTestResults(output, filterPath) {
 
 function showFilterSection() {
   const testResultsEl = document.getElementById('testResults');
+  const filterContentTextarea = document.getElementById('filterContentTextarea');
   if (!currentServerId) {
     var notice = document.getElementById('filterNotice');
     if (notice) {
@@ -130,6 +245,10 @@ function showFilterSection() {
     }
     document.getElementById('filterSelect').innerHTML = '';
     document.getElementById('logLinesTextarea').value = '';
+    if (filterContentTextarea) {
+      filterContentTextarea.value = '';
+      filterContentTextarea.readOnly = true;
+    }
     testResultsEl.innerHTML = '';
     testResultsEl.classList.add('hidden');
     document.getElementById('deleteFilterBtn').disabled = true;
@@ -139,12 +258,37 @@ function showFilterSection() {
   testResultsEl.innerHTML = '';
   testResultsEl.classList.add('hidden');
   document.getElementById('logLinesTextarea').value = '';
-  // Add change listener to enable/disable delete button
+  const editBtn = document.getElementById('editFilterContentBtn');
+  if (filterContentTextarea) {
+    filterContentTextarea.value = '';
+    filterContentTextarea.readOnly = true;
+    filterContentTextarea.classList.add('bg-gray-50');
+    filterContentTextarea.classList.remove('bg-white');
+  }
+  if (editBtn) editBtn.classList.add('hidden');
+  updateFilterContentHints(false);
+  // Add change listener to enable/disable delete button and load filter content
   const filterSelect = document.getElementById('filterSelect');
   const deleteBtn = document.getElementById('deleteFilterBtn');
-  filterSelect.addEventListener('change', function() {
-    deleteBtn.disabled = !filterSelect.value;
-  });
+  if (!filterSelect.hasAttribute('data-listener-added')) {
+    filterSelect.setAttribute('data-listener-added', 'true');
+    filterSelect.addEventListener('change', function() {
+      deleteBtn.disabled = !filterSelect.value;
+      if (filterSelect.value) {
+        loadFilterContent(filterSelect.value);
+      } else {
+        const editBtn = document.getElementById('editFilterContentBtn');
+        if (filterContentTextarea) {
+          filterContentTextarea.value = '';
+          filterContentTextarea.readOnly = true;
+          filterContentTextarea.classList.add('bg-gray-50');
+          filterContentTextarea.classList.remove('bg-white');
+        }
+        if (editBtn) editBtn.classList.add('hidden');
+        updateFilterContentHints(false);
+      }
+    });
+  }
 }
 
 function openCreateFilterModal() {
@@ -234,6 +378,16 @@ function deleteFilter() {
       document.getElementById('testResults').innerHTML = '';
       document.getElementById('testResults').classList.add('hidden');
       document.getElementById('logLinesTextarea').value = '';
+      const filterContentTextarea = document.getElementById('filterContentTextarea');
+      const editBtn = document.getElementById('editFilterContentBtn');
+      if (filterContentTextarea) {
+        filterContentTextarea.value = '';
+        filterContentTextarea.readOnly = true;
+        filterContentTextarea.classList.add('bg-gray-50');
+        filterContentTextarea.classList.remove('bg-white');
+      }
+      if (editBtn) editBtn.classList.add('hidden');
+      updateFilterContentHints(false);
     })
     .catch(function(err) {
       console.error('Error deleting filter:', err);
