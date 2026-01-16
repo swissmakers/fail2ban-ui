@@ -467,6 +467,25 @@ button.bg-red-500:hover, button.bg-red-600:hover {
     color: #f3f4f6;
 }
 
+/* Ignore IPs container - ensure proper wrapping and prevent horizontal overflow */
+#ignoreIPsContainer {
+    overflow-x: hidden;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+#ignoreIPsTags {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.ignore-ip-tag {
+    max-width: 100%;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
 #wsTooltip .border-gray-700 {
     border-color: rgb(55 65 81);
 }
