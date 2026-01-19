@@ -1,0 +1,12 @@
+config/
+f2b-run-local/
+fail2ban-config-local/
+keycloak-data/
+keycloak-db/
+pocket-id-data/
+authentik-media/
+authentik-db/
+authelia-config/
+authelia-db/
+authelia-redis/
+.env
