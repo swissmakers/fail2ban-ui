@@ -84,12 +84,16 @@ podman compose up -d
 
 **Important:** 
 - Without setting these, redirect URIs will use `localhost` which won't work from remote browsers
-- After changing these values, you may need to recreate the Keycloak client:
+- After changing these values, you may need to recreate the Keycloak client to update redirect URIs:
   ```bash
   podman compose down
   rm -rf config/keycloak-client-secret
   podman compose up -d
   ```
+  Or manually update the client in Keycloak admin console:
+  - Go to Clients → fail2ban-ui (name of the client)
+  - Update "Valid redirect URIs" and "Valid post logout redirect URIs"
+  - Save
 
 ## Setup Instructions
 
@@ -126,8 +130,11 @@ The `keycloak-init` container will:
 - Wait for Keycloak to be ready
 - Automatically create the `fail2ban-ui` OIDC client
 - Configure redirect URIs and web origins
+- Configure post-logout redirect URI (for proper logout flow)
 - Save the client secret to `/config/keycloak-client-secret`
 - Fail2ban-ui will automatically read the secret from this file
+
+**Note:** If you update `PUBLIC_FRONTEND_URL` after the client has been created, you may need to delete the existing client and let `keycloak-init` recreate it, or manually update the client in Keycloak's admin console to include the new post-logout redirect URI.
 
 **If you see "Client not found" error:**
 

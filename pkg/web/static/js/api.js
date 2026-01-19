@@ -17,3 +17,27 @@ function serverHeaders(headers) {
   return headers;
 }
 
+// Auth-aware fetch wrapper that handles 401/403 responses
+function authFetch(url, options) {
+  options = options || {};
+  // Ensure Accept header for API requests
+  if (!options.headers) {
+    options.headers = {};
+  }
+  if (!options.headers['Accept']) {
+    options.headers['Accept'] = 'application/json';
+  }
+  
+  return fetch(url, options).then(function(response) {
+    // Handle authentication errors
+    if (response.status === 401 || response.status === 403) {
+      if (typeof handleAuthError === 'function') {
+        handleAuthError(response);
+      }
+      // Return a rejected promise to stop the chain
+      return Promise.reject(new Error('Authentication required'));
+    }
+    return response;
+  });
+}
+

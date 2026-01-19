@@ -87,6 +87,22 @@ type AppSettings struct {
 	ConsoleOutput bool `json:"consoleOutput"` // Enable console output in web UI (default: false)
 }
 
+// OIDCConfig holds OIDC authentication configuration
+type OIDCConfig struct {
+	Enabled       bool     `json:"enabled"`
+	Provider      string   `json:"provider"` // keycloak, authentik, pocketid
+	IssuerURL     string   `json:"issuerURL"`
+	ClientID      string   `json:"clientID"`
+	ClientSecret  string   `json:"clientSecret"`
+	RedirectURL   string   `json:"redirectURL"`
+	Scopes        []string `json:"scopes"`        // Default: ["openid", "profile", "email"]
+	SessionSecret string   `json:"sessionSecret"` // For session encryption
+	SessionMaxAge int      `json:"sessionMaxAge"` // Session timeout in seconds
+	SkipVerify    bool     `json:"skipVerify"`    // Skip TLS verification (dev only)
+	UsernameClaim string   `json:"usernameClaim"` // Claim to use as username
+	LogoutURL     string   `json:"logoutURL"`     // Provider logout URL (optional)
+}
+
 type AdvancedActionsConfig struct {
 	Enabled     bool                        `json:"enabled"`
 	Threshold   int                         `json:"threshold"`
@@ -1426,6 +1442,103 @@ func GetBindAddressFromEnv() (string, bool) {
 	}
 	// Invalid format, return default
 	return "0.0.0.0", false
+}
+
+// GetOIDCConfigFromEnv reads OIDC configuration from environment variables
+// Returns nil if OIDC is not enabled
+func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
+	enabled := os.Getenv("OIDC_ENABLED")
+	if enabled != "true" && enabled != "1" {
+		return nil, nil // OIDC not enabled
+	}
+
+	config := &OIDCConfig{
+		Enabled: true,
+	}
+
+	// Required fields
+	config.Provider = os.Getenv("OIDC_PROVIDER")
+	if config.Provider == "" {
+		return nil, fmt.Errorf("OIDC_PROVIDER environment variable is required when OIDC_ENABLED=true")
+	}
+	if config.Provider != "keycloak" && config.Provider != "authentik" && config.Provider != "pocketid" {
+		return nil, fmt.Errorf("OIDC_PROVIDER must be one of: keycloak, authentik, pocketid")
+	}
+
+	config.IssuerURL = os.Getenv("OIDC_ISSUER_URL")
+	if config.IssuerURL == "" {
+		return nil, fmt.Errorf("OIDC_ISSUER_URL environment variable is required when OIDC_ENABLED=true")
+	}
+
+	config.ClientID = os.Getenv("OIDC_CLIENT_ID")
+	if config.ClientID == "" {
+		return nil, fmt.Errorf("OIDC_CLIENT_ID environment variable is required when OIDC_ENABLED=true")
+	}
+
+	config.ClientSecret = os.Getenv("OIDC_CLIENT_SECRET")
+	// If client secret is "auto-configured", try to read from file
+	// This is primarily used for Keycloak's automatic client setup in development
+	if config.ClientSecret == "auto-configured" {
+		secretFile := os.Getenv("OIDC_CLIENT_SECRET_FILE")
+		if secretFile == "" {
+			secretFile = "/config/keycloak-client-secret" // Default path for Keycloak auto-configuration
+		}
+		if secretBytes, err := os.ReadFile(secretFile); err == nil {
+			config.ClientSecret = strings.TrimSpace(string(secretBytes))
+		} else {
+			return nil, fmt.Errorf("OIDC_CLIENT_SECRET is set to 'auto-configured' but could not read from file %s: %w", secretFile, err)
+		}
+	}
+	if config.ClientSecret == "" {
+		return nil, fmt.Errorf("OIDC_CLIENT_SECRET environment variable is required when OIDC_ENABLED=true")
+	}
+
+	config.RedirectURL = os.Getenv("OIDC_REDIRECT_URL")
+	if config.RedirectURL == "" {
+		return nil, fmt.Errorf("OIDC_REDIRECT_URL environment variable is required when OIDC_ENABLED=true")
+	}
+
+	// Optional fields with defaults
+	scopesEnv := os.Getenv("OIDC_SCOPES")
+	if scopesEnv != "" {
+		config.Scopes = strings.Split(scopesEnv, ",")
+		for i := range config.Scopes {
+			config.Scopes[i] = strings.TrimSpace(config.Scopes[i])
+		}
+	} else {
+		config.Scopes = []string{"openid", "profile", "email"}
+	}
+
+	// Set default session max age
+	config.SessionMaxAge = 3600 // Default: 1 hour
+	sessionMaxAgeEnv := os.Getenv("OIDC_SESSION_MAX_AGE")
+	if sessionMaxAgeEnv != "" {
+		if maxAge, err := strconv.Atoi(sessionMaxAgeEnv); err == nil && maxAge > 0 {
+			config.SessionMaxAge = maxAge
+		}
+	}
+
+	config.SessionSecret = os.Getenv("OIDC_SESSION_SECRET")
+	if config.SessionSecret == "" {
+		// Generate a random session secret
+		secretBytes := make([]byte, 32)
+		if _, err := rand.Read(secretBytes); err != nil {
+			return nil, fmt.Errorf("failed to generate session secret: %w", err)
+		}
+		config.SessionSecret = base64.URLEncoding.EncodeToString(secretBytes)
+	}
+
+	skipVerifyEnv := os.Getenv("OIDC_SKIP_VERIFY")
+	config.SkipVerify = (skipVerifyEnv == "true" || skipVerifyEnv == "1")
+
+	config.UsernameClaim = os.Getenv("OIDC_USERNAME_CLAIM")
+	if config.UsernameClaim == "" {
+		config.UsernameClaim = "preferred_username" // Default claim
+	}
+
+	config.LogoutURL = os.Getenv("OIDC_LOGOUT_URL") // Optional
+
+	return config, nil
 }
 
 func GetSettings() AppSettings {

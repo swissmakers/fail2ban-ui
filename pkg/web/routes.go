@@ -25,8 +25,21 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 	// Set the global WebSocket hub
 	SetWebSocketHub(hub)
 
+	// Public authentication routes (no auth required)
+	authRoutes := r.Group("/auth")
+	{
+		authRoutes.GET("/login", LoginHandler)
+		authRoutes.GET("/callback", CallbackHandler)
+		authRoutes.GET("/logout", LogoutHandler)
+		authRoutes.GET("/status", AuthStatusHandler)
+		authRoutes.GET("/user", UserInfoHandler)
+	}
+
+	// Apply authentication middleware to all routes
+	r.Use(AuthMiddleware())
+
 	// Render the dashboard
-	r.GET("/", IndexHandler)
+	r.GET("/", renderIndexPage)
 
 	api := r.Group("/api")
 	{

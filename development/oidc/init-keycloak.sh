@@ -13,6 +13,7 @@ CLIENT_SECRET="${CLIENT_SECRET:-}"
 # Use PUBLIC_FRONTEND_URL if provided, otherwise default to localhost
 PUBLIC_FRONTEND_URL="${PUBLIC_FRONTEND_URL:-http://localhost:3080}"
 REDIRECT_URI="${REDIRECT_URI:-${PUBLIC_FRONTEND_URL}/auth/callback}"
+POST_LOGOUT_REDIRECT_URI="${POST_LOGOUT_REDIRECT_URI:-${PUBLIC_FRONTEND_URL}/auth/login}"
 WEB_ORIGIN="${WEB_ORIGIN:-${PUBLIC_FRONTEND_URL}}"
 
 # Extract host and port from KEYCLOAK_URL for health check
@@ -83,6 +84,9 @@ if [ -n "$EXISTING_CLIENT" ]; then
             \"clientAuthenticatorType\": \"client-secret\",
             \"redirectUris\": [\"${REDIRECT_URI}\"],
             \"webOrigins\": [\"${WEB_ORIGIN}\"],
+            \"attributes\": {
+                \"post.logout.redirect.uris\": \"${POST_LOGOUT_REDIRECT_URI}\"
+            },
             \"protocol\": \"openid-connect\",
             \"publicClient\": false,
             \"standardFlowEnabled\": true,
@@ -103,6 +107,9 @@ else
             \"clientAuthenticatorType\": \"client-secret\",
             \"redirectUris\": [\"${REDIRECT_URI}\"],
             \"webOrigins\": [\"${WEB_ORIGIN}\"],
+            \"attributes\": {
+                \"post.logout.redirect.uris\": \"${POST_LOGOUT_REDIRECT_URI}\"
+            },
             \"protocol\": \"openid-connect\",
             \"publicClient\": false,
             \"standardFlowEnabled\": true,
@@ -148,6 +155,7 @@ echo "Client ID: ${CLIENT_ID}"
 echo "Client Secret: ${CLIENT_SECRET}"
 echo "Realm: ${REALM}"
 echo "Redirect URI: ${REDIRECT_URI}"
+echo "Post Logout Redirect URI: ${POST_LOGOUT_REDIRECT_URI}"
 echo "=========================================="
 
 # Save secret to shared volume for fail2ban-ui to read

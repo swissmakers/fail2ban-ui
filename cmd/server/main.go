@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
@@ -47,6 +48,23 @@ func main() {
 
 	if err := fail2ban.GetManager().ReloadFromSettings(settings); err != nil {
 		log.Fatalf("failed to initialise fail2ban connectors: %v", err)
+	}
+
+	// Initialize OIDC authentication if enabled
+	oidcConfig, err := config.GetOIDCConfigFromEnv()
+	if err != nil {
+		log.Fatalf("failed to load OIDC configuration: %v", err)
+	}
+	if oidcConfig != nil && oidcConfig.Enabled {
+		// Initialize session secret
+		if err := auth.InitializeSessionSecret(oidcConfig.SessionSecret); err != nil {
+			log.Fatalf("failed to initialize session secret: %v", err)
+		}
+		// Initialize OIDC client
+		if _, err := auth.InitializeOIDC(oidcConfig); err != nil {
+			log.Fatalf("failed to initialize OIDC: %v", err)
+		}
+		log.Println("OIDC authentication enabled")
 	}
 
 	// Set Gin mode based on the debug flag in settings.

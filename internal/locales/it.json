@@ -368,5 +368,13 @@
   "toast.ban.title": "Nuovo blocco verificato",
   "toast.ban.action": "bannato in",
   "toast.unban.title": "IP sbloccato",
-  "toast.unban.action": "sbloccato da"
+  "toast.unban.action": "sbloccato da",
+  "auth.login_title": "Accedi a Fail2ban UI",
+  "auth.login_description": "Si prega di autenticarsi per accedere all'interfaccia di gestione",
+  "auth.login_button": "Accedi con OIDC",
+  "auth.logging_in": "Reindirizzamento al login...",
+  "auth.logout": "Esci",
+  "auth.user_info": "Informazioni utente",
+  "auth.session_expired": "La tua sessione è scaduta. Si prega di accedere nuovamente.",
+  "auth.login_required": "Autenticazione richiesta"
 }

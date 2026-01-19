@@ -3,6 +3,29 @@
 
 window.addEventListener('DOMContentLoaded', function() {
   showLoading(true);
+  
+  // Check authentication status first (if auth.js is loaded)
+  if (typeof checkAuthStatus === 'function') {
+    checkAuthStatus().then(function(authStatus) {
+      // Only proceed with initialization if authenticated or OIDC disabled
+      if (!authStatus.enabled || authStatus.authenticated) {
+        initializeApp();
+      } else {
+        // Not authenticated, login page will be shown by checkAuthStatus
+        showLoading(false);
+      }
+    }).catch(function(err) {
+      console.error('Auth check failed:', err);
+      // Proceed with initialization anyway (fallback)
+      initializeApp();
+    });
+  } else {
+    // Auth.js not loaded, proceed normally
+    initializeApp();
+  }
+});
+
+function initializeApp() {
   // Only display external IP if the element exists (not disabled via template variable)
   if (document.getElementById('external-ip')) {
     displayExternalIP();
@@ -148,4 +171,4 @@ window.addEventListener('DOMContentLoaded', function() {
       advancedIntegrationSelect.addEventListener('change', updateAdvancedIntegrationFields);
     }
   });
-});
+}

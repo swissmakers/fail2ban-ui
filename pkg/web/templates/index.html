@@ -60,7 +60,7 @@
   <!-- ******************************************************************* -->
   <!--                          Navigation START                           -->
   <!-- ******************************************************************* -->
-  <nav class="bg-blue-600 text-white shadow-lg">
+  <nav class="hidden bg-blue-600 text-white shadow-lg">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
         <div class="flex items-center">
@@ -80,6 +80,25 @@
             <div id="clockDisplay" class="ml-4 text-sm font-mono">
               <span id="clockTime">--:--:--</span>
             </div>
+            <!-- User info and logout (shown when authenticated) -->
+            <div id="userInfoContainer" class="hidden ml-4 flex items-center gap-3 border-l border-blue-500 pl-4">
+              <div class="relative">
+                <button id="userMenuButton" onclick="toggleUserMenu()" class="flex items-center gap-2 px-3 py-2 rounded text-sm font-medium hover:bg-blue-700 transition-colors focus:outline-none">
+                  <span id="userDisplayName" class="font-medium"></span>
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                  </svg>
+                </button>
+                <!-- User dropdown menu -->
+                <div id="userMenuDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200">
+                  <div class="px-4 py-2 border-b border-gray-200">
+                    <div class="text-sm font-medium text-gray-900" id="userMenuDisplayName"></div>
+                    <div class="text-xs text-gray-500" id="userMenuEmail"></div>
+                  </div>
+                  <button onclick="handleLogout()" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors" data-i18n="auth.logout">Logout</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="md:hidden">
@@ -97,14 +116,79 @@
         <a href="#" onclick="showSection('dashboardSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.dashboard">Dashboard</a>
         <a href="#" onclick="showSection('filterSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
         <a href="#" onclick="showSection('settingsSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
+        <!-- User info and logout in mobile menu (shown when authenticated) -->
+        <div id="mobileUserInfoContainer" class="hidden border-t border-blue-500 mt-2 pt-2">
+          <div class="px-3 py-2">
+            <div class="text-sm font-medium" id="mobileUserDisplayName"></div>
+            <div class="text-xs text-blue-200" id="mobileUserEmail"></div>
+          </div>
+          <button onclick="handleLogout()" class="w-full text-left block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="auth.logout">Logout</button>
+        </div>
       </div>
     </div>
   </nav>
   <!-- ************************ Navigation END *************************** -->
 
+  <!-- Login Page (shown when not authenticated) -->
+  <div id="loginPage" class="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full">
+      <!-- Login Card -->
+      <div class="bg-white rounded-lg shadow-lg p-8 border border-gray-200">
+        <!-- Logo and Title -->
+        <div class="text-center mb-8">
+          <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-600 mb-4">
+            <svg class="h-10 w-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+            </svg>
+          </div>
+          <h2 class="text-3xl font-bold text-gray-900 mb-2" data-i18n="auth.login_title">Sign in to Fail2ban UI</h2>
+          <p class="text-sm text-gray-600" data-i18n="auth.login_description">Please authenticate to access the management interface</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="loginError" class="hidden bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+              </svg>
+            </div>
+            <div class="ml-3">
+              <p class="text-sm font-medium" id="loginErrorText"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Login Button -->
+        <div class="mb-6">
+          <button type="button" onclick="handleLogin()" class="w-full flex justify-center items-center py-3 px-4 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+            <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+            </svg>
+            <span data-i18n="auth.login_button">Sign in with OIDC</span>
+          </button>
+          
+          <!-- Loading State -->
+          <div id="loginLoading" class="hidden text-center py-4">
+            <div class="inline-flex items-center">
+              <div class="h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-3"></div>
+              <p class="text-sm text-gray-600 font-medium" data-i18n="auth.logging_in">Redirecting to login...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Info -->
+        <div class="pt-6 border-t border-gray-200">
+          <p class="text-xs text-center text-gray-500">
+            Secure authentication via OpenID Connect
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Main Content -->
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+  <main id="mainContent" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
   <!-- ******************************************************************* -->
   <!--                        Dashboard Page START                         -->
   <!-- ******************************************************************* -->
@@ -1397,6 +1481,7 @@
   <script src="/static/js/websocket.js?v={{.version}}"></script>
   <script src="/static/js/header.js?v={{.version}}"></script>
   <script src="/static/js/lotr.js?v={{.version}}"></script>
+  <script src="/static/js/auth.js?v={{.version}}"></script>
   <script src="/static/js/init.js?v={{.version}}"></script>
 </body>
 </html>
