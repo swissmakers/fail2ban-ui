@@ -21,6 +21,277 @@
     opacity: 1;
 }
 
+/* Login Page Styling */
+#loginPage {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #f3f4f6;
+    padding: 3rem 1rem;
+    position: relative;
+    z-index: 1;
+}
+
+/* Ensure login page is visible when shown */
+body:has(#loginPage:not(.hidden)) {
+    background-color: #f3f4f6;
+    overflow: hidden;
+}
+
+#loginPage .max-w-md {
+    max-width: 28rem;
+    width: 100%;
+}
+
+#loginPage .bg-white {
+    background-color: #ffffff;
+}
+
+#loginPage .rounded-lg {
+    border-radius: 0.5rem;
+}
+
+#loginPage .shadow-lg {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+#loginPage .p-8 {
+    padding: 2rem;
+}
+
+#loginPage .mb-8 {
+    margin-bottom: 2rem;
+}
+
+#loginPage .mb-4 {
+    margin-bottom: 1rem;
+}
+
+#loginPage .mb-6 {
+    margin-bottom: 1.5rem;
+}
+
+#loginPage .mb-2 {
+    margin-bottom: 0.5rem;
+}
+
+#loginPage .mr-2 {
+    margin-right: 0.5rem;
+}
+
+#loginPage .mr-3 {
+    margin-right: 0.75rem;
+}
+
+#loginPage .ml-3 {
+    margin-left: 0.75rem;
+}
+
+#loginPage .pt-6 {
+    padding-top: 1.5rem;
+}
+
+#loginPage .py-4 {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+#loginPage .py-3 {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+}
+
+#loginPage .px-4 {
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+#loginPage .h-16 {
+    height: 4rem;
+}
+
+#loginPage .w-16 {
+    width: 4rem;
+}
+
+#loginPage .h-10 {
+    height: 2.5rem;
+}
+
+#loginPage .w-10 {
+    width: 2.5rem;
+}
+
+#loginPage .h-5 {
+    height: 1.25rem;
+}
+
+#loginPage .w-5 {
+    width: 1.25rem;
+}
+
+#loginPage .rounded-full {
+    border-radius: 9999px;
+}
+
+#loginPage .bg-blue-600 {
+    background-color: #2563eb;
+}
+
+#loginPage .text-white {
+    color: #ffffff;
+}
+
+#loginPage .text-gray-900 {
+    color: #111827;
+}
+
+#loginPage .text-gray-600 {
+    color: #4b5563;
+}
+
+#loginPage .text-gray-500 {
+    color: #6b7280;
+}
+
+#loginPage .text-red-700 {
+    color: #b91c1c;
+}
+
+#loginPage .text-red-400 {
+    color: #f87171;
+}
+
+#loginPage .text-3xl {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+}
+
+#loginPage .text-base {
+    font-size: 1rem;
+    line-height: 1.5rem;
+}
+
+#loginPage .text-sm {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+}
+
+#loginPage .text-xs {
+    font-size: 0.75rem;
+    line-height: 1rem;
+}
+
+#loginPage .font-bold {
+    font-weight: 700;
+}
+
+#loginPage .font-medium {
+    font-weight: 500;
+}
+
+#loginPage .border {
+    border-width: 1px;
+}
+
+#loginPage .border-l-4 {
+    border-left-width: 4px;
+}
+
+#loginPage .border-t {
+    border-top-width: 1px;
+}
+
+#loginPage .border-gray-200 {
+    border-color: #e5e7eb;
+}
+
+#loginPage .border-red-400 {
+    border-color: #f87171;
+}
+
+#loginPage .border-transparent {
+    border-color: transparent;
+}
+
+#loginPage .bg-red-50 {
+    background-color: #fef2f2;
+}
+
+#loginPage .hover\:bg-blue-700:hover {
+    background-color: #1d4ed8;
+}
+
+#loginPage .focus\:outline-none:focus {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+}
+
+#loginPage .focus\:ring-2:focus {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+#loginPage .focus\:ring-offset-2:focus {
+    box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px rgba(59, 130, 246, 0.5);
+}
+
+#loginPage .focus\:ring-blue-500:focus {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+#loginPage .transition-colors {
+    transition-property: background-color, border-color, color;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+}
+
+#loginPage .animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+#loginPage .flex {
+    display: flex;
+}
+
+#loginPage .inline-flex {
+    display: inline-flex;
+}
+
+#loginPage .items-center {
+    align-items: center;
+}
+
+#loginPage .justify-center {
+    justify-content: center;
+}
+
+#loginPage .text-center {
+    text-align: center;
+}
+
+#loginPage .mx-auto {
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#loginPage .w-full {
+    width: 100%;
+}
+
+#loginPage .hidden {
+    display: none;
+}
+
 /* Restart banner */
 #restartBanner {
     display: none;
@@ -296,6 +567,32 @@ mark {
 }
 
 /* Mobile responsive adjustments */
+/* Custom breakpoint at 830px for menu collapse */
+/* This overrides Tailwind's default md: breakpoint (768px) to collapse at 830px instead */
+@media (max-width: 830px) {
+    /* Hide desktop menu navigation at 830px */
+    nav .hidden.md\:block {
+        display: none !important;
+    }
+    
+    /* Show burger menu button at 830px */
+    nav > div > div > div.md\:hidden:not(#mobileMenu) {
+        display: block !important;
+    }
+    
+    /* Allow mobile menu to be shown at 830px (override md:hidden) */
+    /* The menu visibility is controlled by JavaScript via the 'hidden' class */
+    /* When hidden class is NOT present, show the menu */
+    nav #mobileMenu:not(.hidden) {
+        display: block !important;
+    }
+    
+    /* When mobile menu has 'hidden' class, hide it (JavaScript control takes precedence) */
+    nav #mobileMenu.hidden {
+        display: none !important;
+    }
+}
+
 @media (max-width: 768px) {
     #backendStatus {
         padding: 0.125rem 0.375rem;

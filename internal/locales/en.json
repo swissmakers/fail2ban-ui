@@ -368,6 +368,14 @@
     "toast.ban.title": "New block occurred",
     "toast.ban.action": "banned in",
     "toast.unban.title": "IP unblocked",
-    "toast.unban.action": "unblocked from"
+    "toast.unban.action": "unblocked from",
+    "auth.login_title": "Sign in to Fail2ban UI",
+    "auth.login_description": "Please authenticate to access the management interface",
+    "auth.login_button": "Sign in with OIDC",
+    "auth.logging_in": "Redirecting to login...",
+    "auth.logout": "Logout",
+    "auth.user_info": "User Information",
+    "auth.session_expired": "Your session has expired. Please log in again.",
+    "auth.login_required": "Authentication required"
   }
   

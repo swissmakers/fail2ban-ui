@@ -1,0 +1,137 @@
+services:
+  fail2ban-local:
+    image: lscr.io/linuxserver/fail2ban:latest
+    container_name: DEV_fail2ban-local
+    cap_add:
+      # Required for fail2ban container: Allows to manage network interfaces and iptables from the container
+      - NET_ADMIN
+      # Required for fail2ban container: Allows to create raw sockets (needed for fail2ban.sock)
+      - NET_RAW
+      # Required for fail2ban container: Allows to run as root (needed to manage network interfaces and raw sockets)
+      - SYS_ADMIN
+    #privileged: true
+    network_mode: host # needed to add iptables rules to the host network
+    environment:
+      - TZ=Europe/Zurich
+      - VERBOSITY=-vv
+    volumes:
+      # To make sure linuxserver-fail2ban configs are persistent across container restarts (also needed by fail2ban-ui to modify configs)
+      - ./fail2ban-config-local:/config:z
+      # Directory that contains fail2ban.sock for communication between fail2ban-ui and fail2ban container
+      - ./f2b-run-local:/var/run/fail2ban:z
+
+      # Log sources for fail2ban container
+      - /var/log:/var/log:ro
+      - /var/log/httpd:/remotelogs/apache2:ro
+    restart: unless-stopped
+
+
+  fail2ban-ui:
+    #image: registry.swissmakers.ch/infra/fail2ban-ui:latest
+    image: localhost/fail2ban-ui:dev
+    container_name: DEV_fail2ban-ui
+    privileged: true
+    network_mode: host
+    environment:
+      - PORT=3080
+      - BIND_ADDRESS=172.16.10.18
+
+    volumes:
+      # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
+      - ./config:/config:Z
+      # Mount persistent SSH keys directory
+      - ./ssh-keys:/config/.ssh:z
+      # Required for fail2ban-ui: Used for testing, that logpath is working, before enabeling a jail. Without this read only access the fail2ban-ui will not be able to enable jails (logpath-test would fail)
+      - /var/log:/var/log:ro
+      - /var/log/httpd:/remotelogs/apache2:ro # this mounts the apache2 logs of a RPM based system (e.g. Rocky Linux) to the default location set by linuxserver-fail2ban. (on debian based systems this is /var/log/apache2 and currently hardcoded in the linuxserver-fail2ban container)
+
+      # Required for compose-local fail2ban instance: We mount the same Fail2Ban config as the linuxserver-fail2ban container (under /config/fail2ban to fail2ban-ui can modify configs)
+      - ./fail2ban-config-local/fail2ban:/etc/fail2ban:z
+      # Required for compose-local fail2ban instance: Mount the same run directory that contains fail2ban.sock for communication between fail2ban-ui and the linuxserver-fail2ban container
+      - ./f2b-run-local:/var/run/fail2ban:z
+
+    restart: unless-stopped
+
+
+  fail2ban-ssh:
+    image: lscr.io/linuxserver/fail2ban:latest
+    container_name: DEV_fail2ban-ssh
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    network_mode: bridge
+    ports:
+      - "2222:22"  # SSH port mapping
+    environment:
+      - TZ=Europe/Zurich
+      - VERBOSITY=-vv
+      - PUID=0  # Run as root for SSH setup
+      - PGID=0
+    volumes:
+      - ./fail2ban-config-ssh:/config:z
+      - /var/log:/var/log:ro
+      - /var/log/httpd:/remotelogs/apache2:ro
+      # Mount persistent SSH keys - shared between containers
+      - ./ssh-keys:/mnt/ssh-keys:z
+    # We use entrypoint override to run SSH setup before the container's init
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      apk update && apk add --no-cache openssh-server openssh-keygen sudo acl;
+      ssh-keygen -A;
+      useradd -m -s /bin/bash testuser 2>/dev/null || true;
+      passwd -d testuser 2>/dev/null || usermod -U testuser 2>/dev/null || true;
+      chage -E -1 testuser 2>/dev/null || true;
+      mkdir -p /home/testuser/.ssh;
+      if [ ! -f /mnt/ssh-keys/id_rsa ]; then
+        echo 'Generating new SSH key pair...';
+        ssh-keygen -t rsa -b 4096 -m PEM -f /mnt/ssh-keys/id_rsa -N '';
+        chmod 600 /mnt/ssh-keys/id_rsa;
+        chmod 644 /mnt/ssh-keys/id_rsa.pub;
+        echo 'SSH key pair generated in persistent volume';
+      else
+        echo 'Using existing SSH key pair from persistent volume';
+      fi;
+      cp /mnt/ssh-keys/id_rsa /home/testuser/.ssh/id_rsa;
+      cp /mnt/ssh-keys/id_rsa.pub /home/testuser/.ssh/id_rsa.pub;
+      cat /mnt/ssh-keys/id_rsa.pub > /home/testuser/.ssh/authorized_keys;
+      chmod 700 /home/testuser/.ssh;
+      chmod 600 /home/testuser/.ssh/id_rsa;
+      chmod 644 /home/testuser/.ssh/id_rsa.pub;
+      chmod 600 /home/testuser/.ssh/authorized_keys;
+      chown -R testuser:testuser /home/testuser/.ssh;
+      echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config;
+      echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config;
+      echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config;
+      echo 'LogLevel VERBOSE' >> /etc/ssh/sshd_config;
+      echo 'AuthorizedKeysFile .ssh/authorized_keys' >> /etc/ssh/sshd_config;
+      echo 'SyslogFacility AUTH' >> /etc/ssh/sshd_config;
+      mkdir -p /etc/sudoers.d;
+      echo 'testuser ALL=(ALL) NOPASSWD: /usr/bin/fail2ban-client *' > /etc/sudoers.d/fail2ban-ui;
+      echo 'testuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban' >> /etc/sudoers.d/fail2ban-ui;
+      echo 'testuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload fail2ban' >> /etc/sudoers.d/fail2ban-ui;
+      chmod 440 /etc/sudoers.d/fail2ban-ui;
+      mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/filter.d /etc/fail2ban/action.d;
+      setfacl -Rm u:testuser:rwX /etc/fail2ban 2>/dev/null || true;
+      setfacl -dRm u:testuser:rwX /etc/fail2ban 2>/dev/null || true;
+      [ -d /etc/fail2ban/action.d ] && setfacl -m u:testuser:rwX /etc/fail2ban/action.d 2>/dev/null || true;
+      [ -d /etc/fail2ban/filter.d ] && setfacl -m u:testuser:rwX /etc/fail2ban/filter.d 2>/dev/null || true;
+      [ -d /etc/fail2ban/jail.d ] && setfacl -m u:testuser:rwX /etc/fail2ban/jail.d 2>/dev/null || true;
+      [ -d /config/fail2ban/action.d ] && setfacl -m u:testuser:rwX /config/fail2ban/action.d 2>/dev/null || true;
+      [ -d /config/fail2ban/filter.d ] && setfacl -m u:testuser:rwX /config/fail2ban/filter.d 2>/dev/null || true;
+      [ -d /config/fail2ban/jail.d ] && setfacl -m u:testuser:rwX /config/fail2ban/jail.d 2>/dev/null || true;
+      echo '========================================';
+      echo 'SSH Test Container Ready';
+      echo '========================================';
+      echo 'Host: 127.0.0.1';
+      echo 'Port: 2222';
+      echo 'User: testuser';
+      echo 'Key: /config/.ssh/id_rsa (in fail2ban-ui container)';
+      echo 'Test command: podman exec -it DEV_fail2ban-ui ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i /config/.ssh/id_rsa -p 2222 testuser@127.0.0.1';
+      echo '========================================';
+      /usr/sbin/sshd -D -e &
+      exec /init
+      "
+
+    restart: unless-stopped

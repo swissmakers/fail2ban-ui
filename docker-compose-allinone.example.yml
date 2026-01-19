@@ -36,13 +36,71 @@ services:
     privileged: true # needed because the fail2ban-ui container needs to modify the fail2ban config owned by root inside the linuxserver-fail2ban container
     network_mode: host
     environment:
-      # Optional: Change this to use a different port for the web interface (defaults is 8080)
+      # ============================================
+      # Basic Configuration
+      # ============================================
+      # Optional: Change this to use a different port for the web interface (default: 8080)
       - PORT=3080
       # Optional: Bind to a specific IP address (default: 0.0.0.0)
       # This is useful when running with host networking to prevent exposing
       # the web UI to unprotected networks. Set to a specific IP (e.g., 127.0.0.1
       # or a specific interface IP) to restrict access.
       # - BIND_ADDRESS=127.0.0.1
+
+      # ============================================
+      # Privacy Settings
+      # ============================================
+      # Optional: Disable external IP lookup for privacy (default: false).
+      # When set to true, the "Your ext. IP:" display will be hidden and no external IP lookup requests will be made.
+      # - DISABLE_EXTERNAL_IP_LOOKUP=true
+
+      # ============================================
+      # OIDC Authentication (Optional)
+      # ============================================
+      # Enable OIDC authentication to protect the web UI
+      # - OIDC_ENABLED=true
+      # OIDC Provider: keycloak, authentik, or pocketid
+      # - OIDC_PROVIDER=keycloak
+      # OIDC Issuer URL (required when OIDC_ENABLED=true)
+      # Examples:
+      #   Keycloak: https://keycloak.example.com/realms/your-realm
+      #   Authentik: https://authentik.example.com/application/o/your-client-slug/
+      #   Pocket-ID: https://pocket-id.example.com
+      # - OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm
+      # OIDC Client ID (required when OIDC_ENABLED=true)
+      # - OIDC_CLIENT_ID=fail2ban-ui
+      # OIDC Client Secret (required when OIDC_ENABLED=true)
+      # For Keycloak auto-configuration (development only), use:
+      # - OIDC_CLIENT_SECRET=auto-configured
+      # - OIDC_CLIENT_SECRET_FILE=/config/keycloak-client-secret
+      # Default for production:
+      # - OIDC_CLIENT_SECRET=your-client-secret
+      # OIDC Redirect URL (required when OIDC_ENABLED=true)
+      # This must match the redirect URI configured in your OIDC provider
+      # - OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+      # Optional: OIDC Scopes (default: openid,profile,email)
+      # Comma-separated list of scopes to request
+      # - OIDC_SCOPES=openid,profile,email,groups
+      # Optional: Session timeout in seconds (default: 3600 = 1 hour)
+      # - OIDC_SESSION_MAX_AGE=7200
+      # Optional: Session secret for cookie encryption
+      # If not provided, a random secret will be generated on startup.
+      # For production, it's recommended to set a fixed secret (32 bytes, base64-encoded)
+      # - OIDC_SESSION_SECRET=your-32-byte-base64-encoded-secret
+      # Optional: Skip TLS verification (dev only, default: false)
+      # Only use in development environments!
+      # - OIDC_SKIP_VERIFY=true
+      # Optional: Username claim (default: preferred_username)
+      # The claim to use as the username (e.g., email, preferred_username, sub)
+      # - OIDC_USERNAME_CLAIM=preferred_username
+      # Optional: Provider logout URL
+      # If not set, the logout URL will be auto-constructed using the standard OIDC logout endpoint: {issuer}/protocol/openid-connect/logout
+      # Examples:
+      #   Keycloak: https://keycloak.example.com/realms/your-realm/protocol/openid-connect/logout
+      #   Authentik: https://authentik.example.com/application/o/your-client-slug/protocol/openid-connect/logout
+      #   Pocket-ID: https://pocket-id.example.com/protocol/openid-connect/logout
+      # - OIDC_LOGOUT_URL=https://keycloak.example.com/realms/your-realm/protocol/openid-connect/logout
+
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
       - ./config:/config:Z

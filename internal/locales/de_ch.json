@@ -368,6 +368,14 @@
     "toast.ban.title": "Neui Blockierig ufträte",
     "toast.ban.action": "gsperrt i",
     "toast.unban.title": "IP entsperrt",
-    "toast.unban.action": "entsperrt vo"
+    "toast.unban.action": "entsperrt vo",
+    "auth.login_title": "Bi Fail2ban UI amäudä",
+    "auth.login_description": "Bitte log di ih, zum uf d Verwaltigsoberflächi zuezgriifä",
+    "auth.login_button": "Mit OIDC amäudä",
+    "auth.logging_in": "Wiiterleitig zur Amäudig...",
+    "auth.logout": "Abmäudä",
+    "auth.user_info": "Benutzerinformationä",
+    "auth.session_expired": "Ihri Sitzig isch abglaufä. Bitte mäudä di erneut a.",
+    "auth.login_required": "Authentifizierig erforderlich"
   }
   

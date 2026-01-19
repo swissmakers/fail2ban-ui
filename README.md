@@ -97,15 +97,20 @@ Modern enterprises face increasing security challenges with generally distribute
 - **Email Templates**: Currently features a Modern and classic email design (more to come)
 - **Alert Aggregation**: This feature is planned for the SIEM-modul
 
-### 🔐 Enterprise Security
+### 🔐 Enterprise Security & Authentication
 
 **Hardened for Production Environments**
 
+- **OIDC Authentication**: Optional OpenID Connect authentication supporting Keycloak, Authentik, and Pocket-ID
+  - Secure session management with encrypted cookies (AES-GCM)
+  - Automatic logout with provider integration
+  - CSRF protection via state parameters
+  - Configurable session timeouts
+  - Automatic Keycloak client configuration for development environment
 - **SELinux Support**: Full compatibility with SELinux-enabled systems and pre-created custom policies
-- **Container Security**: Secure containerized deployment with proper best-practisies
+- **Container Security**: Secure containerized deployment with proper best-practices
 - **Least Privilege**: Only minimal permissions are used using FACLs and special sudo-rules
-- **Audit Logging**: Comprehensive logging for compliance and forensics also in the future planned to ingest into a Elastic SIEM
-- **Encrypted Communications Only**: Secure data transmission for all remote operations will be enforced
+- **Audit Logging**: Comprehensive logging for compliance and forensics (planned: Elastic SIEM integration)
 
 ### 🌐 Internationalization
 
@@ -117,8 +122,10 @@ Modern enterprises face increasing security challenges with generally distribute
 ### 📱 Modern User Experience
 
 - **Responsive Design**: Full functionality also on mobile devices
-- **Progressive Web App**: Works also in a no-internet / offline and restricted environment with local CSS/JS builds only
+- **Login Interface**: Modern, clean authentication UI with OIDC integration
+- **Progressive Web App**: Works in offline/restricted environments with local CSS/JS builds only
 - **Fast Performance**: Go-based backend with minimal resource footprint
+- **Real-Time Updates**: WebSocket-based live event streaming for UI-actions and changes
 
 ---
 
@@ -327,6 +334,74 @@ podman run -d \
   swissmakers/fail2ban-ui:latest
 ```
 
+**OIDC Authentication Configuration (Optional)**
+
+Enable OIDC authentication by setting the required environment variables. This protects the web UI with your identity provider. The logout flow automatically redirects back to the login page after successful provider logout.
+
+**Basic Configuration:**
+```bash
+podman run -d \
+  --name fail2ban-ui \
+  --network=host \
+  -e OIDC_ENABLED=true \
+  -e OIDC_PROVIDER=keycloak \
+  -e OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm \
+  -e OIDC_CLIENT_ID=fail2ban-ui \
+  -e OIDC_CLIENT_SECRET=your-client-secret \
+  -e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback \
+  -v /opt/podman-fail2ban-ui:/config:Z \
+  -v /etc/fail2ban:/etc/fail2ban:Z \
+  -v /var/log:/var/log:ro \
+  -v /var/run/fail2ban:/var/run/fail2ban \
+  swissmakers/fail2ban-ui:latest
+```
+
+**Note:** The logout URL is automatically constructed for all supported providers. For Keycloak, ensure the post-logout redirect URI is configured in your client settings (see [Security Notes](#-security-notes) for details).
+
+**Provider-Specific Examples:**
+
+**Keycloak:**
+```bash
+-e OIDC_ENABLED=true \
+-e OIDC_PROVIDER=keycloak \
+-e OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm \
+-e OIDC_CLIENT_ID=fail2ban-ui \
+-e OIDC_CLIENT_SECRET=your-client-secret \
+-e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+# OIDC_LOGOUT_URL is optional - automatically constructed if not set
+# Ensure "Valid post logout redirect URIs" in Keycloak includes: https://fail2ban-ui.example.com/auth/login
+```
+
+**Authentik:**
+```bash
+-e OIDC_ENABLED=true \
+-e OIDC_PROVIDER=authentik \
+-e OIDC_ISSUER_URL=https://authentik.example.com/application/o/your-client-slug/ \
+-e OIDC_CLIENT_ID=fail2ban-ui \
+-e OIDC_CLIENT_SECRET=your-client-secret \
+-e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+```
+
+**Pocket-ID:**
+```bash
+-e OIDC_ENABLED=true \
+-e OIDC_PROVIDER=pocketid \
+-e OIDC_ISSUER_URL=https://pocket-id.example.com \
+-e OIDC_CLIENT_ID=fail2ban-ui-client \
+-e OIDC_CLIENT_SECRET=your-secret \
+-e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+```
+
+**Advanced Options:**
+```bash
+-e OIDC_SCOPES=openid,profile,email,groups \
+-e OIDC_SESSION_MAX_AGE=7200 \
+-e OIDC_USERNAME_CLAIM=preferred_username \
+-e OIDC_SESSION_SECRET=your-32-byte-secret
+```
+
+**Note:** If `OIDC_SESSION_SECRET` is not provided, a random secret will be generated on startup. For production, it's recommended to set a fixed secret.
+
 Access the web interface at `http://localhost:3080`.
 
 **Disable External IP Lookup** (Privacy)
@@ -376,6 +451,22 @@ go build -o fail2ban-ui ./cmd/server/main.go
 ```
 
 **📖 [Complete Systemd Setup Guide](./deployment/systemd/README.md)**
+
+**OIDC Authentication for Systemd Deployment:**
+
+When running as a systemd service, set OIDC environment variables in the systemd service file:
+
+```ini
+[Service]
+Environment="OIDC_ENABLED=true"
+Environment="OIDC_PROVIDER=keycloak"
+Environment="OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm"
+Environment="OIDC_CLIENT_ID=fail2ban-ui"
+Environment="OIDC_CLIENT_SECRET=your-client-secret"
+Environment="OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback"
+```
+
+See the [Security Notes](#-security-notes) section for complete OIDC configuration details.
 
 ### First Launch
 
@@ -565,6 +656,83 @@ sudo setfacl -dRm u:sa_fail2ban:rwX /etc/fail2ban
 
 #### Authentication and Authorization
 
+##### OIDC Authentication (Optional)
+
+Fail2ban UI supports optional OIDC (OpenID Connect) authentication via environment variables. When enabled, all routes are protected and users must authenticate through the configured OIDC provider. The authentication flow includes automatic logout handling and redirects back to the login page.
+
+**Supported Providers:**
+- **Keycloak**: Enterprise identity and access management (recommended)
+- **Authentik**: Full-featured identity provider with OIDC support
+- **Pocket-ID**: Modern identity provider with passkey support
+
+**Development Setup:**
+For local development and testing, a complete OIDC environment is available in `development/oidc/` with automatic Keycloak client configuration. See [Development Documentation](./development/oidc/README.md) for details.
+
+**Required Environment Variables (when OIDC enabled):**
+```bash
+OIDC_ENABLED=true
+OIDC_PROVIDER=keycloak|authentik|pocketid
+OIDC_ISSUER_URL=https://auth.example.com
+OIDC_CLIENT_ID=your-client-id
+OIDC_CLIENT_SECRET=your-client-secret
+OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+```
+
+**Optional Environment Variables:**
+```bash
+OIDC_SCOPES=openid,profile,email          # Default: openid,profile,email
+OIDC_SESSION_SECRET=your-secret-key        # Auto-generated if not provided
+OIDC_SESSION_MAX_AGE=3600                  # Session timeout in seconds (default: 3600)
+OIDC_USERNAME_CLAIM=preferred_username     # Claim to use as username (default: preferred_username)
+OIDC_LOGOUT_URL=https://auth.example.com/logout  # Provider logout URL (optional, auto-constructed if not set)
+OIDC_CLIENT_SECRET_FILE=/path/to/secret-file     # Path to client secret file (for auto-configuration)
+OIDC_SKIP_VERIFY=false                     # Skip TLS verification (dev only, default: false)
+```
+
+**Configuration Examples:**
+
+**Keycloak:**
+```bash
+OIDC_ENABLED=true
+OIDC_PROVIDER=keycloak
+OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm
+OIDC_CLIENT_ID=fail2ban-ui
+OIDC_CLIENT_SECRET=your-client-secret
+OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+# OIDC_LOGOUT_URL is optional - automatically constructed if not set
+# For Keycloak, ensure "Valid post logout redirect URIs" includes: https://fail2ban-ui.example.com/auth/login
+```
+
+**Authentik:**
+```bash
+OIDC_ENABLED=true
+OIDC_PROVIDER=authentik
+OIDC_ISSUER_URL=https://authentik.example.com/application/o/your-client-slug/
+OIDC_CLIENT_ID=fail2ban-ui
+OIDC_CLIENT_SECRET=your-client-secret
+OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+```
+
+**Pocket-ID:**
+```bash
+OIDC_ENABLED=true
+OIDC_PROVIDER=pocketid
+OIDC_ISSUER_URL=https://pocket-id.example.com
+OIDC_CLIENT_ID=fail2ban-ui-client
+OIDC_CLIENT_SECRET=your-secret
+OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+```
+
+**Security Notes:**
+- Session cookies are encrypted using AES-GCM
+- Sessions are httpOnly and secure (automatically detects HTTPS/HTTP context)
+- CSRF protection via state parameter in OAuth flow
+- Session timeout is configurable (default: 1 hour)
+- Automatic logout URL construction for all supported providers
+- When OIDC is disabled, the application works without authentication (backward compatible)
+- Callback endpoints (`/api/ban`, `/api/unban`) remain accessible without OIDC authentication (protected by callback secret)
+
+**Other Security Practices:**
 - **SSH Key Management**: Use strong SSH keys like 4096-bit RSA or even better Ed25519. When using RSA no smaller bit size please.
 - **Service Accounts**: Use dedicated service accounts, not personal accounts
 - **Sudoers Configuration**: Minimal sudo permissions, no passwordless full sudo
@@ -677,6 +845,13 @@ Fail2Ban UI provides a RESTful API for programmatic access:
 - `GET /api/filters` - List available filters
 - `POST /api/filters/test` - Test filter against log lines
 
+**Authentication (OIDC):**
+- `GET /auth/login` - Show login page or redirect to OIDC provider
+- `GET /auth/callback` - OIDC callback handler
+- `GET /auth/logout` - Logout and redirect to provider logout
+- `GET /auth/status` - Get authentication status
+- `GET /auth/user` - Get current user information
+
 **Service Control:**
 - `POST /api/fail2ban/restart` - Restart Fail2Ban service
 
@@ -719,6 +894,36 @@ journalctl -u fail2ban-ui.service -f
 2. Enable **Local Connector** (if Fail2Ban runs locally)
 3. Add remote server via SSH or API agent
 4. Verify server connection status
+
+#### OIDC Authentication Issues
+
+**Symptoms:** Cannot login, redirected to provider but authentication fails
+
+**Solution / Check:**
+1. **Verify OIDC Configuration:**
+   ```bash
+   # Check environment variables
+   podman exec fail2ban-ui env | grep OIDC
+   ```
+
+2. **Check Provider Connectivity:**
+   - Verify `OIDC_ISSUER_URL` is accessible
+   - Check that issuer URL matches provider's discovery document
+   - For Keycloak: Ensure realm exists and is enabled
+
+3. **Verify Client Configuration:**
+   - Client ID and secret must match provider configuration
+   - Redirect URI must exactly match: `{your-url}/auth/callback`
+   - For Keycloak: Ensure "Valid post logout redirect URIs" includes `{your-url}/auth/login`
+
+4. **Check Logs:**
+   ```bash
+   podman logs fail2ban-ui | grep -i oidc
+   ```
+
+5. **Development Environment:**
+   - See [Development OIDC Setup](./development/oidc/README.md) for complete setup guide
+   - Automatic Keycloak client configuration available in development environment
 
 #### SSH Connection Issues
 

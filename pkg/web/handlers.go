@@ -19,8 +19,10 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,7 @@ import (
 	"net"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,6 +45,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/oschwald/maxminddb-golang"
+	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/integrations"
@@ -1116,8 +1120,8 @@ func shouldAlertForCountry(country string, alertCountries []string) bool {
 	return false
 }
 
-// IndexHandler serves the HTML page
-func IndexHandler(c *gin.Context) {
+// renderIndexPage renders the index.html template with common data
+func renderIndexPage(c *gin.Context) {
 	// Check if external IP lookup is disabled via environment variable
 	// Default is enabled (false means enabled, true means disabled)
 	disableExternalIP := os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "true" || os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "1"
@@ -3006,4 +3010,242 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 		}
 	}
 	return nil, nil
+}
+
+// *******************************************************************
+// *                    OIDC Authentication Handlers                  *
+// *******************************************************************
+
+// LoginHandler shows the login page or initiates the OIDC login flow
+// If action=redirect query parameter is present, redirects to OIDC provider
+// Otherwise, renders the login page
+func LoginHandler(c *gin.Context) {
+	oidcClient := auth.GetOIDCClient()
+	if oidcClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OIDC authentication is not configured"})
+		return
+	}
+
+	// Check if this is a redirect action (triggered by clicking the login button)
+	if c.Query("action") == "redirect" {
+		// Generate state parameter for CSRF protection
+		stateBytes := make([]byte, 32)
+		if _, err := rand.Read(stateBytes); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state parameter"})
+			return
+		}
+		state := base64.URLEncoding.EncodeToString(stateBytes)
+
+		// Determine if we're using HTTPS
+		isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+
+		// Store state in session cookie for validation
+		stateCookie := &http.Cookie{
+			Name:     "oidc_state",
+			Value:    state,
+			Path:     "/",
+			MaxAge:   600, // 10 minutes
+			HttpOnly: true,
+			Secure:   isSecure, // Only secure over HTTPS
+			SameSite: http.SameSiteLaxMode,
+		}
+		http.SetCookie(c.Writer, stateCookie)
+		config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
+
+		// Get authorization URL and redirect
+		authURL := oidcClient.GetAuthURL(state)
+		c.Redirect(http.StatusFound, authURL)
+		return
+	}
+
+	// Otherwise, render the login page (index.html)
+	// The JavaScript will handle showing the login page and redirecting when button is clicked
+	renderIndexPage(c)
+}
+
+// CallbackHandler handles the OIDC callback after user authentication
+func CallbackHandler(c *gin.Context) {
+	oidcClient := auth.GetOIDCClient()
+	if oidcClient == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OIDC authentication is not configured"})
+		return
+	}
+
+	// Get state from cookie
+	stateCookie, err := c.Cookie("oidc_state")
+	if err != nil {
+		config.DebugLog("Failed to get state cookie: %v", err)
+		config.DebugLog("Request cookies: %v", c.Request.Cookies())
+		config.DebugLog("Request URL: %s", c.Request.URL.String())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing state parameter", "details": err.Error()})
+		return
+	}
+
+	// Determine if we're using HTTPS
+	isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+
+	// Clear state cookie
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isSecure, // Only secure over HTTPS
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Verify state parameter
+	returnedState := c.Query("state")
+	if returnedState != stateCookie {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state parameter"})
+		return
+	}
+
+	// Get authorization code
+	code := c.Query("code")
+	if code == "" {
+		errorDesc := c.Query("error_description")
+		if errorDesc != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "OIDC authentication failed: " + errorDesc})
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing authorization code"})
+		}
+		return
+	}
+
+	// Exchange code for tokens
+	token, err := oidcClient.ExchangeCode(c.Request.Context(), code)
+	if err != nil {
+		config.DebugLog("Failed to exchange code for token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange authorization code"})
+		return
+	}
+
+	// Verify token and extract user info
+	userInfo, err := oidcClient.VerifyToken(c.Request.Context(), token)
+	if err != nil {
+		config.DebugLog("Failed to verify token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify authentication token"})
+		return
+	}
+
+	// Create session
+	if err := auth.CreateSession(c.Writer, c.Request, userInfo, oidcClient.Config.SessionMaxAge); err != nil {
+		config.DebugLog("Failed to create session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})
+		return
+	}
+
+	config.DebugLog("User authenticated: %s (%s)", userInfo.Username, userInfo.Email)
+
+	// Redirect to main page
+	c.Redirect(http.StatusFound, "/")
+}
+
+// LogoutHandler clears the session and optionally redirects to provider logout
+func LogoutHandler(c *gin.Context) {
+	oidcClient := auth.GetOIDCClient()
+
+	// Clear session first
+	auth.DeleteSession(c.Writer, c.Request)
+
+	// If provider logout URL is configured, redirect there
+	// Auto-construct logout URL for standard OIDC providers if not explicitly set
+	if oidcClient != nil {
+		logoutURL := oidcClient.Config.LogoutURL
+		if logoutURL == "" && oidcClient.Config.IssuerURL != "" {
+			// Auto-construct standard OIDC logout URL for Keycloak, Authentik, and Pocket-ID
+			issuerURL := oidcClient.Config.IssuerURL
+			redirectURI := oidcClient.Config.RedirectURL
+			// Extract base URL from redirect URI for logout redirect (remove /auth/callback)
+			if strings.Contains(redirectURI, "/auth/callback") {
+				redirectURI = strings.TrimSuffix(redirectURI, "/auth/callback")
+			}
+			// Redirect to login page after logout
+			redirectURI = redirectURI + "/auth/login"
+			// URL encode the redirect_uri parameter
+			redirectURIEncoded := url.QueryEscape(redirectURI)
+			clientIDEncoded := url.QueryEscape(oidcClient.Config.ClientID)
+
+			// Provider-specific logout URL construction
+			switch oidcClient.Config.Provider {
+			case "keycloak":
+				// Keycloak requires client_id when using post_logout_redirect_uri
+				// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
+				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
+			case "authentik", "pocketid":
+				// Standard OIDC format for Authentik and Pocket-ID
+				// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
+				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
+			default:
+				// Fallback to standard OIDC format
+				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
+			}
+		}
+
+		if logoutURL != "" {
+			config.DebugLog("Redirecting to provider logout: %s", logoutURL)
+			c.Redirect(http.StatusFound, logoutURL)
+			return
+		}
+	}
+
+	// Otherwise, redirect to login page
+	c.Redirect(http.StatusFound, "/auth/login")
+}
+
+// AuthStatusHandler returns the current authentication status
+func AuthStatusHandler(c *gin.Context) {
+	if !auth.IsEnabled() {
+		c.JSON(http.StatusOK, gin.H{
+			"enabled":       false,
+			"authenticated": false,
+		})
+		return
+	}
+
+	session, err := auth.GetSession(c.Request)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"enabled":       true,
+			"authenticated": false,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":       true,
+		"authenticated": true,
+		"user": gin.H{
+			"id":       session.UserID,
+			"email":    session.Email,
+			"name":     session.Name,
+			"username": session.Username,
+		},
+	})
+}
+
+// UserInfoHandler returns the current user information
+func UserInfoHandler(c *gin.Context) {
+	if !auth.IsEnabled() {
+		c.JSON(http.StatusOK, gin.H{"authenticated": false})
+		return
+	}
+
+	session, err := auth.GetSession(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"authenticated": true,
+		"user": gin.H{
+			"id":       session.UserID,
+			"email":    session.Email,
+			"name":     session.Name,
+			"username": session.Username,
+		},
+	})
 }

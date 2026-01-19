@@ -368,5 +368,13 @@
     "toast.ban.title": "Nuevo bloqueo ocurrido",
     "toast.ban.action": "bloqueado en",
     "toast.unban.title": "IP desbloqueada",
-    "toast.unban.action": "desbloqueada de"
+    "toast.unban.action": "desbloqueada de",
+    "auth.login_title": "Iniciar sesión en Fail2ban UI",
+    "auth.login_description": "Por favor, autentíquese para acceder a la interfaz de gestión",
+    "auth.login_button": "Iniciar sesión con OIDC",
+    "auth.logging_in": "Redirigiendo al inicio de sesión...",
+    "auth.logout": "Cerrar sesión",
+    "auth.user_info": "Información del usuario",
+    "auth.session_expired": "Su sesión ha expirado. Por favor, inicie sesión nuevamente.",
+    "auth.login_required": "Autenticación requerida"
   }
