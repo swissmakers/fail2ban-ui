@@ -721,6 +721,7 @@ OIDC_ISSUER_URL=https://pocket-id.example.com
 OIDC_CLIENT_ID=fail2ban-ui-client
 OIDC_CLIENT_SECRET=your-secret
 OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
+# OIDC_LOGOUT_URL is optional - automatically constructed if not set
 ```
 
 **Security Notes:**

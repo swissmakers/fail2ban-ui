@@ -3221,8 +3221,12 @@ func LogoutHandler(c *gin.Context) {
 				// Keycloak requires client_id when using post_logout_redirect_uri
 				// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
 				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
-			case "authentik", "pocketid":
-				// Standard OIDC format for Authentik and Pocket-ID
+			case "pocketid":
+				// Pocket-ID uses a different logout endpoint
+				// Format: {issuer}/api/oidc/end-session?redirect_uri={redirect}
+				logoutURL = fmt.Sprintf("%s/api/oidc/end-session?redirect_uri=%s", issuerURL, redirectURIEncoded)
+			case "authentik":
+				// Standard OIDC format for Authentik
 				// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
 				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
 			default:
