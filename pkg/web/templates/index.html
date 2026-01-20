@@ -40,7 +40,7 @@
   <link rel="stylesheet" href="/static/vendor/fonts/google-fonts.css?v={{.version}}">
 </head>
 
-<body class="bg-gray-50 overflow-y-scroll">
+<body class="bg-gray-50 overflow-y-scroll" data-skip-login-page="{{if .skipLoginPage}}true{{else}}false{{end}}" data-oidc-enabled="{{if .oidcEnabled}}true{{else}}false{{end}}">
 
   <!-- Loading Overlay -->
   <div id="loading-overlay" class="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50 backdrop-blur-sm">
@@ -129,8 +129,8 @@
   </nav>
   <!-- ************************ Navigation END *************************** -->
 
-  <!-- Login Page (shown when not authenticated) -->
-  <div id="loginPage" class="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+  <!-- Login Page (hidden by default, shown only when OIDC enabled and not authenticated) -->
+  <div id="loginPage" class="hidden min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-md w-full">
       <!-- Login Card -->
       <div class="bg-white rounded-lg shadow-lg p-8 border border-gray-200">
@@ -929,7 +929,7 @@
   </main>
 
   <!-- Footer -->
-  <footer class="bg-gray-100 py-4">
+  <footer id="footer" class="hidden bg-gray-100 py-4">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-gray-600 text-sm">
       <p class="mb-0">
         &copy; <a href="https://swissmakers.ch" target="_blank" class="text-blue-600 hover:text-blue-800">Swissmakers GmbH</a>

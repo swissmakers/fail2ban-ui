@@ -7,14 +7,29 @@ let currentUser = null;
 
 // Check authentication status on page load
 async function checkAuthStatus() {
-  // Immediately hide main content to prevent flash
+  // Both login page and main content are hidden by default
+  // We'll show the appropriate one based on authentication status
   const mainContent = document.getElementById('mainContent');
   const nav = document.querySelector('nav');
+  const loginPage = document.getElementById('loginPage');
+  const footer = document.getElementById('footer');
+  
+  // Ensure all are hidden initially to prevent flash
+  if (loginPage) {
+    loginPage.classList.add('hidden');
+    loginPage.style.display = 'none';
+  }
   if (mainContent) {
+    mainContent.classList.add('hidden');
     mainContent.style.display = 'none';
   }
   if (nav) {
+    nav.classList.add('hidden');
     nav.style.display = 'none';
+  }
+  if (footer) {
+    footer.classList.add('hidden');
+    footer.style.display = 'none';
   }
   
   try {
@@ -29,25 +44,42 @@ async function checkAuthStatus() {
     const data = await response.json();
     authEnabled = data.enabled || false;
     isAuthenticated = data.authenticated || false;
+    const skipLoginPageFlag = data.skipLoginPage || false;
     
     if (authEnabled) {
       if (isAuthenticated && data.user) {
+        // Authenticated: show main content, hide login page
         currentUser = data.user;
         showAuthenticatedUI();
       } else {
-        showLoginPage();
+        // Not authenticated
+        if (skipLoginPageFlag) {
+          // Skip login page: redirect directly to OIDC provider
+          window.location.href = '/auth/login';
+          return { enabled: authEnabled, authenticated: false, user: null };
+        } else {
+          // Show login page, hide main content
+          showLoginPage();
+        }
       }
     } else {
-      // OIDC not enabled, show main content
+      // OIDC not enabled: show main content, hide login page
       showMainContent();
     }
     
     return { enabled: authEnabled, authenticated: isAuthenticated, user: currentUser };
   } catch (error) {
     console.error('Error checking auth status:', error);
-    // If auth check fails and we're on a protected route, show login
-    if (authEnabled) {
-      showLoginPage();
+    // On error, check OIDC status from data attributes
+    const oidcEnabled = document.body.getAttribute('data-oidc-enabled') === 'true';
+    const skipLoginPage = document.body.getAttribute('data-skip-login-page') === 'true';
+    
+    if (oidcEnabled) {
+      if (skipLoginPage) {
+        window.location.href = '/auth/login';
+      } else {
+        showLoginPage();
+      }
     } else {
       showMainContent();
     }
@@ -126,8 +158,9 @@ function showLoginPage() {
   const loginPage = document.getElementById('loginPage');
   const mainContent = document.getElementById('mainContent');
   const nav = document.querySelector('nav');
+  const footer = document.getElementById('footer');
   
-  // Hide main content and nav immediately
+  // Hide main content, nav, and footer
   if (mainContent) {
     mainContent.style.display = 'none';
     mainContent.classList.add('hidden');
@@ -135,6 +168,10 @@ function showLoginPage() {
   if (nav) {
     nav.style.display = 'none';
     nav.classList.add('hidden');
+  }
+  if (footer) {
+    footer.style.display = 'none';
+    footer.classList.add('hidden');
   }
   
   // Show login page
@@ -149,21 +186,26 @@ function showMainContent() {
   const loginPage = document.getElementById('loginPage');
   const mainContent = document.getElementById('mainContent');
   const nav = document.querySelector('nav');
+  const footer = document.getElementById('footer');
   
-  // Hide login page immediately
+  // Hide login page
   if (loginPage) {
     loginPage.style.display = 'none';
     loginPage.classList.add('hidden');
   }
   
-  // Show main content and nav
+  // Show main content, nav, and footer
   if (mainContent) {
-    mainContent.style.display = '';
+    mainContent.style.display = 'block';
     mainContent.classList.remove('hidden');
   }
   if (nav) {
-    nav.style.display = '';
+    nav.style.display = 'block';
     nav.classList.remove('hidden');
+  }
+  if (footer) {
+    footer.style.display = 'block';
+    footer.classList.remove('hidden');
   }
 }
 

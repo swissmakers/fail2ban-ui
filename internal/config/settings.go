@@ -101,6 +101,7 @@ type OIDCConfig struct {
 	SkipVerify    bool     `json:"skipVerify"`    // Skip TLS verification (dev only)
 	UsernameClaim string   `json:"usernameClaim"` // Claim to use as username
 	LogoutURL     string   `json:"logoutURL"`     // Provider logout URL (optional)
+	SkipLoginPage bool     `json:"skipLoginPage"` // Skip login page and redirect directly to OIDC provider (default: false)
 }
 
 type AdvancedActionsConfig struct {
@@ -1517,6 +1518,10 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 			config.SessionMaxAge = maxAge
 		}
 	}
+
+	// Skip login page option (default: false)
+	skipLoginPageEnv := os.Getenv("OIDC_SKIP_LOGINPAGE")
+	config.SkipLoginPage = skipLoginPageEnv == "true" || skipLoginPageEnv == "1"
 
 	config.SessionSecret = os.Getenv("OIDC_SESSION_SECRET")
 	if config.SessionSecret == "" {

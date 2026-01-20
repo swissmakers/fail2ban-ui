@@ -141,6 +141,14 @@ func IsEnabled() bool {
 	return oidcClient != nil && oidcClient.Config != nil && oidcClient.Config.Enabled
 }
 
+// GetConfig returns the OIDC configuration
+func GetConfig() *config.OIDCConfig {
+	if oidcClient == nil {
+		return nil
+	}
+	return oidcClient.Config
+}
+
 // GetAuthURL generates the authorization URL for OIDC login
 func (c *OIDCClient) GetAuthURL(state string) string {
 	return c.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
