@@ -418,11 +418,11 @@ func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings co
 	// Set default banaction values if not set
 	banaction := settings.Banaction
 	if banaction == "" {
-		banaction = "iptables-multiport"
+		banaction = "nftables-multiport"
 	}
 	banactionAllports := settings.BanactionAllports
 	if banactionAllports == "" {
-		banactionAllports = "iptables-allports"
+		banactionAllports = "nftables-allports"
 	}
 	payload := map[string]interface{}{
 		"bantimeIncrement":  settings.BantimeIncrement,
@@ -431,7 +431,6 @@ func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings co
 		"bantime":           settings.Bantime,
 		"findtime":          settings.Findtime,
 		"maxretry":          settings.Maxretry,
-		"destemail":         settings.Destemail,
 		"banaction":         banaction,
 		"banactionAllports": banactionAllports,
 	}

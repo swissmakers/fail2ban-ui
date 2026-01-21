@@ -383,7 +383,7 @@ Modern Linux distributions (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+) use
 
 For systems using `firewalld` as the firewall management tool (common on Rocky Linux and Red Hat Enterprise Linux), you can use:
 
-- **Banaction**: `firewallcmd-multiport`
+- **Banaction**: `firewallcmd-rich-rules`
 - **Banaction Allports**: `firewallcmd-allports`
 
 Alternatively, if firewalld is configured to use the nftables backend (default in RHEL 9+), you can use `nftables-multiport` / `nftables-allports` as described above.

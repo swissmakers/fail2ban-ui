@@ -901,9 +901,9 @@ journalctl -u fail2ban-ui.service -f
 **Symptoms:** Fail2Ban fails to ban IPs with errors like:
 - `Extension multiport revision 0 not supported, missing kernel module?`
 - `iptables v1.8.11 (nf_tables): RULE_INSERT failed (No such file or directory)`
-- `Error starting action Jail('jail-name')/iptables-multiport: 'Script error'`
+- `Error starting action Jail('jail-name')/nftables-multiport: 'Script error'`
 
-**Cause:** Modern Linux distributions (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+) use **nftables** as the default firewall backend instead of legacy iptables. When Fail2Ban is configured to use `iptables-multiport` or `iptables-allports`, it attempts to use legacy iptables modules that are not available in nftables-based systems.
+**Cause:** Modern Linux distributions (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+) use **nftables** as the default firewall backend instead of legacy iptables. When Fail2Ban is configured to use `nftables-multiport` or `nftables-allports`, it attempts to use legacy iptables modules that are not available in nftables-based systems.
 
 **Solution:**
 
@@ -915,7 +915,7 @@ journalctl -u fail2ban-ui.service -f
 
 2. **For systems using firewalld (Rocky Linux / Red Hat):**
    - If your system uses `firewalld` as the firewall management tool, you can use:
-     - **Banaction**: `firewallcmd-multiport`
+     - **Banaction**: `firewallcmd-rich-rules`
      - **Banaction Allports**: `firewallcmd-allports`
    - Alternatively, you can still use `nftables-multiport` if firewalld is configured to use nftables backend (which is the default in RHEL 9+)
 
@@ -931,7 +931,7 @@ journalctl -u fail2ban-ui.service -f
 
 **Note:** The Fail2Ban UI provides all common banaction options in the Settings dropdown, including:
 - `nftables-multiport` / `nftables-allports` (for nftables-based systems)
-- `firewallcmd-multiport` / `firewallcmd-allports` (for firewalld-based systems)
+- `firewallcmd-rich-rules` / `firewallcmd-allports` (for firewalld-based systems)
 - `iptables-multiport` / `iptables-allports` (for legacy iptables systems)
 
 After changing the banaction, Fail2Ban will automatically reload and apply the new configuration.

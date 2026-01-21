@@ -192,13 +192,7 @@ func JailLocalBanner() string {
 	return jailLocalBanner
 }
 
-const fail2banActionTemplate = `[INCLUDES]
-
-before = sendmail-common.conf
-         mail-whois-common.conf
-         helpers-common.conf
-
-[Definition]
+const fail2banActionTemplate = `[Definition]
 
 # Bypass ban/unban for restored tickets
 norestored = 1
@@ -237,7 +231,7 @@ name = default
 # Path to log files containing relevant lines for the abuser IP
 logpath = /dev/null
 
-# Number of log lines to include in the email
+# Number of log lines to include in the callback
 grepmax = 200
 grepopts = -m <grepmax>`
 
@@ -664,10 +658,10 @@ func setDefaultsLocked() {
 		currentSettings.IgnoreIPs = []string{"127.0.0.1/8", "::1"}
 	}
 	if currentSettings.Banaction == "" {
-		currentSettings.Banaction = "iptables-multiport"
+		currentSettings.Banaction = "nftables-multiport"
 	}
 	if currentSettings.BanactionAllports == "" {
-		currentSettings.BanactionAllports = "iptables-allports"
+		currentSettings.BanactionAllports = "nftables-allports"
 	}
 	if currentSettings.GeoIPProvider == "" {
 		currentSettings.GeoIPProvider = "builtin"
@@ -736,11 +730,8 @@ func initializeFromJailFile() error {
 	if val, ok := settings["banaction_allports"]; ok {
 		currentSettings.BanactionAllports = val
 	}
-	if val, ok := settings["destemail"]; ok {
+	/*if val, ok := settings["destemail"]; ok {
 		currentSettings.Destemail = val
-	}
-	/*if val, ok := settings["sender"]; ok {
-		currentSettings.Sender = val
 	}*/
 
 	return nil
@@ -905,11 +896,11 @@ func ensureJailLocalStructure() error {
 	// Set default banaction values if not set
 	banaction := settings.Banaction
 	if banaction == "" {
-		banaction = "iptables-multiport"
+		banaction = "nftables-multiport"
 	}
 	banactionAllports := settings.BanactionAllports
 	if banactionAllports == "" {
-		banactionAllports = "iptables-allports"
+		banactionAllports = "nftables-allports"
 	}
 	defaultSection := fmt.Sprintf(`[DEFAULT]
 enabled = %t
@@ -918,18 +909,18 @@ ignoreip = %s
 bantime = %s
 findtime = %s
 maxretry = %d
-destemail = %s
 banaction = %s
 banaction_allports = %s
 
-`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr, settings.Bantime, settings.Findtime, settings.Maxretry, settings.Destemail, banaction, banactionAllports)
+`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr, settings.Bantime, settings.Findtime, settings.Maxretry, banaction, banactionAllports)
 
 	// Build action_mwlg configuration
 	// Note: action_mwlg depends on action_ which depends on banaction (now defined above)
 	// The multi-line format uses indentation for continuation
-	actionMwlgConfig := `# Custom Fail2Ban action using geo-filter for email alerts
+	// ui-custom-action only needs logpath and chain
+	actionMwlgConfig := `# Custom Fail2Ban action for UI callbacks
 action_mwlg = %(action_)s
-             ui-custom-action[sender="%(sender)s", dest="%(destemail)s", logpath="%(logpath)s", chain="%(chain)s"]
+             ui-custom-action[logpath="%(logpath)s", chain="%(chain)s"]
 
 `
 
@@ -973,11 +964,11 @@ func updateJailLocalDefaultSection(settings AppSettings) error {
 	// Set default banaction values if not set
 	banaction := settings.Banaction
 	if banaction == "" {
-		banaction = "iptables-multiport"
+		banaction = "nftables-multiport"
 	}
 	banactionAllports := settings.BanactionAllports
 	if banactionAllports == "" {
-		banactionAllports = "iptables-allports"
+		banactionAllports = "nftables-allports"
 	}
 	// Keys to update
 	keysToUpdate := map[string]string{
@@ -987,7 +978,6 @@ func updateJailLocalDefaultSection(settings AppSettings) error {
 		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
 		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
 		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
-		"destemail":          fmt.Sprintf("destemail = %s", settings.Destemail),
 		"banaction":          fmt.Sprintf("banaction = %s", banaction),
 		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllports),
 	}

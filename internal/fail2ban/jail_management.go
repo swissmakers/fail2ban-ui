@@ -1230,11 +1230,11 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 	// Set default banaction values if not set
 	banaction := settings.Banaction
 	if banaction == "" {
-		banaction = "iptables-multiport"
+		banaction = "nftables-multiport"
 	}
 	banactionAllports := settings.BanactionAllports
 	if banactionAllports == "" {
-		banactionAllports = "iptables-allports"
+		banactionAllports = "nftables-allports"
 	}
 	// Define the keys we want to update
 	keysToUpdate := map[string]string{
