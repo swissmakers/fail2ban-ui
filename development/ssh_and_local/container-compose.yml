@@ -59,79 +59,25 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-      - SYS_ADMIN
     network_mode: bridge
     ports:
-      - "2222:22"  # SSH port mapping
+      - "2222:22"
     environment:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
-      - PUID=0  # Run as root for SSH setup
+      - PUID=0
       - PGID=0
+      # Install needed packages at startup (non-persistent, but simplest)
+      - DOCKER_MODS=linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=openssh-server|sudo|acl|bash
     volumes:
       - ./fail2ban-config-ssh:/config:z
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
       # Mount persistent SSH keys - shared between containers
       - ./ssh-keys:/mnt/ssh-keys:z
-    # We use entrypoint override to run SSH setup before the container's init
-    entrypoint: /bin/sh
-    command: >
-      -c "
-      apk update && apk add --no-cache openssh-server openssh-keygen sudo acl;
-      ssh-keygen -A;
-      useradd -m -s /bin/bash testuser 2>/dev/null || true;
-      passwd -d testuser 2>/dev/null || usermod -U testuser 2>/dev/null || true;
-      chage -E -1 testuser 2>/dev/null || true;
-      mkdir -p /home/testuser/.ssh;
-      if [ ! -f /mnt/ssh-keys/id_rsa ]; then
-        echo 'Generating new SSH key pair...';
-        ssh-keygen -t rsa -b 4096 -m PEM -f /mnt/ssh-keys/id_rsa -N '';
-        chmod 600 /mnt/ssh-keys/id_rsa;
-        chmod 644 /mnt/ssh-keys/id_rsa.pub;
-        echo 'SSH key pair generated in persistent volume';
-      else
-        echo 'Using existing SSH key pair from persistent volume';
-      fi;
-      cp /mnt/ssh-keys/id_rsa /home/testuser/.ssh/id_rsa;
-      cp /mnt/ssh-keys/id_rsa.pub /home/testuser/.ssh/id_rsa.pub;
-      cat /mnt/ssh-keys/id_rsa.pub > /home/testuser/.ssh/authorized_keys;
-      chmod 700 /home/testuser/.ssh;
-      chmod 600 /home/testuser/.ssh/id_rsa;
-      chmod 644 /home/testuser/.ssh/id_rsa.pub;
-      chmod 600 /home/testuser/.ssh/authorized_keys;
-      chown -R testuser:testuser /home/testuser/.ssh;
-      echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config;
-      echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config;
-      echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config;
-      echo 'LogLevel VERBOSE' >> /etc/ssh/sshd_config;
-      echo 'AuthorizedKeysFile .ssh/authorized_keys' >> /etc/ssh/sshd_config;
-      echo 'SyslogFacility AUTH' >> /etc/ssh/sshd_config;
-      mkdir -p /etc/sudoers.d;
-      echo 'testuser ALL=(ALL) NOPASSWD: /usr/bin/fail2ban-client *' > /etc/sudoers.d/fail2ban-ui;
-      echo 'testuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban' >> /etc/sudoers.d/fail2ban-ui;
-      echo 'testuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload fail2ban' >> /etc/sudoers.d/fail2ban-ui;
-      chmod 440 /etc/sudoers.d/fail2ban-ui;
-      mkdir -p /etc/fail2ban/jail.d /etc/fail2ban/filter.d /etc/fail2ban/action.d;
-      setfacl -Rm u:testuser:rwX /etc/fail2ban 2>/dev/null || true;
-      setfacl -dRm u:testuser:rwX /etc/fail2ban 2>/dev/null || true;
-      [ -d /etc/fail2ban/action.d ] && setfacl -m u:testuser:rwX /etc/fail2ban/action.d 2>/dev/null || true;
-      [ -d /etc/fail2ban/filter.d ] && setfacl -m u:testuser:rwX /etc/fail2ban/filter.d 2>/dev/null || true;
-      [ -d /etc/fail2ban/jail.d ] && setfacl -m u:testuser:rwX /etc/fail2ban/jail.d 2>/dev/null || true;
-      [ -d /config/fail2ban/action.d ] && setfacl -m u:testuser:rwX /config/fail2ban/action.d 2>/dev/null || true;
-      [ -d /config/fail2ban/filter.d ] && setfacl -m u:testuser:rwX /config/fail2ban/filter.d 2>/dev/null || true;
-      [ -d /config/fail2ban/jail.d ] && setfacl -m u:testuser:rwX /config/fail2ban/jail.d 2>/dev/null || true;
-      echo '========================================';
-      echo 'SSH Test Container Ready';
-      echo '========================================';
-      echo 'Host: 127.0.0.1';
-      echo 'Port: 2222';
-      echo 'User: testuser';
-      echo 'Key: /config/.ssh/id_rsa (in fail2ban-ui container)';
-      echo 'Test command: podman exec -it DEV_fail2ban-ui ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i /config/.ssh/id_rsa -p 2222 testuser@127.0.0.1';
-      echo '========================================';
-      /usr/sbin/sshd -D -e &
-      exec /init
-      "
 
+      # New: custom init + service hooks (read-only is recommended)
+      - ./fail2ban-ssh-custom-cont-init.d:/custom-cont-init.d:ro,z
+      - ./fail2ban-ssh-custom-services.d:/custom-services.d:ro,z
     restart: unless-stopped
