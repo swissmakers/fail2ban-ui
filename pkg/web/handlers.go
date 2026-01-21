@@ -1971,18 +1971,46 @@ func UpdateSettingsHandler(c *gin.Context) {
 		return
 	}
 
-	// Update action files for remote servers if callback URL changed
 	if callbackURLChanged {
+		config.DebugLog("Callback URL changed, updating action files and reloading fail2ban on all servers")
+
+		// Update action files for remote servers (SSH and Agent)
 		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
 			config.DebugLog("Warning: failed to update some remote action files: %v", err)
 			// Don't fail the request, just log the warning
 		}
+
+		// Reload all remote servers after updating action files
+		connectors := fail2ban.GetManager().Connectors()
+		for _, conn := range connectors {
+			server := conn.Server()
+			// Only reload remote servers (SSH and Agent), local will be handled separately
+			if (server.Type == "ssh" || server.Type == "agent") && server.Enabled {
+				config.DebugLog("Reloading fail2ban on %s after callback URL change", server.Name)
+				if err := conn.Reload(c.Request.Context()); err != nil {
+					config.DebugLog("Warning: failed to reload fail2ban on %s after updating action file: %v", server.Name, err)
+				} else {
+					config.DebugLog("Successfully reloaded fail2ban on %s", server.Name)
+				}
+			}
+		}
+
 		// Also update local action file if callback URL changed
 		settings := config.GetSettings()
 		for _, server := range settings.Servers {
 			if server.Type == "local" && server.Enabled {
 				if err := config.EnsureLocalFail2banAction(server); err != nil {
 					config.DebugLog("Warning: failed to update local action file: %v", err)
+				} else {
+					// Reload local fail2ban after updating action file
+					if conn, err := fail2ban.GetManager().Connector(server.ID); err == nil {
+						config.DebugLog("Reloading local fail2ban after callback URL change")
+						if reloadErr := conn.Reload(c.Request.Context()); reloadErr != nil {
+							config.DebugLog("Warning: failed to reload local fail2ban after updating action file: %v", reloadErr)
+						} else {
+							config.DebugLog("Successfully reloaded local fail2ban")
+						}
+					}
 				}
 			}
 		}
