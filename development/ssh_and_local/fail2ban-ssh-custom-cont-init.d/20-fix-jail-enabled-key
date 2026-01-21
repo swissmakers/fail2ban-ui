@@ -1,0 +1,26 @@
+#!/usr/bin/with-contenv bash
+set -euo pipefail
+
+fix_file() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+
+  # Only touch the file if it actually contains the wrong key at line start
+  if grep -Eq '^[[:space:]]*enable[[:space:]]*=' "$f"; then
+    echo "[custom-init] fixing key 'enable' -> 'enabled' in: $f"
+    cp -a "$f" "${f}.bak.$(date +%s)" || true
+
+    # BusyBox/Alpine-compatible sed (basic regex)
+    # Preserves indentation and spacing around '='
+    sed -i \
+      's/^\([[:space:]]*\)enable\([[:space:]]*=\)/\1enabled\2/' \
+      "$f"
+  fi
+}
+
+# These paths are typically the same in LSIO (since /etc/fail2ban -> /config/fail2ban),
+# but we list both to be safe in case of future changes.
+fix_file /etc/fail2ban/jail.d/dropbear.conf
+fix_file /etc/fail2ban/jail.d/selinux-ssh.conf
+fix_file /config/fail2ban/jail.d/dropbear.conf
+fix_file /config/fail2ban/jail.d/selinux-ssh.conf

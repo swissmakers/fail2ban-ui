@@ -23,6 +23,9 @@ services:
       # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
+
+      # New: custom init + service hooks (read-only is recommended)
+      - ./fail2ban-ssh-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
     restart: unless-stopped
 
 
