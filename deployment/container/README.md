@@ -10,6 +10,7 @@ A comprehensive guide for building and deploying Fail2Ban UI using containers (D
 - [Volume Mounts](#volume-mounts)
 - [Configuration](#configuration)
 - [Docker Compose](#docker-compose)
+- [Fail2Ban Banaction Configuration](#fail2ban-banaction-configuration)
 - [SELinux Configuration](#selinux-configuration)
 - [Troubleshooting](#troubleshooting)
 
@@ -361,6 +362,44 @@ See `docker-compose-allinone.example.yml` in the project root for the complete c
 
 ---
 
+## Fail2Ban Banaction Configuration
+
+### nftables vs iptables
+
+Modern Linux distributions (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+) use **nftables** as the default firewall backend instead of legacy iptables. When Fail2Ban is configured to use `iptables-multiport` or `iptables-allports`, it may fail with errors like:
+
+- `Extension multiport revision 0 not supported, missing kernel module?`
+- `iptables v1.8.11 (nf_tables): RULE_INSERT failed (No such file or directory)`
+
+**Solution:** Configure Fail2Ban to use nftables-based actions:
+
+1. Access the Fail2Ban UI web interface
+2. Navigate to **Settings** → **Fail2Ban Settings**
+3. Change **Banaction** from `iptables-multiport` to `nftables-multiport`
+4. Change **Banaction Allports** from `iptables-allports` to `nftables-allports`
+5. Save settings (Fail2Ban will automatically reload)
+
+### firewalld (Rocky Linux / Red Hat)
+
+For systems using `firewalld` as the firewall management tool (common on Rocky Linux and Red Hat Enterprise Linux), you can use:
+
+- **Banaction**: `firewallcmd-multiport`
+- **Banaction Allports**: `firewallcmd-allports`
+
+Alternatively, if firewalld is configured to use the nftables backend (default in RHEL 9+), you can use `nftables-multiport` / `nftables-allports` as described above.
+
+**Verify your system's firewall backend:**
+```bash
+# Check if using nftables
+iptables --version
+# Output: iptables v1.8.11 (nf_tables) indicates nftables backend
+
+# Check if firewalld is active
+systemctl status firewalld
+```
+
+---
+
 ## SELinux Configuration
 
 If SELinux is enabled on your system, you must apply the required SELinux policies to allow the container to communicate with Fail2Ban.
@@ -405,6 +444,10 @@ You should see:
 ---
 
 ## Troubleshooting
+
+### Fail2Ban Cannot Ban IPs (nftables/firewalld Issues)
+
+If Fail2Ban fails to ban IPs with errors related to iptables or multiport extensions, see the [Fail2Ban Banaction Configuration](#fail2ban-banaction-configuration) section above for detailed solutions.
 
 ### UI Not Accessible
 

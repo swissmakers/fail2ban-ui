@@ -896,6 +896,46 @@ journalctl -u fail2ban-ui.service -f
 3. Add remote server via SSH or API agent
 4. Verify server connection status
 
+#### Fail2Ban Banaction Configuration (nftables vs iptables)
+
+**Symptoms:** Fail2Ban fails to ban IPs with errors like:
+- `Extension multiport revision 0 not supported, missing kernel module?`
+- `iptables v1.8.11 (nf_tables): RULE_INSERT failed (No such file or directory)`
+- `Error starting action Jail('jail-name')/iptables-multiport: 'Script error'`
+
+**Cause:** Modern Linux distributions (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+) use **nftables** as the default firewall backend instead of legacy iptables. When Fail2Ban is configured to use `iptables-multiport` or `iptables-allports`, it attempts to use legacy iptables modules that are not available in nftables-based systems.
+
+**Solution:**
+
+1. **For nftables-based systems (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+):**
+   - Navigate to **Settings** → **Fail2Ban Settings**
+   - Change **Banaction** from `iptables-multiport` to `nftables-multiport`
+   - Change **Banaction Allports** from `iptables-allports` to `nftables-allports`
+   - Save settings and reload Fail2Ban
+
+2. **For systems using firewalld (Rocky Linux / Red Hat):**
+   - If your system uses `firewalld` as the firewall management tool, you can use:
+     - **Banaction**: `firewallcmd-multiport`
+     - **Banaction Allports**: `firewallcmd-allports`
+   - Alternatively, you can still use `nftables-multiport` if firewalld is configured to use nftables backend (which is the default in RHEL 9+)
+
+3. **Verify your system's firewall backend:**
+   ```bash
+   # Check if using nftables
+   iptables --version
+   # Output: iptables v1.8.11 (nf_tables) indicates nftables backend
+   
+   # Check if firewalld is active
+   systemctl status firewalld
+   ```
+
+**Note:** The Fail2Ban UI provides all common banaction options in the Settings dropdown, including:
+- `nftables-multiport` / `nftables-allports` (for nftables-based systems)
+- `firewallcmd-multiport` / `firewallcmd-allports` (for firewalld-based systems)
+- `iptables-multiport` / `iptables-allports` (for legacy iptables systems)
+
+After changing the banaction, Fail2Ban will automatically reload and apply the new configuration.
+
 #### OIDC Authentication Issues
 
 **Symptoms:** Cannot login, redirected to provider but authentication fails
