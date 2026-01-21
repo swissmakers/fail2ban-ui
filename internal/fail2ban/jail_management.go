@@ -1088,19 +1088,80 @@ func TestLogpathWithResolution(logpath string) (originalPath, resolvedPath strin
 	return originalPath, resolvedPath, files, nil
 }
 
-// ExtractLogpathFromJailConfig extracts the logpath value from jail configuration content.
+// ExtractLogpathFromJailConfig extracts the logpath value(s) from jail configuration content.
+// Supports multiple logpaths in a single line (space-separated) or multiple lines.
+// Fail2ban supports both formats:
+//
+//	logpath = /var/log/file1.log /var/log/file2.log
+//	logpath = /var/log/file1.log
+//	         /var/log/file2.log
+//
+// Returns all logpaths joined by newlines.
 func ExtractLogpathFromJailConfig(jailContent string) string {
+	var logpaths []string
 	scanner := bufio.NewScanner(strings.NewReader(jailContent))
+	inLogpathLine := false
+	currentLogpath := ""
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		// Skip comments
+		if strings.HasPrefix(line, "#") {
+			if inLogpathLine && currentLogpath != "" {
+				// End of logpath block at comment, process current logpath
+				paths := strings.Fields(currentLogpath)
+				logpaths = append(logpaths, paths...)
+				currentLogpath = ""
+				inLogpathLine = false
+			}
+			continue
+		}
+
+		// Check if this line starts with logpath =
 		if strings.HasPrefix(strings.ToLower(line), "logpath") {
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) == 2 {
-				return strings.TrimSpace(parts[1])
+				logpathValue := strings.TrimSpace(parts[1])
+				if logpathValue != "" {
+					currentLogpath = logpathValue
+					inLogpathLine = true
+				}
 			}
+		} else if inLogpathLine {
+			// Continuation line (indented or starting with space)
+			// Fail2ban allows continuation lines for logpath
+			if line != "" && !strings.Contains(line, "=") {
+				// This is a continuation line, append to current logpath
+				currentLogpath += " " + line
+			} else {
+				// End of logpath block, process current logpath
+				if currentLogpath != "" {
+					// Split by spaces to handle multiple logpaths in one line
+					paths := strings.Fields(currentLogpath)
+					logpaths = append(logpaths, paths...)
+					currentLogpath = ""
+				}
+				inLogpathLine = false
+			}
+		} else if inLogpathLine && line == "" {
+			// Empty line might end the logpath block
+			if currentLogpath != "" {
+				paths := strings.Fields(currentLogpath)
+				logpaths = append(logpaths, paths...)
+				currentLogpath = ""
+			}
+			inLogpathLine = false
 		}
 	}
-	return ""
+
+	// Process any remaining logpath
+	if currentLogpath != "" {
+		paths := strings.Fields(currentLogpath)
+		logpaths = append(logpaths, paths...)
+	}
+
+	// Join multiple logpaths with newlines
+	return strings.Join(logpaths, "\n")
 }
 
 // ExtractFilterFromJailConfig extracts the filter name from jail configuration content.
@@ -1183,7 +1244,6 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
 		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
 		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
-		"destemail":          fmt.Sprintf("destemail = %s", settings.Destemail),
 		"banaction":          fmt.Sprintf("banaction = %s", banaction),
 		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllports),
 	}
@@ -1197,7 +1257,7 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 		var newLines []string
 		newLines = append(newLines, strings.Split(strings.TrimRight(config.JailLocalBanner(), "\n"), "\n")...)
 		newLines = append(newLines, "[DEFAULT]")
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail", "banaction", "banaction_allports"} {
+		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
 			newLines = append(newLines, keysToUpdate[key])
 		}
 		newLines = append(newLines, "")
@@ -1270,14 +1330,14 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 	// If DEFAULT section wasn't found, create it at the beginning
 	if !defaultSectionFound {
 		defaultLines := []string{"[DEFAULT]"}
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"} {
+		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
 			defaultLines = append(defaultLines, keysToUpdate[key])
 		}
 		defaultLines = append(defaultLines, "")
 		outputLines = append(defaultLines, outputLines...)
 	} else {
 		// Add any missing keys to the DEFAULT section
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail", "banaction", "banaction_allports"} {
+		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
 			if !keysUpdated[key] {
 				// Find the DEFAULT section and insert after it
 				for i, line := range outputLines {
