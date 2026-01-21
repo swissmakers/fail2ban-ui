@@ -75,12 +75,18 @@ services:
       # The claim to use as the username (e.g., email, preferred_username, sub)
       # - OIDC_USERNAME_CLAIM=preferred_username
       # Optional: Provider logout URL
-      # If not set, the logout URL will be auto-constructed using the standard OIDC logout endpoint: {issuer}/protocol/openid-connect/logout
+      # If not set, the logout URL will be auto-constructed based on the provider:
+      #   Keycloak: {issuer}/protocol/openid-connect/logout
+      #   Authentik: {issuer}/protocol/openid-connect/logout
+      #   Pocket-ID: {issuer}/api/oidc/end-session
       # Examples:
       #   Keycloak: https://keycloak.example.com/realms/your-realm/protocol/openid-connect/logout
       #   Authentik: https://authentik.example.com/application/o/your-client-slug/protocol/openid-connect/logout
-      #   Pocket-ID: https://pocket-id.example.com/protocol/openid-connect/logout
+      #   Pocket-ID: https://pocket-id.example.com/api/oidc/end-session
       # - OIDC_LOGOUT_URL=https://keycloak.example.com/realms/your-realm/protocol/openid-connect/logout
+      # Optional: Skip login page and redirect directly to OIDC provider (default: false)
+      # When set to true, users are immediately redirected to the OIDC provider without showing the login page
+      # - OIDC_SKIP_LOGINPAGE=true
 
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container

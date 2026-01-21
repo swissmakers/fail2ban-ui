@@ -229,6 +229,9 @@ services:
       - OIDC_SESSION_MAX_AGE=7200
       - OIDC_USERNAME_CLAIM=preferred_username
       - OIDC_SKIP_VERIFY=true
+      # Optional: Skip login page and redirect directly to OIDC provider (default: false)
+      # When set to true, users are immediately redirected to the OIDC provider without showing the login page
+      #- OIDC_SKIP_LOGINPAGE=true
       # Optional: Logout URL
       #- OIDC_LOGOUT_URL=${KEYCLOAK_URL}/realms/master/protocol/openid-connect/logout
       

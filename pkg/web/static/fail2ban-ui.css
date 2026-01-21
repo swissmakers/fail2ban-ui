@@ -33,6 +33,35 @@
     z-index: 1;
 }
 
+/* Both login page and main content are hidden by default */
+#loginPage.hidden {
+    display: none !important;
+}
+
+#mainContent.hidden {
+    display: none !important;
+}
+
+nav.hidden {
+    display: none !important;
+}
+
+#footer.hidden {
+    display: none !important;
+}
+
+/* Hide login page when OIDC is not enabled (additional safety) */
+body[data-oidc-enabled="false"] #loginPage {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* Hide login page when skipLoginPage is enabled (additional safety) */
+body[data-skip-login-page="true"] #loginPage {
+    display: none !important;
+    visibility: hidden !important;
+}
+
 /* Ensure login page is visible when shown */
 body:has(#loginPage:not(.hidden)) {
     background-color: #f3f4f6;

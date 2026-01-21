@@ -69,20 +69,46 @@ function initStatusIndicator() {
   updateStatusIndicator('connecting', 'Connecting...');
   
   // Register callback with WebSocket manager when available
-  if (typeof wsManager !== 'undefined' && wsManager) {
-    wsManager.onStatusChange(function(state, text) {
-      updateStatusIndicator(state, text);
-    });
-  } else {
+  function registerStatusCallback() {
+    if (typeof wsManager !== 'undefined' && wsManager) {
+      // Register callback for future status changes
+      wsManager.onStatusChange(function(state, text) {
+        updateStatusIndicator(state, text);
+      });
+      
+      // Immediately update status based on current connection state
+      // This handles the case where connection was established before callback registration
+      var currentState = wsManager.getConnectionState();
+      var currentText = 'Connecting...';
+      
+      if (currentState === 'connected' && wsManager.isConnected) {
+        currentText = 'Connected';
+      } else if (currentState === 'connecting') {
+        currentText = 'Connecting...';
+      } else if (currentState === 'disconnected') {
+        currentText = 'Disconnected';
+      } else if (currentState === 'disconnecting') {
+        currentText = 'Disconnecting...';
+      }
+      
+      updateStatusIndicator(currentState, currentText);
+      return true;
+    }
+    return false;
+  }
+  
+  if (!registerStatusCallback()) {
     // Wait for WebSocket manager to be available
     var checkInterval = setInterval(function() {
-      if (typeof wsManager !== 'undefined' && wsManager) {
-        wsManager.onStatusChange(function(state, text) {
-          updateStatusIndicator(state, text);
-        });
+      if (registerStatusCallback()) {
         clearInterval(checkInterval);
       }
     }, 100);
+    
+    // Stop checking after 5 seconds to avoid infinite loop
+    setTimeout(function() {
+      clearInterval(checkInterval);
+    }, 5000);
   }
 }
 

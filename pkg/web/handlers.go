@@ -1126,10 +1126,22 @@ func renderIndexPage(c *gin.Context) {
 	// Default is enabled (false means enabled, true means disabled)
 	disableExternalIP := os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "true" || os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "1"
 
+	// Check if OIDC is enabled and skip login page setting
+	oidcEnabled := auth.IsEnabled()
+	skipLoginPage := false
+	if oidcEnabled {
+		oidcConfig := auth.GetConfig()
+		if oidcConfig != nil {
+			skipLoginPage = oidcConfig.SkipLoginPage
+		}
+	}
+
 	c.HTML(http.StatusOK, "index.html", gin.H{
 		"timestamp":         time.Now().Format(time.RFC1123),
 		"version":           time.Now().Unix(),
 		"disableExternalIP": disableExternalIP,
+		"oidcEnabled":       oidcEnabled,
+		"skipLoginPage":     skipLoginPage,
 	})
 }
 
@@ -3018,11 +3030,46 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 
 // LoginHandler shows the login page or initiates the OIDC login flow
 // If action=redirect query parameter is present, redirects to OIDC provider
+// If OIDC_SKIP_LOGINPAGE is true, redirects directly to OIDC provider
 // Otherwise, renders the login page
 func LoginHandler(c *gin.Context) {
 	oidcClient := auth.GetOIDCClient()
 	if oidcClient == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OIDC authentication is not configured"})
+		return
+	}
+
+	// Check if skip login page is enabled
+	oidcConfig := auth.GetConfig()
+	if oidcConfig != nil && oidcConfig.SkipLoginPage {
+		// Skip login page - redirect directly to OIDC provider
+		// Generate state parameter for CSRF protection
+		stateBytes := make([]byte, 32)
+		if _, err := rand.Read(stateBytes); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state parameter"})
+			return
+		}
+		state := base64.URLEncoding.EncodeToString(stateBytes)
+
+		// Determine if we're using HTTPS
+		isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+
+		// Store state in session cookie for validation
+		stateCookie := &http.Cookie{
+			Name:     "oidc_state",
+			Value:    state,
+			Path:     "/",
+			MaxAge:   600, // 10 minutes
+			HttpOnly: true,
+			Secure:   isSecure, // Only secure over HTTPS
+			SameSite: http.SameSiteLaxMode,
+		}
+		http.SetCookie(c.Writer, stateCookie)
+		config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
+
+		// Get authorization URL and redirect
+		authURL := oidcClient.GetAuthURL(state)
+		c.Redirect(http.StatusFound, authURL)
 		return
 	}
 
@@ -3174,8 +3221,12 @@ func LogoutHandler(c *gin.Context) {
 				// Keycloak requires client_id when using post_logout_redirect_uri
 				// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
 				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
-			case "authentik", "pocketid":
-				// Standard OIDC format for Authentik and Pocket-ID
+			case "pocketid":
+				// Pocket-ID uses a different logout endpoint
+				// Format: {issuer}/api/oidc/end-session?redirect_uri={redirect}
+				logoutURL = fmt.Sprintf("%s/api/oidc/end-session?redirect_uri=%s", issuerURL, redirectURIEncoded)
+			case "authentik":
+				// Standard OIDC format for Authentik
 				// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
 				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
 			default:
@@ -3205,11 +3256,18 @@ func AuthStatusHandler(c *gin.Context) {
 		return
 	}
 
+	oidcConfig := auth.GetConfig()
+	skipLoginPage := false
+	if oidcConfig != nil {
+		skipLoginPage = oidcConfig.SkipLoginPage
+	}
+
 	session, err := auth.GetSession(c.Request)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"enabled":       true,
 			"authenticated": false,
+			"skipLoginPage": skipLoginPage,
 		})
 		return
 	}
@@ -3217,6 +3275,7 @@ func AuthStatusHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"enabled":       true,
 		"authenticated": true,
+		"skipLoginPage": skipLoginPage,
 		"user": gin.H{
 			"id":       session.UserID,
 			"email":    session.Email,
