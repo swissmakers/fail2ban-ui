@@ -75,6 +75,14 @@ function openJailConfigModal(jailName) {
       // Check if logpath is set in jail config and show test button
       updateLogpathButtonVisibility();
       
+      // Show hint for local servers
+      var localServerHint = document.getElementById('localServerLogpathHint');
+      if (localServerHint && currentServer && currentServer.type === 'local') {
+        localServerHint.classList.remove('hidden');
+      } else if (localServerHint) {
+        localServerHint.classList.add('hidden');
+      }
+      
       // Add listener to update button visibility when jail config changes
       jailTextArea.addEventListener('input', updateLogpathButtonVisibility);
       
@@ -102,11 +110,22 @@ function updateLogpathButtonVisibility() {
   var jailConfig = jailTextArea ? jailTextArea.value : '';
   var hasLogpath = /logpath\s*=/i.test(jailConfig);
   var testSection = document.getElementById('testLogpathSection');
+  var localServerHint = document.getElementById('localServerLogpathHint');
+  
   if (hasLogpath && testSection) {
     testSection.classList.remove('hidden');
+    // Show hint for local servers
+    if (localServerHint && currentServer && currentServer.type === 'local') {
+      localServerHint.classList.remove('hidden');
+    } else if (localServerHint) {
+      localServerHint.classList.add('hidden');
+    }
   } else if (testSection) {
     testSection.classList.add('hidden');
     document.getElementById('logpathResults').classList.add('hidden');
+    if (localServerHint) {
+      localServerHint.classList.add('hidden');
+    }
   }
 }
 
@@ -149,19 +168,68 @@ function saveJailConfig() {
 }
 
 // Extract logpath from jail config text
+// Supports multiple logpaths in a single line (space-separated) or multiple lines
+// Fail2ban supports both formats:
+//   logpath = /var/log/file1.log /var/log/file2.log
+//   logpath = /var/log/file1.log
+//            /var/log/file2.log
 function extractLogpathFromConfig(configText) {
   if (!configText) return '';
   
-  // Match logpath = value (handles various formats)
-  var logpathMatch = configText.match(/^logpath\s*=\s*(.+)$/im);
-  if (logpathMatch && logpathMatch[1]) {
-    // Trim whitespace and remove quotes if present
-    var logpath = logpathMatch[1].trim();
-    // Remove surrounding quotes
-    logpath = logpath.replace(/^["']|["']$/g, '');
-    return logpath;
+  var logpaths = [];
+  var lines = configText.split('\n');
+  var inLogpathLine = false;
+  var currentLogpath = '';
+  
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    // Skip comments
+    if (line.startsWith('#')) {
+      continue;
+    }
+    
+    // Check if this line starts with logpath =
+    var logpathMatch = line.match(/^logpath\s*=\s*(.+)$/i);
+    if (logpathMatch && logpathMatch[1]) {
+      // Trim whitespace and remove quotes if present
+      currentLogpath = logpathMatch[1].trim();
+      currentLogpath = currentLogpath.replace(/^["']|["']$/g, '');
+      inLogpathLine = true;
+    } else if (inLogpathLine) {
+      // Continuation line (indented or starting with space)
+      // Fail2ban allows continuation lines for logpath
+      if (line !== '' && !line.includes('=')) {
+        // This is a continuation line, append to current logpath
+        currentLogpath += ' ' + line.trim();
+      } else {
+        // End of logpath block, process current logpath
+        if (currentLogpath) {
+          // Split by spaces to handle multiple logpaths in one line
+          var paths = currentLogpath.split(/\s+/).filter(function(p) { return p.length > 0; });
+          logpaths = logpaths.concat(paths);
+          currentLogpath = '';
+        }
+        inLogpathLine = false;
+      }
+    } else if (inLogpathLine && line === '') {
+      // Empty line might end the logpath block
+      if (currentLogpath) {
+        var paths = currentLogpath.split(/\s+/).filter(function(p) { return p.length > 0; });
+        logpaths = logpaths.concat(paths);
+        currentLogpath = '';
+      }
+      inLogpathLine = false;
+    }
   }
-  return '';
+  
+  // Process any remaining logpath
+  if (currentLogpath) {
+    var paths = currentLogpath.split(/\s+/).filter(function(p) { return p.length > 0; });
+    logpaths = logpaths.concat(paths);
+  }
+  
+  // Join multiple logpaths with newlines
+  return logpaths.join('\n');
 }
 
 function testLogpath() {
@@ -203,39 +271,88 @@ function testLogpath() {
       }
       
       var originalLogpath = data.original_logpath || '';
-      var resolvedLogpath = data.resolved_logpath || '';
-      var files = data.files || [];
+      var results = data.results || [];
+      var isLocalServer = data.is_local_server || false;
       
-      // Build output message with better formatting
+      // Build HTML output with visual indicators
       var output = '';
       
-      // Show original logpath
-      if (originalLogpath) {
-        output += 'Logpath:\n  ' + originalLogpath + '\n\n';
+      if (results.length === 0) {
+        output = '<div class="text-yellow-600">No logpath entries found.</div>';
+        resultsDiv.innerHTML = output;
+        resultsDiv.classList.add('text-yellow-600');
+        return;
       }
       
-      // Show resolved logpath if different from original
-      if (resolvedLogpath && resolvedLogpath !== originalLogpath) {
-        output += 'Resolved logpath:\n  ' + resolvedLogpath + '\n\n';
-      } else if (resolvedLogpath) {
-        //output += 'Logpath:\n  ' + resolvedLogpath + '\n\n';
-      }
+      // Process each logpath result
+      results.forEach(function(result, idx) {
+        var logpath = result.logpath || '';
+        var resolvedPath = result.resolved_path || '';
+        var found = result.found || false;
+        var files = result.files || [];
+        var error = result.error || '';
+        
+        if (idx > 0) {
+          output += '<div class="my-4 border-t border-gray-300 pt-4"></div>';
+        }
+        
+        output += '<div class="mb-3">';
+        output += '<div class="font-semibold text-gray-800 mb-1">Logpath ' + (idx + 1) + ':</div>';
+        output += '<div class="ml-4 text-sm text-gray-600 font-mono">' + escapeHtml(logpath) + '</div>';
+        
+        if (resolvedPath && resolvedPath !== logpath) {
+          output += '<div class="ml-4 text-xs text-gray-500 mt-1">Resolved: <span class="font-mono">' + escapeHtml(resolvedPath) + '</span></div>';
+        }
+        output += '</div>';
+        
+        // Test results
+        output += '<div class="ml-4 mb-2">';
+        output += '<div class="flex items-center gap-2">';
+        if (isLocalServer) {
+          output += '<span class="font-medium text-sm">In fail2ban-ui Container:</span>';
+        } else {
+          output += '<span class="font-medium text-sm">On Remote Server:</span>';
+        }
+        if (error) {
+          output += '<span class="text-red-600 font-bold">✗</span>';
+          output += '<span class="text-red-600 text-sm">Error: ' + escapeHtml(error) + '</span>';
+        } else if (found) {
+          output += '<span class="text-green-600 font-bold">✓</span>';
+          output += '<span class="text-green-600 text-sm">Found ' + files.length + ' file(s)</span>';
+        } else {
+          output += '<span class="text-red-600 font-bold">✗</span>';
+          if (isLocalServer) {
+            output += '<span class="text-red-600 text-sm">Not found (logs may not be mounted to container)</span>';
+          } else {
+            output += '<span class="text-red-600 text-sm">Not found</span>';
+          }
+        }
+        output += '</div>';
+        if (files.length > 0) {
+          output += '<div class="ml-6 mt-1 text-xs text-gray-600">';
+          files.forEach(function(file) {
+            output += '<div class="font-mono">  • ' + escapeHtml(file) + '</div>';
+          });
+          output += '</div>';
+        }
+        output += '</div>';
+      });
       
-      // Show files found with better formatting
-      if (files.length === 0) {
-        output += 'No files found matching the logpath pattern.';
+      // Set overall status color
+      var allFound = results.every(function(r) { return r.found; });
+      var anyFound = results.some(function(r) { return r.found; });
+      
+      if (allFound) {
+        resultsDiv.classList.remove('text-red-600', 'text-yellow-600');
+      } else if (anyFound) {
         resultsDiv.classList.remove('text-red-600');
         resultsDiv.classList.add('text-yellow-600');
       } else {
-        output += 'Found ' + files.length + ' file(s):\n\n';
-        files.forEach(function(file, index) {
-          output += '  ' + (index + 1) + '. ' + file + '\n';
-        });
-        resultsDiv.classList.remove('text-red-600', 'text-yellow-600');
+        resultsDiv.classList.remove('text-yellow-600');
+        resultsDiv.classList.add('text-red-600');
       }
       
-      // Use textContent for plain text, but we could also use innerHTML for better formatting
-      resultsDiv.textContent = output;
+      resultsDiv.innerHTML = output;
       
       // Auto-scroll to results
       setTimeout(function() {

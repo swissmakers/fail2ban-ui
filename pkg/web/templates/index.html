@@ -1028,11 +1028,14 @@
                 
                 <!-- Test Logpath Button (only shown if logpath is set) -->
                 <div id="testLogpathSection" class="hidden">
+                  <div id="localServerLogpathHint" class="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-800 hidden">
+                    <strong data-i18n="modal.local_server_logpath_note">ℹ️ Note:</strong> <span data-i18n="modal.local_server_logpath_text_prefix">For a local fail2ban server (e.g. installed on container host system or in a container on same host), log files must also be mounted to the fail2ban-ui container (e.g.,</span> <code class="font-mono">-v /var/log:/var/log:ro</code> <span data-i18n="modal.local_server_logpath_text_suffix">) this is required so that the fail2ban-ui can verify logpath variables or paths when updating jails.</span>
+                  </div>
                   <button type="button" 
                     class="inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                     onclick="testLogpath()"
                     data-i18n="modal.test_logpath">Test Logpath</button>
-                  <pre id="logpathResults" class="mt-2 p-3 bg-gray-100 rounded-md text-sm font-mono max-h-32 overflow-y-auto hidden"></pre>
+                  <div id="logpathResults" class="mt-2 p-3 bg-gray-100 rounded-md text-sm max-h-64 overflow-y-auto hidden"></div>
                 </div>
               </div>
             </div>
