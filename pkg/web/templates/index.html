@@ -819,17 +819,8 @@
           <!-- Banaction -->
           <div class="mb-4">
             <label for="banaction" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.banaction">Banaction</label>
-            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.banaction.description">Default banning action (e.g. iptables-multiport, iptables-allports, firewallcmd-multiport, etc). It is used to define action_* variables.</p>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.banaction.description">Default banning action (e.g. nftables-multiport, nftables-allports, firewallcmd-rich-rules, etc). It is used to define action_* variables.</p>
             <select id="banaction" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="iptables-multiport">iptables-multiport</option>
-              <option value="iptables-allports">iptables-allports</option>
-              <option value="iptables-new">iptables-new</option>
-              <option value="iptables-ipset">iptables-ipset</option>
-              <option value="iptables-ipset-proto4">iptables-ipset-proto4</option>
-              <option value="iptables-ipset-proto6">iptables-ipset-proto6</option>
-              <option value="iptables-ipset-proto6-allports">iptables-ipset-proto6-allports</option>
-              <option value="iptables-multiport-log">iptables-multiport-log</option>
-              <option value="iptables-xt_recent-echo">iptables-xt_recent-echo</option>
               <option value="firewallcmd-multiport">firewallcmd-multiport</option>
               <option value="firewallcmd-allports">firewallcmd-allports</option>
               <option value="firewallcmd-ipset">firewallcmd-ipset</option>
@@ -839,6 +830,15 @@
               <option value="nftables-multiport">nftables-multiport</option>
               <option value="nftables-allports">nftables-allports</option>
               <option value="nftables">nftables</option>
+              <option value="iptables-multiport">iptables-multiport</option>
+              <option value="iptables-allports">iptables-allports</option>
+              <option value="iptables-new">iptables-new</option>
+              <option value="iptables-ipset">iptables-ipset</option>
+              <option value="iptables-ipset-proto4">iptables-ipset-proto4</option>
+              <option value="iptables-ipset-proto6">iptables-ipset-proto6</option>
+              <option value="iptables-ipset-proto6-allports">iptables-ipset-proto6-allports</option>
+              <option value="iptables-multiport-log">iptables-multiport-log</option>
+              <option value="iptables-xt_recent-echo">iptables-xt_recent-echo</option>
               <option value="shorewall">shorewall</option>
               <option value="shorewall-ipset-proto6">shorewall-ipset-proto6</option>
               <option value="ufw">ufw</option>
@@ -858,15 +858,6 @@
             <label for="banactionAllports" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.banaction_allports">Banaction Allports</label>
             <p class="text-xs text-gray-500 mb-2" data-i18n="settings.banaction_allports.description">Banning action for all ports (e.g. iptables-allports, firewallcmd-allports, etc). Used when a jail needs to ban all ports instead of specific ones.</p>
             <select id="banactionAllports" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="iptables-allports">iptables-allports</option>
-              <option value="iptables-multiport">iptables-multiport</option>
-              <option value="iptables-new">iptables-new</option>
-              <option value="iptables-ipset">iptables-ipset</option>
-              <option value="iptables-ipset-proto4">iptables-ipset-proto4</option>
-              <option value="iptables-ipset-proto6">iptables-ipset-proto6</option>
-              <option value="iptables-ipset-proto6-allports">iptables-ipset-proto6-allports</option>
-              <option value="iptables-multiport-log">iptables-multiport-log</option>
-              <option value="iptables-xt_recent-echo">iptables-xt_recent-echo</option>
               <option value="firewallcmd-allports">firewallcmd-allports</option>
               <option value="firewallcmd-multiport">firewallcmd-multiport</option>
               <option value="firewallcmd-ipset">firewallcmd-ipset</option>
@@ -876,6 +867,15 @@
               <option value="nftables-allports">nftables-allports</option>
               <option value="nftables-multiport">nftables-multiport</option>
               <option value="nftables">nftables</option>
+              <option value="iptables-allports">iptables-allports</option>
+              <option value="iptables-multiport">iptables-multiport</option>
+              <option value="iptables-new">iptables-new</option>
+              <option value="iptables-ipset">iptables-ipset</option>
+              <option value="iptables-ipset-proto4">iptables-ipset-proto4</option>
+              <option value="iptables-ipset-proto6">iptables-ipset-proto6</option>
+              <option value="iptables-ipset-proto6-allports">iptables-ipset-proto6-allports</option>
+              <option value="iptables-multiport-log">iptables-multiport-log</option>
+              <option value="iptables-xt_recent-echo">iptables-xt_recent-echo</option>
               <option value="shorewall">shorewall</option>
               <option value="shorewall-ipset-proto6">shorewall-ipset-proto6</option>
               <option value="ufw">ufw</option>
@@ -1028,11 +1028,14 @@
                 
                 <!-- Test Logpath Button (only shown if logpath is set) -->
                 <div id="testLogpathSection" class="hidden">
+                  <div id="localServerLogpathHint" class="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-800 hidden">
+                    <strong data-i18n="modal.local_server_logpath_note">ℹ️ Note:</strong> <span data-i18n="modal.local_server_logpath_text_prefix">For a local fail2ban server (e.g. installed on container host system or in a container on same host), log files must also be mounted to the fail2ban-ui container (e.g.,</span> <code class="font-mono">-v /var/log:/var/log:ro</code> <span data-i18n="modal.local_server_logpath_text_suffix">) this is required so that the fail2ban-ui can verify logpath variables or paths when updating jails.</span>
+                  </div>
                   <button type="button" 
                     class="inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                     onclick="testLogpath()"
                     data-i18n="modal.test_logpath">Test Logpath</button>
-                  <pre id="logpathResults" class="mt-2 p-3 bg-gray-100 rounded-md text-sm font-mono max-h-32 overflow-y-auto hidden"></pre>
+                  <div id="logpathResults" class="mt-2 p-3 bg-gray-100 rounded-md text-sm max-h-64 overflow-y-auto hidden"></div>
                 </div>
               </div>
             </div>

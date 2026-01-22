@@ -54,15 +54,24 @@ chmod 0440 /etc/sudoers.d/fail2ban-ui
 mkdir -p /config/fail2ban/{action.d,filter.d,jail.d}
 
 # Apply both access ACL and default ACL (so new files/dirs inherit)
+# First apply recursively to existing files/directories, then set default ACLs
 for d in /config/fail2ban /config/fail2ban/action.d /config/fail2ban/filter.d /config/fail2ban/jail.d; do
-  setfacl -m u:testuser:rwX,m::rwX "$d"
+  # Apply access ACL recursively to existing files/directories
+  setfacl -R -m u:testuser:rwX,m::rwX "$d"
+  # Set default ACL so new files/dirs inherit permissions
   setfacl -d -m u:testuser:rwX,m::rwX "$d"
+  # Also ensure the directory itself has the access ACL
+  setfacl -m u:testuser:rwX,m::rwX "$d"
 done
 
 # /etc/fail2ban is a symlink to /config/fail2ban in this image; setfacl follows symlinks by default.
 if [ -e /etc/fail2ban ]; then
-  setfacl -m u:testuser:rwX,m::rwX /etc/fail2ban || true
+  # Apply recursively to existing files/directories
+  setfacl -R -m u:testuser:rwX,m::rwX /etc/fail2ban || true
+  # Set default ACL
   setfacl -d -m u:testuser:rwX,m::rwX /etc/fail2ban || true
+  # Ensure the symlink target has access ACL
+  setfacl -m u:testuser:rwX,m::rwX /etc/fail2ban || true
 fi
 
 echo "[custom-init] ssh + acl setup complete"

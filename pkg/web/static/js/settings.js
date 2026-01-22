@@ -163,8 +163,8 @@ function loadSettings() {
       renderIgnoreIPsTags(ignoreIPs);
       
       // Load banaction settings
-      document.getElementById('banaction').value = data.banaction || 'iptables-multiport';
-      document.getElementById('banactionAllports').value = data.banactionAllports || 'iptables-allports';
+      document.getElementById('banaction').value = data.banaction || 'nftables-multiport';
+      document.getElementById('banactionAllports').value = data.banactionAllports || 'nftables-allports';
 
       applyAdvancedActionsSettings(data.advancedActions || {});
       loadPermanentBlockLog();

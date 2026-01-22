@@ -1612,11 +1612,11 @@ func (sc *SSHConnector) UpdateDefaultSettings(ctx context.Context, settings conf
 	// Set default banaction values if not set
 	banactionVal := settings.Banaction
 	if banactionVal == "" {
-		banactionVal = "iptables-multiport"
+		banactionVal = "nftables-multiport"
 	}
 	banactionAllportsVal := settings.BanactionAllports
 	if banactionAllportsVal == "" {
-		banactionAllportsVal = "iptables-allports"
+		banactionAllportsVal = "nftables-allports"
 	}
 	// Define the keys we want to update
 	keysToUpdate := map[string]string{
@@ -1626,7 +1626,6 @@ func (sc *SSHConnector) UpdateDefaultSettings(ctx context.Context, settings conf
 		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
 		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
 		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
-		"destemail":          fmt.Sprintf("destemail = %s", settings.Destemail),
 		"banaction":          fmt.Sprintf("banaction = %s", banactionVal),
 		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllportsVal),
 	}
@@ -1635,7 +1634,7 @@ func (sc *SSHConnector) UpdateDefaultSettings(ctx context.Context, settings conf
 	if existingContent == "" {
 		// File doesn't exist, create new one with DEFAULT section
 		defaultLines := []string{"[DEFAULT]"}
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail", "banaction", "banaction_allports"} {
+		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
 			defaultLines = append(defaultLines, keysToUpdate[key])
 		}
 		defaultLines = append(defaultLines, "")
@@ -1675,7 +1674,6 @@ bantime_increment_val = %s
 bantime_val = '%s'
 findtime_val = '%s'
 maxretry_val = %d
-destemail_val = '%s'
 keys_to_update = {
     'enabled': 'enabled = ' + str(default_jail_enable_val).lower(),
     'bantime.increment': 'bantime.increment = ' + str(bantime_increment_val).lower(),
@@ -1683,7 +1681,6 @@ keys_to_update = {
     'bantime': 'bantime = ' + bantime_val,
     'findtime': 'findtime = ' + findtime_val,
     'maxretry': 'maxretry = ' + str(maxretry_val),
-    'destemail': 'destemail = ' + destemail_val,
     'banaction': 'banaction = ' + banaction_val,
     'banaction_allports': 'banaction_allports = ' + banaction_allports_val
 }
@@ -1736,13 +1733,13 @@ for line in lines:
 # If DEFAULT section wasn't found, create it at the beginning
 if not default_section_found:
     default_lines = ["[DEFAULT]\n"]
-    for key in ["enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"]:
+    for key in ["enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"]:
         default_lines.append(keys_to_update[key] + "\n")
     default_lines.append("\n")
     output_lines = default_lines + output_lines
 else:
     # Add any missing keys to the DEFAULT section
-    for key in ["enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "destemail"]:
+    for key in ["enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"]:
         if key not in keys_updated:
             # Find the DEFAULT section and insert after it
             for i, line in enumerate(output_lines):
@@ -1752,7 +1749,7 @@ else:
 
 with open(jail_file, 'w') as f:
     f.writelines(output_lines)
-PY`, escapeForShell(jailLocalPath), escapeForShell(ignoreIPStr), escapeForShell(banactionVal), escapeForShell(banactionAllportsVal), defaultJailEnablePython, bantimeIncrementPython, escapeForShell(settings.Bantime), escapeForShell(settings.Findtime), settings.Maxretry, escapeForShell(settings.Destemail))
+PY`, escapeForShell(jailLocalPath), escapeForShell(ignoreIPStr), escapeForShell(banactionVal), escapeForShell(banactionAllportsVal), defaultJailEnablePython, bantimeIncrementPython, escapeForShell(settings.Bantime), escapeForShell(settings.Findtime), settings.Maxretry)
 
 	_, err = sc.runRemoteCommand(ctx, []string{updateScript})
 	return err
@@ -1776,11 +1773,11 @@ func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
 	// Set default banaction values if not set
 	banactionVal := settings.Banaction
 	if banactionVal == "" {
-		banactionVal = "iptables-multiport"
+		banactionVal = "nftables-multiport"
 	}
 	banactionAllportsVal := settings.BanactionAllports
 	if banactionAllportsVal == "" {
-		banactionAllportsVal = "iptables-allports"
+		banactionAllportsVal = "nftables-allports"
 	}
 
 	// Build the new jail.local content in Go (mirrors local ensureJailLocalStructure)
@@ -1793,7 +1790,6 @@ ignoreip = %s
 bantime = %s
 findtime = %s
 maxretry = %d
-destemail = %s
 banaction = %s
 banaction_allports = %s
 
@@ -1804,14 +1800,13 @@ banaction_allports = %s
 		settings.Bantime,
 		settings.Findtime,
 		settings.Maxretry,
-		settings.Destemail,
 		banactionVal,
 		banactionAllportsVal,
 	)
 
-	actionMwlgConfig := `# Custom Fail2Ban action using geo-filter for email alerts
+	actionMwlgConfig := `# Custom Fail2Ban action for UI callbacks
 action_mwlg = %(action_)s
-             ui-custom-action[sender="%(sender)s", dest="%(destemail)s", logpath="%(logpath)s", chain="%(chain)s"]
+             ui-custom-action[logpath="%(logpath)s", chain="%(chain)s"]
 
 `
 

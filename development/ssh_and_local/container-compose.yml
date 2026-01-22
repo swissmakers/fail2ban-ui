@@ -37,7 +37,7 @@ services:
     network_mode: host
     environment:
       - PORT=3080
-      - BIND_ADDRESS=172.16.10.18
+      - BIND_ADDRESS=0.0.0.0
 
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container

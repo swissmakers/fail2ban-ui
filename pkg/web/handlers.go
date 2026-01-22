@@ -678,8 +678,13 @@ func ListSSHKeysHandler(c *gin.Context) {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, "id_") || strings.HasSuffix(name, ".pem") || strings.HasSuffix(name, ".key") {
-			keys = append(keys, filepath.Join(dir, name))
+		// Only include private keys, not public keys (.pub files)
+		// SSH requires the private key file, not the public key
+		if (strings.HasPrefix(name, "id_") && !strings.HasSuffix(name, ".pub")) ||
+			strings.HasSuffix(name, ".pem") ||
+			(strings.HasSuffix(name, ".key") && !strings.HasSuffix(name, ".pub")) {
+			keyPath := filepath.Join(dir, name)
+			keys = append(keys, keyPath)
 		}
 	}
 	if len(keys) == 0 {
@@ -1394,17 +1399,93 @@ func TestLogpathHandler(c *gin.Context) {
 		return
 	}
 
-	// Test the logpath with variable resolution
-	originalPath, resolvedPath, files, err := conn.TestLogpathWithResolution(c.Request.Context(), originalLogpath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to test logpath: " + err.Error()})
-		return
+	// Get server type to determine test strategy
+	server := conn.Server()
+	isLocalServer := server.Type == "local"
+
+	// Split logpath by newlines and spaces (Fail2ban supports multiple logpaths separated by spaces or newlines)
+	// First split by newlines, then split each line by spaces
+	var logpaths []string
+	for _, line := range strings.Split(originalLogpath, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Split by spaces to handle multiple logpaths in one line
+		paths := strings.Fields(line)
+		logpaths = append(logpaths, paths...)
+	}
+
+	var allResults []map[string]interface{}
+
+	for _, logpathLine := range logpaths {
+		logpathLine = strings.TrimSpace(logpathLine)
+		if logpathLine == "" {
+			continue
+		}
+
+		if isLocalServer {
+			// For local servers: only test in fail2ban-ui container (container can only see mounted paths)
+			// Resolve variables first
+			resolvedPath, err := fail2ban.ResolveLogpathVariables(logpathLine)
+			if err != nil {
+				allResults = append(allResults, map[string]interface{}{
+					"logpath":       logpathLine,
+					"resolved_path": "",
+					"found":         false,
+					"files":         []string{},
+					"error":         err.Error(),
+				})
+				continue
+			}
+
+			if resolvedPath == "" {
+				resolvedPath = logpathLine
+			}
+
+			// Test in fail2ban-ui container
+			files, localErr := fail2ban.TestLogpath(resolvedPath)
+
+			allResults = append(allResults, map[string]interface{}{
+				"logpath":       logpathLine,
+				"resolved_path": resolvedPath,
+				"found":         len(files) > 0,
+				"files":         files,
+				"error": func() string {
+					if localErr != nil {
+						return localErr.Error()
+					}
+					return ""
+				}(),
+			})
+		} else {
+			// For SSH/Agent servers: test on remote server (via connector)
+			_, resolvedPath, filesOnRemote, err := conn.TestLogpathWithResolution(c.Request.Context(), logpathLine)
+			if err != nil {
+				allResults = append(allResults, map[string]interface{}{
+					"logpath":       logpathLine,
+					"resolved_path": resolvedPath,
+					"found":         false,
+					"files":         []string{},
+					"error":         err.Error(),
+				})
+				continue
+			}
+
+			allResults = append(allResults, map[string]interface{}{
+				"logpath":       logpathLine,
+				"resolved_path": resolvedPath,
+				"found":         len(filesOnRemote) > 0,
+				"files":         filesOnRemote,
+				"error":         "",
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"original_logpath": originalPath,
-		"resolved_logpath": resolvedPath,
-		"files":            files,
+		"original_logpath": originalLogpath,
+		"is_local_server":  isLocalServer,
+		"results":          allResults,
 	})
 }
 
@@ -1890,18 +1971,46 @@ func UpdateSettingsHandler(c *gin.Context) {
 		return
 	}
 
-	// Update action files for remote servers if callback URL changed
 	if callbackURLChanged {
+		config.DebugLog("Callback URL changed, updating action files and reloading fail2ban on all servers")
+
+		// Update action files for remote servers (SSH and Agent)
 		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
 			config.DebugLog("Warning: failed to update some remote action files: %v", err)
 			// Don't fail the request, just log the warning
 		}
+
+		// Reload all remote servers after updating action files
+		connectors := fail2ban.GetManager().Connectors()
+		for _, conn := range connectors {
+			server := conn.Server()
+			// Only reload remote servers (SSH and Agent), local will be handled separately
+			if (server.Type == "ssh" || server.Type == "agent") && server.Enabled {
+				config.DebugLog("Reloading fail2ban on %s after callback URL change", server.Name)
+				if err := conn.Reload(c.Request.Context()); err != nil {
+					config.DebugLog("Warning: failed to reload fail2ban on %s after updating action file: %v", server.Name, err)
+				} else {
+					config.DebugLog("Successfully reloaded fail2ban on %s", server.Name)
+				}
+			}
+		}
+
 		// Also update local action file if callback URL changed
 		settings := config.GetSettings()
 		for _, server := range settings.Servers {
 			if server.Type == "local" && server.Enabled {
 				if err := config.EnsureLocalFail2banAction(server); err != nil {
 					config.DebugLog("Warning: failed to update local action file: %v", err)
+				} else {
+					// Reload local fail2ban after updating action file
+					if conn, err := fail2ban.GetManager().Connector(server.ID); err == nil {
+						config.DebugLog("Reloading local fail2ban after callback URL change")
+						if reloadErr := conn.Reload(c.Request.Context()); reloadErr != nil {
+							config.DebugLog("Warning: failed to reload local fail2ban after updating action file: %v", reloadErr)
+						} else {
+							config.DebugLog("Successfully reloaded local fail2ban")
+						}
+					}
 				}
 			}
 		}
@@ -1916,7 +2025,6 @@ func UpdateSettingsHandler(c *gin.Context) {
 		oldSettings.Bantime != newSettings.Bantime ||
 		oldSettings.Findtime != newSettings.Findtime ||
 		oldSettings.Maxretry != newSettings.Maxretry ||
-		oldSettings.Destemail != newSettings.Destemail ||
 		oldSettings.Banaction != newSettings.Banaction ||
 		oldSettings.BanactionAllports != newSettings.BanactionAllports
 
@@ -2142,8 +2250,8 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 		fmt.Sprintf("bantime = %s", s.Bantime),
 		fmt.Sprintf("findtime = %s", s.Findtime),
 		fmt.Sprintf("maxretry = %d", s.Maxretry),
-		fmt.Sprintf("destemail = %s", s.Destemail),
-		//fmt.Sprintf("sender = %s", s.Sender),
+		fmt.Sprintf("banaction = %s", s.Banaction),
+		fmt.Sprintf("banaction_allports = %s", s.BanactionAllports),
 		"",
 	}
 	content := strings.Join(newLines, "\n")
