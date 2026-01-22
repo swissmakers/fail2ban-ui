@@ -2413,10 +2413,19 @@ func isLOTRModeActive(alertCountries []string) bool {
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	// Validate SMTP settings
 	if settings.SMTP.Host == "" || settings.SMTP.Username == "" || settings.SMTP.Password == "" || settings.SMTP.From == "" {
-		return errors.New("SMTP settings are incomplete. Please configure all required fields")
+		err := errors.New("SMTP settings are incomplete. Please configure all required fields")
+		log.Printf("❌ sendEmail validation failed: %v (Host: %q, Username: %q, From: %q)", err, settings.SMTP.Host, settings.SMTP.Username, settings.SMTP.From)
+		return err
 	}
 
-	// Format message with **correct HTML headers**
+	// Validate port range
+	if settings.SMTP.Port <= 0 || settings.SMTP.Port > 65535 {
+		err := errors.New("SMTP port must be between 1 and 65535")
+		log.Printf("❌ sendEmail validation failed: %v (Port: %d)", err, settings.SMTP.Port)
+		return err
+	}
+
+	// Format message with correct HTML headers
 	message := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n"+
 		"MIME-Version: 1.0\nContent-Type: text/html; charset=\"UTF-8\"\n\n%s",
 		settings.SMTP.From, to, subject, body)
@@ -2425,60 +2434,91 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	// SMTP Connection Config
 	smtpHost := settings.SMTP.Host
 	smtpPort := settings.SMTP.Port
-	auth := LoginAuth(settings.SMTP.Username, settings.SMTP.Password)
 	smtpAddr := net.JoinHostPort(smtpHost, fmt.Sprintf("%d", smtpPort))
 
-	// **Choose Connection Type**
-	switch smtpPort {
-	case 465:
-		// SMTPS (Implicit TLS) - Not supported at the moment.
-		tlsConfig := &tls.Config{ServerName: smtpHost}
+	// Determine TLS configuration
+	tlsConfig := &tls.Config{
+		ServerName:         smtpHost,
+		InsecureSkipVerify: settings.SMTP.InsecureSkipVerify,
+	}
+
+	// Determine authentication method
+	authMethod := settings.SMTP.AuthMethod
+	if authMethod == "" {
+		authMethod = "auto" // Default to auto if not set
+	}
+	auth, err := getSMTPAuth(settings.SMTP.Username, settings.SMTP.Password, authMethod, smtpHost)
+	if err != nil {
+		log.Printf("❌ sendEmail: failed to create SMTP auth (method: %q): %v", authMethod, err)
+		return fmt.Errorf("failed to create SMTP auth: %w", err)
+	}
+	log.Printf("📧 sendEmail: Using SMTP auth method: %q, host: %s, port: %d, useTLS: %v, insecureSkipVerify: %v", authMethod, smtpHost, smtpPort, settings.SMTP.UseTLS, settings.SMTP.InsecureSkipVerify)
+
+	// Determine connection type based on port and UseTLS setting
+	// Port 465 typically uses implicit TLS (SMTPS)
+	// Port 587 typically uses STARTTLS
+	// Other ports: use UseTLS setting to determine behavior
+	useImplicitTLS := (smtpPort == 465) || (settings.SMTP.UseTLS && smtpPort != 587 && smtpPort != 25)
+	useSTARTTLS := settings.SMTP.UseTLS && (smtpPort == 587 || (smtpPort != 465 && smtpPort != 25))
+
+	var client *smtp.Client
+
+	if useImplicitTLS {
+		// SMTPS (Implicit TLS) - Connect directly with TLS
 		conn, err := tls.Dial("tcp", smtpAddr, tlsConfig)
 		if err != nil {
 			return fmt.Errorf("failed to connect via TLS: %w", err)
 		}
 		defer conn.Close()
 
-		client, err := smtp.NewClient(conn, smtpHost)
+		client, err = smtp.NewClient(conn, smtpHost)
 		if err != nil {
 			return fmt.Errorf("failed to create SMTP client: %w", err)
 		}
-		defer client.Quit()
-
-		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("SMTP authentication failed: %w", err)
-		}
-
-		return sendSMTPMessage(client, settings.SMTP.From, to, msg)
-
-	case 587:
-		// STARTTLS (Explicit TLS)
-		conn, err := net.Dial("tcp", smtpAddr)
+	} else {
+		// Plain connection (may upgrade to STARTTLS)
+		conn, err := net.DialTimeout("tcp", smtpAddr, 30*time.Second)
 		if err != nil {
 			return fmt.Errorf("failed to connect to SMTP server: %w", err)
 		}
 		defer conn.Close()
 
-		client, err := smtp.NewClient(conn, smtpHost)
+		client, err = smtp.NewClient(conn, smtpHost)
 		if err != nil {
 			return fmt.Errorf("failed to create SMTP client: %w", err)
 		}
-		defer client.Quit()
 
-		// Start TLS Upgrade
-		tlsConfig := &tls.Config{ServerName: smtpHost}
-		if err := client.StartTLS(tlsConfig); err != nil {
-			return fmt.Errorf("failed to start TLS: %w", err)
+		// Upgrade to STARTTLS if requested
+		if useSTARTTLS {
+			if err := client.StartTLS(tlsConfig); err != nil {
+				return fmt.Errorf("failed to start TLS: %w", err)
+			}
 		}
-
-		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("SMTP authentication failed: %w", err)
-		}
-
-		return sendSMTPMessage(client, settings.SMTP.From, to, msg)
 	}
 
-	return errors.New("unsupported SMTP port. Use 587 (STARTTLS) or 465 (SMTPS)")
+	// Ensure client is closed
+	defer func() {
+		if client != nil {
+			client.Quit()
+		}
+	}()
+
+	// Authenticate if credentials are provided
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			log.Printf("❌ sendEmail: SMTP authentication failed: %v", err)
+			return fmt.Errorf("SMTP authentication failed: %w", err)
+		}
+		log.Printf("📧 sendEmail: SMTP authentication successful")
+	}
+
+	err = sendSMTPMessage(client, settings.SMTP.From, to, msg)
+	if err != nil {
+		log.Printf("❌ sendEmail: Failed to send message: %v", err)
+		return err
+	}
+	log.Printf("📧 sendEmail: Successfully sent email to %s", to)
+	return nil
 }
 
 // Helper Function to Send SMTP Message
@@ -3104,8 +3144,37 @@ func TestEmailHandler(c *gin.Context) {
 }
 
 // *******************************************************************
-// *                 Office365 LOGIN Authentication :                *
+// *                 SMTP Authentication Methods :                   *
 // *******************************************************************
+
+// getSMTPAuth returns the appropriate SMTP authentication mechanism
+// based on the authMethod parameter: "auto", "login", "plain", "cram-md5"
+func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error) {
+	if username == "" || password == "" {
+		return nil, nil // No auth if credentials are empty
+	}
+
+	// Normalize auth method
+	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
+	if authMethod == "" || authMethod == "auto" {
+		// Auto-detect: prefer LOGIN for Office365/Gmail, fallback to PLAIN
+		authMethod = "login"
+	}
+
+	switch authMethod {
+	case "login":
+		return LoginAuth(username, password), nil
+	case "plain":
+		return smtp.PlainAuth("", username, password, host), nil
+	case "cram-md5":
+		return smtp.CRAMMD5Auth(username, password), nil
+	default:
+		return nil, fmt.Errorf("unsupported auth method: %s (supported: login, plain, cram-md5)", authMethod)
+	}
+}
+
+// LoginAuth implements the LOGIN authentication mechanism
+// Used by Office365, Gmail, and other providers that require LOGIN instead of PLAIN
 type loginAuth struct {
 	username, password string
 }

@@ -40,12 +40,14 @@ import (
 
 // SMTPSettings holds the SMTP server configuration for sending alert emails
 type SMTPSettings struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	From     string `json:"from"`
-	UseTLS   bool   `json:"useTLS"`
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	From               string `json:"from"`
+	UseTLS             bool   `json:"useTLS"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+	AuthMethod         string `json:"authMethod"`
 }
 
 // AppSettings holds the main UI settings and Fail2ban configuration
@@ -413,12 +415,14 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.Banaction = rec.Banaction
 	currentSettings.BanactionAllports = rec.BanactionAllports
 	currentSettings.SMTP = SMTPSettings{
-		Host:     rec.SMTPHost,
-		Port:     rec.SMTPPort,
-		Username: rec.SMTPUsername,
-		Password: rec.SMTPPassword,
-		From:     rec.SMTPFrom,
-		UseTLS:   rec.SMTPUseTLS,
+		Host:               rec.SMTPHost,
+		Port:               rec.SMTPPort,
+		Username:           rec.SMTPUsername,
+		Password:           rec.SMTPPassword,
+		From:               rec.SMTPFrom,
+		UseTLS:             rec.SMTPUseTLS,
+		InsecureSkipVerify: rec.SMTPInsecureSkipVerify,
+		AuthMethod:         rec.SMTPAuthMethod,
 	}
 
 	if rec.AlertCountriesJSON != "" {
@@ -504,12 +508,14 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		EmailAlertsForBans:   currentSettings.EmailAlertsForBans,
 		EmailAlertsForUnbans: currentSettings.EmailAlertsForUnbans,
 		// SMTP settings
-		SMTPHost:     currentSettings.SMTP.Host,
-		SMTPPort:     currentSettings.SMTP.Port,
-		SMTPUsername: currentSettings.SMTP.Username,
-		SMTPPassword: currentSettings.SMTP.Password,
-		SMTPFrom:     currentSettings.SMTP.From,
-		SMTPUseTLS:   currentSettings.SMTP.UseTLS,
+		SMTPHost:               currentSettings.SMTP.Host,
+		SMTPPort:               currentSettings.SMTP.Port,
+		SMTPUsername:           currentSettings.SMTP.Username,
+		SMTPPassword:           currentSettings.SMTP.Password,
+		SMTPFrom:               currentSettings.SMTP.From,
+		SMTPUseTLS:             currentSettings.SMTP.UseTLS,
+		SMTPInsecureSkipVerify: currentSettings.SMTP.InsecureSkipVerify,
+		SMTPAuthMethod:         currentSettings.SMTP.AuthMethod,
 		// Fail2Ban DEFAULT settings
 		BantimeIncrement:  currentSettings.BantimeIncrement,
 		DefaultJailEnable: currentSettings.DefaultJailEnable,
@@ -653,6 +659,9 @@ func setDefaultsLocked() {
 	}
 	if !currentSettings.SMTP.UseTLS {
 		currentSettings.SMTP.UseTLS = true
+	}
+	if currentSettings.SMTP.AuthMethod == "" {
+		currentSettings.SMTP.AuthMethod = "auto"
 	}
 	if len(currentSettings.IgnoreIPs) == 0 {
 		currentSettings.IgnoreIPs = []string{"127.0.0.1/8", "::1"}
