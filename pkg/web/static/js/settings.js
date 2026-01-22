@@ -27,7 +27,9 @@ function updateEmailFieldsState() {
     document.getElementById('smtpUsername'),
     document.getElementById('smtpPassword'),
     document.getElementById('smtpFrom'),
+    document.getElementById('smtpAuthMethod'),
     document.getElementById('smtpUseTLS'),
+    document.getElementById('smtpInsecureSkipVerify'),
     document.getElementById('sendTestEmailBtn')
   ];
 
@@ -143,7 +145,9 @@ function loadSettings() {
         document.getElementById('smtpUsername').value = data.smtp.username || '';
         document.getElementById('smtpPassword').value = data.smtp.password || '';
         document.getElementById('smtpFrom').value = data.smtp.from || '';
-        document.getElementById('smtpUseTLS').checked = data.smtp.useTLS || false;
+        document.getElementById('smtpUseTLS').checked = data.smtp.useTLS !== undefined ? data.smtp.useTLS : true;
+        document.getElementById('smtpInsecureSkipVerify').checked = data.smtp.insecureSkipVerify || false;
+        document.getElementById('smtpAuthMethod').value = data.smtp.authMethod || 'auto';
       }
 
       document.getElementById('bantimeIncrement').checked = data.bantimeIncrement || false;
@@ -186,13 +190,22 @@ function saveSettings(event) {
   
   showLoading(true);
   
+  const smtpPort = parseInt(document.getElementById('smtpPort').value, 10);
+  if (isNaN(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
+    showToast('SMTP port must be between 1 and 65535', 'error');
+    showLoading(false);
+    return;
+  }
+
   const smtpSettings = {
     host: document.getElementById('smtpHost').value.trim(),
-    port: parseInt(document.getElementById('smtpPort').value, 10) || 587,
+    port: smtpPort,
     username: document.getElementById('smtpUsername').value.trim(),
     password: document.getElementById('smtpPassword').value.trim(),
     from: document.getElementById('smtpFrom').value.trim(),
     useTLS: document.getElementById('smtpUseTLS').checked,
+    insecureSkipVerify: document.getElementById('smtpInsecureSkipVerify').checked,
+    authMethod: document.getElementById('smtpAuthMethod').value || 'auto',
   };
 
   const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);

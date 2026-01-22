@@ -757,10 +757,9 @@
           </div>
           <div class="mb-4">
             <label for="smtpPort" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_port">SMTP Port</label>
-            <select id="smtpPort" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
-              <option value="587" selected>587 (Recommended - STARTTLS)</option>
-              <option value="465" disabled>465 (Not Supported)</option>
-            </select>
+            <input type="number" min="1" max="65535" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpPort"
+                   data-i18n-placeholder="settings.smtp_port_placeholder" placeholder="587" value="587" required />
+            <p class="mt-1 text-xs text-gray-500" data-i18n="settings.smtp_port_hint">Common ports: 25 (plain), 587 (STARTTLS), 465 (SMTPS), 2525 (alternative STARTTLS)</p>
           </div>
           <div class="mb-4">
             <label for="smtpUsername" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_username">SMTP Username</label>
@@ -777,11 +776,29 @@
             <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpFrom"
                    data-i18n-placeholder="settings.smtp_sender_placeholder" placeholder="noreply@swissmakers.ch" required />
           </div>
+          <div class="mb-4">
+            <label for="smtpAuthMethod" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_auth_method">Authentication Method</label>
+            <select id="smtpAuthMethod" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed">
+              <option value="auto" selected data-i18n="settings.smtp_auth_method_auto">Auto (LOGIN preferred)</option>
+              <option value="login" data-i18n="settings.smtp_auth_method_login">LOGIN</option>
+              <option value="plain" data-i18n="settings.smtp_auth_method_plain">PLAIN</option>
+              <option value="cram-md5" data-i18n="settings.smtp_auth_method_cram_md5">CRAM-MD5</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500" data-i18n="settings.smtp_auth_method_hint">LOGIN is recommended for Office365/Gmail. PLAIN is standard SMTP auth. CRAM-MD5 is challenge-response based.</p>
+          </div>
           <div class="flex items-center mb-4">
             <input type="checkbox" id="smtpUseTLS" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
             <label for="smtpUseTLS" class="ml-2 block text-sm text-gray-700" data-i18n="settings.smtp_tls">Use TLS (Recommended)</label>
           </div>
-          <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed" onclick="sendTestEmail()" id="sendTestEmailBtn" data-i18n="settings.send_test_email">Send Test Email</button>
+          <div class="flex items-center mb-4">
+            <input type="checkbox" id="smtpInsecureSkipVerify" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+            <label for="smtpInsecureSkipVerify" class="ml-2 block text-sm text-gray-700" data-i18n="settings.smtp_insecure_skip_verify">Skip TLS Certificate Verification</label>
+            <span class="ml-2 text-xs text-red-600" data-i18n="settings.smtp_insecure_skip_verify_warning">⚠️ Not recommended for production</span>
+          </div>
+          <div class="mb-4">
+            <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed" onclick="sendTestEmail()" id="sendTestEmailBtn" data-i18n="settings.send_test_email">Send Test Email</button>
+            <p class="mt-2 text-xs text-amber-600" data-i18n="settings.send_test_email_hint">⚠️ Please save your SMTP settings first before sending a test email.</p>
+          </div>
         </div>
 
         <!-- Fail2Ban Configuration Group -->

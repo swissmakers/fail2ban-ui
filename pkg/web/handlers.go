@@ -2413,10 +2413,19 @@ func isLOTRModeActive(alertCountries []string) bool {
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	// Validate SMTP settings
 	if settings.SMTP.Host == "" || settings.SMTP.Username == "" || settings.SMTP.Password == "" || settings.SMTP.From == "" {
-		return errors.New("SMTP settings are incomplete. Please configure all required fields")
+		err := errors.New("SMTP settings are incomplete. Please configure all required fields")
+		log.Printf("❌ sendEmail validation failed: %v (Host: %q, Username: %q, From: %q)", err, settings.SMTP.Host, settings.SMTP.Username, settings.SMTP.From)
+		return err
 	}
 
-	// Format message with **correct HTML headers**
+	// Validate port range
+	if settings.SMTP.Port <= 0 || settings.SMTP.Port > 65535 {
+		err := errors.New("SMTP port must be between 1 and 65535")
+		log.Printf("❌ sendEmail validation failed: %v (Port: %d)", err, settings.SMTP.Port)
+		return err
+	}
+
+	// Format message with correct HTML headers
 	message := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n"+
 		"MIME-Version: 1.0\nContent-Type: text/html; charset=\"UTF-8\"\n\n%s",
 		settings.SMTP.From, to, subject, body)
@@ -2425,60 +2434,91 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	// SMTP Connection Config
 	smtpHost := settings.SMTP.Host
 	smtpPort := settings.SMTP.Port
-	auth := LoginAuth(settings.SMTP.Username, settings.SMTP.Password)
 	smtpAddr := net.JoinHostPort(smtpHost, fmt.Sprintf("%d", smtpPort))
 
-	// **Choose Connection Type**
-	switch smtpPort {
-	case 465:
-		// SMTPS (Implicit TLS) - Not supported at the moment.
-		tlsConfig := &tls.Config{ServerName: smtpHost}
+	// Determine TLS configuration
+	tlsConfig := &tls.Config{
+		ServerName:         smtpHost,
+		InsecureSkipVerify: settings.SMTP.InsecureSkipVerify,
+	}
+
+	// Determine authentication method
+	authMethod := settings.SMTP.AuthMethod
+	if authMethod == "" {
+		authMethod = "auto" // Default to auto if not set
+	}
+	auth, err := getSMTPAuth(settings.SMTP.Username, settings.SMTP.Password, authMethod, smtpHost)
+	if err != nil {
+		log.Printf("❌ sendEmail: failed to create SMTP auth (method: %q): %v", authMethod, err)
+		return fmt.Errorf("failed to create SMTP auth: %w", err)
+	}
+	log.Printf("📧 sendEmail: Using SMTP auth method: %q, host: %s, port: %d, useTLS: %v, insecureSkipVerify: %v", authMethod, smtpHost, smtpPort, settings.SMTP.UseTLS, settings.SMTP.InsecureSkipVerify)
+
+	// Determine connection type based on port and UseTLS setting
+	// Port 465 typically uses implicit TLS (SMTPS)
+	// Port 587 typically uses STARTTLS
+	// Other ports: use UseTLS setting to determine behavior
+	useImplicitTLS := (smtpPort == 465) || (settings.SMTP.UseTLS && smtpPort != 587 && smtpPort != 25)
+	useSTARTTLS := settings.SMTP.UseTLS && (smtpPort == 587 || (smtpPort != 465 && smtpPort != 25))
+
+	var client *smtp.Client
+
+	if useImplicitTLS {
+		// SMTPS (Implicit TLS) - Connect directly with TLS
 		conn, err := tls.Dial("tcp", smtpAddr, tlsConfig)
 		if err != nil {
 			return fmt.Errorf("failed to connect via TLS: %w", err)
 		}
 		defer conn.Close()
 
-		client, err := smtp.NewClient(conn, smtpHost)
+		client, err = smtp.NewClient(conn, smtpHost)
 		if err != nil {
 			return fmt.Errorf("failed to create SMTP client: %w", err)
 		}
-		defer client.Quit()
-
-		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("SMTP authentication failed: %w", err)
-		}
-
-		return sendSMTPMessage(client, settings.SMTP.From, to, msg)
-
-	case 587:
-		// STARTTLS (Explicit TLS)
-		conn, err := net.Dial("tcp", smtpAddr)
+	} else {
+		// Plain connection (may upgrade to STARTTLS)
+		conn, err := net.DialTimeout("tcp", smtpAddr, 30*time.Second)
 		if err != nil {
 			return fmt.Errorf("failed to connect to SMTP server: %w", err)
 		}
 		defer conn.Close()
 
-		client, err := smtp.NewClient(conn, smtpHost)
+		client, err = smtp.NewClient(conn, smtpHost)
 		if err != nil {
 			return fmt.Errorf("failed to create SMTP client: %w", err)
 		}
-		defer client.Quit()
 
-		// Start TLS Upgrade
-		tlsConfig := &tls.Config{ServerName: smtpHost}
-		if err := client.StartTLS(tlsConfig); err != nil {
-			return fmt.Errorf("failed to start TLS: %w", err)
+		// Upgrade to STARTTLS if requested
+		if useSTARTTLS {
+			if err := client.StartTLS(tlsConfig); err != nil {
+				return fmt.Errorf("failed to start TLS: %w", err)
+			}
 		}
-
-		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("SMTP authentication failed: %w", err)
-		}
-
-		return sendSMTPMessage(client, settings.SMTP.From, to, msg)
 	}
 
-	return errors.New("unsupported SMTP port. Use 587 (STARTTLS) or 465 (SMTPS)")
+	// Ensure client is closed
+	defer func() {
+		if client != nil {
+			client.Quit()
+		}
+	}()
+
+	// Authenticate if credentials are provided
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			log.Printf("❌ sendEmail: SMTP authentication failed: %v", err)
+			return fmt.Errorf("SMTP authentication failed: %w", err)
+		}
+		log.Printf("📧 sendEmail: SMTP authentication successful")
+	}
+
+	err = sendSMTPMessage(client, settings.SMTP.From, to, msg)
+	if err != nil {
+		log.Printf("❌ sendEmail: Failed to send message: %v", err)
+		return err
+	}
+	log.Printf("📧 sendEmail: Successfully sent email to %s", to)
+	return nil
 }
 
 // Helper Function to Send SMTP Message
@@ -2539,7 +2579,11 @@ func buildClassicEmailBody(title, intro string, details []emailDetail, whoisHTML
     .content { padding: 15px; }
     .details { background: #f9f9f9; padding: 15px; border-left: 4px solid #5579f8; margin-bottom: 10px; }
     .footer { text-align: center; color: #888; font-size: 12px; padding-top: 10px; border-top: 1px solid #ddd; margin-top: 15px; }
+    .footer a { color: #005DE0; text-decoration: none; }
+    .footer a:hover { color: #0044b3; text-decoration: underline; }
     .label { font-weight: bold; color: #333; }
+    a { color: #005DE0; text-decoration: none; }
+    a:hover { color: #0044b3; text-decoration: underline; }
     pre {
         background: #222;
         color: #ddd;
@@ -2629,6 +2673,10 @@ func buildLOTREmailBody(title, intro string, details []emailDetail, whoisHTML, l
     .email-footer { border-top:3px solid #d4af37; padding:24px 28px; font-size:13px; color:#3d2817; text-align:center; background:#e8d5b7; font-family:'Cinzel', serif; }
     .email-footer-text { margin:0 0 8px; font-weight:600; }
     .email-footer-copyright { margin:0; font-size:11px; color:#8b7355; }
+    .email-header a { color:#ffffff !important; text-decoration:underline; }
+    .email-header a:hover { color:#f4e8d0 !important; }
+    a { color:#1a4d2e; text-decoration:none; }
+    a:hover { color:#2d0a4f; text-decoration:underline; }
     @media only screen and (max-width:600px) {
       .email-wrapper { padding:12px 8px; }
       .email-header { padding:30px 20px; }
@@ -2695,10 +2743,14 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
     body { margin:0; padding:0; background-color:#f6f8fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color:#1f2933; line-height:1.6; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
     .email-wrapper { width:100%%; padding:20px 10px; }
     .email-container { max-width:640px; margin:0 auto; background:#ffffff; border-radius:20px; box-shadow:0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); overflow:hidden; }
-    .email-header { background:linear-gradient(135deg,#004cff 0%%,#6c2bd9 100%%); color:#ffffff; padding:32px 28px; text-align:center; }
-    .email-header-brand { margin:0 0 8px; font-size:11px; letter-spacing:0.3em; text-transform:uppercase; opacity:0.9; font-weight:600; }
-    .email-header-title { margin:0 0 10px; font-size:26px; font-weight:700; line-height:1.2; }
+    .email-header { background:linear-gradient(135deg,#004cff 0%%,#6c2bd9 100%%); background-color:#004cff; color:#ffffff !important; padding:32px 28px; text-align:center; }
+    .email-header-brand { margin:0 0 8px; font-size:11px; letter-spacing:0.3em; text-transform:uppercase; opacity:0.9; font-weight:600; color:#ffffff !important; }
+    .email-header-title { margin:0 0 10px; font-size:26px; font-weight:700; line-height:1.2; color:#ffffff !important; }
+    .email-header a { color:#ffffff !important; text-decoration:underline; }
+    .email-header a:hover { color:#e0e7ff !important; }
     .email-body { padding:36px 28px; }
+    a { color:#2563eb; text-decoration:none; }
+    a:hover { color:#1d4ed8; text-decoration:underline; }
     .email-intro { font-size:16px; line-height:1.7; margin:0 0 28px; color:#4b5563; }
     .email-details-wrapper { background:#f9fafb; border-radius:12px; padding:20px; margin:0 0 32px; border:1px solid #e5e7eb; }
     .email-details-wrapper p { margin:8px 0; font-size:14px; line-height:1.6; color:#111827; }
@@ -2718,8 +2770,9 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
     .email-footer-copyright { margin:0; font-size:11px; color:#9ca3af; }
     @media only screen and (max-width:600px) {
       .email-wrapper { padding:12px 8px; }
-      .email-header { padding:24px 20px; }
-      .email-header-title { font-size:22px; }
+      .email-header { padding:24px 20px; background-color:#004cff !important; }
+      .email-header-brand { color:#ffffff !important; }
+      .email-header-title { font-size:22px; color:#ffffff !important; }
       .email-body { padding:28px 20px; }
       .email-intro { font-size:15px; }
       .email-details-wrapper { padding:16px; }
@@ -2727,9 +2780,18 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
       .email-footer { padding:20px 16px; }
     }
     @media only screen and (max-width:480px) {
-      .email-header-title { font-size:20px; }
+      .email-header { background-color:#004cff !important; }
+      .email-header-brand { color:#ffffff !important; }
+      .email-header-title { font-size:20px; color:#ffffff !important; }
       .email-body { padding:24px 16px; }
       .email-details-wrapper { padding:12px; }
+    }
+    @media print {
+      .email-header { background:#004cff !important; background-color:#004cff !important; color:#ffffff !important; }
+      .email-header-brand { color:#ffffff !important; }
+      .email-header-title { color:#ffffff !important; }
+      .email-header a { color:#ffffff !important; }
+      a { color:#2563eb !important; }
     }
   </style>
 </head>
@@ -3104,8 +3166,37 @@ func TestEmailHandler(c *gin.Context) {
 }
 
 // *******************************************************************
-// *                 Office365 LOGIN Authentication :                *
+// *                 SMTP Authentication Methods :                   *
 // *******************************************************************
+
+// getSMTPAuth returns the appropriate SMTP authentication mechanism
+// based on the authMethod parameter: "auto", "login", "plain", "cram-md5"
+func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error) {
+	if username == "" || password == "" {
+		return nil, nil // No auth if credentials are empty
+	}
+
+	// Normalize auth method
+	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
+	if authMethod == "" || authMethod == "auto" {
+		// Auto-detect: prefer LOGIN for Office365/Gmail, fallback to PLAIN
+		authMethod = "login"
+	}
+
+	switch authMethod {
+	case "login":
+		return LoginAuth(username, password), nil
+	case "plain":
+		return smtp.PlainAuth("", username, password, host), nil
+	case "cram-md5":
+		return smtp.CRAMMD5Auth(username, password), nil
+	default:
+		return nil, fmt.Errorf("unsupported auth method: %s (supported: login, plain, cram-md5)", authMethod)
+	}
+}
+
+// LoginAuth implements the LOGIN authentication mechanism
+// Used by Office365, Gmail, and other providers that require LOGIN instead of PLAIN
 type loginAuth struct {
 	username, password string
 }
