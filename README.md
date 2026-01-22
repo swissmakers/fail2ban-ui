@@ -131,47 +131,81 @@ Modern enterprises face increasing security challenges with generally distribute
 
 ## 📸 Screenshots
 
-### Dashboard Overview
-The central command center for monitoring all Fail2Ban instances and security events.
+### Main Dashboard
+![Dashboard](screenshots/0_Dashboard.png)
+**Description:** The main dashboard view showing an overview of all active jails, banned IPs, and real-time statistics. Displays total bans, recent activity, and quick access to key features.
 
-![Dashboard](./screenshots/0_Dashboard.jpg)
+#### Unban IP
+![Unban IP](screenshots/0.1_Dashboard_unban_IP.png)
+**Description:** Unbanning a IP addresses directly from the dashboard. Shows the unban confirmation dialog.
 
 ### Server Management
-Add, configure, and manage multiple Fail2Ban servers from the "Manage Servers" modal.
+![Manage Servers](screenshots/1_Dashboard_Manage_Servers.png)
+**Description:** Server management modal for configuring / adding and managing multiple Fail2Ban instances. Supports local, SSH, and API agent connections.
 
-![Server Management](./screenshots/0.1_Dashboard_Manage_Servers.jpg)
+### Jail / Filter Management
+![Manage Jails](screenshots/1.1_Dashboard_Manage_Jails.png)
+**Description:** Overview of all configured jails with their enabled/disabled status. Allows centralized management of jail configurations across multiple servers.
 
-### IP Search and Management
-Quickly locate and review / manage banned IPs across all jails and servers.
+#### Edit Jail Configuration
+![Edit Jail](screenshots/1.2_Dashboard_Manage_Jails_Edit.png)
+**Description:** When clicking on "Edit Filter / Jail" the Jail configuration editor is opened. It shows the current filter and jail configuration  with all options to modify the settings, test or add / modify the logpaths, and save changes.
 
-![IP Search](./screenshots/1_Dashboard_search.jpg)
+#### Logpath Test
+![Logpath Test](screenshots/1.3_Dashboard_Manage_Jails_Edit_Logpathtest.png)
+**Description:** Logpath testing functionality that verifies log file paths and checks if files are accessible. Shows test results with visual indicators (✓/✗) for each log path.
 
-### Unban Operations
-One-click unban action with confirmation dialog.
+#### Create new Filter
+![Create Filter](screenshots/1.4_Dashboard_Manage_Jails_Create_Filter.png)
+**Description:** The first button opens the modal for creating new Fail2Ban filter files. Includes filter configuration editor with syntax highlighting and validation.
 
-![Unban IP](./screenshots/2_Dashboard_unban_IP.jpg)
+#### Create new Jail
+![Create Jail](screenshots/1.5_Dashboard_Manage_Jails_Create_Jail.png)
+**Description:** The second button opens the Jail creation modal for setting up new jails. Allows configuration of seperate jails with special parameters, filter selection, with automatic configuration generation.
 
-### Configuration Editor
-Edit Fail2Ban jail and filter configurations (with syntax highlighting - planned) and validation.
+### Search Functionality
+![Search](screenshots/1.6_Dashboard_search.png)
+**Description:** Search for a specific IPs, that where blocked in a specific jail - searches in all active jails. Provides a quick and painless filtering.
 
-![Configuration Editor](./screenshots/3_Dashboard_edit_filter.jpg)
+### Internal Log Overview
+![Log Overview](screenshots/2_Dashboard_Log_Overview.png)
+**Description:** Comprehensive log overview showing ban / unban events, timestamps, and associated jails and recurring offenders. Provides detailed information about past security events.
 
-### Service Management
-Reload or restart Fail2Ban services when needed, with integrated change detection.
+#### Whois Information
+![Whois](screenshots/2.1_Dashboard_Log_Overview_Whois.png)
+**Description:** Whois lookup modal displaying detailed information about banned IP addresses, including geographic location, ISP details, and network information.
 
-![Service Reload](./screenshots/4_Dashboard_Reload.jpg)
+#### Ban Logs
+![Ban Logs](screenshots/2.2_Dashboard_Log_Overview_BanLogs.png)
+**Description:** Detailed ban log view showing log lines that triggered the ban, timestamps, and context information for each security event.
 
 ### Filter Debugging
-Test and validate Fail2Ban filters using `fail2ban-regex`.
+![Filter Debug](screenshots/3_Filter_Debug.png)
+**Description:** Filter debugging interface for testing Fail2Ban filter regex patterns against log lines. Helps validate filter configurations before deployment.
 
-![Filter Debug](./screenshots/5_Filter_Debug.jpg)
+#### Filter Test Results
+![Filter Test Results](screenshots/3.1_Filter_Debug_Testresult.png)
+**Description:** Results from filter testing showing matched lines, regex performance, and validation feedback. Displays which log lines match the filter pattern.
 
-### Settings and Configuration
-Comprehensive settings management for alerts, advanced banning, and system preferences.
+### Settings
+![Settings](screenshots/4_Settings.png)
+**Description:** Main settings page with sections for different configuration categories including general settings, advanced ban actions, alert settings, and global fail2ban settings.
 
-![Settings](./screenshots/6_Settings.jpg)
+#### Debug Console
+![Debug Console](screenshots/4.1_Settings_DebugConsole.png)
+**Description:** When enabled the Debug console  showing real-time application logs, system messages, and debugging information. Useful for troubleshooting and monitoring without the need to query the container logs manually everytime.
 
-![Settings Advanced](./screenshots/7_Settings_Bottom.jpg)
+#### Advanced Ban Actions
+![Advanced Ban Actions](screenshots/4.2_Settings_AdvancedBanActions.png)
+**Description:** Configuration for advanced ban actions including permanent blocking, firewall integrations (Mikrotik, pfSense, OPNsense), and threshold settings for recurring offenders.
+
+#### Alert Settings
+![Alert Settings](screenshots/4.3_Settings_AlertSettings.png)
+**Description:** Email alert configuration with SMTP settings, country-based filtering (blocks from what country to raport), GeoIP provider selection, and alert preferences for bans and unbans.
+
+#### Global Settings
+![Global Settings](screenshots/4.4_Settings_GlobalSettings.png)
+**Description:** Global Fail2Ban settings including default bantime, findtime, maxretry, banaction configuration (nftables/firewalld/iptables) and so on.
 
 ---
 
