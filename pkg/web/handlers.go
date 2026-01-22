@@ -2579,7 +2579,11 @@ func buildClassicEmailBody(title, intro string, details []emailDetail, whoisHTML
     .content { padding: 15px; }
     .details { background: #f9f9f9; padding: 15px; border-left: 4px solid #5579f8; margin-bottom: 10px; }
     .footer { text-align: center; color: #888; font-size: 12px; padding-top: 10px; border-top: 1px solid #ddd; margin-top: 15px; }
+    .footer a { color: #005DE0; text-decoration: none; }
+    .footer a:hover { color: #0044b3; text-decoration: underline; }
     .label { font-weight: bold; color: #333; }
+    a { color: #005DE0; text-decoration: none; }
+    a:hover { color: #0044b3; text-decoration: underline; }
     pre {
         background: #222;
         color: #ddd;
@@ -2669,6 +2673,10 @@ func buildLOTREmailBody(title, intro string, details []emailDetail, whoisHTML, l
     .email-footer { border-top:3px solid #d4af37; padding:24px 28px; font-size:13px; color:#3d2817; text-align:center; background:#e8d5b7; font-family:'Cinzel', serif; }
     .email-footer-text { margin:0 0 8px; font-weight:600; }
     .email-footer-copyright { margin:0; font-size:11px; color:#8b7355; }
+    .email-header a { color:#ffffff !important; text-decoration:underline; }
+    .email-header a:hover { color:#f4e8d0 !important; }
+    a { color:#1a4d2e; text-decoration:none; }
+    a:hover { color:#2d0a4f; text-decoration:underline; }
     @media only screen and (max-width:600px) {
       .email-wrapper { padding:12px 8px; }
       .email-header { padding:30px 20px; }
@@ -2735,10 +2743,14 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
     body { margin:0; padding:0; background-color:#f6f8fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color:#1f2933; line-height:1.6; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
     .email-wrapper { width:100%%; padding:20px 10px; }
     .email-container { max-width:640px; margin:0 auto; background:#ffffff; border-radius:20px; box-shadow:0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04); overflow:hidden; }
-    .email-header { background:linear-gradient(135deg,#004cff 0%%,#6c2bd9 100%%); color:#ffffff; padding:32px 28px; text-align:center; }
-    .email-header-brand { margin:0 0 8px; font-size:11px; letter-spacing:0.3em; text-transform:uppercase; opacity:0.9; font-weight:600; }
-    .email-header-title { margin:0 0 10px; font-size:26px; font-weight:700; line-height:1.2; }
+    .email-header { background:linear-gradient(135deg,#004cff 0%%,#6c2bd9 100%%); background-color:#004cff; color:#ffffff !important; padding:32px 28px; text-align:center; }
+    .email-header-brand { margin:0 0 8px; font-size:11px; letter-spacing:0.3em; text-transform:uppercase; opacity:0.9; font-weight:600; color:#ffffff !important; }
+    .email-header-title { margin:0 0 10px; font-size:26px; font-weight:700; line-height:1.2; color:#ffffff !important; }
+    .email-header a { color:#ffffff !important; text-decoration:underline; }
+    .email-header a:hover { color:#e0e7ff !important; }
     .email-body { padding:36px 28px; }
+    a { color:#2563eb; text-decoration:none; }
+    a:hover { color:#1d4ed8; text-decoration:underline; }
     .email-intro { font-size:16px; line-height:1.7; margin:0 0 28px; color:#4b5563; }
     .email-details-wrapper { background:#f9fafb; border-radius:12px; padding:20px; margin:0 0 32px; border:1px solid #e5e7eb; }
     .email-details-wrapper p { margin:8px 0; font-size:14px; line-height:1.6; color:#111827; }
@@ -2758,8 +2770,9 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
     .email-footer-copyright { margin:0; font-size:11px; color:#9ca3af; }
     @media only screen and (max-width:600px) {
       .email-wrapper { padding:12px 8px; }
-      .email-header { padding:24px 20px; }
-      .email-header-title { font-size:22px; }
+      .email-header { padding:24px 20px; background-color:#004cff !important; }
+      .email-header-brand { color:#ffffff !important; }
+      .email-header-title { font-size:22px; color:#ffffff !important; }
       .email-body { padding:28px 20px; }
       .email-intro { font-size:15px; }
       .email-details-wrapper { padding:16px; }
@@ -2767,9 +2780,18 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
       .email-footer { padding:20px 16px; }
     }
     @media only screen and (max-width:480px) {
-      .email-header-title { font-size:20px; }
+      .email-header { background-color:#004cff !important; }
+      .email-header-brand { color:#ffffff !important; }
+      .email-header-title { font-size:20px; color:#ffffff !important; }
       .email-body { padding:24px 16px; }
       .email-details-wrapper { padding:12px; }
+    }
+    @media print {
+      .email-header { background:#004cff !important; background-color:#004cff !important; color:#ffffff !important; }
+      .email-header-brand { color:#ffffff !important; }
+      .email-header-title { color:#ffffff !important; }
+      .email-header a { color:#ffffff !important; }
+      a { color:#2563eb !important; }
     }
   </style>
 </head>
