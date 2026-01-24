@@ -395,6 +395,25 @@ function loadPermanentBlockLog() {
     });
 }
 
+function renderPermanentBlockLogRow(block) {
+  const statusClass = block.status === 'blocked'
+    ? 'text-green-600'
+    : (block.status === 'unblocked' ? 'text-gray-500' : 'text-red-600');
+  const message = block.message ? escapeHtml(block.message) : '';
+  return ''
+    + '<tr class="border-t">'
+    + '  <td class="px-3 py-2 font-mono text-sm">' + escapeHtml(block.ip) + '</td>'
+    + '  <td class="px-3 py-2 text-sm">' + escapeHtml(block.integration) + '</td>'
+    + '  <td class="px-3 py-2 text-sm ' + statusClass + '">' + escapeHtml(block.status) + '</td>'
+    + '  <td class="px-3 py-2 text-sm">' + (message || '&nbsp;') + '</td>'
+    + '  <td class="px-3 py-2 text-xs text-gray-500">' + escapeHtml(block.serverId || '') + '</td>'
+    + '  <td class="px-3 py-2 text-xs text-gray-500">' + (block.updatedAt ? new Date(block.updatedAt).toLocaleString() : '') + '</td>'
+    + '  <td class="px-3 py-2 text-right">'
+    + '    <button type="button" class="text-sm text-blue-600 hover:text-blue-800" onclick="advancedUnblockIP(\'' + escapeHtml(block.ip) + '\', event)" data-i18n="settings.advanced.unblock_btn">Remove</button>'
+    + '  </td>'
+    + '</tr>';
+}
+
 function renderPermanentBlockLog(blocks) {
   const container = document.getElementById('permanentBlockLog');
   if (!container) return;
@@ -403,25 +422,14 @@ function renderPermanentBlockLog(blocks) {
     if (typeof updateTranslations === 'function') updateTranslations();
     return;
   }
-  let rows = blocks.map(block => {
-    const statusClass = block.status === 'blocked'
-      ? 'text-green-600'
-      : (block.status === 'unblocked' ? 'text-gray-500' : 'text-red-600');
-    const message = block.message ? escapeHtml(block.message) : '';
-    return ''
-      + '<tr class="border-t">'
-      + '  <td class="px-3 py-2 font-mono text-sm">' + escapeHtml(block.ip) + '</td>'
-      + '  <td class="px-3 py-2 text-sm">' + escapeHtml(block.integration) + '</td>'
-      + '  <td class="px-3 py-2 text-sm ' + statusClass + '">' + escapeHtml(block.status) + '</td>'
-      + '  <td class="px-3 py-2 text-sm">' + (message || '&nbsp;') + '</td>'
-      + '  <td class="px-3 py-2 text-xs text-gray-500">' + escapeHtml(block.serverId || '') + '</td>'
-      + '  <td class="px-3 py-2 text-xs text-gray-500">' + (block.updatedAt ? new Date(block.updatedAt).toLocaleString() : '') + '</td>'
-      + '  <td class="px-3 py-2 text-right">'
-      + '    <button type="button" class="text-sm text-blue-600 hover:text-blue-800" onclick="advancedUnblockIP(\'' + escapeHtml(block.ip) + '\', event)" data-i18n="settings.advanced.unblock_btn">Remove</button>'
-      + '  </td>'
-      + '</tr>';
-  }).join('');
-  container.innerHTML = ''
+  const maxVisible = 10;
+  const visible = blocks.slice(0, maxVisible);
+  const hidden = blocks.slice(maxVisible);
+
+  let visibleRows = visible.map(renderPermanentBlockLogRow).join('');
+  let hiddenRows = hidden.map(renderPermanentBlockLogRow).join('');
+
+  let html = ''
     + '<table class="min-w-full text-sm">'
     + '  <thead class="bg-gray-50 text-left">'
     + '    <tr>'
@@ -434,8 +442,30 @@ function renderPermanentBlockLog(blocks) {
     + '      <th class="px-3 py-2 text-right" data-i18n="settings.advanced.log_actions">Actions</th>'
     + '    </tr>'
     + '  </thead>'
-    + '  <tbody>' + rows + '</tbody>'
-    + '</table>';
+    + '  <tbody>' + visibleRows + '</tbody>';
+
+  if (hidden.length > 0) {
+    const hiddenId = 'permanentBlockLog-hidden';
+    const toggleId = 'permanentBlockLog-toggle';
+    const moreLabel = (typeof t === 'function' ? t('dashboard.banned.show_more', 'Show more') : 'Show more') + ' +' + hidden.length;
+    const lessLabel = typeof t === 'function' ? t('dashboard.banned.show_less', 'Hide extra') : 'Hide extra';
+    html += ''
+      + '  <tbody id="' + hiddenId + '" class="hidden" data-initially-hidden="true">' + hiddenRows + '</tbody>'
+      + '</table>'
+      + '<button type="button" class="text-xs font-semibold text-blue-600 hover:text-blue-800 px-3 py-3 permanent-block-log-toggle"'
+      + ' id="' + toggleId + '"'
+      + ' data-target="' + hiddenId + '"'
+      + ' data-more-label="' + escapeHtml(moreLabel) + '"'
+      + ' data-less-label="' + escapeHtml(lessLabel) + '"'
+      + ' data-expanded="false"'
+      + ' onclick="toggleBannedList(\'' + hiddenId + '\', \'' + toggleId + '\')">'
+      + escapeHtml(moreLabel)
+      + '</button>';
+  } else {
+    html += '</table>';
+  }
+
+  container.innerHTML = html;
   if (typeof updateTranslations === 'function') updateTranslations();
 }
 
