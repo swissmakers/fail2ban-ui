@@ -320,8 +320,20 @@ func (p *pfSenseIntegration) updateAlias(client *http.Client, baseURL, apiToken 
 		"descr":   alias.Descr,
 		"address": alias.Address,
 	}
-	if len(alias.Detail) > 0 {
-		patchPayload["detail"] = alias.Detail
+	// pfSense requires that detail cannot have more items than address
+	// If address is empty, detail must also be empty
+	if len(alias.Address) > 0 {
+		// Only include detail if address has items, and ensure detail length matches address length
+		detailToSend := alias.Detail
+		if len(detailToSend) > len(alias.Address) {
+			// Truncate detail to match address length
+			detailToSend = detailToSend[:len(alias.Address)]
+		}
+		// Always include detail array when address has items (even if empty) to maintain consistency
+		patchPayload["detail"] = detailToSend
+	} else {
+		// When address is empty, explicitly set detail to empty array
+		patchPayload["detail"] = []string{}
 	}
 
 	data, err := json.Marshal(patchPayload)
