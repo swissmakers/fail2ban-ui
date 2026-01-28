@@ -163,17 +163,17 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 	return nil
 }
 
-// getAliasByName retrieves a firewall alias by name using GET /api/v2/firewall/alias
+// getAliasByName retrieves a firewall alias by name using GET /api/v2/firewall/aliases
 func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiToken, aliasName string, logger func(string, ...interface{})) (*FirewallAlias, error) {
-	apiURL := baseURL + "/api/v2/firewall/alias"
+	apiURL := baseURL + "/api/v2/firewall/aliases"
 
-	// Add query parameter for alias name
+	// Add query parameter for alias name filtering
 	u, err := url.Parse(apiURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 	q := u.Query()
-	q.Set("name", aliasName)
+	q.Set("query", aliasName)
 	u.RawQuery = q.Encode()
 	apiURL = u.String()
 
@@ -206,12 +206,22 @@ func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiTok
 		return nil, fmt.Errorf("pfSense API GET failed: status %s, response: %s", resp.Status, bodyStr)
 	}
 
-	var aliasResp FirewallAliasResponse
-	if err := json.Unmarshal(bodyBytes, &aliasResp); err != nil {
+	// The plural endpoint returns an array of aliases in the data field
+	var listResp struct {
+		Data []FirewallAlias `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &listResp); err != nil {
 		return nil, fmt.Errorf("failed to decode pfSense alias response: %w", err)
 	}
 
-	return &aliasResp.Data, nil
+	// Find the alias with matching name (query parameter may return multiple results)
+	for i := range listResp.Data {
+		if listResp.Data[i].Name == aliasName {
+			return &listResp.Data[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("alias %s not found", aliasName)
 }
 
 // updateAlias updates a firewall alias using PATCH /api/v2/firewall/alias/{id}
