@@ -390,5 +390,8 @@
   "auth.logout": "Déconnexion",
   "auth.user_info": "Informations utilisateur",
   "auth.session_expired": "Votre session a expiré. Veuillez vous reconnecter.",
-  "auth.login_required": "Authentification requise"
+  "auth.login_required": "Authentification requise",
+  "footer.version": "Fail2ban-UI v{version}",
+  "footer.latest": "À jour",
+  "footer.update_available": "Mise à jour disponible : v{version}"
 }

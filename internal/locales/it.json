@@ -390,5 +390,8 @@
   "auth.logout": "Esci",
   "auth.user_info": "Informazioni utente",
   "auth.session_expired": "La tua sessione è scaduta. Si prega di accedere nuovamente.",
-  "auth.login_required": "Autenticazione richiesta"
+  "auth.login_required": "Autenticazione richiesta",
+  "footer.version": "Fail2ban-UI v{version}",
+  "footer.latest": "Aggiornato",
+  "footer.update_available": "Aggiornamento disponibile: v{version}"
 }

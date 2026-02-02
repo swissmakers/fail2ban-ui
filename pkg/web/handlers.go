@@ -50,6 +50,7 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/integrations"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
+	"github.com/swissmakers/fail2ban-ui/internal/version"
 )
 
 // wsHub is the global WebSocket hub instance
@@ -1141,13 +1142,95 @@ func renderIndexPage(c *gin.Context) {
 		}
 	}
 
+	// Update check: default true; set UPDATE_CHECK=false to disable external GitHub request
+	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
+
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"timestamp":         time.Now().Format(time.RFC1123),
-		"version":           time.Now().Unix(),
-		"disableExternalIP": disableExternalIP,
-		"oidcEnabled":       oidcEnabled,
-		"skipLoginPage":     skipLoginPage,
+		"timestamp":          time.Now().Format(time.RFC1123),
+		"version":            time.Now().Unix(),
+		"appVersion":         version.Version,
+		"updateCheckEnabled": updateCheckEnabled,
+		"disableExternalIP":  disableExternalIP,
+		"oidcEnabled":        oidcEnabled,
+		"skipLoginPage":      skipLoginPage,
 	})
+}
+
+// githubReleaseResponse is used to parse the GitHub releases/latest API response
+type githubReleaseResponse struct {
+	TagName string `json:"tag_name"`
+}
+
+// versionLess returns true if a < b (e.g. "1.3.5" < "1.3.6")
+func versionLess(a, b string) bool {
+	parse := func(s string) []int {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
+		parts := strings.Split(s, ".")
+		out := make([]int, 0, len(parts))
+		for _, p := range parts {
+			n, _ := strconv.Atoi(p)
+			out = append(out, n)
+		}
+		return out
+	}
+	pa, pb := parse(a), parse(b)
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		va, vb := 0, 0
+		if i < len(pa) {
+			va = pa[i]
+		}
+		if i < len(pb) {
+			vb = pb[i]
+		}
+		if va < vb {
+			return true
+		}
+		if va > vb {
+			return false
+		}
+	}
+	return false
+}
+
+// GetVersionHandler returns the current app version and optionally the latest GitHub release.
+// UPDATE_CHECK=false disables the external request to GitHub.
+func GetVersionHandler(c *gin.Context) {
+	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
+	out := gin.H{
+		"version":              version.Version,
+		"update_check_enabled": updateCheckEnabled,
+	}
+	if !updateCheckEnabled {
+		c.JSON(http.StatusOK, out)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/swissmakers/fail2ban-ui/releases/latest", nil)
+	if err != nil {
+		c.JSON(http.StatusOK, out)
+		return
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusOK, out)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusOK, out)
+		return
+	}
+	var gh githubReleaseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gh); err != nil {
+		c.JSON(http.StatusOK, out)
+		return
+	}
+	latest := strings.TrimPrefix(strings.TrimSpace(gh.TagName), "v")
+	out["latest_version"] = latest
+	out["update_available"] = versionLess(version.Version, latest)
+	c.JSON(http.StatusOK, out)
 }
 
 // GetJailFilterConfigHandler returns both the filter config and jail config for a given jail

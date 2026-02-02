@@ -390,6 +390,9 @@
     "auth.logout": "Logout",
     "auth.user_info": "User Information",
     "auth.session_expired": "Your session has expired. Please log in again.",
-    "auth.login_required": "Authentication required"
+    "auth.login_required": "Authentication required",
+    "footer.version": "Fail2ban-UI v{version}",
+    "footer.latest": "Latest",
+    "footer.update_available": "Update available: v{version}"
   }
   

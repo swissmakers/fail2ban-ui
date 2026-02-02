@@ -390,6 +390,9 @@
     "auth.logout": "Abmäudä",
     "auth.user_info": "Benutzerinformationä",
     "auth.session_expired": "Ihri Sitzig isch abglaufä. Bitte mäudä di erneut a.",
-    "auth.login_required": "Authentifizierig erforderlich"
+    "auth.login_required": "Authentifizierig erforderlich",
+    "footer.version": "Fail2ban-UI v{version}",
+    "footer.latest": "Aktuell",
+    "footer.update_available": "Update verfüegbar: v{version}"
   }
   

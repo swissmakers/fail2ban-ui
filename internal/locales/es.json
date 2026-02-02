@@ -390,5 +390,8 @@
     "auth.logout": "Cerrar sesión",
     "auth.user_info": "Información del usuario",
     "auth.session_expired": "Su sesión ha expirado. Por favor, inicie sesión nuevamente.",
-    "auth.login_required": "Autenticación requerida"
+    "auth.login_required": "Autenticación requerida",
+    "footer.version": "Fail2ban-UI v{version}",
+    "footer.latest": "Actual",
+    "footer.update_available": "Actualización disponible: v{version}"
   }
