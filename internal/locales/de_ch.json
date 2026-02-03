@@ -68,6 +68,7 @@
     "logs.overview.per_server_empty": "No keni Serverdate verfügbar.",
     "logs.overview.recent_filtered_empty": "Kei Ereigniss erfülle d Filter.",
     "logs.overview.recent_count_label": "Aazeigti Ereigniss",
+    "logs.overview.load_more": "Mehr lade",
     "logs.overview.country_unknown": "Unbekannt",
     "logs.overview.last_seen": "Zletscht gseh",
     "logs.table.server": "Server",

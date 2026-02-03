@@ -209,77 +209,11 @@ Modern enterprises face increasing security challenges with generally distribute
 
 ---
 
-## 🏗️ Architecture
-
-### System Components
-
-```
- ┌────────────────────────────────────────────────────────────┐
- │                  Fail2Ban UI Web Interface                 │
- │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
- │  │   Dashboard  │  │  Management  │  │   Settings   │      │
- │  └──────────────┘  └──────────────┘  └──────────────┘      │
- └────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────┐
-│                     Go Backend API Server                      │
-│    ┌─────────────────────────────┐    ┌──────────────────────┐ │
-│    │ Fail2Ban UI (Backend)       │--->│ Send Alerts via Mail │ │
-│    │ - Gin handlers + REST API   │    │ (planned: Elastic)   │ │
-│    │ - Vanilla JS + Tailwind UI  │    └──────────────────────┘ │
-│  ->│ - SQLite storage            │                             │
-│ │  └──────────────┬──────────────┘                             │
-│ │                 │                                            │
-│ │      ┌──────────┴────────────┐       ┌─────────────────────┐ │
-│ │      │ Connector Manager and │-------│ Integrations        │ │
-│ │      │ handlers / actions    │       │ Mikrotik / pfSense  │ │
-│ │      └────────────────────┬──┘       └─────────────────────┘ │
-│ │                           │                                  │
-└─│───────────────────────────│──────────────────────────────────┘
-  │                           │
-  │                           ▼
-┌─│─────────────────────────────────────────────────────────────┐
-│ │               Connection to remote Server                   │
-│ │              ─────────────────────────────                  │
-│ │              │             │             │                  │
-│ │              ▼             ▼             ▼                  │
-│ │          ┌────────┐    ┌────────┐    ┌────────┐             │
-│ │          │ Local  │    │  SSH   │    │  API   │             │
-│ │          │ Server │    │ Server │    │ Agent  │             │
-│ │          └────────┘    └────────┘    └────────┘             │
-│ │              │             │             │                  │
-│ │              │             │             │                  │
-│ │        ┌─────┴─────────────┴─────────────┴─────┐            │
-│ │        │ Fail2Ban instances on Reverse Proxies │            │
-│ │        │ or remote / local Webserver           │            │
-│ │        └─────────────┬─────────────────────────┘            │
-│ │                      │                                      │
-│ │           ┌──────────┴────────────┐                         │
-│ │           │ Report Alerts back to │                         │
-│  <----------│ Fail2Ban-UI REST with │                         │
-│             │ custom action         │                         │
-│             └───────────────────────┘                         │
-└───────────────────────────────────────────────────────────────┘
-```
-
-
-### Technology Stack
-
-- **Backend**: Go 1.24+ (Golang)
-- **Frontend**: Vanilla JavaScript, Tailwind CSS
-- **Database**: SQLite (embedded)
-- **Container Runtime**: Podman/Docker compatible
-- **Service Management**: systemd
-- **Security**: SELinux compatible
-
----
-
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Operating System**: Linux (RHEL 8+, Ubuntu 20.04+, Debian 11+, or containerized)
+- **System**: Linux (RHEL 8+, Ubuntu 20.04+, Debian 11+) or Container-Environment
 - **Fail2Ban**: At least version 0.10+ installed and configured
 - **Go**: Version 1.24+ (only for source builds)
 - **Node.js**: Version 16+ (only for source build - Tailwind CSS)
@@ -287,7 +221,7 @@ Modern enterprises face increasing security challenges with generally distribute
 
 ### Installation Methods (Example with mounts for local fail2ban connector)
 
-#### Method 1: Container Deployment (Recommended for Production)
+#### Method 1: Container Deployment (Recommended)
 
 **Option A: Using Pre-built Image**
 
@@ -302,7 +236,7 @@ docker pull swissmakers/fail2ban-ui:latest
 # podman pull registry.swissmakers.ch/infra/fail2ban-ui:latest
 # docker pull registry.swissmakers.ch/infra/fail2ban-ui:latest
 
-# Run the container
+# Run the container (for usage with the local connector - fail2ban runs on same host)
 podman run -d \
   --name fail2ban-ui \
   --network=host \
@@ -326,7 +260,7 @@ sudo podman build -t fail2ban-ui:dev .
 # or with Docker:
 sudo docker build -t fail2ban-ui:dev .
 
-# Run the container
+# Run the container (for usage with the local connector - fail2ban runs on same host)
 sudo podman run -d \
   --name fail2ban-ui \
   --network=host \
@@ -339,14 +273,14 @@ sudo podman run -d \
 
 **Option C: Using Docker Compose**
 
-For easier management, use Docker Compose:
+For a quicker start you can also use Docker Compose:
 ```bash
 # Copy the example file
 cp docker-compose.example.yml docker-compose.yml
 # or
 cp docker-compose-allinone.example.yml docker-compose.yml
 
-# Edit docker-compose.yml to customize (e.g., change PORT)
+# Edit docker-compose.yml to customize (e.g., change PORT and so on..)
 # Then start:
 podman compose up -d 
 # or
@@ -357,16 +291,36 @@ docker-compose up -d
 
 Change the default port (8080) using the `PORT` environment variable:
 ```bash
-podman run -d \
-  --name fail2ban-ui \
-  --network=host \
-  -e PORT=3080 \
-  -v /opt/podman-fail2ban-ui:/config:Z \
-  -v /etc/fail2ban:/etc/fail2ban:Z \
-  -v /var/log:/var/log:ro \
-  -v /var/run/fail2ban:/var/run/fail2ban \
-  swissmakers/fail2ban-ui:latest
+-e PORT=3080 \
 ```
+
+**Bind address**
+
+By default, the HTTP server listens on `0.0.0.0`. To bind to a specific interface, set `BIND_ADDRESS` to an IP address (e.g. `127.0.0.1` for localhost only):
+
+```bash
+-e BIND_ADDRESS=127.0.0.1  \
+```
+
+**Disable External IP Lookup** (Privacy / air-gapped)
+
+By default, the web UI displays your external IP address by querying external services. For privacy reasons, you can disable this feature using the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable:
+
+```bash
+-e DISABLE_EXTERNAL_IP_LOOKUP=true \
+```
+
+When set, the "Your ext. IP:" display will be completely hidden and no external IP lookup requests will be made.
+
+**Disable version update check** (Privacy / air-gapped)
+
+On page load, the footer can check the latest release on GitHub to show "Latest" or "Update available". To disable this external request (e.g. in air-gapped or privacy-sensitive environments), set `UPDATE_CHECK=false`:
+
+```bash
+-e UPDATE_CHECK=false  \
+```
+
+When disabled, the footer still shows the current version but does not perform any request to GitHub.
 
 **OIDC Authentication Configuration (Optional)**
 
@@ -426,7 +380,7 @@ podman run -d \
 -e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
 ```
 
-**Advanced Options:**
+**Advanced OIDC Options:**
 ```bash
 -e OIDC_SCOPES=openid,profile,email,groups \
 -e OIDC_SESSION_MAX_AGE=7200 \
@@ -436,25 +390,14 @@ podman run -d \
 
 **Note:** If `OIDC_SESSION_SECRET` is not provided, a random secret will be generated on startup. For production, it's recommended to set a fixed secret.
 
-Access the web interface at `http://localhost:3080`.
 
-**Disable External IP Lookup** (Privacy)
+**Email alert template style**
 
-By default, the web UI displays your external IP address by querying external services. For privacy reasons, you can disable this feature using the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable:
+Alert emails (ban/unban notifications) use a "modern" HTML template by default. To use the classic style fail2ban-UI instead, set:
 
 ```bash
-podman run -d \
-  --name fail2ban-ui \
-  --network=host \
-  -e DISABLE_EXTERNAL_IP_LOOKUP=true \
-  -v /opt/podman-fail2ban-ui:/config:Z \
-  -v /etc/fail2ban:/etc/fail2ban:Z \
-  -v /var/log:/var/log:ro \
-  -v /var/run/fail2ban:/var/run/fail2ban \
-  swissmakers/fail2ban-ui:latest
+-e emailStyle=classic
 ```
-
-When set, the "Your ext. IP:" display will be completely hidden and no external IP lookup requests will be made.
 
 **Volume Mounts Explained**
 
@@ -505,8 +448,8 @@ See the [Security Notes](#-security-notes) section for complete OIDC configurati
 ### First Launch
 
 1. **Access the Web Interface**
-   - Navigate to `http://localhost:8080` (or your configured port)
-   - Default port: `8080` (configurable via `PORT` environment variable or in UI settings)
+   - Navigate to `http://localhost:8080` or `http://YOUR-LAN-IP:8080`
+   - Default port: `8080` (can be changed via `PORT` environment variable or in UI settings)
 
 2. **Add Your First Server**
    - **Local Server**: Enable the local connector if Fail2Ban runs on the same host
@@ -520,6 +463,141 @@ See the [Security Notes](#-security-notes) section for complete OIDC configurati
 ---
 
 ## 📚 Documentation
+
+### Highlevel System Architecture / Communication
+
+- Backend: Go 1.24+ (Golang)
+- Frontend: Vanilla JavaScript, Tailwind CSS
+- Database: SQLite (embedded)
+- Container Runtime: Podman/Docker compatible
+- Service Management: systemd / container
+- Security: SELinux compliant / least privileges
+
+The following diagrams should describe the communication paths between browser (frontend) ↔ API, WebSocket message types, callbacks from Fail2ban instances, and connector types.
+
+#### Browser (Frontend) ↔ Backend (HTTP / WebSocket) communication
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│  FRONTEND (Vanilla JS + Tailwind CSS)                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │
+│  │  Dashboard  │  │ Filter Debug│  │   Settings  │  │  (index)    │               │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘               │
+│         └────────────────┴────────────────┴────────────────┘                      │
+│                                    │                                              │
+│  Communication to backend:         │  HTTP/HTTPS (REST)                           │
+│  • GET  /                          │  • All /api/* (except callbacks) use your    │
+│  • GET  /api/summary               │    session when OIDC is enabled              │
+│  • GET  /api/events/bans           │  • X-F2B-Server header for server selection  │
+│  • GET  /api/version               │                                              │
+│  • POST /api/jails/:jail/unban/:ip │  WebSocket: GET /api/ws (upgrade)            │
+│  • POST /api/jails/:jail/ban/:ip   │  • Same origin, same cookies as HTTP         │◀-┐
+│  • POST /api/settings              │  • Receives: heartbeat, console_log,         │  │
+│  • … (see diagram 2)               │    ban_event, unban_event                    │  │
+└────────────────────────────────────┼──────────────────────────────────────────────┘  │ W
+                                     │                                                 │ e
+                                     ▼                                                 │ b
+┌─────────────────────────────────────────────────────────────────────────────────┐    │ s
+│  GO BACKEND (Gin)                                                               │    │ o
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │    │ c
+│  │  PUBLIC (no OIDC-auth session needed for access):                         │  │    │ k
+│  │  • /auth/login | /auth/callback | /auth/logout                            │  │    │ e
+│  │  • /auth/status | /auth/user                                              │  │    │ t  
+│  │  • POST /api/ban | POST /api/unban ← Fail2ban callbacks (a valid Callback │  │    │
+│  │  • GET /api/ws   (WebSocket)                            Secret is needed) │  │    │
+│  │  • /static/* | /locales/*                                                 │  │----┘
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐  │
+│  │  PROTECTED (when OIDC enabled):  GET / | GET and POST to all other /api/* │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Backend internals: API routes, WebSocket hub, storage, connectors
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  GIN SERVER                                                                      │
+│  ┌────────────────────────────────────────────────────────────────────────────┐  │
+│  │  REST API (group /api)                                                     │  │
+│  │  • GET  /summary              → Connector(s) → Fail2ban(jails, banned IPs) │  │
+│  │  • GET  /jails/:jail/config   • POST /jails/:jail/config                   │  │
+│  │  • GET  /jails/manage         • POST /jails/manage | POST /jails           │  │
+│  │  • POST /jails/:jail/unban/:ip  • POST /jails/:jail/ban/:ip                │  │
+│  │  • GET  /settings             • POST /settings                             │  │
+│  │  • GET  /events/bans          • GET /events/bans/stats | /insights         │  │
+│  │  • GET  /version              (optional GitHub request if UPDATE_CHECK)    │  │
+│  │  • GET  /servers | POST/DELETE /servers | POST /servers/:id/test           │  │
+│  │  • GET  /filters/*            • POST /filters/test | POST/DELETE /filters  │  │
+│  │  • POST /fail2ban/restart     • GET/POST /advanced-actions/*               │  │
+│  │  • POST /ban  (callback)      • POST /unban (callback)                     │  │
+│  └────────────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                             │
+│  ┌─────────────────────────────────┴──────────────────────────────────────────┐  │
+│  │  WebSocket Hub (GET /api/ws)                                               │  │
+│  │  • register / unregister clients                                           │  │
+│  │  • broadcast to all clients:                                               │  │
+│  │    - type: "heartbeat"   (every ~30s)                                      │  │
+│  │    - type: "console_log" (debug console lines)                             │  │
+│  │    - type: "ban_event"   (after POST /api/ban → store → broadcast)         │  │
+│  │    - type: "unban_event" (after POST /api/unban → store → broadcast)       │  │
+│  └────────────────────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────┐  ┌────────────────────────────┐                  │
+│  │  SQLite Storage            │  │  Whois / GeoIP             │                  │
+│  │  • ban_events              │  │  • IP → country/hostname   │                  │
+│  │  • app_settings, servers   │  │    MaxMind or ip-api.com   │                  │
+│  │  • permanent_blocks        │  │  • Used in UI and emails   │                  │
+│  └────────────────────────────┘  └────────────────────────────┘                  │
+│  ┌────────────────────────────┐  ┌────────────────────────────┐                  │
+│  │  Connector Manager         │  │  Integrations + Email      │                  │
+│  │  • Local (fail2ban.sock)   │  │  • Mikrotik / pfSense /    │                  │
+│  │  • SSH (exec on remote)    │  │    OPNsense (block/unblock)│                  │
+│  │  • Agent (HTTP to agent)   │  │  • SMTP alert emails       │                  │
+│  │  • New server init: ensure │  └────────────────────────────┘                  │
+│  │    action.d (ui-custom-    │                                                  │
+│  │    action.conf)            │                                                  │
+│  └────────────────────────────┘                                                  │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Fail2ban instances → Fail2ban-UI (callbacks) and Fail2ban-UI → Fail2ban (via connectors)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│  FAIL2BAN INSTANCES (one per server: local, SSH host, or agent host)             │
+│  On each host: Fail2ban + action script (ui-custom-action.conf)                  │
+│  On ban/unban → action runs → HTTP POST to Fail2ban-UI callback URL              │
+│                                                                                  │
+│         ┌───────────────────────────────────────────────────────────────┐        │
+│         │  Outbound to Fail2ban-UI (from each Fail2ban host)            │        │
+│         │  POST <CallbackURL>/api/ban   or   /api/unban                 │        │
+│         │  Header: X-Callback-Secret: <configured secret>               │        │
+│         │  Body: JSON { serverId, ip, jail, hostname, failures, logs }  │        │
+│         └───────────────────────────────────────────────────────────────┘        │
+│                                    │                                             │
+│                                    ▼                                             │
+│  ┌────────────────────────────────────────────────────────────────────────────┐  │
+│  │  Fail2ban-UI Backend                                                       │  │
+│  │  1. Validate X-Callback-Secret → 401 if missing/invalid                    │  │
+│  │  2. Resolve server (serverId or hostname)                                  │  │
+│  │  3. Whois/GeoIP enrichment                                                 │  │
+│  │  4. Store event in SQLite DB (ban_events) if nothing was invalid           │  │
+│  │  5. Broadcast current event to WebSocket clients (ban_event / unban_event) │  │
+│  │  6. Optional: send SMTP alert                                              │  │
+│  │  7  Run additional actions (e.g. block on pfSense for recurring offenders) │  │
+│  │  8. Respond status 200 OK - if all above was without an error              │  │
+│  └────────────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  INBOUND from Fail2ban-UI to Fail2ban (per connector type)                      │
+│  • Local:  fail2ban-client over Unix socket (/var/run/fail2ban/fail2ban.sock)   │
+│  • SSH:   SSH + fail2ban-client on remote host                                  │
+│  • Agent: HTTP to agent API (e.g. /v1/jails/:jail/unban, /v1/jails/:jail/ban)   │
+│  Used for: summary (jails, banned IPs), unban/ban from UI, config read/write,   │
+│            filter test, jail create/delete, restart/reload, logpath test        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### Deployment Guides
 
@@ -615,6 +693,7 @@ The **Fail2Ban Callback URL** is a critical setting that determines how Fail2Ban
 **Privacy Settings**
 
 - **External IP Lookup**: By default, the web UI displays your external IP address. To disable this feature for privacy reasons, set the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable to `true` or `1`. This will hide the "Your ext. IP:" display and prevent any external IP lookup requests.
+- **Version update check**: On page load, the footer may request the latest release from GitHub to show an "Update available" badge. Set `UPDATE_CHECK=false` to disable this external request (e.g. air-gapped or privacy-sensitive environments). The current version is still shown in the footer.
    - For custom callback URLs (e.g., reverse proxy or custom IP), you must manually update them to match your setup
 
 **Important Notes:**
@@ -721,6 +800,7 @@ OIDC_USERNAME_CLAIM=preferred_username     # Claim to use as username (default: 
 OIDC_LOGOUT_URL=https://auth.example.com/logout  # Provider logout URL (optional, auto-constructed if not set)
 OIDC_CLIENT_SECRET_FILE=/path/to/secret-file     # Path to client secret file (for auto-configuration)
 OIDC_SKIP_VERIFY=false                     # Skip TLS verification (dev only, default: false)
+OIDC_SKIP_LOGINPAGE=false                  # Skip login page and redirect directly to OIDC provider (default: false)
 ```
 
 **Configuration Examples:**

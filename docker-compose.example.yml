@@ -34,6 +34,9 @@ services:
       # Optional: Disable external IP lookup for privacy (default: false).
       # When set to true, the "Your ext. IP:" display will be hidden and no external IP lookup requests will be made.
       # - DISABLE_EXTERNAL_IP_LOOKUP=true
+      # Optional: Disable version update check (default: enabled).
+      # When set to false, the footer will not request the latest release from GitHub (e.g. air-gapped or privacy-sensitive environments).
+      # - UPDATE_CHECK=false
 
       # ============================================
       # OIDC Authentication (Optional)

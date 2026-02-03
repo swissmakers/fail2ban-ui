@@ -68,6 +68,7 @@
   "logs.overview.per_server_empty": "Aún no hay datos por servidor.",
   "logs.overview.recent_filtered_empty": "No hay eventos que coincidan con los filtros.",
   "logs.overview.recent_count_label": "Eventos mostrados",
+  "logs.overview.load_more": "Cargar más",
   "logs.overview.country_unknown": "Desconocido",
   "logs.overview.last_seen": "Última vez",
   "logs.table.server": "Servidor",

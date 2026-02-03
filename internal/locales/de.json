@@ -68,6 +68,7 @@
     "logs.overview.per_server_empty": "Noch keine Serverdaten verfügbar.",
     "logs.overview.recent_filtered_empty": "Keine gespeicherten Ereignisse passen zu den Filtern.",
     "logs.overview.recent_count_label": "Angezeigte Ereignisse",
+    "logs.overview.load_more": "Mehr laden",
     "logs.overview.country_unknown": "Unbekannt",
     "logs.overview.last_seen": "Zuletzt gesehen",
     "logs.table.server": "Server",

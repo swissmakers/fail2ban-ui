@@ -68,6 +68,7 @@
   "logs.overview.per_server_empty": "Ancora nessun dato per server.",
   "logs.overview.recent_filtered_empty": "Nessun evento corrisponde ai filtri.",
   "logs.overview.recent_count_label": "Eventi mostrati",
+  "logs.overview.load_more": "Carica altri",
   "logs.overview.country_unknown": "Sconosciuto",
   "logs.overview.last_seen": "Ultima visualizzazione",
   "logs.table.server": "Server",
