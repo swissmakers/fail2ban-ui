@@ -603,6 +603,139 @@ WHERE 1=1`
 	return results, rows.Err()
 }
 
+const (
+	// MaxBanEventsLimit is the maximum number of events per API request (pagination page size).
+	MaxBanEventsLimit = 50
+	// MaxBanEventsOffset is the maximum offset (total events loaded in UI capped for browser stability).
+	MaxBanEventsOffset = 1000
+)
+
+// ListBanEventsFiltered returns ban events with optional search and country filter, ordered by occurred_at DESC.
+// search is applied as LIKE %search% on ip, jail, server_name, hostname, country.
+// limit is capped at MaxBanEventsLimit; offset is capped at MaxBanEventsOffset.
+func ListBanEventsFiltered(ctx context.Context, serverID string, limit, offset int, since time.Time, search, country string) ([]BanEventRecord, error) {
+	if db == nil {
+		return nil, errors.New("storage not initialised")
+	}
+	if limit <= 0 || limit > MaxBanEventsLimit {
+		limit = MaxBanEventsLimit
+	}
+	if offset < 0 || offset > MaxBanEventsOffset {
+		offset = 0
+	}
+
+	baseQuery := `
+SELECT id, server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
+FROM ban_events
+WHERE 1=1`
+	args := []any{}
+
+	if serverID != "" {
+		baseQuery += " AND server_id = ?"
+		args = append(args, serverID)
+	}
+	if !since.IsZero() {
+		baseQuery += " AND occurred_at >= ?"
+		args = append(args, since.UTC())
+	}
+	search = strings.TrimSpace(search)
+	if search != "" {
+		baseQuery += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
+		pattern := "%" + search + "%"
+		for i := 0; i < 5; i++ {
+			args = append(args, pattern)
+		}
+	}
+	if country != "" && country != "all" {
+		if country == "__unknown__" {
+			baseQuery += " AND (country IS NULL OR country = '')"
+		} else {
+			baseQuery += " AND LOWER(COALESCE(country,'')) = ?"
+			args = append(args, strings.ToLower(country))
+		}
+	}
+
+	baseQuery += " ORDER BY occurred_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	rows, err := db.QueryContext(ctx, baseQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []BanEventRecord
+	for rows.Next() {
+		var rec BanEventRecord
+		var eventType sql.NullString
+		if err := rows.Scan(
+			&rec.ID,
+			&rec.ServerID,
+			&rec.ServerName,
+			&rec.Jail,
+			&rec.IP,
+			&rec.Country,
+			&rec.Hostname,
+			&rec.Failures,
+			&rec.Whois,
+			&rec.Logs,
+			&eventType,
+			&rec.OccurredAt,
+			&rec.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if eventType.Valid {
+			rec.EventType = eventType.String
+		} else {
+			rec.EventType = "ban"
+		}
+		results = append(results, rec)
+	}
+	return results, rows.Err()
+}
+
+// CountBanEventsFiltered returns the total count of ban events matching the same filters as ListBanEventsFiltered.
+func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Time, search, country string) (int64, error) {
+	if db == nil {
+		return 0, errors.New("storage not initialised")
+	}
+
+	query := `SELECT COUNT(*) FROM ban_events WHERE 1=1`
+	args := []any{}
+
+	if serverID != "" {
+		query += " AND server_id = ?"
+		args = append(args, serverID)
+	}
+	if !since.IsZero() {
+		query += " AND occurred_at >= ?"
+		args = append(args, since.UTC())
+	}
+	search = strings.TrimSpace(search)
+	if search != "" {
+		query += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
+		pattern := "%" + search + "%"
+		for i := 0; i < 5; i++ {
+			args = append(args, pattern)
+		}
+	}
+	if country != "" && country != "all" {
+		if country == "__unknown__" {
+			query += " AND (country IS NULL OR country = '')"
+		} else {
+			query += " AND LOWER(COALESCE(country,'')) = ?"
+			args = append(args, strings.ToLower(country))
+		}
+	}
+
+	var total int64
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 // CountBanEventsByServer returns simple aggregation per server.
 func CountBanEventsByServer(ctx context.Context, since time.Time) (map[string]int64, error) {
 	if db == nil {
@@ -918,6 +1051,7 @@ CREATE TABLE IF NOT EXISTS ban_events (
 
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_id ON ban_events(server_id);
 CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_ban_events_ip ON ban_events(ip);
 
 CREATE TABLE IF NOT EXISTS permanent_blocks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,

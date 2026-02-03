@@ -81,6 +81,26 @@ function initializeApp() {
       console.warn('Could not check LOTR on load:', err);
     });
   
+  // Version and update check: only on page load; UPDATE_CHECK=false disables external GitHub request
+  var versionContainer = document.getElementById('version-badge-container');
+  if (versionContainer && versionContainer.getAttribute('data-update-check') === 'true') {
+    fetch('/api/version')
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (!data.update_check_enabled || versionContainer.innerHTML) return;
+        var latestLabel = typeof t === 'function' ? t('footer.latest', 'Latest') : 'Latest';
+        var updateHint = (typeof t === 'function' && translations && translations['footer.update_available'])
+          ? translations['footer.update_available'].replace('{version}', data.latest_version || '')
+          : ('Update available: v' + (data.latest_version || ''));
+        if (data.update_available && data.latest_version) {
+          versionContainer.innerHTML = '<a href="https://github.com/swissmakers/fail2ban-ui/releases" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200" title="' + updateHint + '">' + updateHint + '</a>';
+        } else {
+          versionContainer.innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title="' + latestLabel + '">' + latestLabel + '</span>';
+        }
+      })
+      .catch(function() { /* ignore; no badge on error */ });
+  }
+
   Promise.all([
     loadServers(),
     getTranslationsSettingsOnPageload()

@@ -68,6 +68,7 @@
     "logs.overview.per_server_empty": "Noch keine Serverdaten verfügbar.",
     "logs.overview.recent_filtered_empty": "Keine gespeicherten Ereignisse passen zu den Filtern.",
     "logs.overview.recent_count_label": "Angezeigte Ereignisse",
+    "logs.overview.load_more": "Mehr laden",
     "logs.overview.country_unknown": "Unbekannt",
     "logs.overview.last_seen": "Zuletzt gesehen",
     "logs.table.server": "Server",
@@ -390,6 +391,9 @@
     "auth.logout": "Abmelden",
     "auth.user_info": "Benutzerinformationen",
     "auth.session_expired": "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
-    "auth.login_required": "Authentifizierung erforderlich"
+    "auth.login_required": "Authentifizierung erforderlich",
+    "footer.version": "Fail2ban-UI v{version}",
+    "footer.latest": "Aktuell",
+    "footer.update_available": "Update verfügbar: v{version}"
   }
   

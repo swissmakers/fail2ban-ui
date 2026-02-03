@@ -68,6 +68,7 @@
     "logs.overview.per_server_empty": "No per-server data available yet.",
     "logs.overview.recent_filtered_empty": "No stored events match the current filters.",
     "logs.overview.recent_count_label": "Events shown",
+    "logs.overview.load_more": "Load more",
     "logs.overview.country_unknown": "Unknown",
     "logs.overview.last_seen": "Last seen",
     "logs.table.server": "Server",
@@ -390,6 +391,9 @@
     "auth.logout": "Logout",
     "auth.user_info": "User Information",
     "auth.session_expired": "Your session has expired. Please log in again.",
-    "auth.login_required": "Authentication required"
+    "auth.login_required": "Authentication required",
+    "footer.version": "Fail2ban-UI v{version}",
+    "footer.latest": "Latest",
+    "footer.update_available": "Update available: v{version}"
   }
   

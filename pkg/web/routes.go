@@ -58,6 +58,9 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		api.POST("/jails", CreateJailHandler)
 		api.DELETE("/jails/:jail", DeleteJailHandler)
 
+		// Version and update check (only on page load; UPDATE_CHECK=false disables GitHub request)
+		api.GET("/version", GetVersionHandler)
+
 		// Settings endpoints
 		api.GET("/settings", GetSettingsHandler)
 		api.POST("/settings", UpdateSettingsHandler)
