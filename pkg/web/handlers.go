@@ -2527,6 +2527,12 @@ func isLOTRModeActive(alertCountries []string) bool {
 // *                 Unified Email Sending Function :                *
 // *******************************************************************
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
+	// Skip sending if the destination email is still the default placeholder
+	if strings.EqualFold(strings.TrimSpace(to), "alerts@example.com") {
+		log.Printf("⚠️ sendEmail skipped: destination email is still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
+		return errors.New("destination email is still the default (alerts@example.com) - please configure a valid address in Settings → Alert Settings")
+	}
+
 	// Validate SMTP settings
 	if settings.SMTP.Host == "" || settings.SMTP.Username == "" || settings.SMTP.Password == "" || settings.SMTP.From == "" {
 		err := errors.New("SMTP settings are incomplete. Please configure all required fields")
