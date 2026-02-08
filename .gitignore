@@ -34,3 +34,6 @@ fail2ban-ui.db*
 node_modules/
 package-lock.json
 .tailwind-build/
+
+# Server specific test-files
+server

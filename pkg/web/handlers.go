@@ -2129,10 +2129,12 @@ func UpdateSettingsHandler(c *gin.Context) {
 		oldSettings.DefaultJailEnable != newSettings.DefaultJailEnable ||
 		ignoreIPsChanged ||
 		oldSettings.Bantime != newSettings.Bantime ||
+		oldSettings.BantimeRndtime != newSettings.BantimeRndtime ||
 		oldSettings.Findtime != newSettings.Findtime ||
 		oldSettings.Maxretry != newSettings.Maxretry ||
 		oldSettings.Banaction != newSettings.Banaction ||
-		oldSettings.BanactionAllports != newSettings.BanactionAllports
+		oldSettings.BanactionAllports != newSettings.BanactionAllports ||
+		oldSettings.Chain != newSettings.Chain
 
 	if defaultSettingsChanged {
 		config.DebugLog("Fail2Ban DEFAULT settings changed, pushing to all enabled servers")
@@ -2348,6 +2350,10 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 	// TODO: -> maybe we store [DEFAULT] block in memory, replace lines
 	// or do a line-based approach. Example is simplistic:
 
+	chain := s.Chain
+	if chain == "" {
+		chain = "INPUT"
+	}
 	newLines := []string{
 		"[DEFAULT]",
 		fmt.Sprintf("enabled = %t", s.DefaultJailEnable),
@@ -2358,8 +2364,12 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 		fmt.Sprintf("maxretry = %d", s.Maxretry),
 		fmt.Sprintf("banaction = %s", s.Banaction),
 		fmt.Sprintf("banaction_allports = %s", s.BanactionAllports),
-		"",
+		fmt.Sprintf("chain = %s", chain),
 	}
+	if s.BantimeRndtime != "" {
+		newLines = append(newLines, fmt.Sprintf("bantime.rndtime = %s", s.BantimeRndtime))
+	}
+	newLines = append(newLines, "")
 	content := strings.Join(newLines, "\n")
 
 	return os.WriteFile(jailLocalPath, []byte(content), 0644)

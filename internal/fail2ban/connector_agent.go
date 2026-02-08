@@ -424,6 +424,10 @@ func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings co
 	if banactionAllports == "" {
 		banactionAllports = "nftables-allports"
 	}
+	chain := settings.Chain
+	if chain == "" {
+		chain = "INPUT"
+	}
 	payload := map[string]interface{}{
 		"bantimeIncrement":  settings.BantimeIncrement,
 		"defaultJailEnable": settings.DefaultJailEnable,
@@ -433,6 +437,8 @@ func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings co
 		"maxretry":          settings.Maxretry,
 		"banaction":         banaction,
 		"banactionAllports": banactionAllports,
+		"chain":             chain,
+		"bantimeRndtime":    settings.BantimeRndtime,
 	}
 	return ac.put(ctx, "/v1/jails/default-settings", payload, nil)
 }

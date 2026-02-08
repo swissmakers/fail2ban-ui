@@ -74,6 +74,8 @@ type AppSettings struct {
 	Destemail         string   `json:"destemail"`
 	Banaction         string   `json:"banaction"`         // Default banning action
 	BanactionAllports string   `json:"banactionAllports"` // Allports banning action
+	Chain             string   `json:"chain"`             // Default iptables/nftables chain (INPUT, DOCKER-USER, FORWARD)
+	BantimeRndtime    string   `json:"bantimeRndtime"`    // Optional: bantime.rndtime in seconds (e.g. 2048) for bantime increment formula
 	//Sender           string `json:"sender"`
 
 	// GeoIP and Whois settings
@@ -414,6 +416,12 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.Destemail = rec.DestEmail
 	currentSettings.Banaction = rec.Banaction
 	currentSettings.BanactionAllports = rec.BanactionAllports
+	if rec.Chain != "" {
+		currentSettings.Chain = rec.Chain
+	} else {
+		currentSettings.Chain = "INPUT"
+	}
+	currentSettings.BantimeRndtime = rec.BantimeRndtime
 	currentSettings.SMTP = SMTPSettings{
 		Host:               rec.SMTPHost,
 		Port:               rec.SMTPPort,
@@ -527,6 +535,8 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		DestEmail:         currentSettings.Destemail,
 		Banaction:         currentSettings.Banaction,
 		BanactionAllports: currentSettings.BanactionAllports,
+		Chain:             currentSettings.Chain,
+		BantimeRndtime:    currentSettings.BantimeRndtime,
 		// Advanced features
 		AdvancedActionsJSON: string(advancedBytes),
 		GeoIPProvider:       currentSettings.GeoIPProvider,
@@ -672,6 +682,9 @@ func setDefaultsLocked() {
 	if currentSettings.BanactionAllports == "" {
 		currentSettings.BanactionAllports = "nftables-allports"
 	}
+	if currentSettings.Chain == "" {
+		currentSettings.Chain = "INPUT"
+	}
 	if currentSettings.GeoIPProvider == "" {
 		currentSettings.GeoIPProvider = "builtin"
 	}
@@ -738,6 +751,12 @@ func initializeFromJailFile() error {
 	}
 	if val, ok := settings["banaction_allports"]; ok {
 		currentSettings.BanactionAllports = val
+	}
+	if val, ok := settings["chain"]; ok && val != "" {
+		currentSettings.Chain = val
+	}
+	if val, ok := settings["bantime.rndtime"]; ok && val != "" {
+		currentSettings.BantimeRndtime = val
 	}
 	/*if val, ok := settings["destemail"]; ok {
 		currentSettings.Destemail = val
@@ -911,6 +930,10 @@ func ensureJailLocalStructure() error {
 	if banactionAllports == "" {
 		banactionAllports = "nftables-allports"
 	}
+	chain := settings.Chain
+	if chain == "" {
+		chain = "INPUT"
+	}
 	defaultSection := fmt.Sprintf(`[DEFAULT]
 enabled = %t
 bantime.increment = %t
@@ -920,8 +943,13 @@ findtime = %s
 maxretry = %d
 banaction = %s
 banaction_allports = %s
+chain = %s
 
-`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr, settings.Bantime, settings.Findtime, settings.Maxretry, banaction, banactionAllports)
+`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr, settings.Bantime, settings.Findtime, settings.Maxretry, banaction, banactionAllports, chain)
+	if settings.BantimeRndtime != "" {
+		defaultSection += fmt.Sprintf("bantime.rndtime = %s\n", settings.BantimeRndtime)
+	}
+	defaultSection += "\n"
 
 	// Build action_mwlg configuration
 	// Note: action_mwlg depends on action_ which depends on banaction (now defined above)
@@ -979,6 +1007,10 @@ func updateJailLocalDefaultSection(settings AppSettings) error {
 	if banactionAllports == "" {
 		banactionAllports = "nftables-allports"
 	}
+	chain := settings.Chain
+	if chain == "" {
+		chain = "INPUT"
+	}
 	// Keys to update
 	keysToUpdate := map[string]string{
 		"enabled":            fmt.Sprintf("enabled = %t", settings.DefaultJailEnable),
@@ -989,6 +1021,14 @@ func updateJailLocalDefaultSection(settings AppSettings) error {
 		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
 		"banaction":          fmt.Sprintf("banaction = %s", banaction),
 		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllports),
+		"chain":              fmt.Sprintf("chain = %s", chain),
+	}
+	if settings.BantimeRndtime != "" {
+		keysToUpdate["bantime.rndtime"] = fmt.Sprintf("bantime.rndtime = %s", settings.BantimeRndtime)
+	}
+	defaultKeysOrder := []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports", "chain"}
+	if settings.BantimeRndtime != "" {
+		defaultKeysOrder = append(defaultKeysOrder, "bantime.rndtime")
 	}
 	keysUpdated := make(map[string]bool)
 
@@ -1021,14 +1061,24 @@ func updateJailLocalDefaultSection(settings AppSettings) error {
 		} else if inDefault {
 			// Check if this line is a key we need to update
 			keyUpdated := false
-			for key, newValue := range keysToUpdate {
-				keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
-				if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
-					outputLines = append(outputLines, newValue)
-					keysUpdated[key] = true
+			// When user cleared bantime.rndtime, remove the line from config instead of keeping old value
+			if settings.BantimeRndtime == "" {
+				if matched, _ := regexp.MatchString(`^\s*bantime\.rndtime\s*=`, trimmed); matched {
 					keyUpdated = true
 					defaultUpdated = true
-					break
+					// don't append: line is removed
+				}
+			}
+			if !keyUpdated {
+				for key, newValue := range keysToUpdate {
+					keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
+					if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
+						outputLines = append(outputLines, newValue)
+						keysUpdated[key] = true
+						keyUpdated = true
+						defaultUpdated = true
+						break
+					}
 				}
 			}
 			if !keyUpdated {
@@ -1043,9 +1093,8 @@ func updateJailLocalDefaultSection(settings AppSettings) error {
 
 	// Add any missing keys to the DEFAULT section
 	if inDefault {
-		for key, newValue := range keysToUpdate {
-			if !keysUpdated[key] {
-				// Find the DEFAULT section and insert after it
+		for _, key := range defaultKeysOrder {
+			if newValue, ok := keysToUpdate[key]; ok && !keysUpdated[key] {
 				for i, outputLine := range outputLines {
 					if strings.TrimSpace(outputLine) == "[DEFAULT]" {
 						outputLines = append(outputLines[:i+1], append([]string{newValue}, outputLines[i+1:]...)...)

@@ -160,8 +160,10 @@ function loadSettings() {
       document.getElementById('geoipDatabasePath').value = data.geoipDatabasePath || '/usr/share/GeoIP/GeoLite2-Country.mmdb';
       document.getElementById('maxLogLines').value = data.maxLogLines || 50;
       document.getElementById('banTime').value = data.bantime || '';
+      document.getElementById('bantimeRndtime').value = data.bantimeRndtime || '';
       document.getElementById('findTime').value = data.findtime || '';
       document.getElementById('maxRetry').value = data.maxretry || '';
+      document.getElementById('defaultChain').value = data.chain || 'INPUT';
       // Load IgnoreIPs as array
       const ignoreIPs = data.ignoreips || [];
       renderIgnoreIPsTags(ignoreIPs);
@@ -233,11 +235,13 @@ function saveSettings(event) {
     bantimeIncrement: document.getElementById('bantimeIncrement').checked,
     defaultJailEnable: document.getElementById('defaultJailEnable').checked,
     bantime: document.getElementById('banTime').value.trim(),
+    bantimeRndtime: document.getElementById('bantimeRndtime').value.trim(),
     findtime: document.getElementById('findTime').value.trim(),
     maxretry: parseInt(document.getElementById('maxRetry').value, 10) || 3,
     ignoreips: getIgnoreIPsArray(),
     banaction: document.getElementById('banaction').value,
     banactionAllports: document.getElementById('banactionAllports').value,
+    chain: document.getElementById('defaultChain').value || 'INPUT',
     geoipProvider: document.getElementById('geoipProvider').value || 'builtin',
     geoipDatabasePath: document.getElementById('geoipDatabasePath').value || '/usr/share/GeoIP/GeoLite2-Country.mmdb',
     maxLogLines: parseInt(document.getElementById('maxLogLines').value, 10) || 50,

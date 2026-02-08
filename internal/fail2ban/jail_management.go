@@ -1236,6 +1236,10 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 	if banactionAllports == "" {
 		banactionAllports = "nftables-allports"
 	}
+	chain := settings.Chain
+	if chain == "" {
+		chain = "INPUT"
+	}
 	// Define the keys we want to update
 	keysToUpdate := map[string]string{
 		"enabled":            fmt.Sprintf("enabled = %t", settings.DefaultJailEnable),
@@ -1246,6 +1250,14 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
 		"banaction":          fmt.Sprintf("banaction = %s", banaction),
 		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllports),
+		"chain":              fmt.Sprintf("chain = %s", chain),
+	}
+	if settings.BantimeRndtime != "" {
+		keysToUpdate["bantime.rndtime"] = fmt.Sprintf("bantime.rndtime = %s", settings.BantimeRndtime)
+	}
+	defaultKeysOrder := []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports", "chain"}
+	if settings.BantimeRndtime != "" {
+		defaultKeysOrder = append(defaultKeysOrder, "bantime.rndtime")
 	}
 
 	// Track which keys we've updated
@@ -1257,7 +1269,7 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 		var newLines []string
 		newLines = append(newLines, strings.Split(strings.TrimRight(config.JailLocalBanner(), "\n"), "\n")...)
 		newLines = append(newLines, "[DEFAULT]")
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
+		for _, key := range defaultKeysOrder {
 			newLines = append(newLines, keysToUpdate[key])
 		}
 		newLines = append(newLines, "")
@@ -1307,14 +1319,23 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 		} else if inDefault {
 			// We're in DEFAULT section - check if this line is a key we need to update
 			keyUpdated := false
-			for key, newValue := range keysToUpdate {
-				// Check if this line contains the key (with or without spaces around =)
-				keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
-				if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
-					outputLines = append(outputLines, newValue)
-					keysUpdated[key] = true
+			// When user cleared bantime.rndtime, remove the line from config instead of keeping old value
+			if settings.BantimeRndtime == "" {
+				if matched, _ := regexp.MatchString(`^\s*bantime\.rndtime\s*=`, trimmed); matched {
 					keyUpdated = true
-					break
+					// don't append: line is removed
+				}
+			}
+			if !keyUpdated {
+				for key, newValue := range keysToUpdate {
+					// Check if this line contains the key (with or without spaces around =)
+					keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
+					if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
+						outputLines = append(outputLines, newValue)
+						keysUpdated[key] = true
+						keyUpdated = true
+						break
+					}
 				}
 			}
 			if !keyUpdated {
@@ -1330,14 +1351,14 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 	// If DEFAULT section wasn't found, create it at the beginning
 	if !defaultSectionFound {
 		defaultLines := []string{"[DEFAULT]"}
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
+		for _, key := range defaultKeysOrder {
 			defaultLines = append(defaultLines, keysToUpdate[key])
 		}
 		defaultLines = append(defaultLines, "")
 		outputLines = append(defaultLines, outputLines...)
 	} else {
 		// Add any missing keys to the DEFAULT section
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
+		for _, key := range defaultKeysOrder {
 			if !keysUpdated[key] {
 				// Find the DEFAULT section and insert after it
 				for i, line := range outputLines {
