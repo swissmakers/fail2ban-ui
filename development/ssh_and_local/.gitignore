@@ -1,3 +1,4 @@
+config
 fail2ban-config-local
 fail2ban-config-ssh
 f2b-run-local
