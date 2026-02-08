@@ -15,7 +15,7 @@ function showLoading(show) {
 }
 
 // Show toast notification
-function showToast(message, type) {
+function showToast(message, type, duration) {
   var container = document.getElementById('toast-container');
   if (!container || !message) return;
   
@@ -38,7 +38,7 @@ function showToast(message, type) {
     setTimeout(function() {
       toast.remove();
     }, 300);
-  }, 5000);
+  }, duration || 5000);
 }
 
 // Show toast for ban event
