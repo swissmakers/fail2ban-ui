@@ -68,259 +68,6 @@ body:has(#loginPage:not(.hidden)) {
     overflow: hidden;
 }
 
-#loginPage .max-w-md {
-    max-width: 28rem;
-    width: 100%;
-}
-
-#loginPage .bg-white {
-    background-color: #ffffff;
-}
-
-#loginPage .rounded-lg {
-    border-radius: 0.5rem;
-}
-
-#loginPage .shadow-lg {
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-}
-
-#loginPage .p-8 {
-    padding: 2rem;
-}
-
-#loginPage .mb-8 {
-    margin-bottom: 2rem;
-}
-
-#loginPage .mb-4 {
-    margin-bottom: 1rem;
-}
-
-#loginPage .mb-6 {
-    margin-bottom: 1.5rem;
-}
-
-#loginPage .mb-2 {
-    margin-bottom: 0.5rem;
-}
-
-#loginPage .mr-2 {
-    margin-right: 0.5rem;
-}
-
-#loginPage .mr-3 {
-    margin-right: 0.75rem;
-}
-
-#loginPage .ml-3 {
-    margin-left: 0.75rem;
-}
-
-#loginPage .pt-6 {
-    padding-top: 1.5rem;
-}
-
-#loginPage .py-4 {
-    padding-top: 1rem;
-    padding-bottom: 1rem;
-}
-
-#loginPage .py-3 {
-    padding-top: 0.75rem;
-    padding-bottom: 0.75rem;
-}
-
-#loginPage .px-4 {
-    padding-left: 1rem;
-    padding-right: 1rem;
-}
-
-#loginPage .h-16 {
-    height: 4rem;
-}
-
-#loginPage .w-16 {
-    width: 4rem;
-}
-
-#loginPage .h-10 {
-    height: 2.5rem;
-}
-
-#loginPage .w-10 {
-    width: 2.5rem;
-}
-
-#loginPage .h-5 {
-    height: 1.25rem;
-}
-
-#loginPage .w-5 {
-    width: 1.25rem;
-}
-
-#loginPage .rounded-full {
-    border-radius: 9999px;
-}
-
-#loginPage .bg-blue-600 {
-    background-color: #2563eb;
-}
-
-#loginPage .text-white {
-    color: #ffffff;
-}
-
-#loginPage .text-gray-900 {
-    color: #111827;
-}
-
-#loginPage .text-gray-600 {
-    color: #4b5563;
-}
-
-#loginPage .text-gray-500 {
-    color: #6b7280;
-}
-
-#loginPage .text-red-700 {
-    color: #b91c1c;
-}
-
-#loginPage .text-red-400 {
-    color: #f87171;
-}
-
-#loginPage .text-3xl {
-    font-size: 1.875rem;
-    line-height: 2.25rem;
-}
-
-#loginPage .text-base {
-    font-size: 1rem;
-    line-height: 1.5rem;
-}
-
-#loginPage .text-sm {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-}
-
-#loginPage .text-xs {
-    font-size: 0.75rem;
-    line-height: 1rem;
-}
-
-#loginPage .font-bold {
-    font-weight: 700;
-}
-
-#loginPage .font-medium {
-    font-weight: 500;
-}
-
-#loginPage .border {
-    border-width: 1px;
-}
-
-#loginPage .border-l-4 {
-    border-left-width: 4px;
-}
-
-#loginPage .border-t {
-    border-top-width: 1px;
-}
-
-#loginPage .border-gray-200 {
-    border-color: #e5e7eb;
-}
-
-#loginPage .border-red-400 {
-    border-color: #f87171;
-}
-
-#loginPage .border-transparent {
-    border-color: transparent;
-}
-
-#loginPage .bg-red-50 {
-    background-color: #fef2f2;
-}
-
-#loginPage .hover\:bg-blue-700:hover {
-    background-color: #1d4ed8;
-}
-
-#loginPage .focus\:outline-none:focus {
-    outline: 2px solid transparent;
-    outline-offset: 2px;
-}
-
-#loginPage .focus\:ring-2:focus {
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
-}
-
-#loginPage .focus\:ring-offset-2:focus {
-    box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px rgba(59, 130, 246, 0.5);
-}
-
-#loginPage .focus\:ring-blue-500:focus {
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
-}
-
-#loginPage .transition-colors {
-    transition-property: background-color, border-color, color;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
-}
-
-#loginPage .animate-spin {
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-#loginPage .flex {
-    display: flex;
-}
-
-#loginPage .inline-flex {
-    display: inline-flex;
-}
-
-#loginPage .items-center {
-    align-items: center;
-}
-
-#loginPage .justify-center {
-    justify-content: center;
-}
-
-#loginPage .text-center {
-    text-align: center;
-}
-
-#loginPage .mx-auto {
-    margin-left: auto;
-    margin-right: auto;
-}
-
-#loginPage .w-full {
-    width: 100%;
-}
-
-#loginPage .hidden {
-    display: none;
-}
-
 /* Restart banner */
 #restartBanner {
     display: none;
@@ -492,13 +239,8 @@ mark {
     padding: 0.25rem 0.5rem;
     margin-left: 5px;
     border-radius: 0.25rem;
-    /* background-color: rgba(255, 255, 255, 0.1); */
     transition: background-color 0.2s ease;
 }
-
-/*#backendStatus:hover {
-    background-color: rgba(255, 255, 255, 0.15);
-}*/
 
 #statusDot {
     width: 0.5rem;
@@ -644,37 +386,6 @@ mark {
     padding: 10px;
 }
 
-/* Additional Tailwind color classes for buttons */
-.bg-red-500 {
-    --tw-bg-opacity: 1;
-    background-color: rgb(239 68 68 / var(--tw-bg-opacity, 1));
-}
-
-.bg-red-600 {
-    --tw-bg-opacity: 1;
-    background-color: rgb(220 38 38 / var(--tw-bg-opacity, 1));
-}
-
-.hover\:bg-red-600:hover {
-    --tw-bg-opacity: 1;
-    background-color: rgb(220 38 38 / var(--tw-bg-opacity, 1));
-}
-
-.bg-purple-600 {
-    --tw-bg-opacity: 1;
-    background-color: rgb(147 51 234 / var(--tw-bg-opacity, 1));
-}
-
-.bg-purple-700 {
-    --tw-bg-opacity: 1;
-    background-color: rgb(126 34 206 / var(--tw-bg-opacity, 1));
-}
-
-.hover\:bg-purple-700:hover {
-    --tw-bg-opacity: 1;
-    background-color: rgb(126 34 206 / var(--tw-bg-opacity, 1));
-}
-
 /* Ensure Font Awesome icons are visible */
 .fas, .far, .fab, .fal, .fad {
     font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands", "Font Awesome 6 Pro";
@@ -692,6 +403,9 @@ mark {
 
 /* Button icon spacing */
 button .fas, button .far, button .fab {
+    display: inline-block;
+    width: 1em;
+    text-align: center;
     margin-right: 0.25rem;
 }
 
@@ -699,98 +413,10 @@ button .fas:only-child, button .far:only-child, button .fab:only-child {
     margin-right: 0;
 }
 
-/* Additional utility classes that might be missing */
-/* Support for top-1/2 and -translate-y-1/2 (with escaped slash) */
-.top-1\/2 {
-    top: 50%;
-}
-
-.-translate-y-1\/2 {
-    --tw-translate-y: -50%;
-    transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
-}
-
-/* Alternative class name without escape (for compatibility) */
-.top-1-2 {
-    top: 50%;
-}
-
-.-translate-y-1-2 {
-    --tw-translate-y: -50%;
-    transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
-}
-
-.gap-2 {
-    gap: 0.5rem;
-}
-
-/* Ensure buttons with icons display properly */
-button.inline-flex, .inline-flex {
-    display: inline-flex;
-    align-items: center;
-}
-
-button .fas, button .far, button .fab {
-    display: inline-block;
-    width: 1em;
-    text-align: center;
-}
-
-/* Ensure delete button is visible */
-button.bg-red-500, button.bg-red-600 {
-    color: white;
-    border: none;
-    cursor: pointer;
-}
-
-button.bg-red-500:hover, button.bg-red-600:hover {
-    background-color: rgb(220 38 38);
-}
-
-/* Green color classes */
-.bg-green-100 {
-    --tw-bg-opacity: 1;
-    background-color: rgb(220 252 231 / var(--tw-bg-opacity, 1));
-}
-
-.text-green-800 {
-    --tw-text-opacity: 1;
-    color: rgb(22 101 52 / var(--tw-text-opacity, 1));
-}
-
 /* WebSocket Tooltip Styling */
 #wsTooltip {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     line-height: 1.5;
-}
-
-#wsTooltip .text-green-400 {
-    color: rgb(74 222 128);
-}
-
-#wsTooltip .text-blue-400 {
-    color: rgb(96 165 250);
-}
-
-#wsTooltip .text-yellow-400 {
-    color: rgb(250 204 21);
-}
-
-#wsTooltip .text-orange-400 {
-    color: rgb(251 146 60);
-}
-
-#wsTooltip .text-gray-400 {
-    color: rgb(156 163 175);
-}
-
-#wsTooltip .text-gray-500 {
-    color: rgb(107 114 128);
-}
-
-/* Console output text colors */
-.text-gray-100 {
-    color: #f3f4f6;
 }
 
 /* Ignore IPs container - ensure proper wrapping and prevent horizontal overflow */
@@ -810,16 +436,4 @@ button.bg-red-500:hover, button.bg-red-600:hover {
     max-width: 100%;
     word-break: break-all;
     overflow-wrap: anywhere;
-}
-
-#wsTooltip .border-gray-700 {
-    border-color: rgb(55 65 81);
-}
-
-#wsTooltip .border-b {
-    border-bottom-width: 1px;
-}
-
-#wsTooltip .border-t {
-    border-top-width: 1px;
 }
