@@ -154,8 +154,17 @@ func SummaryHandler(c *gin.Context) {
 
 	// Check jail.local integrity on every summary request so the dashboard
 	// can display a persistent warning banner when the file is not managed by us.
-	if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil && exists && !hasUI {
-		resp.JailLocalWarning = true
+	if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil {
+		if exists && !hasUI {
+			resp.JailLocalWarning = true
+		} else if !exists {
+			// File was removed (user finished migration) – initialize a fresh managed file
+			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
+				config.DebugLog("Warning: failed to initialize jail.local on summary request: %v", err)
+			} else {
+				config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, resp)
@@ -780,11 +789,18 @@ func TestServerHandler(c *gin.Context) {
 		return
 	}
 
-	// Check jail.local integrity: if it exists but is not managed by fail2ban-ui, warn the user
+	// Check jail.local integrity: if it exists but is not managed by fail2ban-ui, warn the user.
+	// If the file was removed (user finished migration), initialize a fresh managed file.
 	resp := gin.H{"messageKey": "servers.actions.test_success"}
 	if exists, hasUI, err := conn.CheckJailLocalIntegrity(ctx); err == nil {
 		if exists && !hasUI {
 			resp["jailLocalWarning"] = true
+		} else if !exists {
+			if err := conn.EnsureJailLocalStructure(ctx); err != nil {
+				config.DebugLog("Warning: failed to initialize jail.local on test request: %v", err)
+			} else {
+				config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
+			}
 		}
 	}
 	c.JSON(http.StatusOK, resp)
@@ -2172,7 +2188,7 @@ func UpdateSettingsHandler(c *gin.Context) {
 			config.DebugLog("Updating DEFAULT settings on server: %s (type: %s)", server.Name, server.Type)
 			if err := conn.UpdateDefaultSettings(c.Request.Context(), newSettings); err != nil {
 				errorMsg := fmt.Sprintf("Failed to update DEFAULT settings on %s: %v", server.Name, err)
-				config.DebugLog("Error: %s", errorMsg)
+				log.Printf("⚠️ %s", errorMsg)
 				errors = append(errors, errorMsg)
 			} else {
 				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)

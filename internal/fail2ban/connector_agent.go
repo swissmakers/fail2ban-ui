@@ -410,6 +410,21 @@ func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath
 
 // UpdateDefaultSettings implements Connector.
 func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
+	// Check jail.local integrity first
+	exists, hasUI, chkErr := ac.CheckJailLocalIntegrity(ctx)
+	if chkErr != nil {
+		config.DebugLog("Warning: could not check jail.local integrity on agent %s: %v", ac.server.Name, chkErr)
+	}
+	if exists && !hasUI {
+		return fmt.Errorf("jail.local on agent server %s is not managed by Fail2ban-UI - skipping settings update (please migrate your jail.local manually)", ac.server.Name)
+	}
+	if !exists {
+		config.DebugLog("jail.local does not exist on agent server %s - initializing fresh managed file", ac.server.Name)
+		if err := ac.EnsureJailLocalStructure(ctx); err != nil {
+			return fmt.Errorf("failed to initialize jail.local on agent server %s: %w", ac.server.Name, err)
+		}
+	}
+
 	// Convert IgnoreIPs array to space-separated string
 	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
 	if ignoreIPStr == "" {

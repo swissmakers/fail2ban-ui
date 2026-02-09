@@ -1555,10 +1555,28 @@ PYEOF
 func (sc *SSHConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
 	jailLocalPath := "/etc/fail2ban/jail.local"
 
-	// Read existing file if it exists
+	// Check jail.local integrity first
+	exists, hasUI, chkErr := sc.CheckJailLocalIntegrity(ctx)
+	if chkErr != nil {
+		config.DebugLog("Warning: could not check jail.local integrity on %s: %v", sc.server.Name, chkErr)
+	}
+
+	if exists && !hasUI {
+		// File belongs to the user – never overwrite
+		return fmt.Errorf("jail.local on server %s is not managed by Fail2ban-UI - skipping settings update (please migrate your jail.local manually)", sc.server.Name)
+	}
+
+	if !exists {
+		// File was deleted (e.g. user finished migration) – create a fresh managed file
+		config.DebugLog("jail.local does not exist on server %s - initializing fresh managed file", sc.server.Name)
+		if err := sc.EnsureJailLocalStructure(ctx); err != nil {
+			return fmt.Errorf("failed to initialize jail.local on server %s: %w", sc.server.Name, err)
+		}
+	}
+
+	// Read existing file
 	existingContent, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
 	if err != nil {
-		// File doesn't exist, create new one
 		existingContent = ""
 	}
 

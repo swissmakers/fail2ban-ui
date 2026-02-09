@@ -1071,12 +1071,33 @@ func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 	config.DebugLog("UpdateDefaultSettingsLocal called")
 	localPath := "/etc/fail2ban/jail.local"
 
-	// Read existing file if it exists
+	// Check jail.local integrity first
 	var existingContent string
+	fileExists := false
 	if content, err := os.ReadFile(localPath); err == nil {
 		existingContent = string(content)
+		fileExists = len(strings.TrimSpace(existingContent)) > 0
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read jail.local: %w", err)
+	}
+
+	hasUIAction := strings.Contains(existingContent, "ui-custom-action")
+
+	if fileExists && !hasUIAction {
+		// File belongs to the user – never overwrite
+		return fmt.Errorf("jail.local is not managed by Fail2ban-UI - skipping settings update (please migrate your jail.local manually)")
+	}
+
+	if !fileExists {
+		// File was deleted (e.g. user finished migration); create a fresh managed file
+		config.DebugLog("jail.local does not exist - initializing fresh managed file")
+		if err := config.EnsureJailLocalStructure(); err != nil {
+			return fmt.Errorf("failed to initialize jail.local: %w", err)
+		}
+		// Re-read the freshly created file
+		if content, err := os.ReadFile(localPath); err == nil {
+			existingContent = string(content)
+		}
 	}
 
 	// Remove commented lines (lines starting with #) but preserve:
