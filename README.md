@@ -322,6 +322,18 @@ On page load, the footer can check the latest release on GitHub to show "Latest"
 
 When disabled, the footer still shows the current version but does not perform any request to GitHub.
 
+**Experimental: Automatic jail.local Migration**
+
+If your Fail2ban server has a pre-existing `jail.local` with custom jails, Fail2ban-UI **will not** migrate them automatically by default. It is always best to migrate a pre-existing `jail.local` by hand (move each jail section into its own file under `jail.d/`).
+
+To enable the **experimental** automatic migration, set:
+
+```bash
+-e JAIL_AUTOMIGRATION=true  \
+```
+
+> **Warning:** This feature is experimental. A backup of your original `jail.local` should be created before migration, but manual migration is strongly recommended for production systems.
+
 **OIDC Authentication Configuration (Optional)**
 
 Enable OIDC authentication by setting the required environment variables. This protects the web UI with your identity provider. The logout flow automatically redirects back to the login page after successful provider logout.

@@ -354,6 +354,9 @@ function submitServerForm(event) {
         return;
       }
       showToast(t('servers.form.success', 'Server saved successfully.'), 'success');
+      if (data.jailLocalWarning) {
+        showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
+      }
       var saved = data.server || {};
       currentServerId = saved.id || currentServerId;
       return loadServers().then(function() {
@@ -475,6 +478,9 @@ function testServerConnection(serverId) {
         return;
       }
       showToast(t(data.messageKey || 'servers.actions.test_success', data.message || 'Connection successful'), 'success');
+      if (data.jailLocalWarning) {
+        showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
+      }
     })
     .catch(function(err) {
       showToast(t('servers.actions.test_failure', 'Connection failed') + ': ' + err, 'error');

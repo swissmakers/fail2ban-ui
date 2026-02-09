@@ -63,7 +63,8 @@ func SetWebSocketHub(hub *Hub) {
 
 // SummaryResponse is what we return from /api/summary
 type SummaryResponse struct {
-	Jails []fail2ban.JailInfo `json:"jails"`
+	Jails            []fail2ban.JailInfo `json:"jails"`
+	JailLocalWarning bool                `json:"jailLocalWarning,omitempty"`
 }
 
 type emailDetail struct {
@@ -150,6 +151,13 @@ func SummaryHandler(c *gin.Context) {
 	resp := SummaryResponse{
 		Jails: jailInfos,
 	}
+
+	// Check jail.local integrity on every summary request so the dashboard
+	// can display a persistent warning banner when the file is not managed by us.
+	if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil && exists && !hasUI {
+		resp.JailLocalWarning = true
+	}
+
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -595,41 +603,53 @@ func UpsertServerHandler(c *gin.Context) {
 	}
 
 	// Ensure jail.local structure is properly initialized for newly enabled/added servers
+	var jailLocalWarning bool
 	if justEnabled || !wasEnabled {
 		conn, err := fail2ban.GetManager().Connector(server.ID)
 		if err == nil {
+			// EnsureJailLocalStructure respects user-owned files:
+			//   - file missing --> creates it
+			//   - file is ours --> updates it
+			//   - file is user's own --> leave it alone
 			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
 				config.DebugLog("Warning: failed to ensure jail.local structure for server %s: %v", server.Name, err)
-				// Don't fail the request, just log the warning
 			} else {
 				config.DebugLog("Successfully ensured jail.local structure for server %s", server.Name)
+			}
 
-				// If the server was just enabled, try to restart fail2ban and perform a basic health check.
-				if justEnabled {
-					if err := conn.Restart(c.Request.Context()); err != nil {
-						// Surface restart failures to the UI so the user sees that the service did not restart.
-						msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
-						config.DebugLog("Warning: %s", msg)
-						c.JSON(http.StatusInternalServerError, gin.H{
-							"error":  msg,
-							"server": server,
-						})
-						return
+			// Check integrity AFTER ensuring structure so fresh servers don't
+			// trigger a false-positive warning.
+			if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil && exists && !hasUI {
+				jailLocalWarning = true
+				log.Printf("⚠️ Server %s: jail.local is not managed by Fail2ban-UI. Please migrate your jail.local manually (see documentation).", server.Name)
+			}
+
+			// If the server was just enabled, try to restart fail2ban and perform a basic health check.
+			if justEnabled {
+				if err := conn.Restart(c.Request.Context()); err != nil {
+					msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
+					config.DebugLog("Warning: %s", msg)
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error":  msg,
+						"server": server,
+					})
+					return
+				} else {
+					if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
+						config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
 					} else {
-						// Basic health check: attempt to fetch jail infos, which runs fail2ban-client status.
-						if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
-							config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
-							// Again, we log instead of failing the request to avoid breaking existing flows.
-						} else {
-							config.DebugLog("Fail2ban service appears healthy on server %s after restart", server.Name)
-						}
+						config.DebugLog("Fail2ban service appears healthy on server %s after restart", server.Name)
 					}
 				}
 			}
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"server": server})
+	resp := gin.H{"server": server}
+	if jailLocalWarning {
+		resp["jailLocalWarning"] = true
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // DeleteServerHandler removes a server configuration.
@@ -760,7 +780,14 @@ func TestServerHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"messageKey": "servers.actions.test_success"})
+	// Check jail.local integrity: if it exists but is not managed by fail2ban-ui, warn the user
+	resp := gin.H{"messageKey": "servers.actions.test_success"}
+	if exists, hasUI, err := conn.CheckJailLocalIntegrity(ctx); err == nil {
+		if exists && !hasUI {
+			resp["jailLocalWarning"] = true
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // HandleBanNotification processes Fail2Ban notifications, checks geo-location, stores the event, and sends alerts.

@@ -20,6 +20,8 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
+// sshEnsureActionScript only deploys action.d/ui-custom-action.conf.
+// jail.local is managed by EnsureJailLocalStructure
 const sshEnsureActionScript = `python3 - <<'PY'
 import base64
 import pathlib
@@ -30,40 +32,6 @@ try:
     action_dir.mkdir(parents=True, exist_ok=True)
     action_cfg = base64.b64decode("__PAYLOAD__").decode("utf-8")
     (action_dir / "ui-custom-action.conf").write_text(action_cfg)
-    
-    jail_file = pathlib.Path("/etc/fail2ban/jail.local")
-    if not jail_file.exists():
-        jail_file.write_text("[DEFAULT]\n")
-    
-    lines = jail_file.read_text().splitlines()
-    already = any("Custom Fail2Ban action applied by fail2ban-ui" in line for line in lines)
-    if not already:
-        new_lines = []
-        inserted = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("action") and "ui-custom-action" not in stripped and not inserted:
-                if not stripped.startswith("#"):
-                    new_lines.append("# " + line)
-                else:
-                    new_lines.append(line)
-                new_lines.append("# Custom Fail2Ban action applied by fail2ban-ui")
-                new_lines.append("action = %(action_mwlg)s")
-                inserted = True
-                continue
-            new_lines.append(line)
-        if not inserted:
-            insert_at = None
-            for idx, value in enumerate(new_lines):
-                if value.strip().startswith("[DEFAULT]"):
-                    insert_at = idx + 1
-                    break
-            if insert_at is None:
-                new_lines.append("[DEFAULT]")
-                insert_at = len(new_lines)
-            new_lines.insert(insert_at, "# Custom Fail2Ban action applied by fail2ban-ui")
-            new_lines.insert(insert_at + 1, "action = %(action_mwlg)s")
-        jail_file.write_text("\n".join(new_lines) + "\n")
 except Exception as e:
     sys.stderr.write(f"Error: {e}\n")
     sys.exit(1)
@@ -1785,22 +1753,53 @@ PY`, escapeForShell(jailLocalPath), escapeForShell(ignoreIPStr), escapeForShell(
 	return err
 }
 
+// CheckJailLocalIntegrity implements Connector.
+func (sc *SSHConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
+	const jailLocalPath = "/etc/fail2ban/jail.local"
+	output, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
+	if err != nil {
+		// "No such file" means jail.local does not exist – that's fine
+		if strings.Contains(err.Error(), "No such file") || strings.Contains(output, "No such file") {
+			return false, false, nil
+		}
+		return false, false, fmt.Errorf("failed to read jail.local on %s: %w", sc.server.Name, err)
+	}
+	hasUIAction := strings.Contains(output, "ui-custom-action")
+	return true, hasUIAction, nil
+}
+
 // EnsureJailLocalStructure implements Connector.
-// For SSH connectors we:
-//  1. Migrate any legacy jails out of jail.local into jail.d/*.local
-//  2. Rebuild /etc/fail2ban/jail.local with a clean, managed structure
-//     (banner, [DEFAULT] section based on current settings, and action_mwlg/action override).
+// If JAIL_AUTOMIGRATION=true, it first migrates any legacy jails to jail.d/.
 func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
 	jailLocalPath := "/etc/fail2ban/jail.local"
+
+	// Check whether jail.local already exists and whether it belongs to us
+	exists, hasUI, chkErr := sc.CheckJailLocalIntegrity(ctx)
+	if chkErr != nil {
+		config.DebugLog("Warning: could not check jail.local integrity on %s: %v", sc.server.Name, chkErr)
+		// Proceed cautiously; treat as "not ours" if the check itself failed.
+	}
+	if exists && !hasUI {
+		// The file belongs to the user; never overwrite it.
+		config.DebugLog("jail.local on server %s exists but is not managed by Fail2ban-UI - skipping overwrite", sc.server.Name)
+		return nil
+	}
+
+	// Run experimental migration if enabled
+	if isJailAutoMigrationEnabled() {
+		config.DebugLog("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for SSH server %s", sc.server.Name)
+		if err := sc.MigrateJailsFromJailLocalRemote(ctx); err != nil {
+			return fmt.Errorf("failed to migrate legacy jails from jail.local on remote server %s: %w", sc.server.Name, err)
+		}
+	}
+
+	// Build the managed jail.local content
 	settings := config.GetSettings()
 
-	// Convert IgnoreIPs array to space-separated string
 	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
 	if ignoreIPStr == "" {
 		ignoreIPStr = "127.0.0.1/8 ::1"
 	}
-
-	// Set default banaction values if not set
 	banactionVal := settings.Banaction
 	if banactionVal == "" {
 		banactionVal = "nftables-multiport"
@@ -1814,7 +1813,6 @@ func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
 		chainVal = "INPUT"
 	}
 
-	// Build the new jail.local content in Go (mirrors local ensureJailLocalStructure)
 	banner := config.JailLocalBanner()
 
 	defaultSection := fmt.Sprintf(`[DEFAULT]
@@ -1859,15 +1857,6 @@ action = %(action_mwlg)s
 	// Escape single quotes for safe use in a single-quoted heredoc
 	escaped := strings.ReplaceAll(content, "'", "'\"'\"'")
 
-	// IMPORTANT: Run migration FIRST before ensuring structure.
-	// This is because EnsureJailLocalStructure may overwrite jail.local,
-	// which would destroy any jail sections that need to be migrated.
-	// If migration fails for any reason, we SHOULD NOT overwrite jail.local,
-	// otherwise legacy jails would be lost.
-	if err := sc.MigrateJailsFromJailLocalRemote(ctx); err != nil {
-		return fmt.Errorf("failed to migrate legacy jails from jail.local on remote server %s: %w", sc.server.Name, err)
-	}
-
 	// Write the rebuilt content via heredoc over SSH
 	writeScript := fmt.Sprintf(`cat > %s <<'JAILLOCAL'
 %s
@@ -1879,6 +1868,7 @@ JAILLOCAL
 }
 
 // MigrateJailsFromJailLocalRemote migrates non-commented jail sections from jail.local to jail.d/*.local files on remote system.
+// EXPERIMENTAL: Only called when JAIL_AUTOMIGRATION=true. It is always best to migrate a pre-existing jail.local by hand.
 func (sc *SSHConnector) MigrateJailsFromJailLocalRemote(ctx context.Context) error {
 	jailLocalPath := "/etc/fail2ban/jail.local"
 	jailDPath := "/etc/fail2ban/jail.d"
@@ -1946,7 +1936,7 @@ func (sc *SSHConnector) MigrateJailsFromJailLocalRemote(ctx context.Context) err
 		writeScript := fmt.Sprintf(`cat > %s <<'JAILEOF'
 %s
 JAILEOF
-'`, jailFilePath, escapedContent)
+`, jailFilePath, escapedContent)
 		if _, err := sc.runRemoteCommand(ctx, []string{writeScript}); err != nil {
 			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
 		}
@@ -1962,7 +1952,7 @@ JAILEOF
 		writeLocalScript := fmt.Sprintf(`cat > %s <<'LOCALEOF'
 %s
 LOCALEOF
-'`, jailLocalPath, escapedDefault)
+`, jailLocalPath, escapedDefault)
 		if _, err := sc.runRemoteCommand(ctx, []string{writeLocalScript}); err != nil {
 			return fmt.Errorf("failed to rewrite jail.local: %w", err)
 		}

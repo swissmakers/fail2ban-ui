@@ -43,6 +43,10 @@ type Connector interface {
 	// Jail local structure management
 	EnsureJailLocalStructure(ctx context.Context) error
 
+	// CheckJailLocalIntegrity checks whether jail.local exists and contains the
+	// ui-custom-action marker, which indicates it is managed by Fail2ban-UI.
+	CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error)
+
 	// Jail and filter creation/deletion
 	CreateJail(ctx context.Context, jailName, content string) error
 	DeleteJail(ctx context.Context, jailName string) error
@@ -176,11 +180,13 @@ func updateConnectorAction(ctx context.Context, conn Connector) error {
 func newConnectorForServer(server config.Fail2banServer) (Connector, error) {
 	switch server.Type {
 	case "local":
-		// IMPORTANT: Run migration FIRST before ensuring structure
-		// This ensures any legacy jails in jail.local are migrated to jail.d/*.local
-		// before ensureJailLocalStructure() overwrites jail.local
-		if err := MigrateJailsFromJailLocal(); err != nil {
-			return nil, fmt.Errorf("failed to initialise local fail2ban connector for %s: %w", server.Name, err)
+		// Run migration FIRST before ensuring structure — but only when
+		// the experimental JAIL_AUTOMIGRATION=true env var is set.
+		if isJailAutoMigrationEnabled() {
+			config.DebugLog("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for local server %s", server.Name)
+			if err := MigrateJailsFromJailLocal(); err != nil {
+				return nil, fmt.Errorf("failed to initialise local fail2ban connector for %s: %w", server.Name, err)
+			}
 		}
 
 		if err := config.EnsureLocalFail2banAction(server); err != nil {
