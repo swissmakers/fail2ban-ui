@@ -61,11 +61,5 @@ for dir in "${DATA_DIRS[@]}"; do
   fi
 done
 
-# remove generated .env
-if [ -f "${SCRIPT_DIR}/.env" ]; then
-  rm -f "${SCRIPT_DIR}/.env"
-  info "  Removed .env"
-fi
-
 echo ""
 info "${BOLD}OIDC dev environment cleaned.${RESET} Run 'podman compose up -d' (or docker compose) to start fresh."
