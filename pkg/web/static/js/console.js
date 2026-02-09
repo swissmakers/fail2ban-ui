@@ -151,14 +151,15 @@ function appendConsoleLog(message, timestamp) {
       .replace(/'/g, '&#039;');
   }
   
-  // Color code different log levels
+  // Color code different log levels using precise patterns to avoid
+  // false positives from SSH flags (e.g. "-o LogLevel=ERROR") or
+  // substrings like "stderr".
   let logClass = 'text-green-400';
-  const msgLower = message.toLowerCase();
-  if (msgLower.includes('error') || msgLower.includes('fatal')) {
+  if (/❌/.test(message) || /\b(?:error|fatal)\s*:/i.test(message) || /\bfailed\s+to\b/i.test(message)) {
     logClass = 'text-red-400';
-  } else if (msgLower.includes('warning') || msgLower.includes('warn')) {
+  } else if (/⚠️/.test(message) || /\b(?:warning|warn)\s*:/i.test(message)) {
     logClass = 'text-yellow-400';
-  } else if (msgLower.includes('info') || msgLower.includes('debug')) {
+  } else if (/✅/.test(message) || /\b(?:info|debug)\s*:/i.test(message) || /\bsuccessfully\b/i.test(message)) {
     logClass = 'text-blue-400';
   }
   
