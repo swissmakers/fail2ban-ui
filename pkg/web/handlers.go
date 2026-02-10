@@ -886,13 +886,10 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		return nil
 	}
 
-	// Send email notification
+	// Send email notification (best-effort; the ban event is already recorded)
 	if err := sendBanAlert(ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
-		log.Printf("❌ Failed to send alert email: %v", err)
-		return err
+		log.Printf("❌ Failed to send ban alert email: %v", err)
 	}
-
-	log.Printf("✅ Email alert sent for banned IP %s (%s)", ip, displayCountry)
 	return nil
 }
 
@@ -973,13 +970,10 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		return nil
 	}
 
-	// Send email notification
+	// Send email notification (best-effort; the unban event is already recorded)
 	if err := sendUnbanAlert(ip, jail, hostname, whoisData, country, settings); err != nil {
 		log.Printf("❌ Failed to send unban alert email: %v", err)
-		return err
 	}
-
-	log.Printf("✅ Email alert sent for unbanned IP %s (%s)", ip, displayCountry)
 	return nil
 }
 
@@ -2587,7 +2581,7 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	// Skip sending if the destination email is still the default placeholder
 	if strings.EqualFold(strings.TrimSpace(to), "alerts@example.com") {
 		log.Printf("⚠️ sendEmail skipped: destination email is still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
-		return errors.New("destination email is still the default (alerts@example.com) - please configure a valid address in Settings → Alert Settings")
+		return nil
 	}
 
 	// Validate SMTP settings
