@@ -75,9 +75,21 @@ function showBanEventToast(event) {
     + '      ' + escapeHtml(server) + ' • ' + escapeHtml(country)
     + '    </div>'
     + '  </div>'
+    + '  <button class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="Close">'
+    + '    <i class="fas fa-times text-sm"></i>'
+    + '  </button>'
     + '</div>';
-  
-  // Add click handler to scroll to ban events table
+
+  // Close button handler
+  var closeBtn = toast.querySelector('button');
+  closeBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    clearTimeout(autoRemoveTimer);
+    toast.classList.remove('show');
+    setTimeout(function() { toast.remove(); }, 300);
+  });
+
+  // Click on toast body scrolls to ban events table
   toast.addEventListener('click', function() {
     var logSection = document.getElementById('logOverviewSection');
     if (logSection) {
@@ -92,7 +104,7 @@ function showBanEventToast(event) {
     toast.classList.add('show');
   });
   
-  setTimeout(function() {
+  var autoRemoveTimer = setTimeout(function() {
     toast.classList.remove('show');
     setTimeout(function() {
       toast.remove();
