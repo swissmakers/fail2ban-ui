@@ -313,7 +313,11 @@
             <label for="callbackURL" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.callback_url">Fail2ban Callback URL</label>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="callbackURL"
                    data-i18n-placeholder="settings.callback_url_placeholder" placeholder="http://127.0.0.1:8080" />
-            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.callback_url_hint">This URL is used by all Fail2Ban instances to send ban alerts back to Fail2Ban UI. For local deployments, use the same port as Fail2Ban UI (e.g., http://127.0.0.1:8080). For reverse proxy setups, use your TLS-encrypted endpoint (e.g., https://fail2ban.example.com).</p>
+            <p class="mt-1 text-sm text-gray-500" id="callbackUrlEnvHint" style="display: none;">
+              <span data-i18n="settings.callback_url_env_set">Callback URL is set via CALLBACK_URL environment variable:</span>
+              <span id="callbackUrlEnvValue"></span>. <span data-i18n="settings.callback_url_env_hint">To change the callback URL via Web UI, remove the CALLBACK_URL environment variable and restart the container.</span>
+            </p>
+            <p class="text-xs text-gray-500 mt-1" id="callbackUrlDefaultHint" data-i18n="settings.callback_url_hint">This URL is used by all Fail2Ban instances to send ban alerts back to Fail2Ban UI. For local deployments, use the same port as Fail2Ban UI (e.g., http://127.0.0.1:8080). For reverse proxy setups, use your TLS-encrypted endpoint (e.g., https://fail2ban.example.com).</p>
           </div>
 
           <div class="mb-4">

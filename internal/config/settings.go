@@ -1321,6 +1321,15 @@ func GetPortFromEnv() (int, bool) {
 	return 0, false
 }
 
+// GetCallbackURLFromEnv returns the CALLBACK_URL environment variable value and whether it's set.
+func GetCallbackURLFromEnv() (string, bool) {
+	v := strings.TrimSpace(os.Getenv("CALLBACK_URL"))
+	if v == "" {
+		return "", false
+	}
+	return strings.TrimRight(v, "/"), true
+}
+
 // GetBindAddressFromEnv returns the BIND_ADDRESS environment variable value if set, and whether it's set
 // If not set, returns "0.0.0.0" as the default bind address
 // Validates that the address is a valid IP address format

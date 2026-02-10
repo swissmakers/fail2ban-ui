@@ -2078,6 +2078,14 @@ func GetSettingsHandler(c *gin.Context) {
 		response["port"] = envPort
 	}
 
+	// Check if CALLBACK_URL environment variable is set
+	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
+	response["callbackUrlEnvSet"] = envCallbackURLSet
+	response["callbackUrlFromEnv"] = envCallbackURL
+	if envCallbackURLSet {
+		response["callbackUrl"] = envCallbackURL
+	}
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -2101,6 +2109,12 @@ func UpdateSettingsHandler(c *gin.Context) {
 	if envPortSet {
 		// Don't allow port changes when PORT env is set
 		req.Port = envPort
+	}
+
+	// Check if CALLBACK_URL environment variable is set - if so, ignore changes from request
+	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
+	if envCallbackURLSet {
+		req.CallbackURL = envCallbackURL
 	}
 
 	oldSettings := config.GetSettings()
