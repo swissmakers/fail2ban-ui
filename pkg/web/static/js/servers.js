@@ -406,6 +406,41 @@ function populateSSHKeySelect(keys, selected) {
   if (typeof updateTranslations === 'function') {
     updateTranslations();
   }
+  // Sync readonly state of the path input
+  syncSSHKeyPathReadonly();
+  // Attach change handler once
+  initSSHKeySelectHandler();
+}
+
+// Toggle the SSH key path input between readonly (key selected) and editable (manual entry).
+function syncSSHKeyPathReadonly() {
+  var select = document.getElementById('serverSSHKeySelect');
+  var input = document.getElementById('serverSSHKey');
+  if (!select || !input) return;
+  if (select.value) {
+    input.readOnly = true;
+    input.classList.add('bg-gray-100', 'text-gray-500');
+  } else {
+    input.readOnly = false;
+    input.classList.remove('bg-gray-100', 'text-gray-500');
+  }
+}
+
+// Attach a change listener on the select dropdown (once).
+var _sshKeySelectHandlerBound = false;
+function initSSHKeySelectHandler() {
+  if (_sshKeySelectHandlerBound) return;
+  var select = document.getElementById('serverSSHKeySelect');
+  if (!select) return;
+  _sshKeySelectHandlerBound = true;
+  select.addEventListener('change', function() {
+    var input = document.getElementById('serverSSHKey');
+    if (!input) return;
+    if (select.value) {
+      input.value = select.value;
+    }
+    syncSSHKeyPathReadonly();
+  });
 }
 
 function loadSSHKeys() {
