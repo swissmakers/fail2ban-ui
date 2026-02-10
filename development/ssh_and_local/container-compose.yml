@@ -38,7 +38,8 @@ services:
     environment:
       - PORT=3080
       - BIND_ADDRESS=0.0.0.0
-
+      - CALLBACK_URL=http://10.88.0.1:3080
+      #- CALLBACK_SECRET=**************************************************
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
       - ./config:/config:Z

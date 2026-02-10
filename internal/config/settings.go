@@ -623,8 +623,12 @@ func setDefaultsLocked() {
 	} else if currentSettings.Port == 0 {
 		currentSettings.Port = 8080
 	}
-	// Auto-update callback URL if it's empty or still using the old default localhost pattern
-	if currentSettings.CallbackURL == "" {
+	// CALLBACK_URL env var always takes priority (external address where Fail2ban
+	// instances send back ban/unban API calls). If not set, fall back to the
+	// stored value or auto-generate from the port.
+	if cbURL := os.Getenv("CALLBACK_URL"); cbURL != "" {
+		currentSettings.CallbackURL = strings.TrimRight(strings.TrimSpace(cbURL), "/")
+	} else if currentSettings.CallbackURL == "" {
 		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 	} else {
 		// If callback URL matches the old default pattern, update it to match the current port
@@ -633,8 +637,11 @@ func setDefaultsLocked() {
 			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 		}
 	}
-	// Generate callback secret if not set (only generate once, never regenerate)
-	if currentSettings.CallbackSecret == "" {
+	// CALLBACK_SECRET env var always takes priority.
+	// If not set, keep stored value or generate a new one (only once).
+	if cbSecret := os.Getenv("CALLBACK_SECRET"); cbSecret != "" {
+		currentSettings.CallbackSecret = strings.TrimSpace(cbSecret)
+	} else if currentSettings.CallbackSecret == "" {
 		currentSettings.CallbackSecret = generateCallbackSecret()
 	}
 	if currentSettings.AlertCountries == nil {

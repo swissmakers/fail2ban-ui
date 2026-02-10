@@ -302,6 +302,26 @@ By default, the HTTP server listens on `0.0.0.0`. To bind to a specific interfac
 -e BIND_ADDRESS=127.0.0.1  \
 ```
 
+**Callback URL** (for remote / containerised Fail2ban instances)
+
+The callback URL is the external address that each Fail2ban instance uses to send ban/unban action calls back to Fail2ban-UI (via `/api/ban` and `/api/unban`). By default it is set to `http://127.0.0.1:<PORT>`, which works when Fail2ban runs on the same host or in the same network namespace. For container setups (bridge networking) or remote Fail2ban servers, override it with an address that is reachable from those instances:
+
+```bash
+-e CALLBACK_URL=http://10.88.0.1:3080 \
+```
+
+> When `CALLBACK_URL` is set, the environment variable always takes priority over the value stored in the database or entered in the UI settings.
+
+**Callback Secret**
+
+The callback secret is a shared token used to authenticate ban/unban callbacks from Fail2ban instances. If not set, Fail2ban-UI auto-generates a secure random secret on first start. You can pin a specific secret via environment variable (e.g. when running multiple replicas or when you need a deterministic value):
+
+```bash
+-e CALLBACK_SECRET=your-secure-shared-secret \
+```
+
+> When `CALLBACK_SECRET` is set, the environment variable always takes priority over the auto-generated or stored value.
+
 **Disable External IP Lookup** (Privacy / air-gapped)
 
 By default, the web UI displays your external IP address by querying external services. For privacy reasons, you can disable this feature using the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable:
@@ -694,13 +714,18 @@ The **Fail2Ban Callback URL** is a critical setting that determines how Fail2Ban
    - The callback URL automatically updates when you change the server port
    - Example: If Fail2Ban UI runs on port `3080`, use `http://127.0.0.1:3080`
 
-2. **Reverse Proxy Setups:**
+2. **Container / Remote Deployments:**
+   - Fail2ban instances running in a different network namespace (e.g. bridge-mode containers) cannot reach `127.0.0.1` of the host. Set `CALLBACK_URL` to an address they can reach, e.g. the Podman/Docker gateway IP: `-e CALLBACK_URL=http://10.88.0.1:3080`
+   - For remote Fail2Ban servers on other hosts, use the LAN IP or DNS name of the Fail2Ban-UI host
+
+3. **Reverse Proxy Setups:**
    - Use your TLS-encrypted endpoint: `https://fail2ban.example.com`
    - Ensure the reverse proxy forwards requests to the correct Fail2Ban UI port
    - The callback URL must be accessible from all Fail2Ban instances (local and remote)
 
-3. **Port Changes:**
+4. **Port Changes:**
    - When you change the Fail2Ban UI port (via `PORT` environment variable or UI settings), the callback URL automatically updates if it's using the default localhost pattern
+   - When `CALLBACK_URL` is set via environment variable, the env var always takes priority over automatic updates
 
 **Privacy Settings**
 
