@@ -63,7 +63,8 @@ func SetWebSocketHub(hub *Hub) {
 
 // SummaryResponse is what we return from /api/summary
 type SummaryResponse struct {
-	Jails []fail2ban.JailInfo `json:"jails"`
+	Jails            []fail2ban.JailInfo `json:"jails"`
+	JailLocalWarning bool                `json:"jailLocalWarning,omitempty"`
 }
 
 type emailDetail struct {
@@ -150,6 +151,22 @@ func SummaryHandler(c *gin.Context) {
 	resp := SummaryResponse{
 		Jails: jailInfos,
 	}
+
+	// Check jail.local integrity on every summary request so the dashboard
+	// can display a persistent warning banner when the file is not managed by us.
+	if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil {
+		if exists && !hasUI {
+			resp.JailLocalWarning = true
+		} else if !exists {
+			// File was removed (user finished migration) – initialize a fresh managed file
+			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
+				config.DebugLog("Warning: failed to initialize jail.local on summary request: %v", err)
+			} else {
+				config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -595,41 +612,53 @@ func UpsertServerHandler(c *gin.Context) {
 	}
 
 	// Ensure jail.local structure is properly initialized for newly enabled/added servers
+	var jailLocalWarning bool
 	if justEnabled || !wasEnabled {
 		conn, err := fail2ban.GetManager().Connector(server.ID)
 		if err == nil {
+			// EnsureJailLocalStructure respects user-owned files:
+			//   - file missing --> creates it
+			//   - file is ours --> updates it
+			//   - file is user's own --> leave it alone
 			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
 				config.DebugLog("Warning: failed to ensure jail.local structure for server %s: %v", server.Name, err)
-				// Don't fail the request, just log the warning
 			} else {
 				config.DebugLog("Successfully ensured jail.local structure for server %s", server.Name)
+			}
 
-				// If the server was just enabled, try to restart fail2ban and perform a basic health check.
-				if justEnabled {
-					if err := conn.Restart(c.Request.Context()); err != nil {
-						// Surface restart failures to the UI so the user sees that the service did not restart.
-						msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
-						config.DebugLog("Warning: %s", msg)
-						c.JSON(http.StatusInternalServerError, gin.H{
-							"error":  msg,
-							"server": server,
-						})
-						return
+			// Check integrity AFTER ensuring structure so fresh servers don't
+			// trigger a false-positive warning.
+			if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil && exists && !hasUI {
+				jailLocalWarning = true
+				log.Printf("⚠️ Server %s: jail.local is not managed by Fail2ban-UI. Please migrate your jail.local manually (see documentation).", server.Name)
+			}
+
+			// If the server was just enabled, try to restart fail2ban and perform a basic health check.
+			if justEnabled {
+				if err := conn.Restart(c.Request.Context()); err != nil {
+					msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
+					config.DebugLog("Warning: %s", msg)
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error":  msg,
+						"server": server,
+					})
+					return
+				} else {
+					if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
+						config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
 					} else {
-						// Basic health check: attempt to fetch jail infos, which runs fail2ban-client status.
-						if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
-							config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
-							// Again, we log instead of failing the request to avoid breaking existing flows.
-						} else {
-							config.DebugLog("Fail2ban service appears healthy on server %s after restart", server.Name)
-						}
+						config.DebugLog("Fail2ban service appears healthy on server %s after restart", server.Name)
 					}
 				}
 			}
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"server": server})
+	resp := gin.H{"server": server}
+	if jailLocalWarning {
+		resp["jailLocalWarning"] = true
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // DeleteServerHandler removes a server configuration.
@@ -760,7 +789,21 @@ func TestServerHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"messageKey": "servers.actions.test_success"})
+	// Check jail.local integrity: if it exists but is not managed by fail2ban-ui, warn the user.
+	// If the file was removed (user finished migration), initialize a fresh managed file.
+	resp := gin.H{"messageKey": "servers.actions.test_success"}
+	if exists, hasUI, err := conn.CheckJailLocalIntegrity(ctx); err == nil {
+		if exists && !hasUI {
+			resp["jailLocalWarning"] = true
+		} else if !exists {
+			if err := conn.EnsureJailLocalStructure(ctx); err != nil {
+				config.DebugLog("Warning: failed to initialize jail.local on test request: %v", err)
+			} else {
+				config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
+			}
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // HandleBanNotification processes Fail2Ban notifications, checks geo-location, stores the event, and sends alerts.
@@ -843,13 +886,10 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		return nil
 	}
 
-	// Send email notification
+	// Send email notification (best-effort; the ban event is already recorded)
 	if err := sendBanAlert(ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
-		log.Printf("❌ Failed to send alert email: %v", err)
-		return err
+		log.Printf("❌ Failed to send ban alert email: %v", err)
 	}
-
-	log.Printf("✅ Email alert sent for banned IP %s (%s)", ip, displayCountry)
 	return nil
 }
 
@@ -930,13 +970,10 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		return nil
 	}
 
-	// Send email notification
+	// Send email notification (best-effort; the unban event is already recorded)
 	if err := sendUnbanAlert(ip, jail, hostname, whoisData, country, settings); err != nil {
 		log.Printf("❌ Failed to send unban alert email: %v", err)
-		return err
 	}
-
-	log.Printf("✅ Email alert sent for unbanned IP %s (%s)", ip, displayCountry)
 	return nil
 }
 
@@ -2035,6 +2072,14 @@ func GetSettingsHandler(c *gin.Context) {
 		response["port"] = envPort
 	}
 
+	// Check if CALLBACK_URL environment variable is set
+	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
+	response["callbackUrlEnvSet"] = envCallbackURLSet
+	response["callbackUrlFromEnv"] = envCallbackURL
+	if envCallbackURLSet {
+		response["callbackUrl"] = envCallbackURL
+	}
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -2058,6 +2103,12 @@ func UpdateSettingsHandler(c *gin.Context) {
 	if envPortSet {
 		// Don't allow port changes when PORT env is set
 		req.Port = envPort
+	}
+
+	// Check if CALLBACK_URL environment variable is set - if so, ignore changes from request
+	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
+	if envCallbackURLSet {
+		req.CallbackURL = envCallbackURL
 	}
 
 	oldSettings := config.GetSettings()
@@ -2129,10 +2180,12 @@ func UpdateSettingsHandler(c *gin.Context) {
 		oldSettings.DefaultJailEnable != newSettings.DefaultJailEnable ||
 		ignoreIPsChanged ||
 		oldSettings.Bantime != newSettings.Bantime ||
+		oldSettings.BantimeRndtime != newSettings.BantimeRndtime ||
 		oldSettings.Findtime != newSettings.Findtime ||
 		oldSettings.Maxretry != newSettings.Maxretry ||
 		oldSettings.Banaction != newSettings.Banaction ||
-		oldSettings.BanactionAllports != newSettings.BanactionAllports
+		oldSettings.BanactionAllports != newSettings.BanactionAllports ||
+		oldSettings.Chain != newSettings.Chain
 
 	if defaultSettingsChanged {
 		config.DebugLog("Fail2Ban DEFAULT settings changed, pushing to all enabled servers")
@@ -2143,7 +2196,7 @@ func UpdateSettingsHandler(c *gin.Context) {
 			config.DebugLog("Updating DEFAULT settings on server: %s (type: %s)", server.Name, server.Type)
 			if err := conn.UpdateDefaultSettings(c.Request.Context(), newSettings); err != nil {
 				errorMsg := fmt.Sprintf("Failed to update DEFAULT settings on %s: %v", server.Name, err)
-				config.DebugLog("Error: %s", errorMsg)
+				log.Printf("⚠️ %s", errorMsg)
 				errors = append(errors, errorMsg)
 			} else {
 				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)
@@ -2348,6 +2401,10 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 	// TODO: -> maybe we store [DEFAULT] block in memory, replace lines
 	// or do a line-based approach. Example is simplistic:
 
+	chain := s.Chain
+	if chain == "" {
+		chain = "INPUT"
+	}
 	newLines := []string{
 		"[DEFAULT]",
 		fmt.Sprintf("enabled = %t", s.DefaultJailEnable),
@@ -2358,8 +2415,12 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 		fmt.Sprintf("maxretry = %d", s.Maxretry),
 		fmt.Sprintf("banaction = %s", s.Banaction),
 		fmt.Sprintf("banaction_allports = %s", s.BanactionAllports),
-		"",
+		fmt.Sprintf("chain = %s", chain),
 	}
+	if s.BantimeRndtime != "" {
+		newLines = append(newLines, fmt.Sprintf("bantime.rndtime = %s", s.BantimeRndtime))
+	}
+	newLines = append(newLines, "")
 	content := strings.Join(newLines, "\n")
 
 	return os.WriteFile(jailLocalPath, []byte(content), 0644)
@@ -2517,6 +2578,12 @@ func isLOTRModeActive(alertCountries []string) bool {
 // *                 Unified Email Sending Function :                *
 // *******************************************************************
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
+	// Skip sending if the destination email is still the default placeholder
+	if strings.EqualFold(strings.TrimSpace(to), "alerts@example.com") {
+		log.Printf("⚠️ sendEmail skipped: destination email is still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
+		return nil
+	}
+
 	// Validate SMTP settings
 	if settings.SMTP.Host == "" || settings.SMTP.Username == "" || settings.SMTP.Password == "" || settings.SMTP.From == "" {
 		err := errors.New("SMTP settings are incomplete. Please configure all required fields")

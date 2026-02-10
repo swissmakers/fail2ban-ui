@@ -81,6 +81,8 @@ type AppSettingsRecord struct {
 	DestEmail         string
 	Banaction         string
 	BanactionAllports string
+	Chain             string
+	BantimeRndtime    string
 	// Advanced features
 	AdvancedActionsJSON string
 	GeoIPProvider       string
@@ -194,17 +196,17 @@ func GetAppSettings(ctx context.Context) (AppSettingsRecord, bool, error) {
 	}
 
 	row := db.QueryRowContext(ctx, `
-SELECT language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output, smtp_insecure_skip_verify, smtp_auth_method
+SELECT language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output, smtp_insecure_skip_verify, smtp_auth_method, chain, bantime_rndtime
 FROM app_settings
 WHERE id = 1`)
 
 	var (
-		lang, callback, callbackSecret, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, advancedActions, geoipProvider, geoipDatabasePath, smtpAuthMethod sql.NullString
-		port, smtpPort, maxretry, maxLogLines                                                                                                                                                                                   sql.NullInt64
-		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans, consoleOutput, smtpInsecureSkipVerify                                                                               sql.NullInt64
+		lang, callback, callbackSecret, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, chain, bantimeRndtime, advancedActions, geoipProvider, geoipDatabasePath, smtpAuthMethod sql.NullString
+		port, smtpPort, maxretry, maxLogLines                                                                                                                                                                                                          sql.NullInt64
+		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans, consoleOutput, smtpInsecureSkipVerify                                                                                                      sql.NullInt64
 	)
 
-	err := row.Scan(&lang, &port, &debug, &restartNeeded, &callback, &callbackSecret, &alerts, &emailAlertsForBans, &emailAlertsForUnbans, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines, &consoleOutput, &smtpInsecureSkipVerify, &smtpAuthMethod)
+	err := row.Scan(&lang, &port, &debug, &restartNeeded, &callback, &callbackSecret, &alerts, &emailAlertsForBans, &emailAlertsForUnbans, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines, &consoleOutput, &smtpInsecureSkipVerify, &smtpAuthMethod, &chain, &bantimeRndtime)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AppSettingsRecord{}, false, nil
 	}
@@ -244,6 +246,8 @@ WHERE id = 1`)
 		DestEmail:         stringFromNull(destemail),
 		Banaction:         stringFromNull(banaction),
 		BanactionAllports: stringFromNull(banactionAllports),
+		Chain:             stringFromNull(chain),
+		BantimeRndtime:    stringFromNull(bantimeRndtime),
 		// Advanced features
 		AdvancedActionsJSON: stringFromNull(advancedActions),
 		GeoIPProvider:       stringFromNull(geoipProvider),
@@ -262,9 +266,9 @@ func SaveAppSettings(ctx context.Context, rec AppSettingsRecord) error {
 	}
 	_, err := db.ExecContext(ctx, `
 INSERT INTO app_settings (
-	id, language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output, smtp_insecure_skip_verify, smtp_auth_method
+	id, language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output, smtp_insecure_skip_verify, smtp_auth_method, chain, bantime_rndtime
 ) VALUES (
-	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 ) ON CONFLICT(id) DO UPDATE SET
 	language = excluded.language,
 	port = excluded.port,
@@ -296,7 +300,9 @@ INSERT INTO app_settings (
 	max_log_lines = excluded.max_log_lines,
 	console_output = excluded.console_output,
 	smtp_insecure_skip_verify = excluded.smtp_insecure_skip_verify,
-	smtp_auth_method = excluded.smtp_auth_method
+	smtp_auth_method = excluded.smtp_auth_method,
+	chain = excluded.chain,
+	bantime_rndtime = excluded.bantime_rndtime
 `, rec.Language,
 		rec.Port,
 		boolToInt(rec.Debug),
@@ -327,7 +333,9 @@ INSERT INTO app_settings (
 		rec.MaxLogLines,
 		boolToInt(rec.ConsoleOutput),
 		boolToInt(rec.SMTPInsecureSkipVerify),
-		rec.SMTPAuthMethod)
+		rec.SMTPAuthMethod,
+		rec.Chain,
+		rec.BantimeRndtime)
 	return err
 }
 
@@ -1097,6 +1105,16 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN smtp_auth_method TEXT DEFAULT 'auto'`); err != nil {
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN chain TEXT DEFAULT 'INPUT'`); err != nil {
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_rndtime TEXT DEFAULT ''`); err != nil {
 		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}

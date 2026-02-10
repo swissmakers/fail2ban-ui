@@ -74,6 +74,8 @@ type AppSettings struct {
 	Destemail         string   `json:"destemail"`
 	Banaction         string   `json:"banaction"`         // Default banning action
 	BanactionAllports string   `json:"banactionAllports"` // Allports banning action
+	Chain             string   `json:"chain"`             // Default iptables/nftables chain (INPUT, DOCKER-USER, FORWARD)
+	BantimeRndtime    string   `json:"bantimeRndtime"`    // Optional: bantime.rndtime in seconds (e.g. 2048) for bantime increment formula
 	//Sender           string `json:"sender"`
 
 	// GeoIP and Whois settings
@@ -414,6 +416,12 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.Destemail = rec.DestEmail
 	currentSettings.Banaction = rec.Banaction
 	currentSettings.BanactionAllports = rec.BanactionAllports
+	if rec.Chain != "" {
+		currentSettings.Chain = rec.Chain
+	} else {
+		currentSettings.Chain = "INPUT"
+	}
+	currentSettings.BantimeRndtime = rec.BantimeRndtime
 	currentSettings.SMTP = SMTPSettings{
 		Host:               rec.SMTPHost,
 		Port:               rec.SMTPPort,
@@ -527,6 +535,8 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		DestEmail:         currentSettings.Destemail,
 		Banaction:         currentSettings.Banaction,
 		BanactionAllports: currentSettings.BanactionAllports,
+		Chain:             currentSettings.Chain,
+		BantimeRndtime:    currentSettings.BantimeRndtime,
 		// Advanced features
 		AdvancedActionsJSON: string(advancedBytes),
 		GeoIPProvider:       currentSettings.GeoIPProvider,
@@ -613,8 +623,12 @@ func setDefaultsLocked() {
 	} else if currentSettings.Port == 0 {
 		currentSettings.Port = 8080
 	}
-	// Auto-update callback URL if it's empty or still using the old default localhost pattern
-	if currentSettings.CallbackURL == "" {
+	// CALLBACK_URL env var always takes priority (external address where Fail2ban
+	// instances send back ban/unban API calls). If not set, fall back to the
+	// stored value or auto-generate from the port.
+	if cbURL := os.Getenv("CALLBACK_URL"); cbURL != "" {
+		currentSettings.CallbackURL = strings.TrimRight(strings.TrimSpace(cbURL), "/")
+	} else if currentSettings.CallbackURL == "" {
 		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 	} else {
 		// If callback URL matches the old default pattern, update it to match the current port
@@ -623,8 +637,11 @@ func setDefaultsLocked() {
 			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 		}
 	}
-	// Generate callback secret if not set (only generate once, never regenerate)
-	if currentSettings.CallbackSecret == "" {
+	// CALLBACK_SECRET env var always takes priority.
+	// If not set, keep stored value or generate a new one (only once).
+	if cbSecret := os.Getenv("CALLBACK_SECRET"); cbSecret != "" {
+		currentSettings.CallbackSecret = strings.TrimSpace(cbSecret)
+	} else if currentSettings.CallbackSecret == "" {
 		currentSettings.CallbackSecret = generateCallbackSecret()
 	}
 	if currentSettings.AlertCountries == nil {
@@ -671,6 +688,9 @@ func setDefaultsLocked() {
 	}
 	if currentSettings.BanactionAllports == "" {
 		currentSettings.BanactionAllports = "nftables-allports"
+	}
+	if currentSettings.Chain == "" {
+		currentSettings.Chain = "INPUT"
 	}
 	if currentSettings.GeoIPProvider == "" {
 		currentSettings.GeoIPProvider = "builtin"
@@ -738,6 +758,12 @@ func initializeFromJailFile() error {
 	}
 	if val, ok := settings["banaction_allports"]; ok {
 		currentSettings.BanactionAllports = val
+	}
+	if val, ok := settings["chain"]; ok && val != "" {
+		currentSettings.Chain = val
+	}
+	if val, ok := settings["bantime.rndtime"]; ok && val != "" {
+		currentSettings.BantimeRndtime = val
 	}
 	/*if val, ok := settings["destemail"]; ok {
 		currentSettings.Destemail = val
@@ -844,65 +870,22 @@ func ensureFail2banActionFiles(callbackURL, serverID string) error {
 	}
 
 	// Ensure jail.local has proper structure (banner, DEFAULT, action_mwlg, action override)
-	if err := ensureJailLocalStructure(); err != nil {
+	if err := EnsureJailLocalStructure(); err != nil {
 		return err
 	}
 	return writeFail2banAction(callbackURL, serverID)
 }
 
-// EnsureJailLocalStructure creates or updates jail.local with proper structure:
-// This is exported so connectors can call it.
-func EnsureJailLocalStructure() error {
-	return ensureJailLocalStructure()
-}
-
-// ensureJailLocalStructure creates or updates jail.local with proper structure:
-// 1. Banner at top warning users not to edit manually
-// 2. [DEFAULT] section with current UI settings
-// 3. action_mwlg configuration
-// 4. action = %(action_mwlg)s at the end
-func ensureJailLocalStructure() error {
-	DebugLog("Running ensureJailLocalStructure()") // entry point
-
-	// Check if /etc/fail2ban directory exists (fail2ban must be installed)
-	if _, err := os.Stat(filepath.Dir(jailFile)); os.IsNotExist(err) {
-		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban directory does not exist. Please install fail2ban package first")
-	}
-
-	// Get current settings
+// BuildJailLocalContent builds the complete managed jail.local file content
+// from the current settings. This is the single source of truth for the file
+// format, shared by all connectors (local, SSH, agent).
+func BuildJailLocalContent() string {
 	settings := GetSettings()
 
-	// Read existing jail.local content if it exists
-	var existingContent string
-	if content, err := os.ReadFile(jailFile); err == nil {
-		existingContent = string(content)
-	}
-
-	// Check if file already has our full banner (indicating it's already properly structured)
-	// Check for the complete banner pattern with hash line separators
-	hasFullBanner := strings.Contains(existingContent, "################################################################################") &&
-		strings.Contains(existingContent, "Fail2Ban-UI Managed Configuration") &&
-		strings.Contains(existingContent, "DO NOT EDIT THIS FILE MANUALLY")
-	hasActionMwlg := strings.Contains(existingContent, "action_mwlg") && strings.Contains(existingContent, "ui-custom-action")
-	hasActionOverride := strings.Contains(existingContent, "action = %(action_mwlg)s")
-
-	// If file is already properly structured, just ensure DEFAULT section is up to date
-	if hasFullBanner && hasActionMwlg && hasActionOverride {
-		DebugLog("jail.local already has proper structure, updating DEFAULT section if needed")
-		// Update DEFAULT section values without changing structure
-		return updateJailLocalDefaultSection(settings)
-	}
-
-	// Use the standard banner
-	banner := jailLocalBanner
-
-	// Build [DEFAULT] section
-	// Convert IgnoreIPs array to space-separated string
 	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
 	if ignoreIPStr == "" {
 		ignoreIPStr = "127.0.0.1/8 ::1"
 	}
-	// Set default banaction values if not set
 	banaction := settings.Banaction
 	if banaction == "" {
 		banaction = "nftables-multiport"
@@ -910,6 +893,10 @@ func ensureJailLocalStructure() error {
 	banactionAllports := settings.BanactionAllports
 	if banactionAllports == "" {
 		banactionAllports = "nftables-allports"
+	}
+	chain := settings.Chain
+	if chain == "" {
+		chain = "INPUT"
 	}
 	defaultSection := fmt.Sprintf(`[DEFAULT]
 enabled = %t
@@ -920,151 +907,57 @@ findtime = %s
 maxretry = %d
 banaction = %s
 banaction_allports = %s
+chain = %s
+`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr,
+		settings.Bantime, settings.Findtime, settings.Maxretry,
+		banaction, banactionAllports, chain)
+	if settings.BantimeRndtime != "" {
+		defaultSection += fmt.Sprintf("bantime.rndtime = %s\n", settings.BantimeRndtime)
+	}
+	defaultSection += "\n"
 
-`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr, settings.Bantime, settings.Findtime, settings.Maxretry, banaction, banactionAllports)
-
-	// Build action_mwlg configuration
-	// Note: action_mwlg depends on action_ which depends on banaction (now defined above)
-	// The multi-line format uses indentation for continuation
-	// ui-custom-action only needs logpath and chain
 	actionMwlgConfig := `# Custom Fail2Ban action for UI callbacks
 action_mwlg = %(action_)s
              ui-custom-action[logpath="%(logpath)s", chain="%(chain)s"]
 
 `
-
-	// Build action override (at the end as per user requirements)
 	actionOverride := `# Custom Fail2Ban action applied by fail2ban-ui
 action = %(action_mwlg)s
 `
 
-	// Combine all parts
-	newContent := banner + defaultSection + actionMwlgConfig + actionOverride
+	return jailLocalBanner + defaultSection + actionMwlgConfig + actionOverride
+}
 
-	// Write the new content
-	err := os.WriteFile(jailFile, []byte(newContent), 0644)
-	if err != nil {
+// EnsureJailLocalStructure writes a complete managed jail.local to the local filesystem.
+func EnsureJailLocalStructure() error {
+	DebugLog("Running EnsureJailLocalStructure()")
+
+	// Check if /etc/fail2ban directory exists (fail2ban must be installed)
+	if _, err := os.Stat(filepath.Dir(jailFile)); os.IsNotExist(err) {
+		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban directory does not exist. Please install fail2ban package first")
+	}
+
+	// Read existing jail.local content if it exists
+	var existingContent string
+	fileExists := false
+	if content, err := os.ReadFile(jailFile); err == nil {
+		existingContent = string(content)
+		fileExists = len(strings.TrimSpace(existingContent)) > 0
+	}
+
+	// If jail.local exists but is NOT managed by Fail2ban-UI,
+	// it belongs to the user — never overwrite it.
+	if fileExists && !strings.Contains(existingContent, "ui-custom-action") {
+		DebugLog("jail.local exists but is not managed by Fail2ban-UI - skipping overwrite")
+		return nil
+	}
+
+	// Full rewrite from current settings (self-healing, no stale keys)
+	if err := os.WriteFile(jailFile, []byte(BuildJailLocalContent()), 0644); err != nil {
 		return fmt.Errorf("failed to write jail.local: %v", err)
 	}
 
 	DebugLog("Created/updated jail.local with proper structure")
-	return nil
-}
-
-// updateJailLocalDefaultSection updates only the [DEFAULT] section values in jail.local
-// while preserving the banner, action_mwlg, and action override
-func updateJailLocalDefaultSection(settings AppSettings) error {
-	content, err := os.ReadFile(jailFile)
-	if err != nil {
-		return fmt.Errorf("failed to read jail.local: %w", err)
-	}
-
-	contentStr := string(content)
-	lines := strings.Split(contentStr, "\n")
-	var outputLines []string
-	inDefault := false
-	defaultUpdated := false
-
-	// Convert IgnoreIPs array to space-separated string
-	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
-	if ignoreIPStr == "" {
-		ignoreIPStr = "127.0.0.1/8 ::1"
-	}
-	// Set default banaction values if not set
-	banaction := settings.Banaction
-	if banaction == "" {
-		banaction = "nftables-multiport"
-	}
-	banactionAllports := settings.BanactionAllports
-	if banactionAllports == "" {
-		banactionAllports = "nftables-allports"
-	}
-	// Keys to update
-	keysToUpdate := map[string]string{
-		"enabled":            fmt.Sprintf("enabled = %t", settings.DefaultJailEnable),
-		"bantime.increment":  fmt.Sprintf("bantime.increment = %t", settings.BantimeIncrement),
-		"ignoreip":           fmt.Sprintf("ignoreip = %s", ignoreIPStr),
-		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
-		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
-		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
-		"banaction":          fmt.Sprintf("banaction = %s", banaction),
-		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllports),
-	}
-	keysUpdated := make(map[string]bool)
-
-	// Always add the full banner at the start
-	outputLines = append(outputLines, strings.Split(strings.TrimRight(jailLocalBanner, "\n"), "\n")...)
-
-	// Skip everything before [DEFAULT] section (old banner, comments, empty lines)
-	foundSection := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			// Found a section - stop skipping and process this line
-			foundSection = true
-		}
-		if !foundSection {
-			// Skip lines before any section (old banner, comments, empty lines)
-			continue
-		}
-
-		// Process lines after we found a section
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			sectionName := strings.Trim(trimmed, "[]")
-			if sectionName == "DEFAULT" {
-				inDefault = true
-				outputLines = append(outputLines, line)
-			} else {
-				inDefault = false
-				outputLines = append(outputLines, line)
-			}
-		} else if inDefault {
-			// Check if this line is a key we need to update
-			keyUpdated := false
-			for key, newValue := range keysToUpdate {
-				keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
-				if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
-					outputLines = append(outputLines, newValue)
-					keysUpdated[key] = true
-					keyUpdated = true
-					defaultUpdated = true
-					break
-				}
-			}
-			if !keyUpdated {
-				// Keep the line as-is
-				outputLines = append(outputLines, line)
-			}
-		} else {
-			// Keep lines outside DEFAULT section
-			outputLines = append(outputLines, line)
-		}
-	}
-
-	// Add any missing keys to the DEFAULT section
-	if inDefault {
-		for key, newValue := range keysToUpdate {
-			if !keysUpdated[key] {
-				// Find the DEFAULT section and insert after it
-				for i, outputLine := range outputLines {
-					if strings.TrimSpace(outputLine) == "[DEFAULT]" {
-						outputLines = append(outputLines[:i+1], append([]string{newValue}, outputLines[i+1:]...)...)
-						defaultUpdated = true
-						break
-					}
-				}
-			}
-		}
-	}
-
-	if defaultUpdated {
-		newContent := strings.Join(outputLines, "\n")
-		if err := os.WriteFile(jailFile, []byte(newContent), 0644); err != nil {
-			return fmt.Errorf("failed to write jail.local: %w", err)
-		}
-		DebugLog("Updated DEFAULT section in jail.local")
-	}
-
 	return nil
 }
 
@@ -1426,6 +1319,15 @@ func GetPortFromEnv() (int, bool) {
 		return port, true
 	}
 	return 0, false
+}
+
+// GetCallbackURLFromEnv returns the CALLBACK_URL environment variable value and whether it's set.
+func GetCallbackURLFromEnv() (string, bool) {
+	v := strings.TrimSpace(os.Getenv("CALLBACK_URL"))
+	if v == "" {
+		return "", false
+	}
+	return strings.TrimRight(v, "/"), true
 }
 
 // GetBindAddressFromEnv returns the BIND_ADDRESS environment variable value if set, and whether it's set

@@ -58,6 +58,20 @@ services:
       # - UPDATE_CHECK=false
 
       # ============================================
+      # Callback Settings (Optional)
+      # ============================================
+      # Optional: External address where Fail2ban instances send ban/unban API calls back to Fail2ban-UI.
+      # Default: http://127.0.0.1:<PORT> (works when Fail2ban runs in the same network namespace).
+      # For container setups with bridge networking or remote Fail2ban servers, set this to an address
+      # reachable from those instances (e.g. the Docker/Podman gateway IP or the host LAN IP).
+      # When set, this env var always takes priority over the value in the UI settings.
+      # - CALLBACK_URL=http://10.88.0.1:3080
+      # Optional: Shared secret used to authenticate ban/unban callbacks from Fail2ban instances.
+      # If not set, a secure random secret is auto-generated on first start.
+      # When set, this env var always takes priority over the auto-generated or stored value.
+      # - CALLBACK_SECRET=your-secure-shared-secret
+
+      # ============================================
       # OIDC Authentication (Optional)
       # ============================================
       # Enable OIDC authentication to protect the web UI

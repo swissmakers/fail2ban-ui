@@ -26,3 +26,4 @@ var translations = {};
 var sshKeysCache = null;
 var openModalCount = 0;
 var isLOTRModeActive = false;
+var jailLocalWarning = false;

@@ -17,6 +17,12 @@ var (
 	migrationOnce sync.Once
 )
 
+// Auto-migration of an existing jail.local into jail.d/ is experimental and disabled by default;
+// it is always best to migrate a pre-existing jail.local by hand.
+func isJailAutoMigrationEnabled() bool {
+	return strings.EqualFold(os.Getenv("JAIL_AUTOMIGRATION"), "true")
+}
+
 // ensureJailLocalFile ensures that a .local file exists for the given jail.
 // If .local doesn't exist, it copies from .conf if available, or creates a minimal section.
 func ensureJailLocalFile(jailName string) error {
@@ -324,16 +330,17 @@ func DeleteJail(jailName string) error {
 	return nil
 }
 
-// GetAllJails reads jails from /etc/fail2ban/jail.local (DEFAULT only) and /etc/fail2ban/jail.d directory.
-// Automatically migrates legacy jails from jail.local to jail.d on first call.
-// Now uses DiscoverJailsFromFiles() for file-based discovery.
+// GetAllJails reads jails from /etc/fail2ban/jail.d directory.
 func GetAllJails() ([]JailInfo, error) {
-	// Run migration once if needed
-	migrationOnce.Do(func() {
-		if err := MigrateJailsToJailD(); err != nil {
-			config.DebugLog("Migration warning: %v", err)
-		}
-	})
+	// Run migration once if enabled (experimental, off by default)
+	if isJailAutoMigrationEnabled() {
+		migrationOnce.Do(func() {
+			config.DebugLog("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration")
+			if err := MigrateJailsFromJailLocal(); err != nil {
+				config.DebugLog("Migration warning: %v", err)
+			}
+		})
+	}
 
 	// Discover jails from filesystem
 	jails, err := DiscoverJailsFromFiles()
@@ -510,142 +517,9 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 	return nil
 }
 
-// MigrateJailsToJailD migrates all non-DEFAULT jails from jail.local to individual files in jail.d/.
-// Creates a backup of jail.local before migration. If a jail already exists in jail.d, jail.local takes precedence.
-func MigrateJailsToJailD() error {
-	localPath := "/etc/fail2ban/jail.local"
-	jailDPath := "/etc/fail2ban/jail.d"
-
-	// Check if jail.local exists
-	if _, err := os.Stat(localPath); os.IsNotExist(err) {
-		return nil // Nothing to migrate
-	}
-
-	// Read jail.local content
-	content, err := os.ReadFile(localPath)
-	if err != nil {
-		return fmt.Errorf("failed to read jail.local: %w", err)
-	}
-
-	// Parse content to extract sections
-	sections, defaultContent, err := parseJailSections(string(content))
-	if err != nil {
-		return fmt.Errorf("failed to parse jail.local: %w", err)
-	}
-
-	// If no non-DEFAULT jails found, nothing to migrate
-	if len(sections) == 0 {
-		return nil
-	}
-
-	// Create backup of jail.local
-	backupPath := localPath + ".backup." + fmt.Sprintf("%d", os.Getpid())
-	if err := os.WriteFile(backupPath, content, 0644); err != nil {
-		return fmt.Errorf("failed to create backup: %w", err)
-	}
-	config.DebugLog("Created backup of jail.local at %s", backupPath)
-
-	// Ensure jail.d directory exists
-	if err := os.MkdirAll(jailDPath, 0755); err != nil {
-		return fmt.Errorf("failed to create jail.d directory: %w", err)
-	}
-
-	// Write each jail to its own file in jail.d/
-	for jailName, jailContent := range sections {
-		jailFilePath := filepath.Join(jailDPath, jailName+".conf")
-
-		// Check if file already exists
-		if _, err := os.Stat(jailFilePath); err == nil {
-			// File exists - jail.local takes precedence, so overwrite
-			config.DebugLog("Overwriting existing jail file %s with content from jail.local", jailFilePath)
-		}
-
-		// Write jail content to file
-		if err := os.WriteFile(jailFilePath, []byte(jailContent), 0644); err != nil {
-			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
-		}
-	}
-
-	// Rewrite jail.local with only DEFAULT section
-	newLocalContent := defaultContent
-	if !strings.HasSuffix(newLocalContent, "\n") {
-		newLocalContent += "\n"
-	}
-	if err := os.WriteFile(localPath, []byte(newLocalContent), 0644); err != nil {
-		return fmt.Errorf("failed to rewrite jail.local: %w", err)
-	}
-
-	config.DebugLog("Migration completed: moved %d jails to jail.d/", len(sections))
-	return nil
-}
-
-// parseJailSections parses jail.local content and returns:
-// - map of jail name to jail content (excluding DEFAULT and INCLUDES)
-// - DEFAULT section content
-func parseJailSections(content string) (map[string]string, string, error) {
-	sections := make(map[string]string)
-	var defaultContent strings.Builder
-
-	// Sections that should be ignored (not jails)
-	ignoredSections := map[string]bool{
-		"DEFAULT":  true,
-		"INCLUDES": true,
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	var currentSection string
-	var currentContent strings.Builder
-	inDefault := false
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			// Save previous section
-			if currentSection != "" {
-				sectionContent := strings.TrimSpace(currentContent.String())
-				if inDefault {
-					defaultContent.WriteString(sectionContent)
-					if !strings.HasSuffix(sectionContent, "\n") {
-						defaultContent.WriteString("\n")
-					}
-				} else if !ignoredSections[currentSection] {
-					// Only save if it's not an ignored section
-					sections[currentSection] = sectionContent
-				}
-			}
-
-			// Start new section
-			currentSection = strings.Trim(trimmed, "[]")
-			currentContent.Reset()
-			currentContent.WriteString(line)
-			currentContent.WriteString("\n")
-			inDefault = (currentSection == "DEFAULT")
-		} else {
-			currentContent.WriteString(line)
-			currentContent.WriteString("\n")
-		}
-	}
-
-	// Save final section
-	if currentSection != "" {
-		sectionContent := strings.TrimSpace(currentContent.String())
-		if inDefault {
-			defaultContent.WriteString(sectionContent)
-		} else if !ignoredSections[currentSection] {
-			// Only save if it's not an ignored section
-			sections[currentSection] = sectionContent
-		}
-	}
-
-	return sections, defaultContent.String(), scanner.Err()
-}
-
 // parseJailSectionsUncommented parses jail.local content and returns:
 // - map of jail name to jail content (excluding DEFAULT, INCLUDES, and commented sections)
 // - DEFAULT section content (including commented lines)
-// Only extracts non-commented jail sections
 func parseJailSectionsUncommented(content string) (map[string]string, string, error) {
 	sections := make(map[string]string)
 	var defaultContent strings.Builder
@@ -725,7 +599,7 @@ func parseJailSectionsUncommented(content string) (map[string]string, string, er
 }
 
 // MigrateJailsFromJailLocal migrates non-commented jail sections from jail.local to jail.d/*.local files.
-// This should be called when a server is added or enabled to migrate legacy jails.
+// EXPERIMENTAL: Only called when JAIL_AUTOMIGRATION=true. It is always best to migrate a pre-existing jail.local by hand.
 func MigrateJailsFromJailLocal() error {
 	localPath := "/etc/fail2ban/jail.local"
 	jailDPath := "/etc/fail2ban/jail.d"
@@ -1190,172 +1064,8 @@ func ExtractFilterFromJailConfig(jailContent string) string {
 	return ""
 }
 
-// UpdateDefaultSettingsLocal updates specific keys in the [DEFAULT] section of /etc/fail2ban/jail.local
-// with the provided settings, preserving all other content including the ui-custom-action section.
-// Removes commented lines (starting with #) before applying updates.
+// UpdateDefaultSettingsLocal rewrites /etc/fail2ban/jail.local with the current settings.
 func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 	config.DebugLog("UpdateDefaultSettingsLocal called")
-	localPath := "/etc/fail2ban/jail.local"
-
-	// Read existing file if it exists
-	var existingContent string
-	if content, err := os.ReadFile(localPath); err == nil {
-		existingContent = string(content)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read jail.local: %w", err)
-	}
-
-	// Remove commented lines (lines starting with #) but preserve:
-	// - Banner lines (containing "Fail2Ban-UI" or "fail2ban-ui")
-	// - action_mwlg and action override lines
-	lines := strings.Split(existingContent, "\n")
-	var uncommentedLines []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Keep empty lines, banner lines, action_mwlg lines, action override lines, and lines that don't start with #
-		isBanner := strings.Contains(line, "Fail2Ban-UI") || strings.Contains(line, "fail2ban-ui")
-		isActionMwlg := strings.Contains(trimmed, "action_mwlg")
-		isActionOverride := strings.Contains(trimmed, "action = %(action_mwlg)s")
-		if trimmed == "" || !strings.HasPrefix(trimmed, "#") || isBanner || isActionMwlg || isActionOverride {
-			uncommentedLines = append(uncommentedLines, line)
-		}
-	}
-	existingContent = strings.Join(uncommentedLines, "\n")
-
-	// Convert IgnoreIPs array to space-separated string
-	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
-	if ignoreIPStr == "" {
-		ignoreIPStr = "127.0.0.1/8 ::1"
-	}
-	// Set default banaction values if not set
-	banaction := settings.Banaction
-	if banaction == "" {
-		banaction = "nftables-multiport"
-	}
-	banactionAllports := settings.BanactionAllports
-	if banactionAllports == "" {
-		banactionAllports = "nftables-allports"
-	}
-	// Define the keys we want to update
-	keysToUpdate := map[string]string{
-		"enabled":            fmt.Sprintf("enabled = %t", settings.DefaultJailEnable),
-		"bantime.increment":  fmt.Sprintf("bantime.increment = %t", settings.BantimeIncrement),
-		"ignoreip":           fmt.Sprintf("ignoreip = %s", ignoreIPStr),
-		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
-		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
-		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
-		"banaction":          fmt.Sprintf("banaction = %s", banaction),
-		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllports),
-	}
-
-	// Track which keys we've updated
-	keysUpdated := make(map[string]bool)
-
-	// Parse existing content and update only specific keys in DEFAULT section
-	if existingContent == "" {
-		// File doesn't exist, create new one with banner and DEFAULT section
-		var newLines []string
-		newLines = append(newLines, strings.Split(strings.TrimRight(config.JailLocalBanner(), "\n"), "\n")...)
-		newLines = append(newLines, "[DEFAULT]")
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
-			newLines = append(newLines, keysToUpdate[key])
-		}
-		newLines = append(newLines, "")
-		newContent := strings.Join(newLines, "\n")
-		if err := os.WriteFile(localPath, []byte(newContent), 0644); err != nil {
-			return fmt.Errorf("failed to write jail.local: %w", err)
-		}
-		config.DebugLog("Created new jail.local with banner and DEFAULT section")
-		return nil
-	}
-
-	// Parse and update only specific keys in DEFAULT section
-	lines = strings.Split(existingContent, "\n")
-	var outputLines []string
-	inDefault := false
-	defaultSectionFound := false
-
-	// Always add the full banner at the start
-	outputLines = append(outputLines, strings.Split(strings.TrimRight(config.JailLocalBanner(), "\n"), "\n")...)
-
-	// Skip everything before [DEFAULT] section (old banner, comments, empty lines)
-	foundSection := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			// Found a section - stop skipping and process this line
-			foundSection = true
-		}
-		if !foundSection {
-			// Skip lines before any section (old banner, comments, empty lines)
-			continue
-		}
-
-		// Process lines after we found a section
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			sectionName := strings.Trim(trimmed, "[]")
-			if sectionName == "DEFAULT" {
-				// Start of DEFAULT section
-				inDefault = true
-				defaultSectionFound = true
-				outputLines = append(outputLines, line)
-			} else {
-				// Other section - stop DEFAULT mode
-				inDefault = false
-				outputLines = append(outputLines, line)
-			}
-		} else if inDefault {
-			// We're in DEFAULT section - check if this line is a key we need to update
-			keyUpdated := false
-			for key, newValue := range keysToUpdate {
-				// Check if this line contains the key (with or without spaces around =)
-				keyPattern := "^\\s*" + regexp.QuoteMeta(key) + "\\s*="
-				if matched, _ := regexp.MatchString(keyPattern, trimmed); matched {
-					outputLines = append(outputLines, newValue)
-					keysUpdated[key] = true
-					keyUpdated = true
-					break
-				}
-			}
-			if !keyUpdated {
-				// Keep the line as-is (might be other DEFAULT settings or action_mwlg)
-				outputLines = append(outputLines, line)
-			}
-		} else {
-			// Keep lines outside DEFAULT section (preserves ui-custom-action and other content)
-			outputLines = append(outputLines, line)
-		}
-	}
-
-	// If DEFAULT section wasn't found, create it at the beginning
-	if !defaultSectionFound {
-		defaultLines := []string{"[DEFAULT]"}
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
-			defaultLines = append(defaultLines, keysToUpdate[key])
-		}
-		defaultLines = append(defaultLines, "")
-		outputLines = append(defaultLines, outputLines...)
-	} else {
-		// Add any missing keys to the DEFAULT section
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
-			if !keysUpdated[key] {
-				// Find the DEFAULT section and insert after it
-				for i, line := range outputLines {
-					if strings.TrimSpace(line) == "[DEFAULT]" {
-						// Insert after [DEFAULT] header
-						outputLines = append(outputLines[:i+1], append([]string{keysToUpdate[key]}, outputLines[i+1:]...)...)
-						break
-					}
-				}
-			}
-		}
-	}
-
-	newContent := strings.Join(outputLines, "\n")
-	if err := os.WriteFile(localPath, []byte(newContent), 0644); err != nil {
-		return fmt.Errorf("failed to write jail.local: %w", err)
-	}
-
-	config.DebugLog("Updated specific keys in DEFAULT section of jail.local")
-	return nil
+	return config.EnsureJailLocalStructure()
 }

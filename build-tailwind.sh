@@ -51,6 +51,7 @@ if [ ! -f tailwind.config.js ]; then
 module.exports = {
   content: [
     "./pkg/web/templates/**/*.html",
+    "./pkg/web/static/js/**/*.js",
   ],
   theme: {
     extend: {},

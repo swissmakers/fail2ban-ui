@@ -46,14 +46,17 @@ function fetchSummaryData() {
       if (data && !data.error) {
         latestSummary = data;
         latestSummaryError = null;
+        jailLocalWarning = !!data.jailLocalWarning;
       } else {
         latestSummary = null;
         latestSummaryError = data && data.error ? data.error : t('dashboard.errors.summary_failed', 'Failed to load summary from server.');
+        jailLocalWarning = false;
       }
     })
     .catch(function(err) {
       latestSummary = null;
       latestSummaryError = err ? err.toString() : 'Unknown error';
+      jailLocalWarning = false;
     });
 }
 
@@ -596,6 +599,20 @@ function renderDashboard() {
 
   var summary = latestSummary;
   var html = '';
+
+  // Persistent warning banner when jail.local is not managed by Fail2ban-UI
+  if (jailLocalWarning) {
+    html += ''
+      + '<div class="bg-red-100 border-l-4 border-red-500 text-red-800 px-4 py-3 rounded mb-4 flex items-start gap-3" role="alert">'
+      + '  <svg class="w-5 h-5 mt-0.5 flex-shrink-0 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">'
+      + '    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>'
+      + '  </svg>'
+      + '  <div>'
+      + '    <p class="font-semibold" data-i18n="dashboard.jail_local_warning_title">jail.local not managed by Fail2ban-UI</p>'
+      + '    <p class="text-sm mt-1" data-i18n="dashboard.jail_local_warning_body">The file /etc/fail2ban/jail.local on the selected server exists but is not managed by Fail2ban-UI. The callback action (ui-custom-action) is missing, which means ban/unban events will not be recorded and no email alerts will be sent. To fix this, move each jail section from jail.local into its own file under /etc/fail2ban/jail.d/ (use jailname.conf to keep a default or jailname.local to override an existing .conf). Then delete jail.local so Fail2ban-UI can create its own managed version. Ensure Fail2ban-UI has write permissions to /etc/fail2ban/ — see the documentation for details.</p>'
+      + '  </div>'
+      + '</div>';
+  }
 
   if (latestSummaryError) {
     html += ''

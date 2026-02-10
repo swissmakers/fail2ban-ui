@@ -354,6 +354,9 @@ function submitServerForm(event) {
         return;
       }
       showToast(t('servers.form.success', 'Server saved successfully.'), 'success');
+      if (data.jailLocalWarning) {
+        showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
+      }
       var saved = data.server || {};
       currentServerId = saved.id || currentServerId;
       return loadServers().then(function() {
@@ -403,6 +406,41 @@ function populateSSHKeySelect(keys, selected) {
   if (typeof updateTranslations === 'function') {
     updateTranslations();
   }
+  // Sync readonly state of the path input
+  syncSSHKeyPathReadonly();
+  // Attach change handler once
+  initSSHKeySelectHandler();
+}
+
+// Toggle the SSH key path input between readonly (key selected) and editable (manual entry).
+function syncSSHKeyPathReadonly() {
+  var select = document.getElementById('serverSSHKeySelect');
+  var input = document.getElementById('serverSSHKey');
+  if (!select || !input) return;
+  if (select.value) {
+    input.readOnly = true;
+    input.classList.add('bg-gray-100', 'text-gray-500');
+  } else {
+    input.readOnly = false;
+    input.classList.remove('bg-gray-100', 'text-gray-500');
+  }
+}
+
+// Attach a change listener on the select dropdown (once).
+var _sshKeySelectHandlerBound = false;
+function initSSHKeySelectHandler() {
+  if (_sshKeySelectHandlerBound) return;
+  var select = document.getElementById('serverSSHKeySelect');
+  if (!select) return;
+  _sshKeySelectHandlerBound = true;
+  select.addEventListener('change', function() {
+    var input = document.getElementById('serverSSHKey');
+    if (!input) return;
+    if (select.value) {
+      input.value = select.value;
+    }
+    syncSSHKeyPathReadonly();
+  });
 }
 
 function loadSSHKeys() {
@@ -475,6 +513,9 @@ function testServerConnection(serverId) {
         return;
       }
       showToast(t(data.messageKey || 'servers.actions.test_success', data.message || 'Connection successful'), 'success');
+      if (data.jailLocalWarning) {
+        showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
+      }
     })
     .catch(function(err) {
       showToast(t('servers.actions.test_failure', 'Connection failed') + ': ' + err, 'error');

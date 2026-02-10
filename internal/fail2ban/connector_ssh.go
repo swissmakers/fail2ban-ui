@@ -20,6 +20,8 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
+// sshEnsureActionScript only deploys action.d/ui-custom-action.conf.
+// jail.local is managed by EnsureJailLocalStructure
 const sshEnsureActionScript = `python3 - <<'PY'
 import base64
 import pathlib
@@ -30,40 +32,6 @@ try:
     action_dir.mkdir(parents=True, exist_ok=True)
     action_cfg = base64.b64decode("__PAYLOAD__").decode("utf-8")
     (action_dir / "ui-custom-action.conf").write_text(action_cfg)
-    
-    jail_file = pathlib.Path("/etc/fail2ban/jail.local")
-    if not jail_file.exists():
-        jail_file.write_text("[DEFAULT]\n")
-    
-    lines = jail_file.read_text().splitlines()
-    already = any("Custom Fail2Ban action applied by fail2ban-ui" in line for line in lines)
-    if not already:
-        new_lines = []
-        inserted = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("action") and "ui-custom-action" not in stripped and not inserted:
-                if not stripped.startswith("#"):
-                    new_lines.append("# " + line)
-                else:
-                    new_lines.append(line)
-                new_lines.append("# Custom Fail2Ban action applied by fail2ban-ui")
-                new_lines.append("action = %(action_mwlg)s")
-                inserted = True
-                continue
-            new_lines.append(line)
-        if not inserted:
-            insert_at = None
-            for idx, value in enumerate(new_lines):
-                if value.strip().startswith("[DEFAULT]"):
-                    insert_at = idx + 1
-                    break
-            if insert_at is None:
-                new_lines.append("[DEFAULT]")
-                insert_at = len(new_lines)
-            new_lines.insert(insert_at, "# Custom Fail2Ban action applied by fail2ban-ui")
-            new_lines.insert(insert_at + 1, "action = %(action_mwlg)s")
-        jail_file.write_text("\n".join(new_lines) + "\n")
 except Exception as e:
     sys.stderr.write(f"Error: {e}\n")
     sys.exit(1)
@@ -1585,248 +1553,56 @@ PYEOF
 
 // UpdateDefaultSettings implements Connector.
 func (sc *SSHConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
-	jailLocalPath := "/etc/fail2ban/jail.local"
-
-	// Read existing file if it exists
-	existingContent, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
-	if err != nil {
-		// File doesn't exist, create new one
-		existingContent = ""
-	}
-
-	// Remove commented lines (lines starting with #) using sed
-	if existingContent != "" {
-		// Use sed to remove lines starting with # (but preserve empty lines)
-		removeCommentsCmd := fmt.Sprintf("sed '/^[[:space:]]*#/d' %s", jailLocalPath)
-		uncommentedContent, err := sc.runRemoteCommand(ctx, []string{removeCommentsCmd})
-		if err == nil {
-			existingContent = uncommentedContent
-		}
-	}
-
-	// Convert IgnoreIPs array to space-separated string
-	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
-	if ignoreIPStr == "" {
-		ignoreIPStr = "127.0.0.1/8 ::1"
-	}
-	// Set default banaction values if not set
-	banactionVal := settings.Banaction
-	if banactionVal == "" {
-		banactionVal = "nftables-multiport"
-	}
-	banactionAllportsVal := settings.BanactionAllports
-	if banactionAllportsVal == "" {
-		banactionAllportsVal = "nftables-allports"
-	}
-	// Define the keys we want to update
-	keysToUpdate := map[string]string{
-		"enabled":            fmt.Sprintf("enabled = %t", settings.DefaultJailEnable),
-		"bantime.increment":  fmt.Sprintf("bantime.increment = %t", settings.BantimeIncrement),
-		"ignoreip":           fmt.Sprintf("ignoreip = %s", ignoreIPStr),
-		"bantime":            fmt.Sprintf("bantime = %s", settings.Bantime),
-		"findtime":           fmt.Sprintf("findtime = %s", settings.Findtime),
-		"maxretry":           fmt.Sprintf("maxretry = %d", settings.Maxretry),
-		"banaction":          fmt.Sprintf("banaction = %s", banactionVal),
-		"banaction_allports": fmt.Sprintf("banaction_allports = %s", banactionAllportsVal),
-	}
-
-	// Parse existing content and update only specific keys in DEFAULT section
-	if existingContent == "" {
-		// File doesn't exist, create new one with DEFAULT section
-		defaultLines := []string{"[DEFAULT]"}
-		for _, key := range []string{"enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"} {
-			defaultLines = append(defaultLines, keysToUpdate[key])
-		}
-		defaultLines = append(defaultLines, "")
-		newContent := strings.Join(defaultLines, "\n")
-		cmd := fmt.Sprintf("cat <<'EOF' | tee %s >/dev/null\n%s\nEOF", jailLocalPath, newContent)
-		_, err = sc.runRemoteCommand(ctx, []string{cmd})
-		return err
-	}
-
-	// Use Python script to update only specific keys in DEFAULT section
-	// Preserves banner, action_mwlg, and action override sections
-	// Escape values for shell/Python
-	escapeForShell := func(s string) string {
-		// Escape single quotes for shell
-		return strings.ReplaceAll(s, "'", "'\"'\"'")
-	}
-
-	// Convert boolean values to Python boolean literals
-	defaultJailEnablePython := "False"
-	if settings.DefaultJailEnable {
-		defaultJailEnablePython = "True"
-	}
-	bantimeIncrementPython := "False"
-	if settings.BantimeIncrement {
-		bantimeIncrementPython = "True"
-	}
-
-	updateScript := fmt.Sprintf(`python3 <<'PY'
-import re
-
-jail_file = '%s'
-ignore_ip_str = '%s'
-banaction_val = '%s'
-banaction_allports_val = '%s'
-default_jail_enable_val = %s
-bantime_increment_val = %s
-bantime_val = '%s'
-findtime_val = '%s'
-maxretry_val = %d
-keys_to_update = {
-    'enabled': 'enabled = ' + str(default_jail_enable_val).lower(),
-    'bantime.increment': 'bantime.increment = ' + str(bantime_increment_val).lower(),
-    'ignoreip': 'ignoreip = ' + ignore_ip_str,
-    'bantime': 'bantime = ' + bantime_val,
-    'findtime': 'findtime = ' + findtime_val,
-    'maxretry': 'maxretry = ' + str(maxretry_val),
-    'banaction': 'banaction = ' + banaction_val,
-    'banaction_allports': 'banaction_allports = ' + banaction_allports_val
+	// Since the managed jail.local is fully owned by Fail2ban-UI, a complete
+	// rewrite from current settings is always correct and self-healing.
+	return sc.EnsureJailLocalStructure(ctx)
 }
 
-try:
-    with open(jail_file, 'r') as f:
-        lines = f.readlines()
-except FileNotFoundError:
-    lines = []
-
-output_lines = []
-in_default = False
-default_section_found = False
-keys_updated = set()
-
-for line in lines:
-    stripped = line.strip()
-    
-    # Preserve banner lines, action_mwlg lines, and action override lines
-    is_banner = 'Fail2Ban-UI' in line or 'fail2ban-ui' in line
-    is_action_mwlg = 'action_mwlg' in stripped
-    is_action_override = 'action = %%(action_mwlg)s' in stripped
-    
-    if stripped.startswith('[') and stripped.endswith(']'):
-        section_name = stripped.strip('[]')
-        if section_name == "DEFAULT":
-            in_default = True
-            default_section_found = True
-            output_lines.append(line)
-        else:
-            in_default = False
-            output_lines.append(line)
-    elif in_default:
-        # Check if this line is a key we need to update
-        key_updated = False
-        for key, new_value in keys_to_update.items():
-            pattern = r'^\s*' + re.escape(key) + r'\s*='
-            if re.match(pattern, stripped):
-                output_lines.append(new_value + '\n')
-                keys_updated.add(key)
-                key_updated = True
-                break
-        if not key_updated:
-            # Keep the line as-is (might be action_mwlg or other DEFAULT settings)
-            output_lines.append(line)
-    else:
-        # Keep lines outside DEFAULT section (preserves banner, action_mwlg, action override)
-        output_lines.append(line)
-
-# If DEFAULT section wasn't found, create it at the beginning
-if not default_section_found:
-    default_lines = ["[DEFAULT]\n"]
-    for key in ["enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"]:
-        default_lines.append(keys_to_update[key] + "\n")
-    default_lines.append("\n")
-    output_lines = default_lines + output_lines
-else:
-    # Add any missing keys to the DEFAULT section
-    for key in ["enabled", "bantime.increment", "ignoreip", "bantime", "findtime", "maxretry", "banaction", "banaction_allports"]:
-        if key not in keys_updated:
-            # Find the DEFAULT section and insert after it
-            for i, line in enumerate(output_lines):
-                if line.strip() == "[DEFAULT]":
-                    output_lines.insert(i + 1, keys_to_update[key] + "\n")
-                    break
-
-with open(jail_file, 'w') as f:
-    f.writelines(output_lines)
-PY`, escapeForShell(jailLocalPath), escapeForShell(ignoreIPStr), escapeForShell(banactionVal), escapeForShell(banactionAllportsVal), defaultJailEnablePython, bantimeIncrementPython, escapeForShell(settings.Bantime), escapeForShell(settings.Findtime), settings.Maxretry)
-
-	_, err = sc.runRemoteCommand(ctx, []string{updateScript})
-	return err
+// CheckJailLocalIntegrity implements Connector.
+func (sc *SSHConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
+	const jailLocalPath = "/etc/fail2ban/jail.local"
+	output, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
+	if err != nil {
+		// "No such file" means jail.local does not exist – that's fine
+		if strings.Contains(err.Error(), "No such file") || strings.Contains(output, "No such file") {
+			return false, false, nil
+		}
+		return false, false, fmt.Errorf("failed to read jail.local on %s: %w", sc.server.Name, err)
+	}
+	hasUIAction := strings.Contains(output, "ui-custom-action")
+	return true, hasUIAction, nil
 }
 
 // EnsureJailLocalStructure implements Connector.
-// For SSH connectors we:
-//  1. Migrate any legacy jails out of jail.local into jail.d/*.local
-//  2. Rebuild /etc/fail2ban/jail.local with a clean, managed structure
-//     (banner, [DEFAULT] section based on current settings, and action_mwlg/action override).
+// If JAIL_AUTOMIGRATION=true, it first migrates any legacy jails to jail.d/.
 func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
 	jailLocalPath := "/etc/fail2ban/jail.local"
-	settings := config.GetSettings()
 
-	// Convert IgnoreIPs array to space-separated string
-	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
-	if ignoreIPStr == "" {
-		ignoreIPStr = "127.0.0.1/8 ::1"
+	// Check whether jail.local already exists and whether it belongs to us
+	exists, hasUI, chkErr := sc.CheckJailLocalIntegrity(ctx)
+	if chkErr != nil {
+		config.DebugLog("Warning: could not check jail.local integrity on %s: %v", sc.server.Name, chkErr)
+		// Proceed cautiously; treat as "not ours" if the check itself failed.
+	}
+	if exists && !hasUI {
+		// The file belongs to the user; never overwrite it.
+		config.DebugLog("jail.local on server %s exists but is not managed by Fail2ban-UI - skipping overwrite", sc.server.Name)
+		return nil
 	}
 
-	// Set default banaction values if not set
-	banactionVal := settings.Banaction
-	if banactionVal == "" {
-		banactionVal = "nftables-multiport"
-	}
-	banactionAllportsVal := settings.BanactionAllports
-	if banactionAllportsVal == "" {
-		banactionAllportsVal = "nftables-allports"
+	// Run experimental migration if enabled
+	if isJailAutoMigrationEnabled() {
+		config.DebugLog("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for SSH server %s", sc.server.Name)
+		if err := sc.MigrateJailsFromJailLocalRemote(ctx); err != nil {
+			return fmt.Errorf("failed to migrate legacy jails from jail.local on remote server %s: %w", sc.server.Name, err)
+		}
 	}
 
-	// Build the new jail.local content in Go (mirrors local ensureJailLocalStructure)
-	banner := config.JailLocalBanner()
-
-	defaultSection := fmt.Sprintf(`[DEFAULT]
-enabled = %t
-bantime.increment = %t
-ignoreip = %s
-bantime = %s
-findtime = %s
-maxretry = %d
-banaction = %s
-banaction_allports = %s
-
-`,
-		settings.DefaultJailEnable,
-		settings.BantimeIncrement,
-		ignoreIPStr,
-		settings.Bantime,
-		settings.Findtime,
-		settings.Maxretry,
-		banactionVal,
-		banactionAllportsVal,
-	)
-
-	actionMwlgConfig := `# Custom Fail2Ban action for UI callbacks
-action_mwlg = %(action_)s
-             ui-custom-action[logpath="%(logpath)s", chain="%(chain)s"]
-
-`
-
-	actionOverride := `# Custom Fail2Ban action applied by fail2ban-ui
-action = %(action_mwlg)s
-`
-
-	content := banner + defaultSection + actionMwlgConfig + actionOverride
+	// Build content using the shared helper (single source of truth)
+	content := config.BuildJailLocalContent()
 
 	// Escape single quotes for safe use in a single-quoted heredoc
 	escaped := strings.ReplaceAll(content, "'", "'\"'\"'")
-
-	// IMPORTANT: Run migration FIRST before ensuring structure.
-	// This is because EnsureJailLocalStructure may overwrite jail.local,
-	// which would destroy any jail sections that need to be migrated.
-	// If migration fails for any reason, we SHOULD NOT overwrite jail.local,
-	// otherwise legacy jails would be lost.
-	if err := sc.MigrateJailsFromJailLocalRemote(ctx); err != nil {
-		return fmt.Errorf("failed to migrate legacy jails from jail.local on remote server %s: %w", sc.server.Name, err)
-	}
 
 	// Write the rebuilt content via heredoc over SSH
 	writeScript := fmt.Sprintf(`cat > %s <<'JAILLOCAL'
@@ -1839,6 +1615,7 @@ JAILLOCAL
 }
 
 // MigrateJailsFromJailLocalRemote migrates non-commented jail sections from jail.local to jail.d/*.local files on remote system.
+// EXPERIMENTAL: Only called when JAIL_AUTOMIGRATION=true. It is always best to migrate a pre-existing jail.local by hand.
 func (sc *SSHConnector) MigrateJailsFromJailLocalRemote(ctx context.Context) error {
 	jailLocalPath := "/etc/fail2ban/jail.local"
 	jailDPath := "/etc/fail2ban/jail.d"
@@ -1906,7 +1683,7 @@ func (sc *SSHConnector) MigrateJailsFromJailLocalRemote(ctx context.Context) err
 		writeScript := fmt.Sprintf(`cat > %s <<'JAILEOF'
 %s
 JAILEOF
-'`, jailFilePath, escapedContent)
+`, jailFilePath, escapedContent)
 		if _, err := sc.runRemoteCommand(ctx, []string{writeScript}); err != nil {
 			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
 		}
@@ -1922,7 +1699,7 @@ JAILEOF
 		writeLocalScript := fmt.Sprintf(`cat > %s <<'LOCALEOF'
 %s
 LOCALEOF
-'`, jailLocalPath, escapedDefault)
+`, jailLocalPath, escapedDefault)
 		if _, err := sc.runRemoteCommand(ctx, []string{writeLocalScript}); err != nil {
 			return fmt.Errorf("failed to rewrite jail.local: %w", err)
 		}

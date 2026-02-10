@@ -85,6 +85,26 @@ function loadSettings() {
       // Set callback URL and add auto-update listener for port changes
       const callbackURLInput = document.getElementById('callbackURL');
       callbackURLInput.value = data.callbackUrl || '';
+      const callbackUrlEnvHint = document.getElementById('callbackUrlEnvHint');
+      const callbackUrlEnvValue = document.getElementById('callbackUrlEnvValue');
+      const callbackUrlDefaultHint = document.getElementById('callbackUrlDefaultHint');
+
+      if (data.callbackUrlEnvSet) {
+        // CALLBACK_URL env is set - make field readonly and show hint
+        callbackURLInput.value = data.callbackUrlFromEnv || data.callbackUrl || '';
+        callbackURLInput.readOnly = true;
+        callbackURLInput.classList.add('bg-gray-100', 'cursor-not-allowed');
+        callbackUrlEnvValue.textContent = data.callbackUrlFromEnv || data.callbackUrl || '';
+        callbackUrlEnvHint.style.display = 'block';
+        callbackUrlDefaultHint.style.display = 'none';
+      } else {
+        // CALLBACK_URL env not set - allow editing
+        callbackURLInput.readOnly = false;
+        callbackURLInput.classList.remove('bg-gray-100', 'cursor-not-allowed');
+        callbackUrlEnvHint.style.display = 'none';
+        callbackUrlDefaultHint.style.display = 'block';
+      }
+
       const callbackSecretInput = document.getElementById('callbackSecret');
       const toggleLink = document.getElementById('toggleCallbackSecretLink');
       if (callbackSecretInput) {
@@ -101,6 +121,7 @@ function loadSettings() {
       
       // Auto-update callback URL when port changes (if using default localhost pattern)
       function updateCallbackURLIfDefault() {
+        if (data.callbackUrlEnvSet) return; // Skip auto-update when env is set
         const currentPort = parseInt(uiPortInput.value, 10) || 8080;
         const currentCallbackURL = callbackURLInput.value.trim();
         // Check if callback URL matches default localhost pattern
@@ -160,8 +181,10 @@ function loadSettings() {
       document.getElementById('geoipDatabasePath').value = data.geoipDatabasePath || '/usr/share/GeoIP/GeoLite2-Country.mmdb';
       document.getElementById('maxLogLines').value = data.maxLogLines || 50;
       document.getElementById('banTime').value = data.bantime || '';
+      document.getElementById('bantimeRndtime').value = data.bantimeRndtime || '';
       document.getElementById('findTime').value = data.findtime || '';
       document.getElementById('maxRetry').value = data.maxretry || '';
+      document.getElementById('defaultChain').value = data.chain || 'INPUT';
       // Load IgnoreIPs as array
       const ignoreIPs = data.ignoreips || [];
       renderIgnoreIPsTags(ignoreIPs);
@@ -233,11 +256,13 @@ function saveSettings(event) {
     bantimeIncrement: document.getElementById('bantimeIncrement').checked,
     defaultJailEnable: document.getElementById('defaultJailEnable').checked,
     bantime: document.getElementById('banTime').value.trim(),
+    bantimeRndtime: document.getElementById('bantimeRndtime').value.trim(),
     findtime: document.getElementById('findTime').value.trim(),
     maxretry: parseInt(document.getElementById('maxRetry').value, 10) || 3,
     ignoreips: getIgnoreIPsArray(),
     banaction: document.getElementById('banaction').value,
     banactionAllports: document.getElementById('banactionAllports').value,
+    chain: document.getElementById('defaultChain').value || 'INPUT',
     geoipProvider: document.getElementById('geoipProvider').value || 'builtin',
     geoipDatabasePath: document.getElementById('geoipDatabasePath').value || '/usr/share/GeoIP/GeoLite2-Country.mmdb',
     maxLogLines: parseInt(document.getElementById('maxLogLines').value, 10) || 50,

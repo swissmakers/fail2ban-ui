@@ -151,15 +151,20 @@ function appendConsoleLog(message, timestamp) {
       .replace(/'/g, '&#039;');
   }
   
-  // Color code different log levels
+  // Color code different log levels using precise patterns to avoid
+  // false positives from SSH flags (e.g. "-o LogLevel=ERROR") or
+  // substrings like "stderr".
+  // Skip coloring for SSH command output that dumps config file content
   let logClass = 'text-green-400';
-  const msgLower = message.toLowerCase();
-  if (msgLower.includes('error') || msgLower.includes('fatal')) {
-    logClass = 'text-red-400';
-  } else if (msgLower.includes('warning') || msgLower.includes('warn')) {
-    logClass = 'text-yellow-400';
-  } else if (msgLower.includes('info') || msgLower.includes('debug')) {
-    logClass = 'text-blue-400';
+  var isConfigDump = /SSH command output\b/.test(message) && /Fail2Ban-UI Managed Configuration|jail\.local|action_mwlg/.test(message);
+  if (!isConfigDump) {
+    if (/❌/.test(message) || /\b(?:error|fatal)\s*:/i.test(message) || /\bfailed\s+to\b/i.test(message)) {
+      logClass = 'text-red-400';
+    } else if (/⚠️/.test(message) || /\b(?:warning|warn)\s*:/i.test(message)) {
+      logClass = 'text-yellow-400';
+    } else if (/✅/.test(message) || /\b(?:info|debug)\s*:/i.test(message) || /\bsuccessfully\b/i.test(message)) {
+      logClass = 'text-blue-400';
+    }
   }
   
   logLine.className = logClass + ' leading-relaxed';

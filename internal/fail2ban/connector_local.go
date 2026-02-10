@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -343,9 +344,6 @@ func (lc *LocalConnector) UpdateDefaultSettings(ctx context.Context, settings co
 
 // EnsureJailLocalStructure implements Connector.
 func (lc *LocalConnector) EnsureJailLocalStructure(ctx context.Context) error {
-	// Note: Migration is handled in newConnectorForServer() before
-	// config.EnsureLocalFail2banAction() is called, so migration has already
-	// run by the time this method is called.
 	return config.EnsureJailLocalStructure()
 }
 
@@ -367,6 +365,20 @@ func (lc *LocalConnector) CreateFilter(ctx context.Context, filterName, content 
 // DeleteFilter implements Connector.
 func (lc *LocalConnector) DeleteFilter(ctx context.Context, filterName string) error {
 	return DeleteFilter(filterName)
+}
+
+// CheckJailLocalIntegrity implements Connector.
+func (lc *LocalConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
+	const jailLocalPath = "/etc/fail2ban/jail.local"
+	content, err := os.ReadFile(jailLocalPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, false, nil // file does not exist; OK, will be created
+		}
+		return false, false, fmt.Errorf("failed to read jail.local: %w", err)
+	}
+	hasUIAction := strings.Contains(string(content), "ui-custom-action")
+	return true, hasUIAction, nil
 }
 
 func executeShellCommand(ctx context.Context, command string) (string, error) {

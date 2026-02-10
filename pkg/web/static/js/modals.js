@@ -190,7 +190,7 @@ function openBanInsightsModal() {
       percent = Math.min(Math.max(percent, 3), 100);
       return ''
         + '<div class="space-y-2">'
-        + '  <div class="flex items-center justify-between text-sm font-medium text-gray-800" style="border-bottom: ridge;">'
+        + '  <div class="flex items-center justify-between text-sm font-medium text-gray-800">'
         + '    <span>' + escapeHtml(label) + '</span>'
         + '    <span>' + formatNumber(stat.count || 0) + '</span>'
         + '  </div>'
