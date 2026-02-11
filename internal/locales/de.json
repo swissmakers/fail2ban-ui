@@ -351,6 +351,8 @@
   "servers.form.no_keys": "Keine SSH-Schlüssel gefunden; Pfad manuell eingeben",
   "filter_debug.not_available": "Filter-Debug ist nur verfügbar, wenn mindestens ein registrierter Fail2ban-Server aktiviert ist.",
   "filter_debug.local_missing": "Das lokale Fail2ban-Filterverzeichnis wurde auf diesem Host nicht gefunden.",
+  "filter_debug.save_success": "Filter- und Jail-Konfiguration gespeichert und Fail2ban neu geladen",
+  "filter_debug.save_reload_warning": "Konfiguration gespeichert, aber Fail2ban-Reload fehlgeschlagen",
   "email.ban.title": "Achtung: Fail2Ban hat eine neue IP-Adresse blockiert",
   "email.ban.intro": "Fail2Ban-UI hat eine fehlerhafte Anfrage oder wiederholte Authentifizierungsfehler erkannt und die Quell-IP automatisch blockiert. Überprüfen Sie die Metadaten und Log-Auszüge unten.",
   "email.ban.subject.banned": "Gesperrt",

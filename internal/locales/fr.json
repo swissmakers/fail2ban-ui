@@ -351,6 +351,8 @@
   "servers.form.no_keys": "Aucune clé SSH trouvée ; saisissez le chemin manuellement",
   "filter_debug.not_available": "Le débogage des filtres n'est disponible que lorsqu'au moins un serveur Fail2ban enregistré est activé.",
   "filter_debug.local_missing": "Le répertoire de filtres Fail2ban local est introuvable sur cet hôte.",
+  "filter_debug.save_success": "Configuration de filtre et jail enregistrée et Fail2ban rechargé",
+  "filter_debug.save_reload_warning": "Configuration enregistrée, mais le rechargement de Fail2ban a échoué",
   "email.ban.title": "Alerte de sécurité : Fail2Ban a bloqué une nouvelle adresse IP",
   "email.ban.intro": "Fail2Ban-UI a détecté une requête suspecte ou des échecs d'authentification répétés et a automatiquement bloqué l'IP source. Consultez les métadonnées et extraits de journaux ci-dessous.",
   "email.ban.subject.banned": "Bloqué",

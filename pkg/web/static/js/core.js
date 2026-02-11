@@ -28,12 +28,37 @@ function showToast(message, type, duration) {
   var toast = document.createElement('div');
   var variant = type || 'info';
   toast.className = 'toast toast-' + variant;
-  toast.textContent = message;
+
+  // Build inner layout with close button
+  var wrapper = document.createElement('div');
+  wrapper.className = 'flex items-start';
+
+  var textSpan = document.createElement('span');
+  textSpan.className = 'flex-1';
+  textSpan.textContent = message;
+
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'flex-shrink-0 ml-2 mt-0.5 opacity-60 hover:opacity-100 focus:outline-none';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.innerHTML = '<i class="fas fa-times text-sm"></i>';
+
+  wrapper.appendChild(textSpan);
+  wrapper.appendChild(closeBtn);
+  toast.appendChild(wrapper);
+
+  // Close button handler
+  closeBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    clearTimeout(autoRemoveTimer);
+    toast.classList.remove('show');
+    setTimeout(function() { toast.remove(); }, 300);
+  });
+
   container.appendChild(toast);
   requestAnimationFrame(function() {
     toast.classList.add('show');
   });
-  setTimeout(function() {
+  var autoRemoveTimer = setTimeout(function() {
     toast.classList.remove('show');
     setTimeout(function() {
       toast.remove();

@@ -179,6 +179,7 @@ mark {
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     color: #fff;
+    pointer-events: auto;
     font-weight: 500;
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     opacity: 0;
