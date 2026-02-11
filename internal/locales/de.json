@@ -353,6 +353,7 @@
   "filter_debug.local_missing": "Das lokale Fail2ban-Filterverzeichnis wurde auf diesem Host nicht gefunden.",
   "filter_debug.save_success": "Filter- und Jail-Konfiguration gespeichert und Fail2ban neu geladen",
   "filter_debug.save_reload_warning": "Konfiguration gespeichert, aber Fail2ban-Reload fehlgeschlagen",
+  "filter_debug.jail_auto_disabled": "Jail '%s' wurde automatisch deaktiviert.",
   "email.ban.title": "Achtung: Fail2Ban hat eine neue IP-Adresse blockiert",
   "email.ban.intro": "Fail2Ban-UI hat eine fehlerhafte Anfrage oder wiederholte Authentifizierungsfehler erkannt und die Quell-IP automatisch blockiert. Überprüfen Sie die Metadaten und Log-Auszüge unten.",
   "email.ban.subject.banned": "Gesperrt",

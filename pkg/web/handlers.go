@@ -1459,9 +1459,24 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 	config.DebugLog("Reloading fail2ban")
 	if err := conn.Reload(c.Request.Context()); err != nil {
 		log.Printf("⚠️ Config saved but fail2ban reload failed: %v", err)
+		// Auto-disable this jail so fail2ban won't crash on next restart (invalid filter/jail config)
+		disableUpdate := map[string]bool{jail: false}
+		if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
+			log.Printf("⚠️ Failed to auto-disable jail %s after reload failure: %v", jail, disableErr)
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Config saved successfully, but fail2ban reload failed",
+				"warning": err.Error(),
+			})
+			return
+		}
+		if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
+			log.Printf("⚠️ Failed to reload fail2ban after auto-disabling jail %s: %v", jail, reloadErr2)
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"message": "Config saved successfully, but fail2ban reload failed",
-			"warning": err.Error(),
+			"message":          "Config saved successfully, but fail2ban reload failed",
+			"warning":          err.Error(),
+			"jailAutoDisabled": true,
+			"jailName":         jail,
 		})
 		return
 	}

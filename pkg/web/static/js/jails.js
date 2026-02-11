@@ -156,7 +156,14 @@ function saveJailConfig() {
       }
       closeModal('jailConfigModal');
       if (data.warning) {
-        showToast(t('filter_debug.save_reload_warning', 'Config saved, but fail2ban reload failed') + ': ' + data.warning, 'warning', 12000);
+        var warnMsg = t('filter_debug.save_reload_warning', 'Config saved, but fail2ban reload failed') + ': ' + data.warning;
+        if (data.jailAutoDisabled && data.jailName) {
+          warnMsg = (typeof t === 'function' ? t('filter_debug.jail_auto_disabled', "Jail '%s' was automatically disabled.").replace('%s', data.jailName) : "Jail '" + data.jailName + "' was automatically disabled.") + ' ' + warnMsg;
+          var toggleId = 'toggle-' + data.jailName.replace(/[^a-zA-Z0-9]/g, '_');
+          var cb = document.getElementById(toggleId);
+          if (cb) cb.checked = false;
+        }
+        showToast(warnMsg, 'warning', 12000);
       } else {
         showToast(t('filter_debug.save_success', 'Filter and jail config saved and reloaded'), 'success');
       }
