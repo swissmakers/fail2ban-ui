@@ -17,4 +17,4 @@
 package version
 
 // Version is the current Fail2ban-UI version (in best case it matches the latest release tag on GitHub).
-const Version = "1.3.8"
+const Version = "1.3.9"
