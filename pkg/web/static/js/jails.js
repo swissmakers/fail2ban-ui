@@ -155,7 +155,18 @@ function saveJailConfig() {
         return;
       }
       closeModal('jailConfigModal');
-      showToast(t('filter_debug.save_success', 'Filter and jail config saved and reloaded'), 'success');
+      if (data.warning) {
+        var warnMsg = t('filter_debug.save_reload_warning', 'Config saved, but fail2ban reload failed') + ': ' + data.warning;
+        if (data.jailAutoDisabled && data.jailName) {
+          warnMsg = (typeof t === 'function' ? t('filter_debug.jail_auto_disabled', "Jail '%s' was automatically disabled.").replace('%s', data.jailName) : "Jail '" + data.jailName + "' was automatically disabled.") + ' ' + warnMsg;
+          var toggleId = 'toggle-' + data.jailName.replace(/[^a-zA-Z0-9]/g, '_');
+          var cb = document.getElementById(toggleId);
+          if (cb) cb.checked = false;
+        }
+        showToast(warnMsg, 'warning', 12000);
+      } else {
+        showToast(t('filter_debug.save_success', 'Filter and jail config saved and reloaded'), 'success');
+      }
       return refreshData({ silent: true });
     })
     .catch(function(err) {
@@ -468,17 +479,17 @@ function saveManageJailsSingle(checkbox) {
     console.error('Could not find jail name span');
     return;
   }
-  
+
   const jailName = nameSpan.textContent.trim();
   if (!jailName) {
     console.error('Jail name is empty');
     return;
   }
-  
+
   const isEnabled = checkbox.checked;
   const updatedJails = {};
   updatedJails[jailName] = isEnabled;
-  
+
   console.log('Saving jail state:', jailName, 'enabled:', isEnabled, 'payload:', updatedJails);
 
   // Send updated state to the API endpoint /api/jails/manage.
@@ -500,22 +511,20 @@ function saveManageJailsSingle(checkbox) {
       if (data.error) {
         var errorMsg = data.error;
         var toastType = 'error';
-        
+
         // If jails were auto-disabled, check if this jail was one of them
         var wasAutoDisabled = data.autoDisabled && data.enabledJails && Array.isArray(data.enabledJails) && data.enabledJails.indexOf(jailName) !== -1;
-        
+
         if (wasAutoDisabled) {
           checkbox.checked = false;
           toastType = 'warning';
-          // Use the message if available, otherwise use the error
-          errorMsg = data.message || errorMsg;
         } else {
           // Revert checkbox state on error
           checkbox.checked = !isEnabled;
         }
-        
-        showToast(errorMsg, toastType);
-        
+
+        showToast(errorMsg, toastType, wasAutoDisabled ? 15000 : undefined);
+
         // Still reload the jail list to reflect the actual state
         return fetch(withServerParam('/api/jails/manage'), {
           headers: serverHeaders()

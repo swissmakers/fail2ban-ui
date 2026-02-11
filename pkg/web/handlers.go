@@ -1458,12 +1458,25 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 	// Reload fail2ban
 	config.DebugLog("Reloading fail2ban")
 	if err := conn.Reload(c.Request.Context()); err != nil {
-		config.DebugLog("Failed to reload fail2ban: %v", err)
-		// Still return success but warn about reload failure
-		// The config was saved successfully, user can manually reload
+		log.Printf("⚠️ Config saved but fail2ban reload failed: %v", err)
+		// Auto-disable this jail so fail2ban won't crash on next restart (invalid filter/jail config)
+		disableUpdate := map[string]bool{jail: false}
+		if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
+			log.Printf("⚠️ Failed to auto-disable jail %s after reload failure: %v", jail, disableErr)
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Config saved successfully, but fail2ban reload failed",
+				"warning": err.Error(),
+			})
+			return
+		}
+		if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
+			log.Printf("⚠️ Failed to reload fail2ban after auto-disabling jail %s: %v", jail, reloadErr2)
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"message": "Config saved successfully, but fail2ban reload failed",
-			"warning": "Please check the fail2ban configuration and reload manually: " + err.Error(),
+			"message":          "Config saved successfully, but fail2ban reload failed",
+			"warning":          err.Error(),
+			"jailAutoDisabled": true,
+			"jailName":         jail,
 		})
 		return
 	}
@@ -1908,13 +1921,9 @@ func UpdateJailManagementHandler(c *gin.Context) {
 			}
 		}
 
-		// Update errMsg with detailed error output when debug mode is enabled
-		settings := config.GetSettings()
-		if settings.Debug && detailedErrorOutput != "" {
-			errMsg = fmt.Sprintf("%s\n\nDetailed error output:\n%s", errMsg, detailedErrorOutput)
-		} else if detailedErrorOutput != "" {
-			// Even without debug mode, include basic error info
-			errMsg = fmt.Sprintf("%s (check debug mode for details)", errMsg)
+		if detailedErrorOutput != "" {
+			// We use only the extracted error output
+			errMsg = strings.TrimSpace(detailedErrorOutput)
 		}
 
 		// If any jails were enabled in this request and reload failed, disable them all
