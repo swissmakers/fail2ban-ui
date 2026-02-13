@@ -1,1264 +1,172 @@
 # Fail2Ban UI
 
-<div align="center">
+Fail2Ban UI is a web interface for operating Fail2Ban across one or more Linux hosts. It provides a central place to review bans, search and unban IPs, manage jails and filters, and receive notifications.
 
-**Enterprise-Grade Intrusion Detection System Management Platform**
+The project is maintained by Swissmakers GmbH and released under GPL-3.0.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go)](https://golang.org/)
-[![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://www.linux.org/)
+## What this project does
 
-*Swiss-made open-source solution for centralized Fail2Ban management across distributed infrastructure*
+Fail2Ban UI does not replace Fail2Ban. It connects to existing Fail2Ban instances and adds:
 
-[Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Screenshots](#-screenshots) • [Security Notes](#-security-notes)
+- A Dashboard for active jails and recent ban/unban activity
+- Server Manager for adding new fail2ban servers to Fail2ban-UI
+- Central search and unban across jails and servers
+- Remote editing / creating, of jail/filter configuration (depending on connector)
+- Filter debug integration and live log-pattern testing
+- Advanced ban actions for recurring offenders e.g. automatically ban on pfSense and Mikrotik, when threshold is reached.
+- Optional email alerts with GeoIP/Whois enrichment for selected "alert countries" only.
+- Optional OIDC login (Keycloak, Authentik, Pocket-ID)
+- Least-privilege, SELinux-aware container deployment (policies provided)
+- .. and much more to come.
 
-</div>
+## Connector types
 
----
+| Connector | Typical use | Notes |
+|---|---|---|
+| Local | Fail2Ban runs on the same host as the UI | Uses the Fail2Ban socket and local files |
+| SSH | Manage remote Fail2Ban hosts without installing an agent | Uses key-based SSH and remote `fail2ban-client` |
+| Agent (technical preview) | Environments where SSH is not desired | Limited functionality; work in progress |
 
-## 🎯 Overview
+## Quick start (container)
 
-**Fail2Ban UI** is a production-ready, enterprise-grade web-based management platform to create a distributed Fail2Ban intrusion detection system. Designed for organizations managing single or multible fail2ban instances. It provides centralized ban-control, real-time monitoring and alerting across all servers.
+Prerequisites:
+- A Linux host with Podman or Docker
+- If you manage a local Fail2Ban instance: access to `/etc/fail2ban` and `/var/run/fail2ban` is needed by Fail2ban-UI
 
-### Why we Need Fail2Ban UI
+Procedure (local connector example):
+```bash
+podman run -d --name fail2ban-ui --network=host \
+  -v /opt/fail2ban-ui:/config:Z \
+  -v /etc/fail2ban:/etc/fail2ban:Z \
+  -v /var/run/fail2ban:/var/run/fail2ban \
+  -v /var/log:/var/log:ro \
+  swissmakers/fail2ban-ui:latest
+````
 
-Modern enterprises face increasing security challenges with generally distributed infrastructure, cloud deployments, and multi-location operations. Traditional Fail2Ban management requires a manual SSH access to individual servers, manual configuration changes, and lacks centralized visibility. **Fail2Ban UI solves these challenges** by providing:
+Verification:
 
-- **Centralized Management**: Control multible Fail2Ban instances from a single interface
-- **Real-Time Visibility**: Monitor ban / security events across your entire proxy / webserver infrastructure (also planned to ingest all via connector to SIEM)
-- **Operational Efficiency**: Reduce administrative overhead with automated workflows e.g. auto-banning for recurring IPs, directly  on the firewall.
+* Open `http://localhost:8080`
+* In the UI: Settings → Manage Servers → enable “Local connector” and run “Test connection”
 
-**Developed by [Swissmakers GmbH](https://swissmakers.ch)** — Trusted by enterprises swisswide for mission-critical security infrastructure.
+Next steps:
 
----
+* For Compose, systemd, SELinux, and remote connectors, see the documentation links below.
 
-## 🚀 Current Features
+## Documentation
 
-### 🏢 Multi-Server Management
+* Installation: `docs/installation.md`
+* Configuration reference (env vars, callback URL/secret, OIDC): `docs/configuration.md`
+* Security guidance (recommended deployment posture): `docs/security.md`
+* Architecture overview: `docs/architecture.md`
+* API reference: `docs/api.md`
+* Troubleshooting: `docs/troubleshooting.md`
 
-**Centralized Control Across Distributed Fail2Ban Instances**
+Existing deployment guides in this repository:
 
-- **Unified Dashboard**: Monitor and manage multiple Fail2Ban servers from a single interface
-- **Flexible Connectivity**: Support for local, SSH, (and API agent) connections from Fail2Ban-UI to Fail2Ban Instances
-- **API Agent Connector**: Technical preview; Basic API functionality available, full implementation in progress
-- **Connection Testing**: Validate backend connectivity before activate them on the management UI
+* Container: `deployment/container/README.md`
+* systemd: `deployment/systemd/README.md`
+* SELinux policies: `deployment/container/SELinux/`
 
-**Use Cases:**
-- Multi-datacenter deployments with several reverse proxies
-- Hybrid cloud environments
-- Also integrate external Webservers
+Development / testing stacks:
+* OIDC dev stack: `development/oidc/README.md`
+* SSH and local connector dev stack: `development/ssh_and_local/README.md`
 
-### 📊 Real-Time Security Intelligence
+## Screenshots
 
-**Malicious Actor Visibility and Analytics**
-
-- **Live Event Monitoring**: Real-time ban events from all configured / connected servers
-- **Historical Analysis**: SQLite-based event storage with advanced querying
-- **Geographic Intelligence**: Country-based threat analysis and visualization with GeoIP and whois lookups (Option to send the logs to a SIEM is planned)
-- **Integrated Lookups**: Whois and GeoIP lookups are performed directly by Fail2Ban UI (no Linux binary dependencies anymore on fail2ban side)
-- **Smart Log Filtering**: Automatic selection of most relevant log lines for ban notifications
-- **Recurring Threat Detection**: Identify persistent attackers across time windows
-- **Ban Insights Dashboard**: Aggregated statistics
-- **Event Correlation**: Track attack patterns across multiple servers and jails (planned with Elasticsearch)
-
-**Business Value:**
-- Faster threat response times
-- Proactive security posture management
-- Compliance reporting and audit trails
-
-### 🛡️ Advanced Ban Management
-
-**IP Blocking and Unblocking**
-
-- **Cross-Jail Search**: Find banned IPs across all active jails instantly
-- **Bulk Operations**: Manage multiple bans simultaneously
-- **Ban History**: Complete audit trail with timestamps, ban-reasons, and context including whois and GeoIP information of the attacker
-- **Whitelist Management**: Configure trusted IPs and networks
-- **Automatic Unban**: Time-based ban expiration with configurable policies
-- **Permanent Ban for Reccuring IPs**: Set a threshold in the Settings, after what amount of Bans a IP is automatically banned permanently on Firewall (Currently Supported Mikrotik/PFSense)
-
-
-### ⚙️ Configuration Management
-
-- **Remote Configuration**: Edit Fail2Ban jail and filter configurations remotely
-- **Jail Management**: Enable/disable jails across multiple servers
-- **Filter Testing**: Debug and validate filters using `fail2ban-regex` before enabeling
-- **Template Management**: Standardize configurations across server groups (planned)
-
-
-### 📧 Alerting
-
-**Security Notifications**
-
-- **Multi-Language Email Alerts**: Localized notifications in currently 5 supported languages
-- **Country-Based Filtering**: Alert only on threats from specific geographic regions to reduce alert fatigue
-- **GeoIP Provider Selection**: Choose between MaxMind (needs a local database) or Built-in (ip-api.com) for geographic lookups
-- **SMTP Integration**: Support M365 Mail-Servers with STARTTLS
-- **Email Templates**: Currently features a Modern and classic email design (more to come)
-- **Alert Aggregation**: This feature is planned for the SIEM-modul
-
-### 🔐 Enterprise Security & Authentication
-
-**Hardened for Production Environments**
-
-- **OIDC Authentication**: Optional OpenID Connect authentication supporting Keycloak, Authentik, and Pocket-ID
-  - Secure session management with encrypted cookies (AES-GCM)
-  - Automatic logout with provider integration
-  - CSRF protection via state parameters
-  - Configurable session timeouts
-  - Automatic Keycloak client configuration for development environment
-- **SELinux Support**: Full compatibility with SELinux-enabled systems and pre-created custom policies
-- **Container Security**: Secure containerized deployment with proper best-practices
-- **Least Privilege**: Only minimal permissions are used using FACLs and special sudo-rules
-- **Audit Logging**: Comprehensive logging for compliance and forensics (planned: Elastic SIEM integration)
-
-### 🌐 Internationalization
-
-- **Multi-Language UI**: English, German (DE/CH), French, Italian, Spanish
-- **Localized Content**: All user-facing content translated
-- **RTL Support Ready**: Architecture supports right-to-left languages
-- **Easy Extension**: Simple JSON-based translation system
-
-### 📱 Modern User Experience
-
-- **Responsive Design**: Full functionality also on mobile devices
-- **Login Interface**: Modern, clean authentication UI with OIDC integration
-- **Progressive Web App**: Works in offline/restricted environments with local CSS/JS builds only
-- **Fast Performance**: Go-based backend with minimal resource footprint
-- **Real-Time Updates**: WebSocket-based live event streaming for UI-actions and changes
-
----
-
-## 📸 Screenshots
+A set of screenshots is available in `screenshots/`
 
 ### Main Dashboard
 ![Dashboard](screenshots/0_Dashboard.png)
-**Description:** The main dashboard view showing an overview of all active jails, banned IPs, and real-time statistics. Displays total bans, recent activity, and quick access to key features.
+The main dashboard view showing an overview of all active jails, banned IPs, and real-time statistics. Displays total bans, recent activity, and quick access to key features.
 
 #### Unban IP
 ![Unban IP](screenshots/0.1_Dashboard_unban_IP.png)
-**Description:** Unbanning a IP addresses directly from the dashboard. Shows the unban confirmation dialog.
+Unbanning a IP addresses directly from the dashboard. Shows the unban confirmation dialog.
 
 ### Server Management
 ![Manage Servers](screenshots/1_Dashboard_Manage_Servers.png)
-**Description:** Server management modal for configuring / adding and managing multiple Fail2Ban instances. Supports local, SSH, and API agent connections.
+Server management modal for configuring / adding and managing multiple Fail2Ban instances. Supports local, SSH, and API agent connections.
 
 ### Jail / Filter Management
 ![Manage Jails](screenshots/1.1_Dashboard_Manage_Jails.png)
-**Description:** Overview of all configured jails with their enabled/disabled status. Allows centralized management of jail configurations across multiple servers.
+Overview of all configured jails with their enabled/disabled status. Allows centralized management of jail configurations across multiple servers.
 
 #### Edit Jail Configuration
 ![Edit Jail](screenshots/1.2_Dashboard_Manage_Jails_Edit.png)
-**Description:** When clicking on "Edit Filter / Jail" the Jail configuration editor is opened. It shows the current filter and jail configuration  with all options to modify the settings, test or add / modify the logpaths, and save changes.
+When clicking on "Edit Filter / Jail" the Jail configuration editor is opened. It shows the current filter and jail configuration  with all options to modify the settings, test or add / modify the logpaths, and save changes.
 
 #### Logpath Test
 ![Logpath Test](screenshots/1.3_Dashboard_Manage_Jails_Edit_Logpathtest.png)
-**Description:** Logpath testing functionality that verifies log file paths and checks if files are accessible. Shows test results with visual indicators (✓/✗) for each log path.
+Logpath testing functionality that verifies log file paths and checks if files are accessible. Shows test results with visual indicators (✓/✗) for each log path.
 
 #### Create new Filter
 ![Create Filter](screenshots/1.4_Dashboard_Manage_Jails_Create_Filter.png)
-**Description:** The first button opens the modal for creating new Fail2Ban filter files. Includes filter configuration editor with syntax highlighting and validation.
+The first button opens the modal for creating new Fail2Ban filter files. Includes filter configuration editor with syntax highlighting and validation.
 
 #### Create new Jail
 ![Create Jail](screenshots/1.5_Dashboard_Manage_Jails_Create_Jail.png)
-**Description:** The second button opens the Jail creation modal for setting up new jails. Allows configuration of seperate jails with special parameters, filter selection, with automatic configuration generation.
+The second button opens the Jail creation modal for setting up new jails. Allows configuration of seperate jails with special parameters, filter selection, with automatic configuration generation.
 
 ### Search Functionality
 ![Search](screenshots/1.6_Dashboard_search.png)
-**Description:** Search for a specific IPs, that where blocked in a specific jail - searches in all active jails. Provides a quick and painless filtering.
+Search for a specific IPs, that where blocked in a specific jail - searches in all active jails. Provides a quick and painless filtering.
 
 ### Internal Log Overview
 ![Log Overview](screenshots/2_Dashboard_Log_Overview.png)
-**Description:** Comprehensive log overview showing ban / unban events, timestamps, and associated jails and recurring offenders. Provides detailed information about past security events.
+Comprehensive log overview showing ban / unban events, timestamps, and associated jails and recurring offenders. Provides detailed information about past security events.
 
 #### Whois Information
 ![Whois](screenshots/2.1_Dashboard_Log_Overview_Whois.png)
-**Description:** Whois lookup modal displaying detailed information about banned IP addresses, including geographic location, ISP details, and network information.
+Whois lookup modal displaying detailed information about banned IP addresses, including geographic location, ISP details, and network information.
 
 #### Ban Logs
 ![Ban Logs](screenshots/2.2_Dashboard_Log_Overview_BanLogs.png)
-**Description:** Detailed ban log view showing log lines that triggered the ban, timestamps, and context information for each security event.
+Detailed ban log view showing log lines that triggered the ban, timestamps, and context information for each security event.
 
 ### Filter Debugging
 ![Filter Debug](screenshots/3_Filter_Debug.png)
-**Description:** Filter debugging interface for testing Fail2Ban filter regex patterns against log lines. Helps validate filter configurations before deployment.
+Filter debugging interface for testing Fail2Ban filter regex patterns against log lines. Helps validate filter configurations before deployment.
 
 #### Filter Test Results
 ![Filter Test Results](screenshots/3.1_Filter_Debug_Testresult.png)
-**Description:** Results from filter testing showing matched lines, regex performance, and validation feedback. Displays which log lines match the filter pattern.
+Results from filter testing showing matched lines, regex performance, and validation feedback. Displays which log lines match the filter pattern.
 
 ### Settings
 ![Settings](screenshots/4_Settings.png)
-**Description:** Main settings page with sections for different configuration categories including general settings, advanced ban actions, alert settings, and global fail2ban settings.
+Main settings page with sections for different configuration categories including general settings, advanced ban actions, alert settings, and global fail2ban settings.
 
 #### Debug Console
 ![Debug Console](screenshots/4.1_Settings_DebugConsole.png)
-**Description:** When enabled the Debug console  showing real-time application logs, system messages, and debugging information. Useful for troubleshooting and monitoring without the need to query the container logs manually everytime.
+When enabled the Debug console  showing real-time application logs, system messages, and debugging information. Useful for troubleshooting and monitoring without the need to query the container logs manually everytime.
 
 #### Advanced Ban Actions
 ![Advanced Ban Actions](screenshots/4.2_Settings_AdvancedBanActions.png)
-**Description:** Configuration for advanced ban actions including permanent blocking, firewall integrations (Mikrotik, pfSense, OPNsense), and threshold settings for recurring offenders.
+Configuration for advanced ban actions including permanent blocking, firewall integrations (Mikrotik, pfSense, OPNsense), and threshold settings for recurring offenders.
 
 #### Alert Settings
 ![Alert Settings](screenshots/4.3_Settings_AlertSettings.png)
-**Description:** Email alert configuration with SMTP settings, country-based filtering (blocks from what country to raport), GeoIP provider selection, and alert preferences for bans and unbans.
+Email alert configuration with SMTP settings, country-based filtering (blocks from what country to raport), GeoIP provider selection, and alert preferences for bans and unbans.
 
 #### Global Settings
 ![Global Settings](screenshots/4.4_Settings_GlobalSettings.png)
-**Description:** Global Fail2Ban settings including default bantime, findtime, maxretry, banaction configuration (nftables/firewalld/iptables) and so on.
+Global Fail2Ban settings including default bantime, findtime, maxretry, banaction configuration (nftables/firewalld/iptables) and so on.
 
----
+## Security notes (think before exposing the UI)
 
-## 🚀 Quick Start
+* Do not expose the UI directly to the public Internet. Put it behind a reverse proxy, VPN, firewall rules, and/or OIDC.
+* SSH connector should use a dedicated service account with minimal sudo permissions and ACLs.
 
-### Prerequisites
+See `docs/security.md` for details.
 
-- **System**: Linux (RHEL 8+, Ubuntu 20.04+, Debian 11+) or Container-Environment
-- **Fail2Ban**: At least version 0.10+ installed and configured
-- **Go**: Version 1.24+ (only for source builds)
-- **Node.js**: Version 16+ (only for source build - Tailwind CSS)
-- **Permissions**: Root access to configure FACL and sudo-rules and Fail2Ban socket access
+## Contributing
 
-### Installation Methods (Example with mounts for local fail2ban connector)
+Documentation and deployment guidance in security tooling is never "done", and engineers are not always the fastest at writing it down in docs.
 
-#### Method 1: Container Deployment (Recommended)
+If you see a clearer way to describe installation steps, safer container defaults, better reverse-proxy examples, SELinux improvements, or a more practical demo environment, please contribute. Small improvements (typos, wording, examples) are just as valuable as code changes.
 
-**Option A: Using Pre-built Image**
 
-Pull and run the official image from Docker Hub:
-```bash
-# Pull the image with podman from Docker Hub (default)
-podman pull swissmakers/fail2ban-ui:latest
-# or with Docker:
-docker pull swissmakers/fail2ban-ui:latest
+See `CONTRIBUTING.md` for more info.
 
-# Alternative: Pull from Swissmakers registry (fallback)
-# podman pull registry.swissmakers.ch/infra/fail2ban-ui:latest
-# docker pull registry.swissmakers.ch/infra/fail2ban-ui:latest
+## License
 
-# Run the container (for usage with the local connector - fail2ban runs on same host)
-podman run -d \
-  --name fail2ban-ui \
-  --network=host \
-  -v /opt/podman-fail2ban-ui:/config:Z \
-  -v /etc/fail2ban:/etc/fail2ban:Z \
-  -v /var/log:/var/log:ro \
-  -v /var/run/fail2ban:/var/run/fail2ban \
-  swissmakers/fail2ban-ui:latest
-```
-
-**Option B: Build from Source**
-
-Build your own container image:
-```bash
-# Clone the repository
-git clone https://github.com/swissmakers/fail2ban-ui.git
-cd fail2ban-ui
-
-# Build the image
-sudo podman build -t fail2ban-ui:dev .
-# or with Docker:
-sudo docker build -t fail2ban-ui:dev .
-
-# Run the container (for usage with the local connector - fail2ban runs on same host)
-sudo podman run -d \
-  --name fail2ban-ui \
-  --network=host \
-  -v /opt/podman-fail2ban-ui:/config:Z \
-  -v /etc/fail2ban:/etc/fail2ban:Z \
-  -v /var/log:/var/log:ro \
-  -v /var/run/fail2ban:/var/run/fail2ban \
-  localhost/fail2ban-ui:dev
-```
-
-**Option C: Using Docker Compose**
-
-For a quicker start you can also use Docker Compose:
-```bash
-# Copy the example file
-cp docker-compose.example.yml docker-compose.yml
-# or
-cp docker-compose-allinone.example.yml docker-compose.yml
-
-# Edit docker-compose.yml to customize (e.g., change PORT and so on..)
-# Then start:
-podman compose up -d 
-# or
-docker-compose up -d
-```
-
-**Custom Port Configuration**
-
-Change the default port (8080) using the `PORT` environment variable:
-```bash
--e PORT=3080 \
-```
-
-**Bind address**
-
-By default, the HTTP server listens on `0.0.0.0`. To bind to a specific interface, set `BIND_ADDRESS` to an IP address (e.g. `127.0.0.1` for localhost only):
-
-```bash
--e BIND_ADDRESS=127.0.0.1  \
-```
-
-**Callback URL** (for remote / containerised Fail2ban instances)
-
-The callback URL is the external address that each Fail2ban instance uses to send ban/unban action calls back to Fail2ban-UI (via `/api/ban` and `/api/unban`). By default it is set to `http://127.0.0.1:<PORT>`, which works when Fail2ban runs on the same host or in the same network namespace. For container setups (bridge networking) or remote Fail2ban servers, override it with an address that is reachable from those instances:
-
-```bash
--e CALLBACK_URL=http://10.88.0.1:3080 \
-```
-
-> When `CALLBACK_URL` is set, the environment variable always takes priority over the value stored in the database or entered in the UI settings.
-
-**Callback Secret**
-
-The callback secret is a shared token used to authenticate ban/unban callbacks from Fail2ban instances. If not set, Fail2ban-UI auto-generates a secure random secret on first start. You can pin a specific secret via environment variable (e.g. when running multiple replicas or when you need a deterministic value):
-
-```bash
--e CALLBACK_SECRET=your-secure-shared-secret \
-```
-
-> When `CALLBACK_SECRET` is set, the environment variable always takes priority over the auto-generated or stored value.
-
-**Disable External IP Lookup** (Privacy / air-gapped)
-
-By default, the web UI displays your external IP address by querying external services. For privacy reasons, you can disable this feature using the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable:
-
-```bash
--e DISABLE_EXTERNAL_IP_LOOKUP=true \
-```
-
-When set, the "Your ext. IP:" display will be completely hidden and no external IP lookup requests will be made.
-
-**Disable version update check** (Privacy / air-gapped)
-
-On page load, the footer can check the latest release on GitHub to show "Latest" or "Update available". To disable this external request (e.g. in air-gapped or privacy-sensitive environments), set `UPDATE_CHECK=false`:
-
-```bash
--e UPDATE_CHECK=false  \
-```
-
-When disabled, the footer still shows the current version but does not perform any request to GitHub.
-
-**Experimental: Automatic jail.local Migration**
-
-If your Fail2ban server has a pre-existing `jail.local` with custom jails, Fail2ban-UI **will not** migrate them automatically by default. It is always best to migrate a pre-existing `jail.local` by hand (move each jail section into its own file under `jail.d/`).
-
-To enable the **experimental** automatic migration, set:
-
-```bash
--e JAIL_AUTOMIGRATION=true  \
-```
-
-> **Warning:** This feature is experimental. A backup of your original `jail.local` should be created before migration, but manual migration is strongly recommended for production systems.
-
-**OIDC Authentication Configuration (Optional)**
-
-Enable OIDC authentication by setting the required environment variables. This protects the web UI with your identity provider. The logout flow automatically redirects back to the login page after successful provider logout.
-
-**Basic Configuration:**
-```bash
-podman run -d \
-  --name fail2ban-ui \
-  --network=host \
-  -e OIDC_ENABLED=true \
-  -e OIDC_PROVIDER=keycloak \
-  -e OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm \
-  -e OIDC_CLIENT_ID=fail2ban-ui \
-  -e OIDC_CLIENT_SECRET=your-client-secret \
-  -e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback \
-  -v /opt/podman-fail2ban-ui:/config:Z \
-  -v /etc/fail2ban:/etc/fail2ban:Z \
-  -v /var/log:/var/log:ro \
-  -v /var/run/fail2ban:/var/run/fail2ban \
-  swissmakers/fail2ban-ui:latest
-```
-
-**Note:** The logout URL is automatically constructed for all supported providers. For Keycloak, ensure the post-logout redirect URI is configured in your client settings (see [Security Notes](#-security-notes) for details).
-
-**Provider-Specific Examples:**
-
-**Keycloak:**
-```bash
--e OIDC_ENABLED=true \
--e OIDC_PROVIDER=keycloak \
--e OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm \
--e OIDC_CLIENT_ID=fail2ban-ui \
--e OIDC_CLIENT_SECRET=your-client-secret \
--e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
-# OIDC_LOGOUT_URL is optional - automatically constructed if not set
-# Ensure "Valid post logout redirect URIs" in Keycloak includes: https://fail2ban-ui.example.com/auth/login
-```
-
-**Authentik:**
-```bash
--e OIDC_ENABLED=true \
--e OIDC_PROVIDER=authentik \
--e OIDC_ISSUER_URL=https://authentik.example.com/application/o/your-client-slug/ \
--e OIDC_CLIENT_ID=fail2ban-ui \
--e OIDC_CLIENT_SECRET=your-client-secret \
--e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
-```
-
-**Pocket-ID:**
-```bash
--e OIDC_ENABLED=true \
--e OIDC_PROVIDER=pocketid \
--e OIDC_ISSUER_URL=https://pocket-id.example.com \
--e OIDC_CLIENT_ID=fail2ban-ui-client \
--e OIDC_CLIENT_SECRET=your-secret \
--e OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
-```
-
-**Advanced OIDC Options:**
-```bash
--e OIDC_SCOPES=openid,profile,email,groups \
--e OIDC_SESSION_MAX_AGE=7200 \
--e OIDC_USERNAME_CLAIM=preferred_username \
--e OIDC_SESSION_SECRET=your-32-byte-secret
-```
-
-**Note:** If `OIDC_SESSION_SECRET` is not provided, a random secret will be generated on startup. For production, it's recommended to set a fixed secret.
-
-
-**Email alert template style**
-
-Alert emails (ban/unban notifications) use a "modern" HTML template by default. To use the classic style fail2ban-UI instead, set:
-
-```bash
--e emailStyle=classic
-```
-
-**Volume Mounts Explained**
-
-| Volume | Required | Purpose |
-|--------|----------|---------|
-| `/config` | ✅ Yes | Stores SQLite database, application settings, and SSH keys for remote connections |
-| `/etc/fail2ban` | ✅ Yes* | Access to Fail2Ban configuration files (jails, filters, actions) |
-| `/var/run/fail2ban` | ✅ Yes* | Access to Fail2Ban control socket for local management |
-| `/var/log` | ✅ Yes* | Read-Only | `:ro` | System log files for automated logpath tests on jail management. |
-| `/path/to/your/GeoIPFolder` | ⚠️ Optional | Read-Only | `:ro` | MaxMind GeoIP databases (only needed if using MaxMind provider) |
-
-*Required only if managing a local Fail2Ban instance as well. Not needed for remote-only deployments.
-
-**📖 [Complete Container Deployment Guide](./deployment/container/README.md)** - Detailed documentation including volume descriptions, SELinux configuration, and troubleshooting.
-
-#### Method 2: Systemd Service (Standalone)
-
-**Clone and build:**
-```bash
-git clone https://github.com/swissmakers/fail2ban-ui.git /opt/fail2ban-ui
-cd /opt/fail2ban-ui
-
-# Build Tailwind CSS (optional, for offline use)
-./build-tailwind.sh
-
-# Build Go application
-go build -o fail2ban-ui ./cmd/server/main.go
-```
-
-**📖 [Complete Systemd Setup Guide](./deployment/systemd/README.md)**
-
-**OIDC Authentication for Systemd Deployment:**
-
-When running as a systemd service, set OIDC environment variables in the systemd service file:
-
-```ini
-[Service]
-Environment="OIDC_ENABLED=true"
-Environment="OIDC_PROVIDER=keycloak"
-Environment="OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm"
-Environment="OIDC_CLIENT_ID=fail2ban-ui"
-Environment="OIDC_CLIENT_SECRET=your-client-secret"
-Environment="OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback"
-```
-
-See the [Security Notes](#-security-notes) section for complete OIDC configuration details.
-
-### First Launch
-
-1. **Access the Web Interface**
-   - Navigate to `http://localhost:8080` or `http://YOUR-LAN-IP:8080`
-   - Default port: `8080` (can be changed via `PORT` environment variable or in UI settings)
-
-2. **Add Your First Server**
-   - **Local Server**: Enable the local connector if Fail2Ban runs on the same host
-   - **Remote Server**: Add via SSH or API agent connection
-
-3. **Configure Settings**
-   - Set up email alerts
-   - Configure language preferences
-   - Adjust security settings
-
----
-
-## 📚 Documentation
-
-### Highlevel System Architecture / Communication
-
-- Backend: Go 1.24+ (Golang)
-- Frontend: Vanilla JavaScript, Tailwind CSS
-- Database: SQLite (embedded)
-- Container Runtime: Podman/Docker compatible
-- Service Management: systemd / container
-- Security: SELinux compliant / least privileges
-
-The following diagrams should describe the communication paths between browser (frontend) ↔ API, WebSocket message types, callbacks from Fail2ban instances, and connector types.
-
-#### Browser (Frontend) ↔ Backend (HTTP / WebSocket) communication
-
-```
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│  FRONTEND (Vanilla JS + Tailwind CSS)                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │
-│  │  Dashboard  │  │ Filter Debug│  │   Settings  │  │  (index)    │               │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘               │
-│         └────────────────┴────────────────┴────────────────┘                      │
-│                                    │                                              │
-│  Communication to backend:         │  HTTP/HTTPS (REST)                           │
-│  • GET  /                          │  • All /api/* (except callbacks) use your    │
-│  • GET  /api/summary               │    session when OIDC is enabled              │
-│  • GET  /api/events/bans           │  • X-F2B-Server header for server selection  │
-│  • GET  /api/version               │                                              │
-│  • POST /api/jails/:jail/unban/:ip │  WebSocket: GET /api/ws (upgrade)            │
-│  • POST /api/jails/:jail/ban/:ip   │  • Same origin, same cookies as HTTP         │◀-┐
-│  • POST /api/settings              │  • Receives: heartbeat, console_log,         │  │
-│  • … (see diagram 2)               │    ban_event, unban_event                    │  │
-└────────────────────────────────────┼──────────────────────────────────────────────┘  │ W
-                                     │                                                 │ e
-                                     ▼                                                 │ b
-┌─────────────────────────────────────────────────────────────────────────────────┐    │ s
-│  GO BACKEND (Gin)                                                               │    │ o
-│  ┌───────────────────────────────────────────────────────────────────────────┐  │    │ c
-│  │  PUBLIC (no OIDC-auth session needed for access):                         │  │    │ k
-│  │  • /auth/login | /auth/callback | /auth/logout                            │  │    │ e
-│  │  • /auth/status | /auth/user                                              │  │    │ t  
-│  │  • POST /api/ban | POST /api/unban ← Fail2ban callbacks (a valid Callback │  │    │
-│  │  • GET /api/ws   (WebSocket)                            Secret is needed) │  │    │
-│  │  • /static/* | /locales/*                                                 │  │----┘
-│  └───────────────────────────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────────────────────────┐  │
-│  │  PROTECTED (when OIDC enabled):  GET / | GET and POST to all other /api/* │  │
-│  └───────────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Backend internals: API routes, WebSocket hub, storage, connectors
-
-```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│  GIN SERVER                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────┐  │
-│  │  REST API (group /api)                                                     │  │
-│  │  • GET  /summary              → Connector(s) → Fail2ban(jails, banned IPs) │  │
-│  │  • GET  /jails/:jail/config   • POST /jails/:jail/config                   │  │
-│  │  • GET  /jails/manage         • POST /jails/manage | POST /jails           │  │
-│  │  • POST /jails/:jail/unban/:ip  • POST /jails/:jail/ban/:ip                │  │
-│  │  • GET  /settings             • POST /settings                             │  │
-│  │  • GET  /events/bans          • GET /events/bans/stats | /insights         │  │
-│  │  • GET  /version              (optional GitHub request if UPDATE_CHECK)    │  │
-│  │  • GET  /servers | POST/DELETE /servers | POST /servers/:id/test           │  │
-│  │  • GET  /filters/*            • POST /filters/test | POST/DELETE /filters  │  │
-│  │  • POST /fail2ban/restart     • GET/POST /advanced-actions/*               │  │
-│  │  • POST /ban  (callback)      • POST /unban (callback)                     │  │
-│  └────────────────────────────────────────────────────────────────────────────┘  │
-│                                    │                                             │
-│  ┌─────────────────────────────────┴──────────────────────────────────────────┐  │
-│  │  WebSocket Hub (GET /api/ws)                                               │  │
-│  │  • register / unregister clients                                           │  │
-│  │  • broadcast to all clients:                                               │  │
-│  │    - type: "heartbeat"   (every ~30s)                                      │  │
-│  │    - type: "console_log" (debug console lines)                             │  │
-│  │    - type: "ban_event"   (after POST /api/ban → store → broadcast)         │  │
-│  │    - type: "unban_event" (after POST /api/unban → store → broadcast)       │  │
-│  └────────────────────────────────────────────────────────────────────────────┘  │
-│  ┌────────────────────────────┐  ┌────────────────────────────┐                  │
-│  │  SQLite Storage            │  │  Whois / GeoIP             │                  │
-│  │  • ban_events              │  │  • IP → country/hostname   │                  │
-│  │  • app_settings, servers   │  │    MaxMind or ip-api.com   │                  │
-│  │  • permanent_blocks        │  │  • Used in UI and emails   │                  │
-│  └────────────────────────────┘  └────────────────────────────┘                  │
-│  ┌────────────────────────────┐  ┌────────────────────────────┐                  │
-│  │  Connector Manager         │  │  Integrations + Email      │                  │
-│  │  • Local (fail2ban.sock)   │  │  • Mikrotik / pfSense /    │                  │
-│  │  • SSH (exec on remote)    │  │    OPNsense (block/unblock)│                  │
-│  │  • Agent (HTTP to agent)   │  │  • SMTP alert emails       │                  │
-│  │  • New server init: ensure │  └────────────────────────────┘                  │
-│  │    action.d (ui-custom-    │                                                  │
-│  │    action.conf)            │                                                  │
-│  └────────────────────────────┘                                                  │
-└──────────────────────────────────────────────────────────────────────────────────┘
-```
-
-#### Fail2ban instances → Fail2ban-UI (callbacks) and Fail2ban-UI → Fail2ban (via connectors)
-
-```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│  FAIL2BAN INSTANCES (one per server: local, SSH host, or agent host)             │
-│  On each host: Fail2ban + action script (ui-custom-action.conf)                  │
-│  On ban/unban → action runs → HTTP POST to Fail2ban-UI callback URL              │
-│                                                                                  │
-│         ┌───────────────────────────────────────────────────────────────┐        │
-│         │  Outbound to Fail2ban-UI (from each Fail2ban host)            │        │
-│         │  POST <CallbackURL>/api/ban   or   /api/unban                 │        │
-│         │  Header: X-Callback-Secret: <configured secret>               │        │
-│         │  Body: JSON { serverId, ip, jail, hostname, failures, logs }  │        │
-│         └───────────────────────────────────────────────────────────────┘        │
-│                                    │                                             │
-│                                    ▼                                             │
-│  ┌────────────────────────────────────────────────────────────────────────────┐  │
-│  │  Fail2ban-UI Backend                                                       │  │
-│  │  1. Validate X-Callback-Secret → 401 if missing/invalid                    │  │
-│  │  2. Resolve server (serverId or hostname)                                  │  │
-│  │  3. Whois/GeoIP enrichment                                                 │  │
-│  │  4. Store event in SQLite DB (ban_events) if nothing was invalid           │  │
-│  │  5. Broadcast current event to WebSocket clients (ban_event / unban_event) │  │
-│  │  6. Optional: send SMTP alert                                              │  │
-│  │  7  Run additional actions (e.g. block on pfSense for recurring offenders) │  │
-│  │  8. Respond status 200 OK - if all above was without an error              │  │
-│  └────────────────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│  INBOUND from Fail2ban-UI to Fail2ban (per connector type)                      │
-│  • Local:  fail2ban-client over Unix socket (/var/run/fail2ban/fail2ban.sock)   │
-│  • SSH:   SSH + fail2ban-client on remote host                                  │
-│  • Agent: HTTP to agent API (e.g. /v1/jails/:jail/unban, /v1/jails/:jail/ban)   │
-│  Used for: summary (jails, banned IPs), unban/ban from UI, config read/write,   │
-│            filter test, jail create/delete, restart/reload, logpath test        │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Deployment Guides
-
-- **[Container Deployment Guide](./deployment/container/README.md)**: 
-  - Building container images from source
-  - Running containers with Docker/Podman
-  - Volume mount explanations (required vs optional)
-  - Custom port configuration via `PORT` environment variable
-  - Docker Compose examples
-  - SELinux configuration
-  - Troubleshooting common issues
-
-- **[Systemd Service Setup](./deployment/systemd/README.md)**: Standalone installation and service configuration for non-containerized deployments
-
-- **[SELinux Configuration](./deployment/container/SELinux/)**: Security policies for SELinux-enabled systems
-
-### Connector Types
-
-Fail2Ban UI supports three types of connectors to manage remote and or local only Fail2Ban instances:
-
-#### Local Connector
-
-The local connector manages Fail2Ban on the same host/vm/container-stack where Fail2Ban UI runs. It does that by directly communicating with the local Fail2Ban instance via socked, without network overhead.
-
-**How it works:**
-- Accesses the Fail2Ban control socket at `/var/run/fail2ban/fail2ban.sock`
-- Reads and writes configuration files directly to `/etc/fail2ban/`
-- Requires FACL (File Access Control Lists) rules and passwordless sudo permissions to `/usr/bin/fail2ban-client` (if not running as privileged e.g. in a container)
-
-**When to use:**
-- ✅ Fail2Ban UI and Fail2Ban run on the same server
-- ✅ Single-server deployments
-- ✅ Development or testing environments
-- ✅ Maximum performance with zero network latency
-- ✅ Simplest setup with minimal configuration
-
-#### SSH Connector
-
-The SSH connector connects to remote Fail2Ban instances over SSH, enabling centralized management of distributed infrastructure. (no need to install fail2ban-UI everyware)
-
-**How it works:**
-- Establishes SSH connections to remote servers using key-based authentication
-- Transfers and manages configuration files encrypted over SSH
-- Automatically deploys custom Fail2Ban actions to remote instances for callback API ban-communication
-- Executes `fail2ban-client` commands remotely via SSH
-
-**When to use:**
-- ✅ Managing Fail2Ban instances on remote servers supporting SSH
-- ✅ Multi-server deployments across different hosts / reverse proxies
-- ✅ When Fail2Ban UI runs on a dedicated management server
-- ✅ Environments where direct socket access is not possible
-
-**Requirements:**
-- SSH key-based authentication (passwordless login)
-- Network connectivity from Fail2Ban UI host to remote server
-- Service account on remote server with appropriate permissions
-- Sudo access for Fail2Ban commands (configured via sudoers)
-- File system ACLs on remote server with write-permissions for `/etc/fail2ban/` directory
-
-#### API Agent Connector *(Technical Preview)*
-
-The API agent connector uses a lightweight agent installed on remote servers that communicates bouth ways, to and from Fail2Ban UI via REST API.
-
-**Status:** Implementation in progress
-
-### Configuration Values
-
-#### Fail2Ban Callback URL
-
-The **Fail2Ban Callback URL** is a critical setting that determines how Fail2Ban instances send ban alerts back to Fail2Ban UI. This URL is embedded in a custom Fail2Ban action file as well as the secret that gets deployed to all managed Fail2Ban instances (both local and SSH). For the API agent connections, only the Callback URL and Secret is relevant.
-
-**How it works:**
-- When a Fail2Ban instance bans an IP, it executes the custom action which sends a POST request including the secret to the callback URL (`/api/ban` endpoint)
-- If the secret is missing or wrong the request is dropped.
-- If the secret is valid, Fail2Ban-UI receives these notifications and stores them in the database for monitoring and analysis
-- The callback URL is automatically synchronized with the server port when using the default localhost pattern
-
-**Configuration Guidelines:**
-
-1. **Local Deployments:**
-   - Use the same port as Fail2Ban UI: `http://127.0.0.1:8080` (or your configured port)
-   - The callback URL automatically updates when you change the server port
-   - Example: If Fail2Ban UI runs on port `3080`, use `http://127.0.0.1:3080`
-
-2. **Container / Remote Deployments:**
-   - Fail2ban instances running in a different network namespace (e.g. bridge-mode containers) cannot reach `127.0.0.1` of the host. Set `CALLBACK_URL` to an address they can reach, e.g. the Podman/Docker gateway IP: `-e CALLBACK_URL=http://10.88.0.1:3080`
-   - For remote Fail2Ban servers on other hosts, use the LAN IP or DNS name of the Fail2Ban-UI host
-
-3. **Reverse Proxy Setups:**
-   - Use your TLS-encrypted endpoint: `https://fail2ban.example.com`
-   - Ensure the reverse proxy forwards requests to the correct Fail2Ban UI port
-   - The callback URL must be accessible from all Fail2Ban instances (local and remote)
-
-4. **Port Changes:**
-   - When you change the Fail2Ban UI port (via `PORT` environment variable or UI settings), the callback URL automatically updates if it's using the default localhost pattern
-   - When `CALLBACK_URL` is set via environment variable, the env var always takes priority over automatic updates
-
-**Privacy Settings**
-
-- **External IP Lookup**: By default, the web UI displays your external IP address. To disable this feature for privacy reasons, set the `DISABLE_EXTERNAL_IP_LOOKUP` environment variable to `true` or `1`. This will hide the "Your ext. IP:" display and prevent any external IP lookup requests.
-- **Version update check**: On page load, the footer may request the latest release from GitHub to show an "Update available" badge. Set `UPDATE_CHECK=false` to disable this external request (e.g. air-gapped or privacy-sensitive environments). The current version is still shown in the footer.
-   - For custom callback URLs (e.g., reverse proxy or custom IP), you must manually update them to match your setup
-
-**Important Notes:**
-- The callback URL must be accessible from all Fail2Ban instances that need to send alerts
-- For remote Fail2Ban instances, ensure network connectivity to the callback URL
-- If using a reverse proxy, configure it to forward `/api/ban` requests to Fail2Ban UI
-- The callback URL is stored in `/etc/fail2ban/action.d/ui-custom-action.conf` on each managed Fail2Ban instance
-
-#### Adding a Local Server after initial setup
-
-The local connector allows managing Fail2Ban on the same host where Fail2Ban UI runs.
-
-**Enable in UI:**
-1. Navigate to **Settings** → **Manage Servers**
-2. Enable **Local Connector**
-3. Test connection to verify access
-
-#### Adding an SSH Server after initial setup
-
-Connect to remote Fail2Ban instances via SSH for centralized management.
-
-**Prerequisites:**
-- SSH key-based authentication (passwordless login)
-- Network connectivity from UI host to remote server
-- Service account with appropriate permissions
-
-**Recommended Service Account Setup:**
-
-```bash
-# Create dedicated service account
-sudo useradd -r -s /bin/bash sa_fail2ban
-
-# Configure sudoers for Fail2Ban operations
-sudo visudo -f /etc/sudoers.d/fail2ban-ui
-```
-
-Add the following sudoers configuration:
-```
-sa_fail2ban ALL=(ALL) NOPASSWD: /usr/bin/fail2ban-client *
-sa_fail2ban ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban
-```
-
-**Set file system ACLs:**
-```bash
-# Grant read/write access to Fail2Ban configuration directory
-sudo setfacl -Rm u:sa_fail2ban:rwX /etc/fail2ban
-sudo setfacl -dRm u:sa_fail2ban:rwX /etc/fail2ban
-```
-
-**Add Server in UI:**
-1. Navigate to **Settings** → **Manage Servers**
-2. Click **Add Server**
-3. Select **SSH** connection type
-4. Configure:
-   - **Name**: Descriptive server identifier
-   - **Host**: IP address or hostname (ip is always better, if DNS fails for some reason)
-   - **Port**: SSH port (default: 22)
-   - **SSH User**: Service account username
-   - **SSH Key**: Select from `~/.ssh/` directory
-5. Tick "Enable connector"
-6. Save configuration
-7. Click **Test Connection** to verify
-
----
-
-### 🔒 Security Notes
-
-#### Network Security Best Practices
-
-- **Reverse Proxy**: Use nginx or Apache as reverse proxy with SSL/TLS termination to secure the Fail2ban-UI
-- **VPN Access**: Require VPN connection for access to Fail2Banu-UI only
-- **IP Whitelisting**: Restrict access to specific IPs / ranges e.g. internal IT
-
-#### Authentication and Authorization
-
-##### OIDC Authentication (Optional)
-
-Fail2ban UI supports optional OIDC (OpenID Connect) authentication via environment variables. When enabled, all routes are protected and users must authenticate through the configured OIDC provider. The authentication flow includes automatic logout handling and redirects back to the login page.
-
-**Supported Providers:**
-- **Keycloak**: Enterprise identity and access management (recommended)
-- **Authentik**: Full-featured identity provider with OIDC support
-- **Pocket-ID**: Modern identity provider with passkey support
-
-**Development Setup:**
-For local development and testing, a complete OIDC environment is available in `development/oidc/` with automatic Keycloak client configuration. See [Development Documentation](./development/oidc/README.md) for details.
-
-**Required Environment Variables (when OIDC enabled):**
-```bash
-OIDC_ENABLED=true
-OIDC_PROVIDER=keycloak|authentik|pocketid
-OIDC_ISSUER_URL=https://auth.example.com
-OIDC_CLIENT_ID=your-client-id
-OIDC_CLIENT_SECRET=your-client-secret
-OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
-```
-
-**Optional Environment Variables:**
-```bash
-OIDC_SCOPES=openid,profile,email          # Default: openid,profile,email
-OIDC_SESSION_SECRET=your-secret-key        # Auto-generated if not provided
-OIDC_SESSION_MAX_AGE=3600                  # Session timeout in seconds (default: 3600)
-OIDC_USERNAME_CLAIM=preferred_username     # Claim to use as username (default: preferred_username)
-OIDC_LOGOUT_URL=https://auth.example.com/logout  # Provider logout URL (optional, auto-constructed if not set)
-OIDC_CLIENT_SECRET_FILE=/path/to/secret-file     # Path to client secret file (for auto-configuration)
-OIDC_SKIP_VERIFY=false                     # Skip TLS verification (dev only, default: false)
-OIDC_SKIP_LOGINPAGE=false                  # Skip login page and redirect directly to OIDC provider (default: false)
-```
-
-**Configuration Examples:**
-
-**Keycloak:**
-```bash
-OIDC_ENABLED=true
-OIDC_PROVIDER=keycloak
-OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm
-OIDC_CLIENT_ID=fail2ban-ui
-OIDC_CLIENT_SECRET=your-client-secret
-OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
-# OIDC_LOGOUT_URL is optional - automatically constructed if not set
-# For Keycloak, ensure "Valid post logout redirect URIs" includes: https://fail2ban-ui.example.com/auth/login
-```
-
-**Authentik:**
-```bash
-OIDC_ENABLED=true
-OIDC_PROVIDER=authentik
-OIDC_ISSUER_URL=https://authentik.example.com/application/o/your-client-slug/
-OIDC_CLIENT_ID=fail2ban-ui
-OIDC_CLIENT_SECRET=your-client-secret
-OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
-```
-
-**Pocket-ID:**
-```bash
-OIDC_ENABLED=true
-OIDC_PROVIDER=pocketid
-OIDC_ISSUER_URL=https://pocket-id.example.com
-OIDC_CLIENT_ID=fail2ban-ui-client
-OIDC_CLIENT_SECRET=your-secret
-OIDC_REDIRECT_URL=https://fail2ban-ui.example.com/auth/callback
-# OIDC_LOGOUT_URL is optional - automatically constructed if not set
-```
-
-**Security Notes:**
-- Session cookies are encrypted using AES-GCM
-- Sessions are httpOnly and secure (automatically detects HTTPS/HTTP context)
-- CSRF protection via state parameter in OAuth flow
-- Session timeout is configurable (default: 1 hour)
-- Automatic logout URL construction for all supported providers
-- When OIDC is disabled, the application works without authentication (backward compatible)
-- Callback endpoints (`/api/ban`, `/api/unban`) remain accessible without OIDC authentication (protected by callback secret)
-
-**Other Security Practices:**
-- **SSH Key Management**: Use strong SSH keys like 4096-bit RSA or even better Ed25519. When using RSA no smaller bit size please.
-- **Service Accounts**: Use dedicated service accounts, not personal accounts
-- **Sudoers Configuration**: Minimal sudo permissions, no passwordless full sudo
-- **Callback Secret**: Auto-generated secret authenticates all ban notification requests; keep it secure and never expose
-
-#### Data Protection
-
-- **Database Permissions**: Restrict SQLite database file permissions (600)
-- **Log Files**: Secure log file access and don't forget to setup a rotation
-- **Backup Encryption**: It's always a good idea, to encrypt backups of configuration and database files
-
-#### SELinux Configuration
-
-For SELinux-enabled systems, apply the required policies:
-
-```bash
-# Basic rule to allow Fail2Ban to access the UI API
-semodule -i fail2ban-curl-allow.pp
-
-# Container deployment policies
-semodule -i fail2ban-container-ui.pp
-semodule -i fail2ban-container-client.pp
-```
-
-**📖 [SELinux Policies Documentation](./deployment/container/SELinux/)**
-
----
-
-### 🗄️ Database Notes
-
-#### SQLite Database Schema
-
-Fail2Ban UI uses an embedded SQLite database (`fail2ban-ui.db`) for persistent storage:
-
-**Tables:**
-- **`servers`**: Server configurations (local, SSH, API agent)
-- **`app_settings`**: Application preferences and settings of Fail2Ban-UI
-- **`ban_events`**: Historical ban records with full context
-- **`permanent_blocks`**: Permanent block records for integrations
-
-**Data Retention:**
-- Ban events are stored indefinitely (configurable)
-- Automatic database migrations on version updates
-- Backup recommended before major updates
-
----
-
-### 🌍 Internationalization Notes
-
-#### Currently Supported Languages
-
-- **English** (en) - Default
-- **German** (de, de_CH) - Standard and Swiss variants
-- **French** (fr)
-- **Italian** (it)
-- **Spanish** (es)
-
-#### Adding New Languages
-
-1. Create translation file: `internal/locales/{language_code}.json`
-2. Copy structure from `internal/locales/en.json`
-3. Translate all key-value pairs
-4. Test in UI: **Settings** → **Language** → Select new language
-
-**Translation File Structure:**
-```json
-{
-  "page.title": "Fail2ban UI Dashboard",
-  "nav.dashboard": "Dashboard",
-  "nav.settings": "Settings",
-  ...
-}
-```
-
----
-
-### 📊 API Reference
-
-Fail2Ban UI provides a RESTful API for programmatic access:
-
-#### Endpoints
-
-**Server Management:**
-- `GET /api/servers` - List all configured servers
-- `POST /api/servers` - Add or update server
-- `DELETE /api/servers/:id` - Remove server
-- `POST /api/servers/:id/test` - Test server connection
-
-**Jail Management:**
-- `GET /api/summary` - Get summary of all jails
-- `POST /api/jails/:jail/unban/:ip` - Unban IP address
-- `GET /api/jails/manage` - List jail management status
-- `POST /api/jails/manage` - Update jail enabled states
-
-**Configuration:**
-- `GET /api/jails/:jail/config` - Get jail/filter configuration
-- `POST /api/jails/:jail/config` - Update jail/filter configuration
-
-**Events and Analytics:**
-- `GET /api/events/bans` - List ban events
-- `GET /api/events/bans/stats` - Get ban statistics
-- `GET /api/events/bans/insights` - Get ban insights and analytics
-
-**Settings:**
-- `GET /api/settings` - Get application settings
-- `POST /api/settings` - Update application settings
-- `POST /api/settings/test-email` - Test email configuration
-
-**Filter Debugging:**
-- `GET /api/filters` - List available filters
-- `POST /api/filters/test` - Test filter against log lines
-
-**Authentication (OIDC):**
-- `GET /auth/login` - Show login page or redirect to OIDC provider
-- `GET /auth/callback` - OIDC callback handler
-- `GET /auth/logout` - Logout and redirect to provider logout
-- `GET /auth/status` - Get authentication status
-- `GET /auth/user` - Get current user information
-
-**Service Control:**
-- `POST /api/fail2ban/restart` - Restart Fail2Ban service
-
-**Notifications:**
-- `POST /api/ban` - Receive ban notification from Fail2Ban
-  - **Authentication**: Requires `X-Callback-Secret` header with valid secret
-  - **Request Body**: JSON with `serverId`, `ip`, `jail`, `hostname`, `failures`, `logs`
-  - **Response**: 200 OK on success, 401 Unauthorized if secret is invalid
-
----
-
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-#### UI Not Accessible
-
-**Symptoms:** Cannot access web interface
-
-**Solution / Check:**
-```bash
-# Check if service is running
-systemctl status fail2ban-ui
-
-# Check firewall rules
-sudo firewall-cmd --list-ports
-sudo firewall-cmd --add-port=8080/tcp --permanent
-sudo firewall-cmd --reload
-
-# Check logs
-journalctl -u fail2ban-ui.service -f
-```
-
-#### No Servers Configured
-
-**Symptoms:** Empty dashboard, no servers visible
-
-**Solution / Check:**
-1. Navigate to **Settings** → **Manage Servers**
-2. Enable **Local Connector** (if Fail2Ban runs locally)
-3. Add remote server via SSH or API agent
-4. Verify server connection status
-
-#### Fail2Ban Banaction Configuration (nftables vs iptables)
-
-**Symptoms:** Fail2Ban fails to ban IPs with errors like:
-- `Extension multiport revision 0 not supported, missing kernel module?`
-- `iptables v1.8.11 (nf_tables): RULE_INSERT failed (No such file or directory)`
-- `Error starting action Jail('jail-name')/nftables-multiport: 'Script error'`
-
-**Cause:** Modern Linux distributions (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+) use **nftables** as the default firewall backend instead of legacy iptables. When Fail2Ban is configured to use `nftables-multiport` or `nftables-allports`, it attempts to use legacy iptables modules that are not available in nftables-based systems.
-
-**Solution:**
-
-1. **For nftables-based systems (Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+):**
-   - Navigate to **Settings** → **Fail2Ban Settings**
-   - Change **Banaction** from `iptables-multiport` to `nftables-multiport`
-   - Change **Banaction Allports** from `iptables-allports` to `nftables-allports`
-   - Save settings and reload Fail2Ban
-
-2. **For systems using firewalld (Rocky Linux / Red Hat):**
-   - If your system uses `firewalld` as the firewall management tool, you can use:
-     - **Banaction**: `firewallcmd-rich-rules`
-     - **Banaction Allports**: `firewallcmd-allports`
-   - Alternatively, you can still use `nftables-multiport` if firewalld is configured to use nftables backend (which is the default in RHEL 9+)
-
-3. **Verify your system's firewall backend:**
-   ```bash
-   # Check if using nftables
-   iptables --version
-   # Output: iptables v1.8.11 (nf_tables) indicates nftables backend
-   
-   # Check if firewalld is active
-   systemctl status firewalld
-   ```
-
-**Note:** The Fail2Ban UI provides all common banaction options in the Settings dropdown, including:
-- `nftables-multiport` / `nftables-allports` (for nftables-based systems)
-- `firewallcmd-rich-rules` / `firewallcmd-allports` (for firewalld-based systems)
-- `iptables-multiport` / `iptables-allports` (for legacy iptables systems)
-
-After changing the banaction, Fail2Ban will automatically reload and apply the new configuration.
-
-#### OIDC Authentication Issues
-
-**Symptoms:** Cannot login, redirected to provider but authentication fails
-
-**Solution / Check:**
-1. **Verify OIDC Configuration:**
-   ```bash
-   # Check environment variables
-   podman exec fail2ban-ui env | grep OIDC
-   ```
-
-2. **Check Provider Connectivity:**
-   - Verify `OIDC_ISSUER_URL` is accessible
-   - Check that issuer URL matches provider's discovery document
-   - For Keycloak: Ensure realm exists and is enabled
-
-3. **Verify Client Configuration:**
-   - Client ID and secret must match provider configuration
-   - Redirect URI must exactly match: `{your-url}/auth/callback`
-   - For Keycloak: Ensure "Valid post logout redirect URIs" includes `{your-url}/auth/login`
-
-4. **Check Logs:**
-   ```bash
-   podman logs fail2ban-ui | grep -i oidc
-   ```
-
-5. **Development Environment:**
-   - See [Development OIDC Setup](./development/oidc/README.md) for complete setup guide
-   - Automatic Keycloak client configuration available in development environment
-
-#### SSH Connection Issues
-
-**Symptoms:** Cannot connect to remote server
-
-**Solution / Check:**
-```bash
-# Test SSH connection manually
-ssh -i ~/.ssh/your_key user@remote-host
-
-# Verify SSH user permissions
-sudo -l -U sa_fail2ban
-
-# Check ACLs on /etc/fail2ban
-getfacl /etc/fail2ban
-
-# Enable debug mode in UI settings for detailed error messages
-```
-
-#### Local Connector Not Working
-
-**Symptoms:** Local server shows as disconnected
-
-**Solution / Check:**
-```bash
-# Verify Fail2Ban is running
-sudo systemctl status fail2ban
-
-# Check socket permissions
-ls -la /var/run/fail2ban/fail2ban.sock
-
-# Verify UI has access (runs as root or has sudo permissions)
-sudo fail2ban-client status
-```
-
-#### Database Errors
-
-**Symptoms:** Database-related errors in logs
-
-**Solution / Check:**
-```bash
-# Check database file permissions
-ls -la /opt/fail2ban-ui/fail2ban-ui.db
-
-# Verify database integrity
-sqlite3 /opt/fail2ban-ui/fail2ban-ui.db "PRAGMA integrity_check;"
-
-# Backup and recreate if corrupted
-cp fail2ban-ui.db fail2ban-ui.db.backup
-```
-
----
-
-## 🤝 Contributing
-
-We welcome contributions from the community! Whether it's bug fixes, feature enhancements, or documentation improvements, your contributions help make Fail2Ban UI better for everyone.
-
-### How to Contribute
-
-1. **Fork the Repository**
-   ```bash
-   git clone https://github.com/swissmakers/fail2ban-ui.git
-   cd fail2ban-ui
-   ```
-
-2. **Create a Feature Branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-3. **Make Your Changes**
-   - Follow Go coding standards
-   - Add tests for new features
-   - Update documentation as needed
-
-4. **Commit Your Changes**
-   ```bash
-   git commit -m "Add: Description of your feature"
-   ```
-
-5. **Push and Create Pull Request**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-### Contribution Guidelines
-
-- **Code Style**: Follow Go standard formatting (`gofmt`)
-- **Testing**: Test your changes thoroughly
-- **Documentation**: Update README and inline documentation
-- **Commit Messages**: Use clear, descriptive commit messages
-- **Pull Requests**: Provide detailed description of changes
-
----
-
-## 📜 License
-
-Fail2Ban UI is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.
-
-This means:
-- ✅ **Free to use** in commercial and non-commercial projects
-- ✅ **Free to modify** and distribute
-- ✅ **Source code available** for inspection and auditing
-- ⚠️ **Copyleft**: Modifications must be released under the same license
-
-**Full License Text:** [LICENSE](./LICENSE)
-
----
-
-## 🏢 Enterprise Support
-
-### Professional Services
-
-**Swissmakers GmbH** offers professional services for Fail2Ban UI:
-
-- **Enterprise Deployment**: Custom deployment and configuration
-- **Training and Support**: On-site or remote training sessions
-- **Custom Development**: Feature development and integrations
-- **Security Audits**: Security assessment and hardening
-
-**Contact:** [https://swissmakers.ch](https://swissmakers.ch)
-
-### Community Support
-
-- **GitHub Issues**: [Report bugs and request features](https://github.com/swissmakers/fail2ban-ui/issues)
-- **Documentation**: Comprehensive guides and API reference
-- **Community**: Join discussions and share experiences
-
----
-
-## 🙏 Acknowledgments
-
-Fail2Ban UI is built on the foundation of the excellent [Fail2Ban](https://www.fail2ban.org/) project and the open-source community.
-
-**Special Thanks:**
-- Fail2Ban developers and contributors
-- Go community and ecosystem
-- All contributors and users of Fail2Ban UI
-
----
-
-<div align="center">
-
-**Fail2Ban UI** — *Enterprise-Grade Intrusion Detection System Management*
-
-</div>
+GPL-3.0. See `LICENSE`.
