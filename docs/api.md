@@ -1,4 +1,4 @@
-# API reference (summary)
+# API reference
 
 This is a short index for operators. The UI primarily uses these endpoints. Paths and details may evolve; treat this as a practical reference.
 
