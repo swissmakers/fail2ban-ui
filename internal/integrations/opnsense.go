@@ -52,16 +52,12 @@ func (o *opnsenseIntegration) UnblockIP(req Request) error {
 	if err := o.Validate(req.Config); err != nil {
 		return err
 	}
-	return o.callAPI(req, "del", req.IP)
+	return o.callAPI(req, "delete", req.IP)
 }
 
 func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 	cfg := req.Config.OPNsense
-
-	// OPNsense uses /api/firewall/alias_util/{action}/{alias_name}
 	apiURL := strings.TrimSuffix(cfg.BaseURL, "/") + fmt.Sprintf("/api/firewall/alias_util/%s/%s", action, cfg.Alias)
-
-	// Request body for OPNsense
 	payload := map[string]string{
 		"address": ip,
 	}
@@ -89,8 +85,6 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 		return fmt.Errorf("failed to create OPNsense request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-
-	// OPNsense uses Basic Auth with API key as username and API secret as password
 	auth := base64.StdEncoding.EncodeToString([]byte(cfg.APIKey + ":" + cfg.APISecret))
 	httpReq.Header.Set("Authorization", "Basic "+auth)
 
@@ -106,8 +100,6 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 		return fmt.Errorf("OPNsense API request to %s failed: %w (check base URL, network connectivity, and API credentials)", apiURL, err)
 	}
 	defer resp.Body.Close()
-
-	// Read response body for better error messages
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
