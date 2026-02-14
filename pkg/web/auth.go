@@ -24,41 +24,30 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/auth"
 )
 
-// AuthMiddleware protects routes requiring authentication
-// If OIDC is enabled, validates session and redirects to login if not authenticated
-// If OIDC is disabled, allows all requests
+// If OIDC is enabled, this validates the session and redirects to login if not authenticated
+// If OIDC is disabled, it allows all requests
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Check if OIDC is enabled
 		if !auth.IsEnabled() {
-			// OIDC not enabled, allow request
 			c.Next()
 			return
 		}
-
-		// Check if this is a public route
 		path := c.Request.URL.Path
 		if isPublicRoute(path) {
 			c.Next()
 			return
 		}
-
-		// Validate session
 		session, err := auth.GetSession(c.Request)
 		if err != nil {
-			// No valid session, redirect to login
 			if isAPIRequest(c) {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
 				c.Abort()
 				return
 			}
-			// For HTML requests, redirect to login
 			c.Redirect(http.StatusFound, "/auth/login")
 			c.Abort()
 			return
 		}
-
-		// Store session in context for handlers to access
 		c.Set("session", session)
 		c.Set("userID", session.UserID)
 		c.Set("userEmail", session.Email)
@@ -69,7 +58,7 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// isPublicRoute checks if the path is a public route that doesn't require authentication
+// Checks if path is a public route (that does not require authentication)
 func isPublicRoute(path string) bool {
 	publicRoutes := []string{
 		"/auth/login",
@@ -82,17 +71,15 @@ func isPublicRoute(path string) bool {
 		"/static/",
 		"/locales/",
 	}
-
 	for _, route := range publicRoutes {
 		if strings.HasPrefix(path, route) {
 			return true
 		}
 	}
-
 	return false
 }
 
-// isAPIRequest checks if the request is an API request (JSON expected)
+// Checks if the request is an API request
 func isAPIRequest(c *gin.Context) bool {
 	accept := c.GetHeader("Accept")
 	return strings.Contains(accept, "application/json") || strings.HasPrefix(c.Request.URL.Path, "/api/")
