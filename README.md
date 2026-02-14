@@ -1,6 +1,21 @@
 # Fail2Ban UI
 
-Fail2Ban UI is a web interface for operating Fail2Ban across one or more Linux hosts. It provides a central place to review bans, search and unban IPs, manage jails and filters, and receive notifications.
+
+<div align="center">
+
+**Enterprise-Grade Intrusion Detection System Management Platform**
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org/)
+[![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://www.linux.org/)
+
+*Swissmade open-source solution for centralized Fail2Ban management across distributed infrastructure*
+
+[Quick Start](#quick-start-container) • [Documentation](#documentation) • [Configuration Reference](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/configuration.md) • [Screenshots](#screenshots)
+
+</div>
+
+Fail2Ban UI is a management platform for operating Fail2Ban across one or more Linux hosts. It provides a central place to review bans, search and unban IPs, manage jails and filters, and receive notifications.
 
 The project is maintained by Swissmakers GmbH and released under GPL-3.0.
 
@@ -54,22 +69,22 @@ Next steps:
 
 ## Documentation
 
-* Installation: `docs/installation.md`
-* Configuration reference (env vars, callback URL/secret, OIDC): `docs/configuration.md`
-* Security guidance (recommended deployment posture): `docs/security.md`
-* Architecture overview: `docs/architecture.md`
-* API reference: `docs/api.md`
-* Troubleshooting: `docs/troubleshooting.md`
+* Installation: [`docs/installation.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/installation.md)
+* Configuration reference (env vars, callback URL/secret, OIDC): [`docs/configuration.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/configuration.md)
+* Security guidance (recommended deployment posture): [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md)
+* Architecture overview: [`docs/architecture.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/architecture.md)
+* API reference: [`docs/api.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/api.md)
+* Troubleshooting: [`docs/troubleshooting.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/troubleshooting.md)
 
 Existing deployment guides in this repository:
 
-* Container: `deployment/container/README.md`
-* systemd: `deployment/systemd/README.md`
-* SELinux policies: `deployment/container/SELinux/`
+* Container: [`deployment/container/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/container/README.md)
+* systemd: [`deployment/systemd/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/systemd/README.md)
+* SELinux policies: [`deployment/container/SELinux/`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/container/SELinux/)
 
 Development / testing stacks:
-* OIDC dev stack: `development/oidc/README.md`
-* SSH and local connector dev stack: `development/ssh_and_local/README.md`
+* OIDC dev stack: [`development/oidc/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/development/oidc/README.md)
+* SSH and local connector dev stack: [`development/ssh_and_local/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/development/ssh_and_local/README.md)
 
 ## Screenshots
 
@@ -156,7 +171,7 @@ Global Fail2Ban settings including default bantime, findtime, maxretry, banactio
 * Do not expose the UI directly to the public Internet. Put it behind a reverse proxy, VPN, firewall rules, and/or OIDC.
 * SSH connector should use a dedicated service account with minimal sudo permissions and ACLs.
 
-See `docs/security.md` for details.
+See [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md) for details.
 
 ## Contributing
 
@@ -165,7 +180,7 @@ Documentation and deployment guidance in security tooling is never "done", and e
 If you see a clearer way to describe installation steps, safer container defaults, better reverse-proxy examples, SELinux improvements, or a more practical demo environment, please contribute. Small improvements (typos, wording, examples) are just as valuable as code changes.
 
 
-See `CONTRIBUTING.md` for more info.
+See [`CONTRIBUTING.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/CONTRIBUTING.md) for more info.
 
 ## License
 
