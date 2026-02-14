@@ -33,8 +33,11 @@ import (
 	"github.com/swissmakers/fail2ban-ui/pkg/web"
 )
 
+// =========================================================================
+//  Entrypoint
+// =========================================================================
+
 func main() {
-	// Get application settings from the config package.
 	settings := config.GetSettings()
 
 	if err := storage.Init(""); err != nil {
@@ -50,69 +53,54 @@ func main() {
 		log.Fatalf("failed to initialise fail2ban connectors: %v", err)
 	}
 
-	// Initialize OIDC authentication if enabled
+	// OIDC authentication (optional)
 	oidcConfig, err := config.GetOIDCConfigFromEnv()
 	if err != nil {
 		log.Fatalf("failed to load OIDC configuration: %v", err)
 	}
 	if oidcConfig != nil && oidcConfig.Enabled {
-		// Initialize session secret
 		if err := auth.InitializeSessionSecret(oidcConfig.SessionSecret); err != nil {
 			log.Fatalf("failed to initialize session secret: %v", err)
 		}
-		// Initialize OIDC client
 		if _, err := auth.InitializeOIDC(oidcConfig); err != nil {
 			log.Fatalf("failed to initialize OIDC: %v", err)
 		}
 		log.Println("OIDC authentication enabled")
 	}
 
-	// Set Gin mode based on the debug flag in settings.
 	if settings.Debug {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Create a new Gin router.
 	router := gin.Default()
 	serverPort := strconv.Itoa(int(settings.Port))
-
-	// Get bind address from environment variable, defaulting to 0.0.0.0
 	bindAddress, _ := config.GetBindAddressFromEnv()
 	serverAddr := net.JoinHostPort(bindAddress, serverPort)
 
-	// Load HTML templates depending on whether the application is running inside a container.
+	// Container vs local: different paths for templates and static assets
 	_, container := os.LookupEnv("CONTAINER")
 	if container {
-		// In container, templates are assumed to be in /app/templates
 		router.LoadHTMLGlob("/app/templates/*")
 		router.Static("/locales", "/app/locales")
 		router.Static("/static", "/app/static")
 	} else {
-		// When running locally, load templates from pkg/web/templates
 		router.LoadHTMLGlob("pkg/web/templates/*")
 		router.Static("/locales", "./internal/locales")
 		router.Static("/static", "./pkg/web/static")
 	}
 
-	// Initialize WebSocket hub
+	// WebSocket hub and console log capture
 	wsHub := web.NewHub()
 	go wsHub.Run()
-
-	// Setup console log writer to capture stdout and send via WebSocket
 	web.SetupConsoleLogWriter(wsHub)
-	// Update enabled state based on current settings
 	web.UpdateConsoleLogEnabled()
-	// Register callback to update console log state when settings change
 	config.SetUpdateConsoleLogStateFunc(func(enabled bool) {
 		web.SetConsoleLogEnabled(enabled)
 	})
 
-	// Register all application routes, including the static files and templates.
 	web.RegisterRoutes(router, wsHub)
-
-	// Check if LOTR mode is active
 	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
 	printWelcomeBanner(bindAddress, serverPort, isLOTRMode)
 	if isLOTRMode {
@@ -123,12 +111,10 @@ func main() {
 	}
 	log.Printf("Server listening on %s:%s.\n", bindAddress, serverPort)
 
-	// Start the server on the configured address and port.
 	if err := router.Run(serverAddr); err != nil {
 		log.Fatalf("Could not start server: %v\n", err)
 	}
 }
-
 func isLOTRModeActive(alertCountries []string) bool {
 	if len(alertCountries) == 0 {
 		return false

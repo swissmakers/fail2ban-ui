@@ -28,12 +28,10 @@ import (
 	"time"
 )
 
-const (
-	sessionCookieName = "fail2ban_ui_session"
-	sessionKeyLength  = 32 // AES-256
-)
+// =========================================================================
+//  Types and Constants
+// =========================================================================
 
-// Session represents a user session
 type Session struct {
 	UserID    string    `json:"userID"`
 	Email     string    `json:"email"`
@@ -42,22 +40,28 @@ type Session struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
+const (
+	sessionCookieName = "fail2ban_ui_session"
+	sessionKeyLength  = 32
+)
+
 var sessionSecret []byte
 
-// InitializeSessionSecret initializes the session encryption secret
+// =========================================================================
+//  Session Management
+// =========================================================================
+
+// Initializes the encryption key for session cookies.
 func InitializeSessionSecret(secret string) error {
 	if secret == "" {
 		return fmt.Errorf("session secret cannot be empty")
 	}
 
-	// Decode base64 secret or use directly if not base64
 	decoded, err := base64.URLEncoding.DecodeString(secret)
 	if err != nil {
-		// Not base64, use as-is (but ensure it's 32 bytes for AES-256)
 		if len(secret) < sessionKeyLength {
 			return fmt.Errorf("session secret must be at least %d bytes", sessionKeyLength)
 		}
-		// Use first 32 bytes
 		sessionSecret = []byte(secret[:sessionKeyLength])
 	} else {
 		if len(decoded) < sessionKeyLength {
@@ -69,7 +73,7 @@ func InitializeSessionSecret(secret string) error {
 	return nil
 }
 
-// CreateSession creates a new encrypted session cookie
+// Creates a session cookie with the user info.
 func CreateSession(w http.ResponseWriter, r *http.Request, userInfo *UserInfo, maxAge int) error {
 	session := &Session{
 		UserID:    userInfo.ID,
@@ -79,29 +83,25 @@ func CreateSession(w http.ResponseWriter, r *http.Request, userInfo *UserInfo, m
 		ExpiresAt: time.Now().Add(time.Duration(maxAge) * time.Second),
 	}
 
-	// Serialize session to JSON
 	sessionData, err := json.Marshal(session)
 	if err != nil {
 		return fmt.Errorf("failed to marshal session: %w", err)
 	}
 
-	// Encrypt session data
 	encrypted, err := encrypt(sessionData)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt session: %w", err)
 	}
 
-	// Determine if we're using HTTPS
 	isSecure := r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
 
-	// Create secure cookie
 	cookie := &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    encrypted,
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   isSecure, // Only secure over HTTPS
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
 
@@ -109,26 +109,23 @@ func CreateSession(w http.ResponseWriter, r *http.Request, userInfo *UserInfo, m
 	return nil
 }
 
-// GetSession retrieves and validates a session from the cookie
+// Reads and validates the session cookie.
 func GetSession(r *http.Request) (*Session, error) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return nil, fmt.Errorf("no session cookie: %w", err)
 	}
 
-	// Decrypt session data
 	decrypted, err := decrypt(cookie.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt session: %w", err)
 	}
 
-	// Deserialize session
 	var session Session
 	if err := json.Unmarshal(decrypted, &session); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal session: %w", err)
 	}
 
-	// Check if session is expired
 	if time.Now().After(session.ExpiresAt) {
 		return nil, fmt.Errorf("session expired")
 	}
@@ -136,9 +133,8 @@ func GetSession(r *http.Request) (*Session, error) {
 	return &session, nil
 }
 
-// DeleteSession clears the session cookie
+// Clears the session cookie.
 func DeleteSession(w http.ResponseWriter, r *http.Request) {
-	// Determine if we're using HTTPS
 	isSecure := r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
 
 	cookie := &http.Cookie{
@@ -147,13 +143,16 @@ func DeleteSession(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isSecure, // Only secure over HTTPS
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)
 }
 
-// encrypt encrypts data using AES-GCM
+// =========================================================================
+//  Encryption Helpers
+// =========================================================================
+
 func encrypt(plaintext []byte) (string, error) {
 	block, err := aes.NewCipher(sessionSecret)
 	if err != nil {
@@ -174,7 +173,6 @@ func encrypt(plaintext []byte) (string, error) {
 	return base64.URLEncoding.EncodeToString(ciphertext), nil
 }
 
-// decrypt decrypts data using AES-GCM
 func decrypt(ciphertext string) ([]byte, error) {
 	data, err := base64.URLEncoding.DecodeString(ciphertext)
 	if err != nil {
