@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -25,21 +25,26 @@ import (
 	"github.com/likexian/whois"
 )
 
-var (
-	whoisCache      = make(map[string]cachedWhois)
-	whoisCacheMutex sync.RWMutex
-	cacheExpiry     = 24 * time.Hour
-)
+// =========================================================================
+//  Types and Constants
+// =========================================================================
 
 type cachedWhois struct {
 	data      string
 	timestamp time.Time
 }
 
-// lookupWhois performs a whois lookup for the given IP address.
-// It uses caching to avoid repeated queries for the same IP.
+var (
+	whoisCache      = make(map[string]cachedWhois)
+	whoisCacheMutex sync.RWMutex
+	cacheExpiry     = 24 * time.Hour
+)
+
+// =========================================================================
+//  Lookup Whois Data
+// =========================================================================
+
 func lookupWhois(ip string) (string, error) {
-	// Check cache first
 	whoisCacheMutex.RLock()
 	if cached, ok := whoisCache[ip]; ok {
 		if time.Since(cached.timestamp) < cacheExpiry {
@@ -49,7 +54,6 @@ func lookupWhois(ip string) (string, error) {
 	}
 	whoisCacheMutex.RUnlock()
 
-	// Perform whois lookup with timeout
 	done := make(chan string, 1)
 	errChan := make(chan error, 1)
 
@@ -65,20 +69,17 @@ func lookupWhois(ip string) (string, error) {
 	var whoisData string
 	select {
 	case whoisData = <-done:
-		// Success - cache will be updated below
 	case err := <-errChan:
 		return "", fmt.Errorf("whois lookup failed: %w", err)
 	case <-time.After(10 * time.Second):
 		return "", fmt.Errorf("whois lookup timeout after 10 seconds")
 	}
 
-	// Cache the result
 	whoisCacheMutex.Lock()
 	whoisCache[ip] = cachedWhois{
 		data:      whoisData,
 		timestamp: time.Now(),
 	}
-	// Clean old cache entries if cache is getting large
 	if len(whoisCache) > 1000 {
 		now := time.Now()
 		for k, v := range whoisCache {
@@ -92,15 +93,16 @@ func lookupWhois(ip string) (string, error) {
 	return whoisData, nil
 }
 
-// extractCountryFromWhois attempts to extract country code from whois data.
-// This is a fallback if GeoIP lookup fails.
+// =========================================================================
+//  Extract Country from Whois Data
+// =========================================================================
+
 func extractCountryFromWhois(whoisData string) string {
 	lines := strings.Split(whoisData, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		lineLower := strings.ToLower(line)
 
-		// Look for country field
 		if strings.HasPrefix(lineLower, "country:") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
@@ -110,7 +112,6 @@ func extractCountryFromWhois(whoisData string) string {
 				}
 			}
 		}
-		// Alternative format
 		if strings.HasPrefix(lineLower, "country code:") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
