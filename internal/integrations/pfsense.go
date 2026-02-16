@@ -16,12 +16,14 @@ import (
 
 type pfSenseIntegration struct{}
 
-// FirewallAliasResponse represents the response structure from pfSense API
+// =========================================================================
+//  Types
+// =========================================================================
+
 type FirewallAliasResponse struct {
 	Data FirewallAlias `json:"data"`
 }
 
-// FirewallAlias represents a firewall alias in pfSense
 type FirewallAlias struct {
 	ID      int      `json:"id"`
 	Name    string   `json:"name"`
@@ -30,6 +32,10 @@ type FirewallAlias struct {
 	Address []string `json:"address"`
 	Detail  []string `json:"detail"`
 }
+
+// =========================================================================
+//  Interface Implementation
+// =========================================================================
 
 func init() {
 	Register(&pfSenseIntegration{})
@@ -56,6 +62,10 @@ func (p *pfSenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	return nil
 }
 
+// =========================================================================
+//  Block/Unblock
+// =========================================================================
+
 func (p *pfSenseIntegration) BlockIP(req Request) error {
 	if err := p.Validate(req.Config); err != nil {
 		return err
@@ -70,12 +80,14 @@ func (p *pfSenseIntegration) UnblockIP(req Request) error {
 	return p.modifyAliasIP(req, req.IP, "", false)
 }
 
-// modifyAliasIP implements the GET-modify-PATCH pattern for pfSense alias management
+// =========================================================================
+//  pfSense API
+// =========================================================================
+
 func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, add bool) error {
 	cfg := req.Config.PfSense
 	baseURL := strings.TrimSuffix(cfg.BaseURL, "/")
 
-	// Create HTTP client
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -93,7 +105,6 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 			if req.Logger != nil {
 				req.Logger("Alias %s not found, creating it automatically", cfg.Alias)
 			}
-			// Create a new alias with default values
 			newAlias := &FirewallAlias{
 				Name:    cfg.Alias,
 				Type:    "host",
@@ -111,9 +122,7 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 		}
 	}
 
-	// Modify the address array
 	if add {
-		// Check if IP already exists
 		ipExists := false
 		for _, addr := range alias.Address {
 			if addr == ip {
@@ -124,24 +133,21 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 		if !ipExists {
 			alias.Address = append(alias.Address, ip)
 			if description != "" {
-				// Add description to detail array, matching the address array length
 				alias.Detail = append(alias.Detail, description)
 			}
 		} else {
 			if req.Logger != nil {
 				req.Logger("IP %s already exists in alias %s", ip, cfg.Alias)
 			}
-			return nil // IP already blocked, consider it success
+			return nil
 		}
 	} else {
-		// Remove IP from address array
 		found := false
 		newAddress := make([]string, 0, len(alias.Address))
 		newDetail := make([]string, 0, len(alias.Detail))
 		for i, addr := range alias.Address {
 			if addr != ip {
 				newAddress = append(newAddress, addr)
-				// Keep corresponding detail if it exists
 				if i < len(alias.Detail) {
 					newDetail = append(newDetail, alias.Detail[i])
 				}
@@ -153,20 +159,17 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 			if req.Logger != nil {
 				req.Logger("IP %s not found in alias %s", ip, cfg.Alias)
 			}
-			return nil // IP not in alias, consider it success
+			return nil
 		}
 		alias.Address = newAddress
 		alias.Detail = newDetail
 	}
 
-	// PATCH the alias with updated configuration
 	if err := p.updateAlias(httpClient, baseURL, cfg.APIToken, alias, req.Logger); err != nil {
 		return fmt.Errorf("failed to update alias %s: %w", cfg.Alias, err)
 	}
 
-	// Apply firewall changes
 	if err := p.applyFirewallChanges(httpClient, baseURL, cfg.APIToken, req.Logger); err != nil {
-		// Log warning but don't fail - the alias was updated successfully
 		if req.Logger != nil {
 			req.Logger("Warning: failed to apply firewall changes: %v", err)
 		}
@@ -183,11 +186,9 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 	return nil
 }
 
-// getAliasByName retrieves a firewall alias by name using GET /api/v2/firewall/aliases
 func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiToken, aliasName string, logger func(string, ...interface{})) (*FirewallAlias, error) {
 	apiURL := baseURL + "/api/v2/firewall/aliases"
 
-	// Add query parameter for alias name filtering
 	u, err := url.Parse(apiURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
@@ -226,7 +227,6 @@ func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiTok
 		return nil, fmt.Errorf("pfSense API GET failed: status %s, response: %s", resp.Status, bodyStr)
 	}
 
-	// The plural endpoint returns an array of aliases in the data field
 	var listResp struct {
 		Data []FirewallAlias `json:"data"`
 	}
@@ -234,7 +234,6 @@ func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiTok
 		return nil, fmt.Errorf("failed to decode pfSense alias response: %w", err)
 	}
 
-	// Find the alias with matching name (query parameter may return multiple results)
 	for i := range listResp.Data {
 		if listResp.Data[i].Name == aliasName {
 			return &listResp.Data[i], nil
@@ -244,11 +243,9 @@ func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiTok
 	return nil, fmt.Errorf("alias %s not found", aliasName)
 }
 
-// createAlias creates a new firewall alias using POST /api/v2/firewall/alias
 func (p *pfSenseIntegration) createAlias(client *http.Client, baseURL, apiToken string, alias *FirewallAlias, logger func(string, ...interface{})) (*FirewallAlias, error) {
 	apiURL := baseURL + "/api/v2/firewall/alias"
 
-	// Prepare POST payload - exclude ID as it will be generated by pfSense
 	postPayload := map[string]interface{}{
 		"name":    alias.Name,
 		"type":    alias.Type,
@@ -294,7 +291,6 @@ func (p *pfSenseIntegration) createAlias(client *http.Client, baseURL, apiToken 
 		return nil, fmt.Errorf("pfSense API POST failed: status %s, response: %s", resp.Status, bodyStr)
 	}
 
-	// Parse the response to get the created alias with its ID
 	var createResp FirewallAliasResponse
 	if err := json.Unmarshal(bodyBytes, &createResp); err != nil {
 		return nil, fmt.Errorf("failed to decode pfSense alias creation response: %w", err)
@@ -307,20 +303,13 @@ func (p *pfSenseIntegration) createAlias(client *http.Client, baseURL, apiToken 
 	return &createResp.Data, nil
 }
 
-// updateAlias updates a firewall alias using PATCH /api/v2/firewall/alias
-// The id must be included in the request body, not in the URL path
 func (p *pfSenseIntegration) updateAlias(client *http.Client, baseURL, apiToken string, alias *FirewallAlias, logger func(string, ...interface{})) error {
 	apiURL := baseURL + "/api/v2/firewall/alias"
 
-	// Prepare PATCH payload - include id in the request body
-	// pfSense requires that detail cannot have more items than address
-	// Always include detail array to ensure it matches address length
 	detailToSend := alias.Detail
 	if len(detailToSend) > len(alias.Address) {
-		// Truncate detail to match address length
 		detailToSend = detailToSend[:len(alias.Address)]
 	}
-	// If address is empty, detail must also be empty
 	if len(alias.Address) == 0 {
 		detailToSend = []string{}
 	}
@@ -331,7 +320,7 @@ func (p *pfSenseIntegration) updateAlias(client *http.Client, baseURL, apiToken 
 		"type":    alias.Type,
 		"descr":   alias.Descr,
 		"address": alias.Address,
-		"detail":  detailToSend, // Always include detail to ensure it's cleared when address is empty
+		"detail":  detailToSend,
 	}
 
 	data, err := json.Marshal(patchPayload)
@@ -376,7 +365,7 @@ func (p *pfSenseIntegration) updateAlias(client *http.Client, baseURL, apiToken 
 	return nil
 }
 
-// applyFirewallChanges applies firewall changes using POST /api/v2/firewall/apply
+// Applies firewall changes
 func (p *pfSenseIntegration) applyFirewallChanges(client *http.Client, baseURL, apiToken string, logger func(string, ...interface{})) error {
 	apiURL := baseURL + "/api/v2/firewall/apply"
 

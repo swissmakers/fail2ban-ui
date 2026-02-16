@@ -17,6 +17,10 @@ func init() {
 	Register(&mikrotikIntegration{})
 }
 
+// =========================================================================
+//  Interface Implementation
+// =========================================================================
+
 func (m *mikrotikIntegration) ID() string {
 	return "mikrotik"
 }
@@ -41,6 +45,10 @@ func (m *mikrotikIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	return nil
 }
 
+// =========================================================================
+//  Block/Unblock
+// =========================================================================
+
 func (m *mikrotikIntegration) BlockIP(req Request) error {
 	if err := m.Validate(req.Config); err != nil {
 		return err
@@ -58,6 +66,10 @@ func (m *mikrotikIntegration) UnblockIP(req Request) error {
 		req.IP, req.Config.Mikrotik.AddressList)
 	return m.runCommand(req, cmd)
 }
+
+// =========================================================================
+//  SSH Communication
+// =========================================================================
 
 func (m *mikrotikIntegration) runCommand(req Request, command string) error {
 	cfg := req.Config.Mikrotik
@@ -97,7 +109,6 @@ func (m *mikrotikIntegration) runCommand(req Request, command string) error {
 	address := net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", port))
 	client, err := ssh.Dial("tcp", address, clientCfg)
 	if err != nil {
-		// Provide more specific error messages for common connection issues
 		if netErr, ok := err.(net.Error); ok {
 			if netErr.Timeout() {
 				return fmt.Errorf("connection to mikrotik at %s timed out: %w", address, err)
