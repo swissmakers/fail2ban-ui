@@ -1,6 +1,10 @@
-// Core utility functions for Fail2ban UI
+// Core UI utilities: loading overlay, toasts, formatting, search, and navigation.
+"use strict";
 
-// Toggle the loading overlay (with !important)
+// =========================================================================
+//  Loading Overlay
+// =========================================================================
+
 function showLoading(show) {
   var overlay = document.getElementById('loading-overlay');
   if (overlay) {
@@ -8,18 +12,21 @@ function showLoading(show) {
       overlay.style.setProperty('display', 'flex', 'important');
       setTimeout(() => overlay.classList.add('show'), 10);
     } else {
-      overlay.classList.remove('show');    // Start fade-out
+      overlay.classList.remove('show');
       setTimeout(() => overlay.style.setProperty('display', 'none', 'important'), 400);
     }
   }
 }
 
-// Show toast notification
+// =========================================================================
+//  Toast Notifications
+// =========================================================================
+
 function showToast(message, type, duration) {
   var container = document.getElementById('toast-container');
   if (!container || !message) return;
   
-  // Handle ban event objects
+  // Show ban/unban events as their own styled toast
   if (typeof message === 'object' && message.type === 'ban_event') {
     showBanEventToast(message.data || message);
     return;
@@ -29,7 +36,6 @@ function showToast(message, type, duration) {
   var variant = type || 'info';
   toast.className = 'toast toast-' + variant;
 
-  // Build inner layout with close button
   var wrapper = document.createElement('div');
   wrapper.className = 'flex items-start';
 
@@ -46,7 +52,6 @@ function showToast(message, type, duration) {
   wrapper.appendChild(closeBtn);
   toast.appendChild(wrapper);
 
-  // Close button handler
   closeBtn.addEventListener('click', function(e) {
     e.stopPropagation();
     clearTimeout(autoRemoveTimer);
@@ -66,7 +71,7 @@ function showToast(message, type, duration) {
   }, duration || 5000);
 }
 
-// Show toast for ban event
+// One function for both ban and unban events
 function showBanEventToast(event) {
   var container = document.getElementById('toast-container');
   if (!container || !event) return;
@@ -105,7 +110,6 @@ function showBanEventToast(event) {
     + '  </button>'
     + '</div>';
 
-  // Close button handler
   var closeBtn = toast.querySelector('button');
   closeBtn.addEventListener('click', function(e) {
     e.stopPropagation();
@@ -137,7 +141,11 @@ function showBanEventToast(event) {
   }, 5000);
 }
 
-// Escape HTML to prevent XSS
+// =========================================================================
+//  Formatting Helpers
+// =========================================================================
+
+// Escape HTML special characters to prevent XSS
 function escapeHtml(value) {
   if (value === undefined || value === null) return '';
   return String(value).replace(/[&<>"']/g, function(match) {
@@ -151,7 +159,7 @@ function escapeHtml(value) {
   });
 }
 
-// Format number with locale
+// Format numbers in a human-readable way (1,000,000)
 function formatNumber(value) {
   var num = Number(value);
   if (!isFinite(num)) {
@@ -164,14 +172,13 @@ function formatNumber(value) {
   }
 }
 
-// Format date/time (custom format for dashboard)
+// Format date and time in a human-readable way (YYYY.MM.DD, HH:MM:SS)
 function formatDateTime(value) {
   if (!value) return '';
   var date = new Date(value);
   if (isNaN(date.getTime())) {
     return value;
   }
-  // Format as "2025.11.12, 21:21:52"
   var year = date.getFullYear();
   var month = String(date.getMonth() + 1).padStart(2, '0');
   var day = String(date.getDate()).padStart(2, '0');
@@ -181,7 +188,11 @@ function formatDateTime(value) {
   return year + '.' + month + '.' + day + ', ' + hours + ':' + minutes + ':' + seconds;
 }
 
-// Fetch and display own external IP for webUI
+// =========================================================================
+//  External IP
+// =========================================================================
+
+// Try multiple providers until one returns a valid IP
 function displayExternalIP() {
   const target = document.getElementById('external-ip');
   if (!target) return;
@@ -219,7 +230,10 @@ function displayExternalIP() {
   tryProvider(0);
 }
 
-// Function to initialize tooltips
+// =========================================================================
+//  UI Initialization
+// =========================================================================
+
 function initializeTooltips() {
   const tooltips = document.querySelectorAll('[data-tooltip]');
   tooltips.forEach(el => {
@@ -245,7 +259,7 @@ function initializeTooltips() {
   });
 }
 
-// Function to initialize the IP search
+// Restrict the IP search input to digits and dots only
 function initializeSearch() {
   const ipSearch = document.getElementById("ipSearch");
   if (ipSearch) {
@@ -258,11 +272,14 @@ function initializeSearch() {
   }
 }
 
-// Update restart banner visibility
+// =========================================================================
+//  Navigation
+// =========================================================================
+
 function updateRestartBanner() {
   var banner = document.getElementById('restartBanner');
   if (!banner) return;
-  // Don't show restart banner for local connectors - they only reload, not restart
+  // Don't show restart banner for local connectors; they only reload, not restart
   if (currentServer && currentServer.restartNeeded && currentServer.type !== 'local') {
     banner.style.display = 'block';
   } else {
@@ -270,7 +287,6 @@ function updateRestartBanner() {
   }
 }
 
-// Load dynamically the other pages when navigating in nav
 function showSection(sectionId) {
   // hide all sections
   document.getElementById('dashboardSection').classList.add('hidden');
@@ -292,14 +308,11 @@ function showSection(sectionId) {
       loadSettings();
     }
   }
-
   // Close navbar on mobile when clicking a menu item
   document.getElementById('mobileMenu').classList.add('hidden');
 }
 
-// Toggle mobile menu
 function toggleMobileMenu() {
   const menu = document.getElementById('mobileMenu');
   menu.classList.toggle('hidden');
 }
-
