@@ -1,5 +1,9 @@
-// Utility functions for Fail2ban UI
+// Shared utilities for Fail2ban UI.
 "use strict";
+
+// =========================================================================
+//  Data Normalization
+// =========================================================================
 
 function normalizeInsights(data) {
   var normalized = data && typeof data === 'object' ? data : {};
@@ -26,6 +30,10 @@ function t(key, fallback) {
   return fallback !== undefined ? fallback : key;
 }
 
+// =========================================================================
+//  Focus Management
+// =========================================================================
+
 function captureFocusState(container) {
   var active = document.activeElement;
   if (!active || !container || !container.contains(active)) {
@@ -40,9 +48,7 @@ function captureFocusState(container) {
       state.selectionStart = active.selectionStart;
       state.selectionEnd = active.selectionEnd;
     }
-  } catch (err) {
-    // Ignore selection errors for elements that do not support it.
-  }
+  } catch (err) {}
   return state;
 }
 
@@ -65,10 +71,12 @@ function restoreFocusState(state) {
     if (typeof state.selectionStart === 'number' && typeof state.selectionEnd === 'number' && typeof next.setSelectionRange === 'function') {
       next.setSelectionRange(state.selectionStart, state.selectionEnd);
     }
-  } catch (err) {
-    // Element may not support setSelectionRange; ignore.
-  }
+  } catch (err) {}
 }
+
+// =========================================================================
+//  String Helpers
+// =========================================================================
 
 function highlightQueryMatch(value, query) {
   var text = value || '';
@@ -104,3 +112,46 @@ function slugifyId(value, prefix) {
   return (prefix || 'id') + '-' + base + '-' + hash;
 }
 
+// =========================================================================
+//  Log Analysis Helper
+// =========================================================================
+
+function isSuspiciousLogLine(line, ip) {
+  if (!line) {
+    return false;
+  }
+  var containsIP = ip && line.indexOf(ip) !== -1;
+  var lowered = line.toLowerCase();
+  // Detect HTTP status codes (>= 300 considered problematic)
+  var statusMatch = line.match(/"[^"]*"\s+(\d{3})\b/);
+  if (!statusMatch) {
+    statusMatch = line.match(/\s(\d{3})\s+(?:\d+|-)/);
+  }
+  var statusCode = statusMatch ? parseInt(statusMatch[1], 10) : NaN;
+  var hasBadStatus = !isNaN(statusCode) && statusCode >= 300;
+  // Detect common attack indicators in URLs/payloads
+  var indicators = [
+    '../',
+    '%2e%2e',
+    '%252e%252e',
+    '%24%7b',
+    '${',
+    '/etc/passwd',
+    'select%20',
+    'union%20',
+    'cmd=',
+    'wget',
+    'curl ',
+    'nslookup',
+    '/xmlrpc.php',
+    '/wp-admin',
+    '/cgi-bin',
+    'content-length: 0'
+  ];
+  var hasIndicator = indicators.some(function(ind) {
+    return lowered.indexOf(ind) !== -1;
+  });  if (containsIP) {
+    return hasBadStatus || hasIndicator;
+  }
+  return (hasBadStatus || hasIndicator) && !ip;
+}

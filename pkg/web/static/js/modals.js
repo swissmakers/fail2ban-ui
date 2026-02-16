@@ -1,5 +1,9 @@
-// Modal management functions for Fail2ban UI
+// Modal management for Fail2ban UI
 "use strict";
+
+// =========================================================================
+//  Modal Lifecycle
+// =========================================================================
 
 function updateBodyScrollLock() {
   if (openModalCount > 0) {
@@ -9,7 +13,6 @@ function updateBodyScrollLock() {
   }
 }
 
-// Close modal
 function closeModal(modalId) {
   var modal = document.getElementById(modalId);
   if (!modal || modal.classList.contains('hidden')) {
@@ -20,7 +23,6 @@ function closeModal(modalId) {
   updateBodyScrollLock();
 }
 
-// Open modal
 function openModal(modalId) {
   var modal = document.getElementById(modalId);
   if (!modal || !modal.classList.contains('hidden')) {
@@ -32,6 +34,11 @@ function openModal(modalId) {
   updateBodyScrollLock();
 }
 
+// =========================================================================
+//  Whois and Logs Modal
+// =========================================================================
+
+// Whois modal
 function openWhoisModal(eventIndex) {
   if (!latestBanEvents || !latestBanEvents[eventIndex]) {
     showToast("Event not found", 'error');
@@ -42,13 +49,13 @@ function openWhoisModal(eventIndex) {
     showToast("No whois data available for this event", 'info');
     return;
   }
-
   document.getElementById('whoisModalIP').textContent = event.ip || 'N/A';
   var contentEl = document.getElementById('whoisModalContent');
   contentEl.textContent = event.whois;
   openModal('whoisModal');
 }
 
+// Logs modal
 function openLogsModal(eventIndex) {
   if (!latestBanEvents || !latestBanEvents[eventIndex]) {
     showToast("Event not found", 'error');
@@ -59,27 +66,21 @@ function openLogsModal(eventIndex) {
     showToast("No logs data available for this event", 'info');
     return;
   }
-
   document.getElementById('logsModalIP').textContent = event.ip || 'N/A';
   document.getElementById('logsModalJail').textContent = event.jail || 'N/A';
-
   var logs = event.logs;
   var ip = event.ip || '';
   var logLines = logs.split('\n');
-
-  // Determine which lines are suspicious (bad requests)
   var suspiciousIndices = [];
   for (var i = 0; i < logLines.length; i++) {
     if (isSuspiciousLogLine(logLines[i], ip)) {
       suspiciousIndices.push(i);
     }
   }
-
   var contentEl = document.getElementById('logsModalContent');
   if (suspiciousIndices.length) {
     var highlightMap = {};
     suspiciousIndices.forEach(function(idx) { highlightMap[idx] = true; });
-
     var html = '';
     for (var j = 0; j < logLines.length; j++) {
       var safeLine = escapeHtml(logLines[j] || '');
@@ -91,57 +92,14 @@ function openLogsModal(eventIndex) {
     }
     contentEl.innerHTML = html;
   } else {
-    // No suspicious lines detected; show raw logs without highlighting
     contentEl.textContent = logs;
   }
-
   openModal('logsModal');
 }
 
-function isSuspiciousLogLine(line, ip) {
-  if (!line) {
-    return false;
-  }
-
-  var containsIP = ip && line.indexOf(ip) !== -1;
-  var lowered = line.toLowerCase();
-
-  // Detect HTTP status codes (>= 300 considered problematic)
-  var statusMatch = line.match(/"[^"]*"\s+(\d{3})\b/);
-  if (!statusMatch) {
-    statusMatch = line.match(/\s(\d{3})\s+(?:\d+|-)/);
-  }
-  var statusCode = statusMatch ? parseInt(statusMatch[1], 10) : NaN;
-  var hasBadStatus = !isNaN(statusCode) && statusCode >= 300;
-
-  // Detect common attack indicators in URLs/payloads
-  var indicators = [
-    '../',
-    '%2e%2e',
-    '%252e%252e',
-    '%24%7b',
-    '${',
-    '/etc/passwd',
-    'select%20',
-    'union%20',
-    'cmd=',
-    'wget',
-    'curl ',
-    'nslookup',
-    '/xmlrpc.php',
-    '/wp-admin',
-    '/cgi-bin',
-    'content-length: 0'
-  ];
-  var hasIndicator = indicators.some(function(ind) {
-    return lowered.indexOf(ind) !== -1;
-  });
-
-  if (containsIP) {
-    return hasBadStatus || hasIndicator;
-  }
-  return (hasBadStatus || hasIndicator) && !ip;
-}
+// =========================================================================
+//  Ban Insights Modal
+// =========================================================================
 
 function openBanInsightsModal() {
   var countriesContainer = document.getElementById('countryStatsContainer');
@@ -176,7 +134,6 @@ function openBanInsightsModal() {
         + '</div>';
     }).join('');
   }
-
   var countries = (latestBanInsights && latestBanInsights.countries) || [];
   if (!countries.length) {
     countriesContainer.innerHTML = '<p class="text-sm text-gray-500" data-i18n="logs.modal.insights_countries_empty">No bans recorded for this period.</p>';
@@ -201,7 +158,6 @@ function openBanInsightsModal() {
     }).join('');
     countriesContainer.innerHTML = countryHTML;
   }
-
   var recurring = (latestBanInsights && latestBanInsights.recurring) || [];
   if (!recurring.length) {
     recurringContainer.innerHTML = '<p class="text-sm text-gray-500" data-i18n="logs.modal.insights_recurring_empty">No recurring IPs detected.</p>';
@@ -226,10 +182,8 @@ function openBanInsightsModal() {
     }).join('');
     recurringContainer.innerHTML = recurringHTML;
   }
-
   if (typeof updateTranslations === 'function') {
     updateTranslations();
   }
   openModal('banInsightsModal');
 }
-
