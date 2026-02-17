@@ -1,22 +1,22 @@
 # =========================================
-#  STAGE 1: Build Fail2Ban UI Binary
+#  STAGE 1 -- Build Fail2Ban-UI Binary
 # =========================================
-FROM golang:1.24 AS builder
+FROM golang:1.25.7 AS builder
 
 WORKDIR /app
 
-# Copy module files and download dependencies first
+# Copy module files and download dependencies
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the application source code
+# Copy application source code to buildcontainer
 COPY . .
 
-# Build Go application (as static binary)
+# Build Go application
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o fail2ban-ui ./cmd/server/main.go
 
 # ===================================
-#  STAGE 2: Standalone UI Version
+#  STAGE 2 -- Standalone UI Version
 # ===================================
 FROM alpine:latest AS standalone-ui
 
@@ -34,28 +34,20 @@ RUN mkdir -p /app /config /config/.ssh \
     && touch /etc/fail2ban/jail.local \
     && chown -R fail2ban:0 /app /config /etc/fail2ban /var/run/fail2ban
 
-# Set working directory
+# Set working directory and volume
 WORKDIR /config
-
-# Copy Fail2Ban UI binary and templates from the build stage
-COPY --from=builder /app/fail2ban-ui /app/fail2ban-ui
-RUN chown fail2ban:0 /app/fail2ban-ui && chmod +x /app/fail2ban-ui
-COPY --from=builder /app/pkg/web/templates /app/templates
-COPY --from=builder /app/internal/locales /app/locales
-# Copy static files (Tailwind CSS) if they exist
-COPY --from=builder /app/pkg/web/static /app/static
-
-# Set environment variables
-ENV CONTAINER=true
-
-# Persist config data
 VOLUME ["/config"]
 
-# Expose UI port (default: 8080, can be changed via PORT environment variable)
+ENV CONTAINER=true
+
+# Copy Fail2Ban-UI binary and templates from the build stage
+COPY --from=builder /app/fail2ban-ui /app/fail2ban-ui
+COPY --from=builder /app/pkg/web/templates /app/templates
+COPY --from=builder /app/internal/locales /app/locales
+COPY --from=builder /app/pkg/web/static /app/static
+RUN chown fail2ban:0 /app/fail2ban-ui && chmod +x /app/fail2ban-ui
+
 EXPOSE 8080
 
-# Run the application as non-root (currently not possible because of fail2ban running as privileged)
-#USER fail2ban
-
-# Start Fail2Ban UI
+# Entrypoint
 CMD ["/app/fail2ban-ui"]
