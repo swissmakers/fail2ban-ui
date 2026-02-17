@@ -18,12 +18,15 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o fail2ban-ui ./cmd/server/m
 # ===================================
 #  STAGE 2 -- Standalone UI Version
 # ===================================
-FROM alpine:latest AS standalone-ui
+FROM alpine:3.23 AS standalone-ui
 
 # Install required container dependencies
-RUN apk --update --no-cache add \
-    bash curl wget whois tzdata jq ca-certificates htop fail2ban geoip openssh-client \
-    && adduser -D -u 1000 -G root fail2ban
+RUN set -eux; \
+    apk update; \
+    apk upgrade --no-cache; \
+    apk add --no-cache \
+    bash curl wget whois tzdata jq ca-certificates htop fail2ban geoip openssh-client; \
+    adduser -D -u 1000 -G root fail2ban
 
 RUN mkdir -p /app /config /config/.ssh \
     /etc/fail2ban/jail.d \
@@ -48,6 +51,4 @@ COPY --from=builder /app/pkg/web/static /app/static
 RUN chown fail2ban:0 /app/fail2ban-ui && chmod +x /app/fail2ban-ui
 
 EXPOSE 8080
-
-# Entrypoint
 CMD ["/app/fail2ban-ui"]
