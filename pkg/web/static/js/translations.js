@@ -1,7 +1,10 @@
-// Translation functions for Fail2ban UI
+// Translation implementation for Fail2ban UI.
 "use strict";
 
-// Loads translation JSON file for given language (e.g., en, de, etc.)
+// =========================================================================
+//  Translation Engine
+// =========================================================================
+
 function loadTranslations(lang) {
   $.getJSON('/locales/' + lang + '.json')
     .done(function(data) {
@@ -13,7 +16,6 @@ function loadTranslations(lang) {
     });
 }
 
-// Updates all elements with data-i18n attribute with corresponding translation.
 function updateTranslations() {
   $('[data-i18n]').each(function() {
     var key = $(this).data('i18n');
@@ -21,7 +23,6 @@ function updateTranslations() {
       $(this).text(translations[key]);
     }
   });
-  // Updates placeholders.
   $('[data-i18n-placeholder]').each(function() {
     var key = $(this).data('i18n-placeholder');
     if (translations[key]) {
@@ -43,4 +44,3 @@ function getTranslationsSettingsOnPageload() {
       loadTranslations('en');
     });
 }
-

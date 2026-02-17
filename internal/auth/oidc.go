@@ -29,7 +29,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// OIDCClient holds the OIDC provider, verifier, and OAuth2 configuration
+// =========================================================================
+//  Types
+// =========================================================================
+
 type OIDCClient struct {
 	Provider     *oidc.Provider
 	Verifier     *oidc.IDTokenVerifier
@@ -37,7 +40,6 @@ type OIDCClient struct {
 	Config       *config.OIDCConfig
 }
 
-// UserInfo represents the authenticated user information
 type UserInfo struct {
 	ID       string
 	Email    string
@@ -49,7 +51,10 @@ var (
 	oidcClient *OIDCClient
 )
 
-// contextWithSkipVerify returns a context with an HTTP client that skips TLS verification if enabled
+// =========================================================================
+//  Initialization
+// =========================================================================
+
 func contextWithSkipVerify(ctx context.Context, skipVerify bool) context.Context {
 	if !skipVerify {
 		return ctx
@@ -61,39 +66,32 @@ func contextWithSkipVerify(ctx context.Context, skipVerify bool) context.Context
 	return oidc.ClientContext(ctx, client)
 }
 
-// InitializeOIDC sets up the OIDC client from configuration
 func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, nil
 	}
 
-	// Retry OIDC provider discovery with exponential backoff
-	// This handles cases where the provider isn't ready yet (e.g., Keycloak starting up)
+	// Retry OIDC provider discovery with exponential backoff (e.g. because of Keycloak starting up)
 	maxRetries := 10
 	retryDelay := 2 * time.Second
 	var provider *oidc.Provider
 	var err error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Create context with timeout for each attempt
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		ctx = contextWithSkipVerify(ctx, cfg.SkipVerify)
 
-		// Try to discover OIDC provider
 		provider, err = oidc.NewProvider(ctx, cfg.IssuerURL)
 		cancel()
 
 		if err == nil {
-			// Success - provider discovered
 			break
 		}
-
-		// Log retry attempt (but don't fail yet)
 		config.DebugLog("OIDC provider discovery attempt %d/%d failed: %v, retrying in %v...", attempt+1, maxRetries, err, retryDelay)
 
 		if attempt < maxRetries-1 {
 			time.Sleep(retryDelay)
-			// Exponential backoff: increase delay for each retry
+			// Increases the delay for each retry (exponential backoff)
 			retryDelay = time.Duration(float64(retryDelay) * 1.5)
 			if retryDelay > 10*time.Second {
 				retryDelay = 10 * time.Second
@@ -105,7 +103,6 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 		return nil, fmt.Errorf("failed to discover OIDC provider after %d attempts: %w", maxRetries, err)
 	}
 
-	// Create OAuth2 configuration
 	oauth2Config := &oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
@@ -114,7 +111,6 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 		Scopes:       cfg.Scopes,
 	}
 
-	// Create ID token verifier
 	verifier := provider.Verifier(&oidc.Config{
 		ClientID: cfg.ClientID,
 	})
@@ -131,17 +127,18 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 	return oidcClient, nil
 }
 
-// GetOIDCClient returns the initialized OIDC client
+// =========================================================================
+//  Public Accessors
+// =========================================================================
+
 func GetOIDCClient() *OIDCClient {
 	return oidcClient
 }
 
-// IsEnabled returns whether OIDC is enabled
 func IsEnabled() bool {
 	return oidcClient != nil && oidcClient.Config != nil && oidcClient.Config.Enabled
 }
 
-// GetConfig returns the OIDC configuration
 func GetConfig() *config.OIDCConfig {
 	if oidcClient == nil {
 		return nil
@@ -149,12 +146,16 @@ func GetConfig() *config.OIDCConfig {
 	return oidcClient.Config
 }
 
-// GetAuthURL generates the authorization URL for OIDC login
+// =========================================================================
+//  OAuth2 Flow
+// =========================================================================
+
+// Returns the OAuth2 authorization URL for the given state.
 func (c *OIDCClient) GetAuthURL(state string) string {
 	return c.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
-// ExchangeCode exchanges the authorization code for tokens
+// Exchanges the authorization code for tokens.
 func (c *OIDCClient) ExchangeCode(ctx context.Context, code string) (*oauth2.Token, error) {
 	if c.OAuth2Config == nil {
 		return nil, fmt.Errorf("OIDC client not properly initialized")
@@ -169,7 +170,7 @@ func (c *OIDCClient) ExchangeCode(ctx context.Context, code string) (*oauth2.Tok
 	return token, nil
 }
 
-// VerifyToken verifies the ID token and extracts user information
+// Verifies the ID token and extracts user information.
 func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
@@ -177,13 +178,11 @@ func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*Use
 	}
 
 	ctx = contextWithSkipVerify(ctx, c.Config.SkipVerify)
-	// Verify the ID token
 	idToken, err := c.Verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify ID token: %w", err)
 	}
 
-	// Extract claims
 	var claims struct {
 		Subject           string `json:"sub"`
 		Email             string `json:"email"`
@@ -204,17 +203,15 @@ func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*Use
 		Name:  claims.Name,
 	}
 
-	// Determine username based on configured claim
 	switch c.Config.UsernameClaim {
 	case "email":
 		userInfo.Username = claims.Email
 	case "preferred_username":
 		userInfo.Username = claims.PreferredUsername
 		if userInfo.Username == "" {
-			userInfo.Username = claims.Email // Fallback to email
+			userInfo.Username = claims.Email
 		}
 	default:
-		// Try to get the claim value dynamically
 		var claimValue interface{}
 		if err := idToken.Claims(&map[string]interface{}{
 			c.Config.UsernameClaim: &claimValue,
@@ -231,7 +228,6 @@ func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*Use
 		}
 	}
 
-	// Fallback name construction
 	if userInfo.Name == "" {
 		if claims.GivenName != "" || claims.FamilyName != "" {
 			userInfo.Name = fmt.Sprintf("%s %s", claims.GivenName, claims.FamilyName)
@@ -241,6 +237,5 @@ func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*Use
 			userInfo.Name = userInfo.Username
 		}
 	}
-
 	return userInfo, nil
 }

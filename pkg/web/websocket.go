@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -28,14 +28,27 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
+// =========================================================================
+//  Types and Constants
+// =========================================================================
+
+type Client struct {
+	hub  *Hub
+	conn *websocket.Conn
+	send chan []byte
+}
+
+type Hub struct {
+	clients    map[*Client]bool
+	broadcast  chan []byte
+	register   chan *Client
+	unregister chan *Client
+	mu         sync.RWMutex
+}
+
 const (
-	// Time allowed to write a message to the peer
-	writeWait = 10 * time.Second
-
-	// Time allowed to read the next pong message from the peer
-	pongWait = 60 * time.Second
-
-	// Send pings to peer with this period (must be less than pongWait)
+	writeWait  = 10 * time.Second
+	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10
 )
 
@@ -43,37 +56,15 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins for now - can be restricted in production
 		return true
 	},
 }
 
-// Client represents a WebSocket connection
-type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
-}
+// =========================================================================
+//  Fail2ban-UI WebSocket Hub
+// =========================================================================
 
-// Hub maintains the set of active clients and broadcasts messages to them
-type Hub struct {
-	// Registered clients
-	clients map[*Client]bool
-
-	// Inbound messages from clients
-	broadcast chan []byte
-
-	// Register requests from clients
-	register chan *Client
-
-	// Unregister requests from clients
-	unregister chan *Client
-
-	// Mutex for thread-safe operations
-	mu sync.RWMutex
-}
-
-// BroadcastConsoleLog broadcasts a console log message to all connected clients
+// Broadcasts the console log message to all connected clients.
 func (h *Hub) BroadcastConsoleLog(message string) {
 	logMsg := map[string]interface{}{
 		"type":    "console_log",
@@ -89,11 +80,11 @@ func (h *Hub) BroadcastConsoleLog(message string) {
 	select {
 	case h.broadcast <- data:
 	default:
-		// Channel full, drop message
+		log.Printf("Broadcast channel full, dropping console log")
 	}
 }
 
-// NewHub creates a new WebSocket hub
+// Creates new Hub instance.
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
@@ -103,9 +94,8 @@ func NewHub() *Hub {
 	}
 }
 
-// Run starts the hub's main loop
+// Runs the Hub.
 func (h *Hub) Run() {
-	// Start heartbeat ticker
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -139,13 +129,12 @@ func (h *Hub) Run() {
 			h.mu.RUnlock()
 
 		case <-ticker.C:
-			// Send heartbeat to all clients
 			h.sendHeartbeat()
 		}
 	}
 }
 
-// sendHeartbeat sends a heartbeat message to all connected clients
+// Sends heartbeat message to all connected clients.
 func (h *Hub) sendHeartbeat() {
 	message := map[string]interface{}{
 		"type":   "heartbeat",
@@ -170,7 +159,10 @@ func (h *Hub) sendHeartbeat() {
 	h.mu.RUnlock()
 }
 
-// BroadcastBanEvent broadcasts a ban event to all connected clients
+// =========================================================================
+//  Broadcast Ban Event
+// =========================================================================
+
 func (h *Hub) BroadcastBanEvent(event storage.BanEventRecord) {
 	message := map[string]interface{}{
 		"type": "ban_event",
@@ -189,7 +181,10 @@ func (h *Hub) BroadcastBanEvent(event storage.BanEventRecord) {
 	}
 }
 
-// BroadcastUnbanEvent broadcasts an unban event to all connected clients
+// =========================================================================
+//  Broadcast Unban Event
+// =========================================================================
+
 func (h *Hub) BroadcastUnbanEvent(event storage.BanEventRecord) {
 	message := map[string]interface{}{
 		"type": "unban_event",
@@ -208,7 +203,11 @@ func (h *Hub) BroadcastUnbanEvent(event storage.BanEventRecord) {
 	}
 }
 
-// readPump pumps messages from the WebSocket connection to the hub
+// =========================================================================
+//  WebSocket Helper Functions
+// =========================================================================
+
+// Reads messages from the WebSocket connection.
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
@@ -232,7 +231,7 @@ func (c *Client) readPump() {
 	}
 }
 
-// writePump pumps messages from the hub to the WebSocket connection
+// Writes messages to the WebSocket connection.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -255,7 +254,6 @@ func (c *Client) writePump() {
 			}
 			w.Write(message)
 
-			// Add queued messages to the current websocket message
 			n := len(c.send)
 			for i := 0; i < n; i++ {
 				w.Write([]byte{'\n'})
@@ -275,7 +273,7 @@ func (c *Client) writePump() {
 	}
 }
 
-// serveWS handles WebSocket requests from clients
+// Serves the WebSocket connection.
 func serveWS(hub *Hub, c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -291,12 +289,11 @@ func serveWS(hub *Hub, c *gin.Context) {
 
 	client.hub.register <- client
 
-	// Allow collection of memory referenced by the caller by doing all work in new goroutines
 	go client.writePump()
 	go client.readPump()
 }
 
-// WebSocketHandler is the Gin handler for WebSocket connections
+// This is called from routes.go and returns the Gin handler for WebSocket connections.
 func WebSocketHandler(hub *Hub) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		serveWS(hub, c)

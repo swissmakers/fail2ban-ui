@@ -1,41 +1,40 @@
-// Initialization code for Fail2ban UI
+// App bootstrap and initialization.
 "use strict";
+
+// =========================================================================
+//  Bootstrap
+// =========================================================================
 
 window.addEventListener('DOMContentLoaded', function() {
   showLoading(true);
-  
-  // Check authentication status first (if auth.js is loaded)
   if (typeof checkAuthStatus === 'function') {
     checkAuthStatus().then(function(authStatus) {
-      // Only proceed with initialization if authenticated or OIDC disabled
       if (!authStatus.enabled || authStatus.authenticated) {
         initializeApp();
       } else {
-        // Not authenticated, login page will be shown by checkAuthStatus
         showLoading(false);
       }
     }).catch(function(err) {
       console.error('Auth check failed:', err);
-      // Proceed with initialization anyway (fallback)
       initializeApp();
     });
   } else {
-    // Auth.js not loaded, proceed normally
     initializeApp();
   }
 });
 
+// =========================================================================
+//  App Initialization
+// =========================================================================
+
 function initializeApp() {
-  // Only display external IP if the element exists (not disabled via template variable)
   if (document.getElementById('external-ip')) {
     displayExternalIP();
   }
-  
-  // Initialize header components (clock and status indicator)
   if (typeof initHeader === 'function') {
     initHeader();
   }
-  
+
   // Initialize WebSocket connection and register ban event handler
   function registerBanEventHandler() {
     if (typeof wsManager !== 'undefined' && wsManager) {
@@ -48,22 +47,18 @@ function initializeApp() {
     }
     return false;
   }
-  
+
   if (!registerBanEventHandler()) {
-    // Wait for WebSocket manager to be available
     var wsCheckInterval = setInterval(function() {
       if (registerBanEventHandler()) {
         clearInterval(wsCheckInterval);
       }
     }, 100);
-    
-    // Stop checking after 5 seconds
     setTimeout(function() {
       clearInterval(wsCheckInterval);
     }, 5000);
   }
-  
-  // Check LOTR mode on page load to apply immediately
+
   fetch('/api/settings')
     .then(res => res.json())
     .then(data => {
@@ -71,7 +66,6 @@ function initializeApp() {
       if (typeof checkAndApplyLOTRTheme === 'function') {
         checkAndApplyLOTRTheme(alertCountries);
       }
-      // Store in global for later use
       if (typeof currentSettings === 'undefined') {
         window.currentSettings = {};
       }
@@ -80,8 +74,8 @@ function initializeApp() {
     .catch(err => {
       console.warn('Could not check LOTR on load:', err);
     });
-  
-  // Version and update check: only on page load; UPDATE_CHECK=false disables external GitHub request
+
+  // Check for updates and display version badge in the footer
   var versionContainer = document.getElementById('version-badge-container');
   if (versionContainer && versionContainer.getAttribute('data-update-check') === 'true') {
     fetch('/api/version')
@@ -98,9 +92,10 @@ function initializeApp() {
           versionContainer.innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title="' + latestLabel + '">' + latestLabel + '</span>';
         }
       })
-      .catch(function() { /* ignore; no badge on error */ });
+      .catch(function() { });
   }
 
+  // Load servers and translations, then render the dashboard and initialize tooltips and search
   Promise.all([
     loadServers(),
     getTranslationsSettingsOnPageload()
@@ -119,12 +114,12 @@ function initializeApp() {
       }
     })
     .finally(function() {
-      initializeTooltips(); // Initialize tooltips after fetching and rendering
+      initializeTooltips();
       initializeSearch();
       showLoading(false);
     });
-  
-  // Setup Select2 for alert countries
+
+  // jQuery-dependent setup (Select2 for alert countries)
   $(document).ready(function() {
     $('#alertCountries').select2({
       placeholder: 'Select countries..',
@@ -132,6 +127,7 @@ function initializeApp() {
       width: '100%'
     });
 
+    // When "ALL" is selected, deselect other countries and vice versa
     $('#alertCountries').on('select2:select', function(e) {
       var selectedValue = e.params.data.id;
       var currentValues = $('#alertCountries').val() || [];
@@ -147,7 +143,6 @@ function initializeApp() {
           $('#alertCountries').val(newValues).trigger('change');
         }
       }
-      // Check LOTR mode after selection change
       setTimeout(function() {
         const selectedCountries = $('#alertCountries').val() || [];
         if (typeof checkAndApplyLOTRTheme === 'function') {
@@ -155,9 +150,8 @@ function initializeApp() {
         }
       }, 100);
     });
-    
+
     $('#alertCountries').on('select2:unselect', function(e) {
-      // Check LOTR mode after deselection
       setTimeout(function() {
         const selectedCountries = $('#alertCountries').val() || [];
         if (typeof checkAndApplyLOTRTheme === 'function') {
@@ -174,18 +168,15 @@ function initializeApp() {
         }
       });
     }
-    
-    // Setup IgnoreIPs tag input
+
     if (typeof setupIgnoreIPsInput === 'function') {
       setupIgnoreIPsInput();
     }
-    
-    // Setup form validation
+
     if (typeof setupFormValidation === 'function') {
       setupFormValidation();
     }
-    
-    // Setup advanced integration fields
+
     const advancedIntegrationSelect = document.getElementById('advancedIntegrationSelect');
     if (advancedIntegrationSelect && typeof updateAdvancedIntegrationFields === 'function') {
       advancedIntegrationSelect.addEventListener('change', updateAdvancedIntegrationFields);

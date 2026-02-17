@@ -1,30 +1,28 @@
-// WebSocket Manager for Fail2ban UI
-// Handles real-time communication with the backend
-
+// WebSocket manager for real-time updates in Fail2ban UI.
 "use strict";
+
+// =========================================================================
+//  WebSocket Manager
+// =========================================================================
 
 class WebSocketManager {
   constructor() {
     this.ws = null;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = Infinity;
-    this.reconnectDelay = 1000; // Start with 1 second
-    this.maxReconnectDelay = 30000; // Max 30 seconds
+    this.reconnectDelay = 1000;
+    this.maxReconnectDelay = 30000;
     this.isConnecting = false;
     this.isConnected = false;
     this.lastBanEventId = null;
     this.statusCallbacks = [];
     this.banEventCallbacks = [];
     this.consoleLogCallbacks = [];
-    
-    // Connection metrics for tooltip
     this.connectedAt = null;
     this.lastHeartbeatAt = null;
     this.messageCount = 0;
     this.totalReconnects = 0;
     this.initialConnection = true;
-    
-    // Get WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     this.wsUrl = `${protocol}//${host}/api/ws`;
@@ -86,8 +84,6 @@ class WebSocketManager {
         this.isConnected = false;
         this.updateStatus('disconnected', 'Disconnected');
         console.log('WebSocket disconnected');
-        
-        // Attempt to reconnect
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect();
         }
@@ -117,7 +113,7 @@ class WebSocketManager {
         this.handleBanEvent(message.data);
         break;
       case 'unban_event':
-        this.handleBanEvent(message.data); // Use same handler for unban events
+        this.handleBanEvent(message.data);
         break;
       case 'heartbeat':
         this.handleHeartbeat(message);
@@ -131,7 +127,6 @@ class WebSocketManager {
   }
 
   handleConsoleLog(message) {
-    // Notify all registered console log callbacks
     if (this.consoleLogCallbacks) {
       this.consoleLogCallbacks.forEach(callback => {
         try {
@@ -145,22 +140,16 @@ class WebSocketManager {
 
   handleBanEvent(eventData) {
     // Check if we've already processed this event (prevent duplicates)
-    // Only check if event has an ID and we have a lastBanEventId
     if (eventData.id && this.lastBanEventId !== null && eventData.id <= this.lastBanEventId) {
       console.log('Skipping duplicate ban event:', eventData.id);
       return;
     }
-
-    // Update lastBanEventId if event has an ID
     if (eventData.id) {
       if (this.lastBanEventId === null || eventData.id > this.lastBanEventId) {
         this.lastBanEventId = eventData.id;
       }
     }
-
     console.log('Processing ban event:', eventData);
-
-    // Notify all registered callbacks
     this.banEventCallbacks.forEach(callback => {
       try {
         callback(eventData);
@@ -171,7 +160,6 @@ class WebSocketManager {
   }
 
   handleHeartbeat(message) {
-    // Update status to show backend is healthy
     this.lastHeartbeatAt = new Date();
     if (this.isConnected) {
       this.updateStatus('connected', 'Connected');
@@ -276,12 +264,13 @@ class WebSocketManager {
   }
 }
 
-// Create global instance - initialize immediately
+// =========================================================================
+//  Create Global Instance of WebSocketManager
+// =========================================================================
+
 var wsManager = null;
 
-// Initialize WebSocket manager
 if (typeof window !== 'undefined') {
-  // Initialize immediately if DOM is already loaded, otherwise wait
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
       if (!wsManager) {
@@ -292,4 +281,3 @@ if (typeof window !== 'undefined') {
     wsManager = new WebSocketManager();
   }
 }
-

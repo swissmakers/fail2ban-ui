@@ -7,7 +7,11 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
-// Request represents a block/unblock request for an integration plugin.
+// =========================================================================
+//  Types
+// =========================================================================
+
+// Block/Unblock request for an integration.
 type Request struct {
 	Context context.Context
 	IP      string
@@ -17,7 +21,7 @@ type Request struct {
 	Logger func(format string, args ...interface{})
 }
 
-// Integration exposes functionality required by an external firewall vendor.
+// Exposes functionality required by an external firewall vendor.
 type Integration interface {
 	ID() string
 	DisplayName() string
@@ -28,7 +32,11 @@ type Integration interface {
 
 var registry = map[string]Integration{}
 
-// Register adds an integration to the global registry.
+// =========================================================================
+//  Registry
+// =========================================================================
+
+// Adds an integration to the registry.
 func Register(integration Integration) {
 	if integration == nil {
 		return
@@ -36,13 +44,13 @@ func Register(integration Integration) {
 	registry[integration.ID()] = integration
 }
 
-// Get returns the integration by id.
+// Returns the integration by id.
 func Get(id string) (Integration, bool) {
 	integration, ok := registry[id]
 	return integration, ok
 }
 
-// MustGet obtains the integration or panics – used during init.
+// Returns the integration or panics.
 func MustGet(id string) Integration {
 	integration, ok := Get(id)
 	if !ok {
@@ -51,7 +59,7 @@ func MustGet(id string) Integration {
 	return integration
 }
 
-// Supported returns ids of all registered integrations.
+// Returns all registered integration ids.
 func Supported() []string {
 	keys := make([]string, 0, len(registry))
 	for id := range registry {

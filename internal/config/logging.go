@@ -20,18 +20,20 @@ import (
 	"log"
 )
 
-// DebugLog prints debug messages only if debug mode is enabled.
+// =========================================================================
+//  Debug Logging
+// =========================================================================
+
+// Prints debug messages if debug mode is enabled.
 func DebugLog(format string, v ...interface{}) {
-	// Avoid deadlocks by not calling GetSettings() inside DebugLog.
 	debugEnabled := false
 	debugEnabled = currentSettings.Debug
 	if !debugEnabled {
 		return
 	}
-	// Ensure correct usage of fmt.Printf-style formatting
 	if len(v) > 0 {
-		log.Printf(format, v...) // Uses format directives
+		log.Printf(format, v...)
 	} else {
-		log.Println(format) // Just prints the message
+		log.Println(format)
 	}
 }

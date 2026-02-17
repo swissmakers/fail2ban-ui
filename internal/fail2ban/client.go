@@ -18,6 +18,10 @@ package fail2ban
 
 import "context"
 
+// =========================================================================
+//  Types
+// =========================================================================
+
 type JailInfo struct {
 	JailName      string   `json:"jailName"`
 	TotalBanned   int      `json:"totalBanned"`
@@ -26,7 +30,11 @@ type JailInfo struct {
 	Enabled       bool     `json:"enabled"`
 }
 
-// GetJails returns the jail names for the default server.
+// =========================================================================
+//  Client Functions
+// =========================================================================
+
+// Returns jail names from the default server.
 func GetJails() ([]string, error) {
 	conn, err := GetManager().DefaultConnector()
 	if err != nil {
@@ -44,7 +52,7 @@ func GetJails() ([]string, error) {
 	return names, nil
 }
 
-// GetBannedIPs returns a slice of currently banned IPs for a specific jail.
+// Returns a slice of currently banned IPs for a specific jail.
 func GetBannedIPs(jail string) ([]string, error) {
 	conn, err := GetManager().DefaultConnector()
 	if err != nil {
@@ -53,7 +61,7 @@ func GetBannedIPs(jail string) ([]string, error) {
 	return conn.GetBannedIPs(context.Background(), jail)
 }
 
-// UnbanIP unbans an IP from the given jail.
+// Unbans an IP from the given jail.
 func UnbanIP(jail, ip string) error {
 	conn, err := GetManager().DefaultConnector()
 	if err != nil {
@@ -62,7 +70,7 @@ func UnbanIP(jail, ip string) error {
 	return conn.UnbanIP(context.Background(), jail, ip)
 }
 
-// BuildJailInfos returns extended info for each jail on the default server.
+// Returns extended info for each jail on the default server.
 func BuildJailInfos(_ string) ([]JailInfo, error) {
 	conn, err := GetManager().DefaultConnector()
 	if err != nil {
@@ -71,18 +79,7 @@ func BuildJailInfos(_ string) ([]JailInfo, error) {
 	return conn.GetJailInfos(context.Background())
 }
 
-// ReloadFail2ban triggers a reload on the default server.
-func ReloadFail2ban() error {
-	conn, err := GetManager().DefaultConnector()
-	if err != nil {
-		return err
-	}
-	return conn.Reload(context.Background())
-}
-
-// RestartFail2ban restarts (or reloads) the Fail2ban service using the
-// provided server or default connector and returns a mode string describing
-// what actually happened ("restart" or "reload").
+// Restarts (or reloads) the Fail2ban service.
 func RestartFail2ban(serverID string) (string, error) {
 	manager := GetManager()
 	var (
@@ -97,8 +94,6 @@ func RestartFail2ban(serverID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// If the connector supports a detailed restart mode, use it. Otherwise
-	// fall back to a plain Restart() and assume "restart".
 	if withMode, ok := conn.(interface {
 		RestartWithMode(ctx context.Context) (string, error)
 	}); ok {
