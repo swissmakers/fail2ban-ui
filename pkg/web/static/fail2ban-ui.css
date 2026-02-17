@@ -1,4 +1,7 @@
-/* Loading overlay styling */
+/* =========================================================================
+   Loading Overlay
+   ========================================================================= */
+
 #loading-overlay {
     display: none;
     position: fixed;
@@ -15,13 +18,16 @@
     opacity: 0;
     transition: opacity 0.4s ease;
 }
-    
+
 #loading-overlay.show {
     display: flex;
     opacity: 1;
 }
 
-/* Login Page Styling */
+/* =========================================================================
+   Auth Page
+   ========================================================================= */
+
 #loginPage {
     min-height: 100vh;
     display: flex;
@@ -33,7 +39,6 @@
     z-index: 1;
 }
 
-/* Both login page and main content are hidden by default */
 #loginPage.hidden {
     display: none !important;
 }
@@ -50,25 +55,25 @@ nav.hidden {
     display: none !important;
 }
 
-/* Hide login page when OIDC is not enabled (additional safety) */
 body[data-oidc-enabled="false"] #loginPage {
     display: none !important;
     visibility: hidden !important;
 }
 
-/* Hide login page when skipLoginPage is enabled (additional safety) */
 body[data-skip-login-page="true"] #loginPage {
     display: none !important;
     visibility: hidden !important;
 }
 
-/* Ensure login page is visible when shown */
 body:has(#loginPage:not(.hidden)) {
     background-color: #f3f4f6;
     overflow: hidden;
 }
 
-/* Restart banner */
+/* =========================================================================
+   Layout
+   ========================================================================= */
+
 #restartBanner {
     display: none;
 }
@@ -77,7 +82,6 @@ body:has(#loginPage:not(.hidden)) {
     min-height: 480px;
 }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -96,7 +100,10 @@ body:has(#loginPage:not(.hidden)) {
     background: #555;
 }
 
-/* Custom select2 styling to match Tailwind */
+/* =========================================================================
+   Select2 Overrides
+   ========================================================================= */
+
 .select2-container--default .select2-selection--multiple {
     border: 1px solid #d1d5db;
     border-radius: 0.375rem;
@@ -117,7 +124,10 @@ body:has(#loginPage:not(.hidden)) {
     margin-right: 0.25rem;
 }
 
-/* Custom modal styling */
+/* =========================================================================
+   Modals
+   ========================================================================= */
+
 .modal-content {
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
@@ -126,7 +136,10 @@ body.modal-open {
     overflow: hidden !important;
 }
 
-/* Custom tooltip styling */
+/* =========================================================================
+   Tooltips
+   ========================================================================= */
+
 .tooltip {
     position: relative;
     display: inline-block;
@@ -154,14 +167,20 @@ body.modal-open {
     opacity: 1;
 }
 
-/* Custom mark styling for search highlights */
+/* =========================================================================
+   Search Highlights
+   ========================================================================= */
+
 mark {
     background-color: #fef08a;
     padding: 0.1em 0em 0.1em 0.2em;
     border-radius: 0.25em;
 }
 
-/* Toast notifications */
+/* =========================================================================
+   Toast Notifications
+   ========================================================================= */
+
 #toast-container {
     position: fixed;
     top: 1.5rem;
@@ -232,7 +251,10 @@ mark {
     box-shadow: 0 15px 20px -3px rgba(0, 0, 0, 0.15);
 }
 
-/* Backend Status Indicator */
+/* =========================================================================
+   Status Indicator
+   ========================================================================= */
+
 #backendStatus {
     display: flex;
     align-items: center;
@@ -315,7 +337,10 @@ mark {
     }
 }
 
-/* Clock Display */
+/* =========================================================================
+   Clock
+   ========================================================================= */
+
 #clockDisplay {
     display: flex;
     align-items: center;
@@ -338,28 +363,24 @@ mark {
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* Mobile responsive adjustments */
-/* Custom breakpoint at 830px for menu collapse */
-/* This overrides Tailwind's default md: breakpoint (768px) to collapse at 830px instead */
+/* =========================================================================
+   Responsive Overrides
+   ========================================================================= */
+
+/* Override Tailwind md: (768px) to collapse menu at 830px */
 @media (max-width: 830px) {
-    /* Hide desktop menu navigation at 830px */
     nav .hidden.md\:block {
         display: none !important;
     }
-    
-    /* Show burger menu button at 830px */
+
     nav > div > div > div.md\:hidden:not(#mobileMenu) {
         display: block !important;
     }
-    
-    /* Allow mobile menu to be shown at 830px (override md:hidden) */
-    /* The menu visibility is controlled by JavaScript via the 'hidden' class */
-    /* When hidden class is NOT present, show the menu */
+
     nav #mobileMenu:not(.hidden) {
         display: block !important;
     }
-    
-    /* When mobile menu has 'hidden' class, hide it (JavaScript control takes precedence) */
+
     nav #mobileMenu.hidden {
         display: none !important;
     }
@@ -369,25 +390,33 @@ mark {
     #backendStatus {
         padding: 0.125rem 0.375rem;
     }
-    
+
     #statusText {
         font-size: 0.625rem;
     }
-    
+
     #clockDisplay {
         padding: 0.125rem 0.5rem;
     }
-    
+
     #clockTime {
         font-size: 0.75rem;
     }
 }
 
+/* =========================================================================
+   Integration Fields
+   ========================================================================= */
+
 #advancedMikrotikFields, #advancedPfSenseFields, #advancedOPNsenseFields {
     padding: 10px;
 }
 
-/* Ensure Font Awesome icons are visible */
+/* =========================================================================
+   Font Awesome Fallback
+   ========================================================================= */
+
+/* Ensure icons render when FA is loaded async or partially */
 .fas, .far, .fab, .fal, .fad {
     font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands", "Font Awesome 6 Pro";
     font-weight: 900;
@@ -402,7 +431,6 @@ mark {
     font-weight: 900;
 }
 
-/* Button icon spacing */
 button .fas, button .far, button .fab {
     display: inline-block;
     width: 1em;
@@ -414,13 +442,20 @@ button .fas:only-child, button .far:only-child, button .fab:only-child {
     margin-right: 0;
 }
 
-/* WebSocket Tooltip Styling */
+/* =========================================================================
+   WebSocket Tooltip
+   ========================================================================= */
+
 #wsTooltip {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     line-height: 1.5;
 }
 
-/* Ignore IPs container - ensure proper wrapping and prevent horizontal overflow */
+/* =========================================================================
+   Ignore IPs
+   ========================================================================= */
+
+/* Prevent horizontal overflow on long IP lists */
 #ignoreIPsContainer {
     overflow-x: hidden;
     word-wrap: break-word;
