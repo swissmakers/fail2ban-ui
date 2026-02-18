@@ -1,6 +1,58 @@
 // Filter debug functions for Fail2ban UI
 "use strict";
 
+// =========================================================================
+//  Filter creation
+// =========================================================================
+
+function createFilter() {
+  const filterName = document.getElementById('newFilterName').value.trim();
+  const content = document.getElementById('newFilterContent').value.trim();
+
+  if (!filterName) {
+    showToast('Filter name is required', 'error');
+    return;
+  }
+
+  showLoading(true);
+  fetch(withServerParam('/api/filters'), {
+    method: 'POST',
+    headers: serverHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      filterName: filterName,
+      content: content
+    })
+  })
+    .then(function(res) {
+      if (!res.ok) {
+        return res.json().then(function(data) {
+          throw new Error(data.error || 'Server returned ' + res.status);
+        });
+      }
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.error) {
+        showToast('Error creating filter: ' + data.error, 'error');
+        return;
+      }
+      closeModal('createFilterModal');
+      showToast(data.message || 'Filter created successfully', 'success');
+      loadFilters();
+    })
+    .catch(function(err) {
+      console.error('Error creating filter:', err);
+      showToast('Error creating filter: ' + (err.message || err), 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}
+
+// =========================================================================
+//  Filter Loading
+// =========================================================================
+
 function loadFilters() {
   showLoading(true);
   fetch(withServerParam('/api/filters'), {
@@ -38,12 +90,10 @@ function loadFilters() {
           opt.textContent = f;
           select.appendChild(opt);
         });
-        // Add change listener if not already added
         if (!select.hasAttribute('data-listener-added')) {
           select.setAttribute('data-listener-added', 'true');
           select.addEventListener('change', function() {
             if (deleteBtn) deleteBtn.disabled = !select.value;
-            // Load filter content when a filter is selected
             if (select.value) {
               loadFilterContent(select.value);
             } else {
@@ -61,7 +111,6 @@ function loadFilters() {
           });
         }
         if (deleteBtn) deleteBtn.disabled = !select.value;
-        // If a filter is already selected (e.g., first one by default), load its content
         if (select.value) {
           loadFilterContent(select.value);
         }
@@ -93,7 +142,7 @@ function loadFilterContent(filterName) {
         return;
       }
       filterContentTextarea.value = data.content || '';
-      filterContentTextarea.readOnly = true; // Keep it readonly by default
+      filterContentTextarea.readOnly = true;
       filterContentTextarea.classList.add('bg-gray-50');
       filterContentTextarea.classList.remove('bg-white');
       if (editBtn) editBtn.classList.remove('hidden');
@@ -109,13 +158,15 @@ function loadFilterContent(filterName) {
     .finally(() => showLoading(false));
 }
 
+// =========================================================================
+//  Filter Editing (on the filter section)
+// =========================================================================
+
 function toggleFilterContentEdit() {
   const filterContentTextarea = document.getElementById('filterContentTextarea');
   const editBtn = document.getElementById('editFilterContentBtn');
   if (!filterContentTextarea) return;
-
   if (filterContentTextarea.readOnly) {
-    // Make editable
     filterContentTextarea.readOnly = false;
     filterContentTextarea.classList.remove('bg-gray-50');
     filterContentTextarea.classList.add('bg-white');
@@ -126,7 +177,6 @@ function toggleFilterContentEdit() {
     }
     updateFilterContentHints(true);
   } else {
-    // Make readonly
     filterContentTextarea.readOnly = true;
     filterContentTextarea.classList.add('bg-gray-50');
     filterContentTextarea.classList.remove('bg-white');
@@ -142,7 +192,7 @@ function toggleFilterContentEdit() {
 function updateFilterContentHints(isEditable) {
   const readonlyHint = document.querySelector('p[data-i18n="filter_debug.filter_content_hint_readonly"]');
   const editableHint = document.getElementById('filterContentHintEditable');
-  
+
   if (isEditable) {
     if (readonlyHint) readonlyHint.classList.add('hidden');
     if (editableHint) editableHint.classList.remove('hidden');
@@ -150,11 +200,71 @@ function updateFilterContentHints(isEditable) {
     if (readonlyHint) readonlyHint.classList.remove('hidden');
     if (editableHint) editableHint.classList.add('hidden');
   }
-  
   if (typeof updateTranslations === 'function') {
     updateTranslations();
   }
 }
+
+// =========================================================================
+//  Filter deletion
+// =========================================================================
+
+function deleteFilter() {
+  const filterName = document.getElementById('filterSelect').value;
+  if (!filterName) {
+    showToast('Please select a filter to delete', 'info');
+    return;
+  }
+
+  if (!confirm('Are you sure you want to delete the filter "' + escapeHtml(filterName) + '"? This action cannot be undone.')) {
+    return;
+  }
+  showLoading(true);
+  fetch(withServerParam('/api/filters/' + encodeURIComponent(filterName)), {
+    method: 'DELETE',
+    headers: serverHeaders()
+  })
+    .then(function(res) {
+      if (!res.ok) {
+        return res.json().then(function(data) {
+          throw new Error(data.error || 'Server returned ' + res.status);
+        });
+      }
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.error) {
+        showToast('Error deleting filter: ' + data.error, 'error');
+        return;
+      }
+      showToast(data.message || 'Filter deleted successfully', 'success');
+      loadFilters();
+      document.getElementById('testResults').innerHTML = '';
+      document.getElementById('testResults').classList.add('hidden');
+      document.getElementById('logLinesTextarea').value = '';
+      const filterContentTextarea = document.getElementById('filterContentTextarea');
+      const editBtn = document.getElementById('editFilterContentBtn');
+      if (filterContentTextarea) {
+        filterContentTextarea.value = '';
+        filterContentTextarea.readOnly = true;
+        filterContentTextarea.classList.add('bg-gray-50');
+        filterContentTextarea.classList.remove('bg-white');
+      }
+      if (editBtn) editBtn.classList.add('hidden');
+      updateFilterContentHints(false);
+    })
+    .catch(function(err) {
+      console.error('Error deleting filter:', err);
+      showToast('Error deleting filter: ' + (err.message || err), 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}
+
+// =========================================================================
+//  Filter Testing
+// =========================================================================
 
 function testSelectedFilter() {
   const filterName = document.getElementById('filterSelect').value;
@@ -165,32 +275,24 @@ function testSelectedFilter() {
     showToast('Please select a filter.', 'info');
     return;
   }
-
   if (lines.length === 0) {
     showToast('Please enter at least one log line to test.', 'info');
     return;
   }
-
-  // Hide results initially
   const testResultsEl = document.getElementById('testResults');
   testResultsEl.classList.add('hidden');
   testResultsEl.innerHTML = '';
-
   showLoading(true);
   const requestBody = {
     filterName: filterName,
     logLines: lines
   };
-  
-  // Only include filter content if textarea is editable (not readonly)
-  // If readonly, test the original filter from server
   if (filterContentTextarea && !filterContentTextarea.readOnly) {
     const filterContent = filterContentTextarea.value.trim();
     if (filterContent) {
       requestBody.filterContent = filterContent;
     }
   }
-
   fetch(withServerParam('/api/filters/test'), {
     method: 'POST',
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
@@ -213,15 +315,13 @@ function testSelectedFilter() {
 function renderTestResults(output, filterPath) {
   const testResultsEl = document.getElementById('testResults');
   let html = '<h5 class="text-lg font-medium text-white mb-4" data-i18n="filter_debug.test_results_title">Test Results</h5>';
-  
-  // Show which filter file was used
+
   if (filterPath) {
     html += '<div class="mb-3 p-2 bg-gray-800 rounded text-sm">';
     html += '<span class="text-gray-400">Used Filter (exact file):</span> ';
     html += '<span class="text-yellow-300 font-mono">' + escapeHtml(filterPath) + '</span>';
     html += '</div>';
   }
-  
   if (!output || output.trim() === '') {
     html += '<p class="text-gray-400" data-i18n="filter_debug.no_matches">No output received.</p>';
   } else {
@@ -233,6 +333,10 @@ function renderTestResults(output, filterPath) {
     updateTranslations();
   }
 }
+
+// =========================================================================
+//  Filter Section Init
+// =========================================================================
 
 function showFilterSection() {
   const testResultsEl = document.getElementById('testResults');
@@ -267,7 +371,6 @@ function showFilterSection() {
   }
   if (editBtn) editBtn.classList.add('hidden');
   updateFilterContentHints(false);
-  // Add change listener to enable/disable delete button and load filter content
   const filterSelect = document.getElementById('filterSelect');
   const deleteBtn = document.getElementById('deleteFilterBtn');
   if (!filterSelect.hasAttribute('data-listener-added')) {
@@ -290,111 +393,3 @@ function showFilterSection() {
     });
   }
 }
-
-function openCreateFilterModal() {
-  document.getElementById('newFilterName').value = '';
-  document.getElementById('newFilterContent').value = '';
-  openModal('createFilterModal');
-}
-
-function createFilter() {
-  const filterName = document.getElementById('newFilterName').value.trim();
-  const content = document.getElementById('newFilterContent').value.trim();
-  
-  if (!filterName) {
-    showToast('Filter name is required', 'error');
-    return;
-  }
-  
-  showLoading(true);
-  fetch(withServerParam('/api/filters'), {
-    method: 'POST',
-    headers: serverHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({
-      filterName: filterName,
-      content: content
-    })
-  })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
-    .then(function(data) {
-      if (data.error) {
-        showToast('Error creating filter: ' + data.error, 'error');
-        return;
-      }
-      closeModal('createFilterModal');
-      showToast(data.message || 'Filter created successfully', 'success');
-      // Reload filters
-      loadFilters();
-    })
-    .catch(function(err) {
-      console.error('Error creating filter:', err);
-      showToast('Error creating filter: ' + (err.message || err), 'error');
-    })
-    .finally(function() {
-      showLoading(false);
-    });
-}
-
-function deleteFilter() {
-  const filterName = document.getElementById('filterSelect').value;
-  if (!filterName) {
-    showToast('Please select a filter to delete', 'info');
-    return;
-  }
-  
-  if (!confirm('Are you sure you want to delete the filter "' + escapeHtml(filterName) + '"? This action cannot be undone.')) {
-    return;
-  }
-  
-  showLoading(true);
-  fetch(withServerParam('/api/filters/' + encodeURIComponent(filterName)), {
-    method: 'DELETE',
-    headers: serverHeaders()
-  })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
-    .then(function(data) {
-      if (data.error) {
-        showToast('Error deleting filter: ' + data.error, 'error');
-        return;
-      }
-      showToast(data.message || 'Filter deleted successfully', 'success');
-      // Reload filters
-      loadFilters();
-      // Clear test results
-      document.getElementById('testResults').innerHTML = '';
-      document.getElementById('testResults').classList.add('hidden');
-      document.getElementById('logLinesTextarea').value = '';
-      const filterContentTextarea = document.getElementById('filterContentTextarea');
-      const editBtn = document.getElementById('editFilterContentBtn');
-      if (filterContentTextarea) {
-        filterContentTextarea.value = '';
-        filterContentTextarea.readOnly = true;
-        filterContentTextarea.classList.add('bg-gray-50');
-        filterContentTextarea.classList.remove('bg-white');
-      }
-      if (editBtn) editBtn.classList.add('hidden');
-      updateFilterContentHints(false);
-    })
-    .catch(function(err) {
-      console.error('Error deleting filter:', err);
-      showToast('Error deleting filter: ' + (err.message || err), 'error');
-    })
-    .finally(function() {
-      showLoading(false);
-    });
-}
-

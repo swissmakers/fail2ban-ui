@@ -1,5 +1,9 @@
-// Server management functions for Fail2ban UI
+// Server management javascript functions for Fail2ban UI
 "use strict";
+
+// =========================================================================
+//  Server data loading
+// =========================================================================
 
 function loadServers() {
   return fetch('/api/servers')
@@ -34,6 +38,10 @@ function loadServers() {
       updateRestartBanner();
     });
 }
+
+// =========================================================================
+//  Views rendering
+// =========================================================================
 
 function renderServerSelector() {
   var container = document.getElementById('serverSelectorContainer');
@@ -104,38 +112,6 @@ function renderServerSubtitle() {
   subtitle.textContent = parts.join(' • ');
 }
 
-function setCurrentServer(serverId) {
-  if (!serverId) {
-    currentServerId = null;
-    currentServer = null;
-  } else {
-    var next = serversCache.find(function(s) { return s.id === serverId && s.enabled; });
-    currentServer = next || null;
-    currentServerId = currentServer ? currentServer.id : null;
-  }
-  renderServerSelector();
-  renderServerSubtitle();
-  updateRestartBanner();
-  refreshData();
-}
-
-function openServerManager(serverId) {
-  showLoading(true);
-  loadServers()
-    .then(function() {
-      if (serverId) {
-        editServer(serverId);
-      } else {
-        resetServerForm();
-      }
-      renderServerManagerList();
-      openModal('serverManagerModal');
-    })
-    .finally(function() {
-      showLoading(false);
-    });
-}
-
 function renderServerManagerList() {
   var list = document.getElementById('serverManagerList');
   var emptyState = document.getElementById('serverManagerListEmpty');
@@ -189,7 +165,7 @@ function renderServerManagerList() {
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="editServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.edit">Edit</button>'
       + (server.isDefault ? '' : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="makeDefaultServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.set_default">Set default</button>')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="setServerEnabled(\'' + escapeHtml(server.id) + '\',' + (server.enabled ? 'false' : 'true') + ')" data-i18n="' + (server.enabled ? 'servers.actions.disable' : 'servers.actions.enable') + '">' + (server.enabled ? 'Disable' : 'Enable') + '</button>'
-      + (server.enabled ? (server.type === 'local' 
+      + (server.enabled ? (server.type === 'local'
         ? '<button class="text-sm text-blue-600 hover:text-blue-800 relative group" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" title="" data-i18n-title="servers.actions.reload_tooltip">Reload Fail2ban</button>'
         : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.restart">Restart Fail2ban</button>') : '')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="testServerConnection(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.test">Test connection</button>'
@@ -202,7 +178,6 @@ function renderServerManagerList() {
   list.innerHTML = html;
   if (typeof updateTranslations === 'function') {
     updateTranslations();
-    // Set tooltip text for reload buttons after translations are updated
     setTimeout(function() {
       serversCache.forEach(function(server) {
         if (server.enabled && server.type === 'local') {
@@ -216,6 +191,25 @@ function renderServerManagerList() {
     }, 100);
   }
 }
+
+function setCurrentServer(serverId) {
+  if (!serverId) {
+    currentServerId = null;
+    currentServer = null;
+  } else {
+    var next = serversCache.find(function(s) { return s.id === serverId && s.enabled; });
+    currentServer = next || null;
+    currentServerId = currentServer ? currentServer.id : null;
+  }
+  renderServerSelector();
+  renderServerSubtitle();
+  updateRestartBanner();
+  refreshData();
+}
+
+// =========================================================================
+//  Server manager form actions
+// =========================================================================
 
 function resetServerForm() {
   document.getElementById('serverId').value = '';
@@ -406,13 +400,11 @@ function populateSSHKeySelect(keys, selected) {
   if (typeof updateTranslations === 'function') {
     updateTranslations();
   }
-  // Sync readonly state of the path input
   syncSSHKeyPathReadonly();
-  // Attach change handler once
   initSSHKeySelectHandler();
 }
 
-// Toggle the SSH key path input between readonly (key selected) and editable (manual entry).
+// SSH key path input is readonly when a key is selected, editable for manual entry.
 function syncSSHKeyPathReadonly() {
   var select = document.getElementById('serverSSHKeySelect');
   var input = document.getElementById('serverSSHKey');
@@ -426,7 +418,6 @@ function syncSSHKeyPathReadonly() {
   }
 }
 
-// Attach a change listener on the select dropdown (once).
 var _sshKeySelectHandlerBound = false;
 function initSSHKeySelectHandler() {
   if (_sshKeySelectHandlerBound) return;
@@ -462,6 +453,10 @@ function loadSSHKeys() {
       return sshKeysCache;
     });
 }
+
+// =========================================================================
+//  Server Actions
+// =========================================================================
 
 function setServerEnabled(serverId, enabled) {
   var server = serversCache.find(function(s) { return s.id === serverId; });
@@ -632,4 +627,3 @@ function restartFail2ban() {
   if (!confirm("Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban now? This will take some time.")) return;
   restartFail2banServer(currentServerId);
 }
-

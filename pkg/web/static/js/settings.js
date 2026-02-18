@@ -1,45 +1,9 @@
-// Settings page functions for Fail2ban UI
+// Settings page javascript logics for Fail2ban UI.
 "use strict";
 
-// Handle GeoIP provider change
-function onGeoIPProviderChange(provider) {
-  const dbPathContainer = document.getElementById('geoipDatabasePathContainer');
-  if (dbPathContainer) {
-    if (provider === 'maxmind') {
-      dbPathContainer.style.display = 'block';
-    } else {
-      dbPathContainer.style.display = 'none';
-    }
-  }
-}
-
-// Update email fields state based on checkbox preferences
-function updateEmailFieldsState() {
-  const emailAlertsForBans = document.getElementById('emailAlertsForBans').checked;
-  const emailAlertsForUnbans = document.getElementById('emailAlertsForUnbans').checked;
-  const emailEnabled = emailAlertsForBans || emailAlertsForUnbans;
-
-  // Get all email-related fields
-  const emailFields = [
-    document.getElementById('destEmail'),
-    document.getElementById('smtpHost'),
-    document.getElementById('smtpPort'),
-    document.getElementById('smtpUsername'),
-    document.getElementById('smtpPassword'),
-    document.getElementById('smtpFrom'),
-    document.getElementById('smtpAuthMethod'),
-    document.getElementById('smtpUseTLS'),
-    document.getElementById('smtpInsecureSkipVerify'),
-    document.getElementById('sendTestEmailBtn')
-  ];
-
-  // Enable/disable all email fields
-  emailFields.forEach(field => {
-    if (field) {
-      field.disabled = !emailEnabled;
-    }
-  });
-}
+// =========================================================================
+//  Load Settings
+// =========================================================================
 
 function loadSettings() {
   showLoading(true);
@@ -48,14 +12,12 @@ function loadSettings() {
     .then(data => {
       document.getElementById('languageSelect').value = data.language || 'en';
       
-      // Handle PORT environment variable
       const uiPortInput = document.getElementById('uiPort');
       const portEnvHint = document.getElementById('portEnvHint');
       const portEnvValue = document.getElementById('portEnvValue');
       const portRestartHint = document.getElementById('portRestartHint');
       
       if (data.portEnvSet) {
-        // PORT env is set - make field readonly and show hint
         uiPortInput.value = data.port || data.portFromEnv || 8080;
         uiPortInput.readOnly = true;
         uiPortInput.classList.add('bg-gray-100', 'cursor-not-allowed');
@@ -63,7 +25,6 @@ function loadSettings() {
         portEnvHint.style.display = 'block';
         portRestartHint.style.display = 'none';
       } else {
-        // PORT env not set - allow editing
         uiPortInput.value = data.port || 8080;
         uiPortInput.readOnly = false;
         uiPortInput.classList.remove('bg-gray-100', 'cursor-not-allowed');
@@ -75,14 +36,12 @@ function loadSettings() {
       const consoleOutputEl = document.getElementById('consoleOutput');
       if (consoleOutputEl) {
         consoleOutputEl.checked = data.consoleOutput || false;
-        // Mark that console was enabled on load (settings were already saved)
         if (typeof wasConsoleEnabledOnLoad !== 'undefined') {
           wasConsoleEnabledOnLoad = consoleOutputEl.checked;
         }
-        toggleConsoleOutput(false); // false = not a user click, loading from saved settings
+        toggleConsoleOutput(false);
       }
       
-      // Set callback URL and add auto-update listener for port changes
       const callbackURLInput = document.getElementById('callbackURL');
       callbackURLInput.value = data.callbackUrl || '';
       const callbackUrlEnvHint = document.getElementById('callbackUrlEnvHint');
@@ -90,7 +49,6 @@ function loadSettings() {
       const callbackUrlDefaultHint = document.getElementById('callbackUrlDefaultHint');
 
       if (data.callbackUrlEnvSet) {
-        // CALLBACK_URL env is set - make field readonly and show hint
         callbackURLInput.value = data.callbackUrlFromEnv || data.callbackUrl || '';
         callbackURLInput.readOnly = true;
         callbackURLInput.classList.add('bg-gray-100', 'cursor-not-allowed');
@@ -98,7 +56,6 @@ function loadSettings() {
         callbackUrlEnvHint.style.display = 'block';
         callbackUrlDefaultHint.style.display = 'none';
       } else {
-        // CALLBACK_URL env not set - allow editing
         callbackURLInput.readOnly = false;
         callbackURLInput.classList.remove('bg-gray-100', 'cursor-not-allowed');
         callbackUrlEnvHint.style.display = 'none';
@@ -109,34 +66,27 @@ function loadSettings() {
       const toggleLink = document.getElementById('toggleCallbackSecretLink');
       if (callbackSecretInput) {
         callbackSecretInput.value = data.callbackSecret || '';
-        // Reset to password type when loading
         if (callbackSecretInput.type === 'text') {
           callbackSecretInput.type = 'password';
         }
-        // Update link text
         if (toggleLink) {
           toggleLink.textContent = 'show secret';
         }
       }
       
-      // Auto-update callback URL when port changes (if using default localhost pattern)
+      // Syncs callback URL when port changes (only when using localhost)
       function updateCallbackURLIfDefault() {
-        if (data.callbackUrlEnvSet) return; // Skip auto-update when env is set
+        if (data.callbackUrlEnvSet) return;
         const currentPort = parseInt(uiPortInput.value, 10) || 8080;
         const currentCallbackURL = callbackURLInput.value.trim();
-        // Check if callback URL matches default localhost pattern
         const defaultPattern = /^http:\/\/127\.0\.0\.1:\d+$/;
         if (currentCallbackURL === '' || defaultPattern.test(currentCallbackURL)) {
           callbackURLInput.value = 'http://127.0.0.1:' + currentPort;
         }
       }
       
-      // Add listener to port input to auto-update callback URL
       uiPortInput.addEventListener('input', updateCallbackURLIfDefault);
-
       document.getElementById('destEmail').value = data.destemail || '';
-
-      // Load email alert preferences
       document.getElementById('emailAlertsForBans').checked = data.emailAlertsForBans !== undefined ? data.emailAlertsForBans : true;
       document.getElementById('emailAlertsForUnbans').checked = data.emailAlertsForUnbans !== undefined ? data.emailAlertsForUnbans : false;
       updateEmailFieldsState();
@@ -156,10 +106,7 @@ function loadSettings() {
         }
       }
       $('#alertCountries').trigger('change');
-      
-      // Check and apply LOTR theme
       checkAndApplyLOTRTheme(data.alertCountries || []);
-
       if (data.smtp) {
         document.getElementById('smtpHost').value = data.smtp.host || '';
         document.getElementById('smtpPort').value = data.smtp.port || 587;
@@ -174,7 +121,6 @@ function loadSettings() {
       document.getElementById('bantimeIncrement').checked = data.bantimeIncrement || false;
       document.getElementById('defaultJailEnable').checked = data.defaultJailEnable || false;
       
-      // GeoIP settings
       const geoipProvider = data.geoipProvider || 'builtin';
       document.getElementById('geoipProvider').value = geoipProvider;
       onGeoIPProviderChange(geoipProvider);
@@ -185,11 +131,9 @@ function loadSettings() {
       document.getElementById('findTime').value = data.findtime || '';
       document.getElementById('maxRetry').value = data.maxretry || '';
       document.getElementById('defaultChain').value = data.chain || 'INPUT';
-      // Load IgnoreIPs as array
       const ignoreIPs = data.ignoreips || [];
       renderIgnoreIPsTags(ignoreIPs);
       
-      // Load banaction settings
       document.getElementById('banaction').value = data.banaction || 'nftables-multiport';
       document.getElementById('banactionAllports').value = data.banactionAllports || 'nftables-allports';
 
@@ -202,10 +146,13 @@ function loadSettings() {
     .finally(() => showLoading(false));
 }
 
+// =========================================================================
+//  Save Settings
+// =========================================================================
+
 function saveSettings(event) {
   event.preventDefault();
   
-  // Validate all fields before submitting
   if (!validateAllSettings()) {
     showToast('Please fix validation errors before saving', 'error');
     return;
@@ -233,7 +180,6 @@ function saveSettings(event) {
 
   const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);
 
-  // Auto-update callback URL if using default localhost pattern and port changed
   const callbackURLInput = document.getElementById('callbackURL');
   let callbackUrl = callbackURLInput.value.trim();
   const currentPort = parseInt(document.getElementById('uiPort').value, 10) || 8080;
@@ -283,8 +229,6 @@ function saveSettings(event) {
         var selectedLang = $('#languageSelect').val();
         loadTranslations(selectedLang);
         console.log("Settings saved successfully. Restart needed? " + (data.restartNeeded || false));
-        
-        // Check and apply LOTR theme after saving
         const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);
         checkAndApplyLOTRTheme(selectedCountries.length > 0 ? selectedCountries : ["ALL"]);
         
@@ -300,6 +244,35 @@ function saveSettings(event) {
     })
     .catch(err => showToast('Error saving settings: ' + err, 'error'))
     .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Email Settings
+// =========================================================================
+
+function updateEmailFieldsState() {
+  const emailAlertsForBans = document.getElementById('emailAlertsForBans').checked;
+  const emailAlertsForUnbans = document.getElementById('emailAlertsForUnbans').checked;
+  const emailEnabled = emailAlertsForBans || emailAlertsForUnbans;
+
+  const emailFields = [
+    document.getElementById('destEmail'),
+    document.getElementById('smtpHost'),
+    document.getElementById('smtpPort'),
+    document.getElementById('smtpUsername'),
+    document.getElementById('smtpPassword'),
+    document.getElementById('smtpFrom'),
+    document.getElementById('smtpAuthMethod'),
+    document.getElementById('smtpUseTLS'),
+    document.getElementById('smtpInsecureSkipVerify'),
+    document.getElementById('sendTestEmailBtn')
+  ];
+
+  emailFields.forEach(field => {
+    if (field) {
+      field.disabled = !emailEnabled;
+    }
+  });
 }
 
 function sendTestEmail() {
@@ -320,6 +293,10 @@ function sendTestEmail() {
     .catch(error => showToast('Error sending test email: ' + error, 'error'))
     .finally(() => showLoading(false));
 }
+
+// =========================================================================
+//  Advanced Actions
+// =========================================================================
 
 function applyAdvancedActionsSettings(cfg) {
   cfg = cfg || {};
@@ -404,6 +381,10 @@ function updateAdvancedIntegrationFields() {
   document.getElementById('advancedPfSenseFields').classList.toggle('hidden', selected !== 'pfsense');
   document.getElementById('advancedOPNsenseFields').classList.toggle('hidden', selected !== 'opnsense');
 }
+
+// =========================================================================
+//  Permanent Block Log
+// =========================================================================
 
 function loadPermanentBlockLog() {
   fetch('/api/advanced-actions/blocks')
@@ -498,6 +479,10 @@ function refreshPermanentBlockLog() {
   loadPermanentBlockLog();
 }
 
+// =========================================================================
+//  Advanced Test
+// =========================================================================
+
 function openAdvancedTestModal() {
   document.getElementById('advancedTestIP').value = '';
   openModal('advancedTestModal');
@@ -520,9 +505,7 @@ function submitAdvancedTest(action) {
       if (data.error) {
         showToast('Advanced action failed: ' + data.error, 'error');
       } else {
-        // Check if this is an info message (e.g., IP already blocked)
-        const toastType = data.info ? 'info' : 'success';
-        showToast(data.message || 'Action completed', toastType);
+        showToast(data.message || 'Action completed', data.info ? 'info' : 'success');
         loadPermanentBlockLog();
       }
     })
@@ -556,13 +539,15 @@ function advancedUnblockIP(ip, event) {
     .catch(err => showToast('Failed to remove IP: ' + err, 'error'));
 }
 
-// Initialize advanced integration select listener
+// =========================================================================
+//  Misc
+// =========================================================================
+
 const advancedIntegrationSelect = document.getElementById('advancedIntegrationSelect');
 if (advancedIntegrationSelect) {
   advancedIntegrationSelect.addEventListener('change', updateAdvancedIntegrationFields);
 }
 
-// Toggle callback secret visibility
 function toggleCallbackSecretVisibility() {
   const input = document.getElementById('callbackSecret');
   const link = document.getElementById('toggleCallbackSecretLink');
@@ -574,3 +559,13 @@ function toggleCallbackSecretVisibility() {
   link.textContent = isPassword ? 'hide secret' : 'show secret';
 }
 
+function onGeoIPProviderChange(provider) {
+  const dbPathContainer = document.getElementById('geoipDatabasePathContainer');
+  if (dbPathContainer) {
+    if (provider === 'maxmind') {
+      dbPathContainer.style.display = 'block';
+    } else {
+      dbPathContainer.style.display = 'none';
+    }
+  }
+}
