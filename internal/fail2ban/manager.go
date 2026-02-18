@@ -8,7 +8,11 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
-// Connector describes a communication backend for a Fail2ban server.
+// =========================================================================
+//  Connector Interface
+// =========================================================================
+
+// Connector is the communication backend for a Fail2ban server.
 type Connector interface {
 	ID() string
 	Server() config.Fail2banServer
@@ -19,7 +23,7 @@ type Connector interface {
 	BanIP(ctx context.Context, jail, ip string) error
 	Reload(ctx context.Context) error
 	Restart(ctx context.Context) error
-	GetFilterConfig(ctx context.Context, jail string) (string, string, error) // Returns (config, filePath, error)
+	GetFilterConfig(ctx context.Context, jail string) (string, string, error)
 	SetFilterConfig(ctx context.Context, jail, content string) error
 	FetchBanEvents(ctx context.Context, limit int) ([]BanEvent, error)
 
@@ -32,7 +36,7 @@ type Connector interface {
 	TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (output string, filterPath string, err error)
 
 	// Jail configuration operations
-	GetJailConfig(ctx context.Context, jail string) (string, string, error) // Returns (config, filePath, error)
+	GetJailConfig(ctx context.Context, jail string) (string, string, error)
 	SetJailConfig(ctx context.Context, jail, content string) error
 	TestLogpath(ctx context.Context, logpath string) ([]string, error)
 	TestLogpathWithResolution(ctx context.Context, logpath string) (originalPath, resolvedPath string, files []string, err error)
@@ -54,7 +58,11 @@ type Connector interface {
 	DeleteFilter(ctx context.Context, filterName string) error
 }
 
-// Manager orchestrates all connectors for configured Fail2ban servers.
+// =========================================================================
+//  Manager
+// =========================================================================
+
+// Manager holds connectors for all configured Fail2ban servers.
 type Manager struct {
 	mu         sync.RWMutex
 	connectors map[string]Connector
@@ -65,7 +73,6 @@ var (
 	managerInst *Manager
 )
 
-// GetManager returns the singleton connector manager.
 func GetManager() *Manager {
 	managerOnce.Do(func() {
 		managerInst = &Manager{
@@ -75,7 +82,6 @@ func GetManager() *Manager {
 	return managerInst
 }
 
-// ReloadFromSettings rebuilds connectors using the provided settings.
 func (m *Manager) ReloadFromSettings(settings config.AppSettings) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -96,7 +102,7 @@ func (m *Manager) ReloadFromSettings(settings config.AppSettings) error {
 	return nil
 }
 
-// Connector returns the connector for the specified server ID.
+// Returns the connector for the specified server ID.
 func (m *Manager) Connector(serverID string) (Connector, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -111,7 +117,7 @@ func (m *Manager) Connector(serverID string) (Connector, error) {
 	return conn, nil
 }
 
-// DefaultConnector returns the default connector as defined in settings.
+// Returns the default connector as defined in settings.
 func (m *Manager) DefaultConnector() (Connector, error) {
 	server := config.GetDefaultServer()
 	if server.ID == "" {
@@ -120,7 +126,7 @@ func (m *Manager) DefaultConnector() (Connector, error) {
 	return m.Connector(server.ID)
 }
 
-// Connectors returns all connectors.
+// Returns all connectors.
 func (m *Manager) Connectors() []Connector {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -131,7 +137,11 @@ func (m *Manager) Connectors() []Connector {
 	return result
 }
 
-// UpdateActionFiles updates action files for all active remote connectors (SSH and Agent).
+// =========================================================================
+//  Action File Management
+// =========================================================================
+
+// Updates action files for all active remote connectors (SSH and Agent).
 func (m *Manager) UpdateActionFiles(ctx context.Context) error {
 	m.mu.RLock()
 	connectors := make([]Connector, 0, len(m.connectors))
@@ -154,7 +164,7 @@ func (m *Manager) UpdateActionFiles(ctx context.Context) error {
 	return lastErr
 }
 
-// UpdateActionFileForServer updates the action file for a specific server by ID.
+// Updates the action file for a single server.
 func (m *Manager) UpdateActionFileForServer(ctx context.Context, serverID string) error {
 	m.mu.RLock()
 	conn, ok := m.connectors[serverID]
@@ -165,7 +175,6 @@ func (m *Manager) UpdateActionFileForServer(ctx context.Context, serverID string
 	return updateConnectorAction(ctx, conn)
 }
 
-// updateConnectorAction updates the action file for a specific connector.
 func updateConnectorAction(ctx context.Context, conn Connector) error {
 	switch c := conn.(type) {
 	case *SSHConnector:
@@ -173,15 +182,18 @@ func updateConnectorAction(ctx context.Context, conn Connector) error {
 	case *AgentConnector:
 		return c.ensureAction(ctx)
 	default:
-		return nil // Local connectors are handled separately
+		return nil
 	}
 }
+
+// =========================================================================
+//  Connector Factory
+// =========================================================================
 
 func newConnectorForServer(server config.Fail2banServer) (Connector, error) {
 	switch server.Type {
 	case "local":
-		// Run migration FIRST before ensuring structure — but only when
-		// the experimental JAIL_AUTOMIGRATION=true env var is set.
+		// Run migration before ensuring structure, but only when the experimental JAIL_AUTOMIGRATION=true env var is set.
 		if isJailAutoMigrationEnabled() {
 			config.DebugLog("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for local server %s", server.Name)
 			if err := MigrateJailsFromJailLocal(); err != nil {

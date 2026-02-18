@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ import (
 func main() {
 	settings := config.GetSettings()
 
+	// Initialize storage
 	if err := storage.Init(""); err != nil {
 		log.Fatalf("Failed to initialise storage: %v", err)
 	}
@@ -49,11 +50,12 @@ func main() {
 		}
 	}()
 
+	// Initialize Fail2ban connectors
 	if err := fail2ban.GetManager().ReloadFromSettings(settings); err != nil {
 		log.Fatalf("failed to initialise fail2ban connectors: %v", err)
 	}
 
-	// OIDC authentication (optional)
+	// Initialize OIDC authentication
 	oidcConfig, err := config.GetOIDCConfigFromEnv()
 	if err != nil {
 		log.Fatalf("failed to load OIDC configuration: %v", err)
@@ -68,18 +70,20 @@ func main() {
 		log.Println("OIDC authentication enabled")
 	}
 
+	// Set Gin mode
 	if settings.Debug {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	// Initialize router
 	router := gin.Default()
 	serverPort := strconv.Itoa(int(settings.Port))
 	bindAddress, _ := config.GetBindAddressFromEnv()
 	serverAddr := net.JoinHostPort(bindAddress, serverPort)
 
-	// Container vs local: different paths for templates and static assets
+	// Load templates and static assets based on running in container or locally (compiled binary)
 	_, container := os.LookupEnv("CONTAINER")
 	if container {
 		router.LoadHTMLGlob("/app/templates/*")
@@ -91,7 +95,7 @@ func main() {
 		router.Static("/static", "./pkg/web/static")
 	}
 
-	// WebSocket hub and console log capture
+	// Initialize WebSocket hub and console log capture
 	wsHub := web.NewHub()
 	go wsHub.Run()
 	web.SetupConsoleLogWriter(wsHub)
@@ -100,6 +104,7 @@ func main() {
 		web.SetConsoleLogEnabled(enabled)
 	})
 
+	// Register routes
 	web.RegisterRoutes(router, wsHub)
 	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
 	printWelcomeBanner(bindAddress, serverPort, isLOTRMode)
@@ -127,7 +132,7 @@ func isLOTRModeActive(alertCountries []string) bool {
 	return false
 }
 
-// printWelcomeBanner prints the Tux banner with startup info.
+// Print welcome banner.
 func printWelcomeBanner(bindAddress, appPort string, isLOTRMode bool) {
 	greeting := getGreeting()
 
@@ -173,7 +178,6 @@ Listening on: http://%s:%s
 	}
 }
 
-// getGreeting returns a friendly greeting based on the time of day.
 func getGreeting() string {
 	hour := time.Now().Hour()
 	switch {
