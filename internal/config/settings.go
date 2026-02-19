@@ -90,7 +90,6 @@ type Fail2banServer struct {
 	Host          string    `json:"host,omitempty"`
 	Port          int       `json:"port,omitempty"`
 	SocketPath    string    `json:"socketPath,omitempty"`
-	LogPath       string    `json:"logPath,omitempty"`
 	SSHUser       string    `json:"sshUser,omitempty"`
 	SSHKeyPath    string    `json:"sshKeyPath,omitempty"`
 	AgentURL      string    `json:"agentUrl,omitempty"`
@@ -448,7 +447,6 @@ func applyServerRecordsLocked(records []storage.ServerRecord) {
 			Host:          rec.Host,
 			Port:          rec.Port,
 			SocketPath:    rec.SocketPath,
-			LogPath:       rec.LogPath,
 			SSHUser:       rec.SSHUser,
 			SSHKeyPath:    rec.SSHKeyPath,
 			AgentURL:      rec.AgentURL,
@@ -545,7 +543,6 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 			Host:         srv.Host,
 			Port:         srv.Port,
 			SocketPath:   srv.SocketPath,
-			LogPath:      srv.LogPath,
 			SSHUser:      srv.SSHUser,
 			SSHKeyPath:   srv.SSHKeyPath,
 			AgentURL:     srv.AgentURL,
@@ -730,7 +727,6 @@ func normalizeServersLocked() {
 			Name:       "Fail2ban",
 			Type:       "local",
 			SocketPath: "/var/run/fail2ban/fail2ban.sock",
-			LogPath:    "/var/log/fail2ban.log",
 			Hostname:   hostname,
 			IsDefault:  false,
 			Enabled:    false,
@@ -760,9 +756,6 @@ func normalizeServersLocked() {
 		}
 		if server.Type == "local" && server.SocketPath == "" {
 			server.SocketPath = "/var/run/fail2ban/fail2ban.sock"
-		}
-		if server.Type == "local" && server.LogPath == "" {
-			server.LogPath = "/var/log/fail2ban.log"
 		}
 		if !server.enabledSet {
 			if server.Type == "local" {
@@ -1085,9 +1078,6 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	}
 	if input.Type == "local" && input.SocketPath == "" {
 		input.SocketPath = "/var/run/fail2ban/fail2ban.sock"
-	}
-	if input.Type == "local" && input.LogPath == "" {
-		input.LogPath = "/var/log/fail2ban.log"
 	}
 	if input.Name == "" {
 		input.Name = "Fail2ban Server " + input.ID
@@ -1450,6 +1440,16 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 		return currentSettings, err
 	}
 	return currentSettings, nil
+}
+
+// Checks if "LOTR" is among the configured alert countries.
+func IsLOTRModeActive(alertCountries []string) bool {
+	for _, country := range alertCountries {
+		if strings.EqualFold(country, "LOTR") {
+			return true
+		}
+	}
+	return false
 }
 
 // =========================================================================
