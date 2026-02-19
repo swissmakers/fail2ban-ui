@@ -187,3 +187,232 @@ function openBanInsightsModal() {
   }
   openModal('banInsightsModal');
 }
+
+// =========================================================================
+//  Server Manager Modal
+// =========================================================================
+
+function openServerManager(serverId) {
+  showLoading(true);
+  loadServers()
+    .then(function() {
+      if (serverId) {
+        editServer(serverId);
+      } else {
+        resetServerForm();
+      }
+      renderServerManagerList();
+      openModal('serverManagerModal');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}
+
+// =========================================================================
+//  Manage Jails Modal
+// =========================================================================
+
+function openManageJailsModal() {
+  if (!currentServerId) {
+    showToast(t('servers.selector.none', 'Please add and select a Fail2ban server first.'), 'info');
+    return;
+  }
+  showLoading(true);
+  fetch(withServerParam('/api/jails/manage'), {
+    headers: serverHeaders()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (!data.jails || !data.jails.length) {
+        showToast("No jails found for this server.", 'info');
+        return;
+      }
+
+      const html = data.jails.map(jail => {
+        const isEnabled = jail.enabled ? 'checked' : '';
+        const escapedJailName = escapeHtml(jail.jailName);
+        const jsEscapedJailName = jail.jailName.replace(/'/g, "\\'");
+        return ''
+          + '<div class="flex items-center justify-between gap-3 p-3 bg-gray-50">'
+          + '  <span class="text-sm font-medium flex-1 text-gray-900">' + escapedJailName + '</span>'
+          + '  <div class="flex items-center gap-3">'
+          + '    <button'
+          + '      type="button"'
+          + '      onclick="openJailConfigModal(\'' + jsEscapedJailName + '\')"'
+          + '      class="text-xs px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors whitespace-nowrap"'
+          + '      data-i18n="modal.filter_config_edit"'
+          + '      title="' + escapeHtml(t('modal.filter_config_edit', 'Edit Filter / Jail')) + '"'
+          + '    >'
+          + escapeHtml(t('modal.filter_config_edit', 'Edit Filter / Jail'))
+          + '    </button>'
+          + '    <button'
+          + '      type="button"'
+          + '      onclick="deleteJail(\'' + jsEscapedJailName + '\')"'
+          + '      class="text-xs px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors whitespace-nowrap"'
+          + '      title="' + escapeHtml(t('modal.delete_jail', 'Delete Jail')) + '"'
+          + '    >'
+          + '      <i class="fas fa-trash"></i>'
+          + '    </button>'
+          + '    <label class="inline-flex relative items-center cursor-pointer">'
+          + '      <input'
+          + '        type="checkbox"'
+          + '        id="toggle-' + jail.jailName.replace(/[^a-zA-Z0-9]/g, '_') + '"'
+          + '        class="sr-only peer"'
+          + isEnabled
+          + '      />'
+          + '      <div'
+          + '        class="w-11 h-6 bg-gray-200 rounded-full peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:bg-blue-600 transition-colors"'
+          + '      ></div>'
+          + '      <span'
+          + '        class="absolute left-1 top-1/2 -translate-y-1/2 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"'
+          + '      ></span>'
+          + '    </label>'
+          + '  </div>'
+          + '</div>';
+      }).join('');
+
+      document.getElementById('jailsList').innerHTML = html;
+
+      let saveTimeout;
+      document.querySelectorAll('#jailsList input[type="checkbox"]').forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+          if (saveTimeout) {
+            clearTimeout(saveTimeout);
+          }
+          saveTimeout = setTimeout(function() {
+            saveManageJailsSingle(checkbox);
+          }, 300);
+        });
+      });
+
+      openModal('manageJailsModal');
+    })
+    .catch(err => showToast("Error fetching jails: " + err, 'error'))
+    .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Create Jail Modal
+// =========================================================================
+
+function openCreateJailModal() {
+  document.getElementById('newJailName').value = '';
+  document.getElementById('newJailContent').value = '';
+  const filterSelect = document.getElementById('newJailFilter');
+  if (filterSelect) {
+    filterSelect.value = '';
+  }
+  showLoading(true);
+  fetch(withServerParam('/api/filters'), {
+    headers: serverHeaders()
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (filterSelect) {
+        filterSelect.innerHTML = '<option value="">-- Select a filter --</option>';
+        if (data.filters && data.filters.length > 0) {
+          data.filters.forEach(filter => {
+            const opt = document.createElement('option');
+            opt.value = filter;
+            opt.textContent = filter;
+            filterSelect.appendChild(opt);
+          });
+        }
+      }
+      openModal('createJailModal');
+    })
+    .catch(err => {
+      console.error('Error loading filters:', err);
+      openModal('createJailModal');
+    })
+    .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Create Filter Modal
+// =========================================================================
+
+function openCreateFilterModal() {
+  document.getElementById('newFilterName').value = '';
+  document.getElementById('newFilterContent').value = '';
+  openModal('createFilterModal');
+}
+
+// =========================================================================
+//  Jail / Filter Config Editor Modal
+// =========================================================================
+
+function openJailConfigModal(jailName) {
+  currentJailForConfig = jailName;
+  var filterTextArea = document.getElementById('filterConfigTextarea');
+  var jailTextArea = document.getElementById('jailConfigTextarea');
+  filterTextArea.value = '';
+  jailTextArea.value = '';
+
+  // Prevent browser extensions from interfering
+  preventExtensionInterference(filterTextArea);
+  preventExtensionInterference(jailTextArea);
+
+  document.getElementById('modalJailName').textContent = jailName;
+  document.getElementById('testLogpathSection').classList.add('hidden');
+  document.getElementById('logpathResults').classList.add('hidden');
+
+  showLoading(true);
+  var url = '/api/jails/' + encodeURIComponent(jailName) + '/config';
+  fetch(withServerParam(url), {
+    headers: serverHeaders()
+  })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) {
+        showToast("Error loading config: " + data.error, 'error');
+        return;
+      }
+      filterTextArea.value = data.filter || '';
+      jailTextArea.value = data.jailConfig || '';
+
+      var filterFilePathEl = document.getElementById('filterFilePath');
+      var jailFilePathEl = document.getElementById('jailFilePath');
+      if (filterFilePathEl && data.filterFilePath) {
+        filterFilePathEl.textContent = data.filterFilePath;
+        filterFilePathEl.style.display = 'block';
+      } else if (filterFilePathEl) {
+        filterFilePathEl.style.display = 'none';
+      }
+      if (jailFilePathEl && data.jailFilePath) {
+        jailFilePathEl.textContent = data.jailFilePath;
+        jailFilePathEl.style.display = 'block';
+      } else if (jailFilePathEl) {
+        jailFilePathEl.style.display = 'none';
+      }
+
+      // Update logpath button visibility
+      updateLogpathButtonVisibility();
+      
+      // Show hint for local servers
+      var localServerHint = document.getElementById('localServerLogpathHint');
+      if (localServerHint && currentServer && currentServer.type === 'local') {
+        localServerHint.classList.remove('hidden');
+      } else if (localServerHint) {
+        localServerHint.classList.add('hidden');
+      }
+
+      jailTextArea.addEventListener('input', updateLogpathButtonVisibility);
+
+      preventExtensionInterference(filterTextArea);
+      preventExtensionInterference(jailTextArea);
+      openModal('jailConfigModal');
+
+      setTimeout(function() {
+        preventExtensionInterference(filterTextArea);
+        preventExtensionInterference(jailTextArea);
+      }, 200);
+    })
+    .catch(function(err) {
+      showToast("Error: " + err, 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}

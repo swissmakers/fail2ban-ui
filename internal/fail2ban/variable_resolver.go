@@ -27,13 +27,12 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
-var (
-	// Variable pattern: %(variable_name)s
-	variablePattern = regexp.MustCompile(`%\(([^)]+)\)s`)
-)
+// =========================================================================
+//  Pattern Matching
+// =========================================================================
 
-// extractVariablesFromString extracts all variable names from a string.
-// Returns a list of variable names found in the pattern %(name)s.
+var variablePattern = regexp.MustCompile(`%\(([^)]+)\)s`)
+
 func extractVariablesFromString(s string) []string {
 	matches := variablePattern.FindAllStringSubmatch(s, -1)
 	if len(matches) == 0 {
@@ -49,8 +48,10 @@ func extractVariablesFromString(s string) []string {
 	return variables
 }
 
-// searchVariableInFile searches for a variable definition in a single file.
-// Returns the value if found, empty string if not found, and error on file read error.
+// =========================================================================
+//  Variable Lookup
+// =========================================================================
+
 func searchVariableInFile(filePath, varName string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -162,19 +163,16 @@ func searchVariableInFile(filePath, varName string) (string, error) {
 	return "", nil
 }
 
-// findVariableDefinition searches for a variable definition in all .local files first,
-// then .conf files under /etc/fail2ban/ and subdirectories.
+// Searches for a variable definition in all .local files first, then .conf files under /etc/fail2ban/ and subdirectories.
 // Returns the FIRST value found (prioritizing .local over .conf).
 func findVariableDefinition(varName string) (string, error) {
 	fail2banPath := "/etc/fail2ban"
-
 	config.DebugLog("findVariableDefinition: searching for variable '%s'", varName)
 
 	if _, err := os.Stat(fail2banPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("variable '%s' not found: /etc/fail2ban directory does not exist", varName)
 	}
 
-	// First pass: search .local files (higher priority)
 	var foundValue string
 	err := filepath.Walk(fail2banPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -187,14 +185,13 @@ func findVariableDefinition(varName string) (string, error) {
 
 		value, err := searchVariableInFile(path, varName)
 		if err != nil {
-			return nil // Skip files we can't read
+			return nil
 		}
 
 		if value != "" {
 			foundValue = value
-			return filepath.SkipAll // Stop walking when found
+			return filepath.SkipAll
 		}
-
 		return nil
 	})
 
@@ -207,7 +204,6 @@ func findVariableDefinition(varName string) (string, error) {
 		return "", err
 	}
 
-	// Second pass: search .conf files (only if not found in .local)
 	config.DebugLog("findVariableDefinition: variable '%s' not found in .local files, searching .conf files", varName)
 	err = filepath.Walk(fail2banPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -225,9 +221,8 @@ func findVariableDefinition(varName string) (string, error) {
 
 		if value != "" {
 			foundValue = value
-			return filepath.SkipAll // Stop walking when found
+			return filepath.SkipAll
 		}
-
 		return nil
 	})
 
@@ -244,9 +239,10 @@ func findVariableDefinition(varName string) (string, error) {
 	return "", fmt.Errorf("variable '%s' not found in Fail2Ban configuration files", varName)
 }
 
-// resolveVariableRecursive resolves a variable recursively, handling nested variables.
-// visited map tracks visited variables to detect circular references.
-// This function fully resolves all nested variables until no variables remain.
+// =========================================================================
+//  Resolution
+// =========================================================================
+
 func resolveVariableRecursive(varName string, visited map[string]bool) (string, error) {
 	if visited[varName] {
 		return "", fmt.Errorf("circular reference detected for variable '%s'", varName)
@@ -260,7 +256,6 @@ func resolveVariableRecursive(varName string, visited map[string]bool) (string, 
 		return "", err
 	}
 
-	// Keep resolving until no more variables are found
 	resolved := value
 	maxIterations := 10
 	iteration := 0
@@ -268,16 +263,12 @@ func resolveVariableRecursive(varName string, visited map[string]bool) (string, 
 	for iteration < maxIterations {
 		variables := extractVariablesFromString(resolved)
 		if len(variables) == 0 {
-			// No more variables, fully resolved
 			config.DebugLog("resolveVariableRecursive: '%s' fully resolved to '%s'", varName, resolved)
 			break
 		}
-
 		config.DebugLog("resolveVariableRecursive: iteration %d for '%s', found %d variables in '%s': %v", iteration+1, varName, len(variables), resolved, variables)
 
-		// Resolve all nested variables
 		for _, nestedVar := range variables {
-			// Check for circular reference
 			if visited[nestedVar] {
 				return "", fmt.Errorf("circular reference detected: '%s' -> '%s'", varName, nestedVar)
 			}
@@ -289,70 +280,50 @@ func resolveVariableRecursive(varName string, visited map[string]bool) (string, 
 			}
 
 			config.DebugLog("resolveVariableRecursive: resolved '%s' to '%s' for '%s'", nestedVar, nestedValue, varName)
-
-			// Replace ALL occurrences of the nested variable
-			// Pattern: %(varName)s - need to escape parentheses for regex
-			// The pattern %(varName)s needs to be escaped as %\(varName\)s in regex
 			pattern := fmt.Sprintf("%%\\(%s\\)s", regexp.QuoteMeta(nestedVar))
 			re := regexp.MustCompile(pattern)
 			beforeReplace := resolved
 			resolved = re.ReplaceAllString(resolved, nestedValue)
 			config.DebugLog("resolveVariableRecursive: replaced pattern '%s' in '%s' with '%s', result: '%s'", pattern, beforeReplace, nestedValue, resolved)
 
-			// Verify the replacement actually happened
 			if beforeReplace == resolved {
 				config.DebugLog("resolveVariableRecursive: WARNING - replacement did not change string! Pattern: '%s', Before: '%s', After: '%s'", pattern, beforeReplace, resolved)
-				// If replacement didn't work, this is a critical error
 				return "", fmt.Errorf("failed to replace variable '%s' in '%s': pattern '%s' did not match", nestedVar, beforeReplace, pattern)
 			}
 		}
-
-		// After replacing all variables in this iteration, check if we're done
-		// Verify no variables remain before continuing
 		remainingVars := extractVariablesFromString(resolved)
 		if len(remainingVars) == 0 {
-			// No more variables, fully resolved
 			config.DebugLog("resolveVariableRecursive: '%s' fully resolved to '%s' after replacements", varName, resolved)
 			break
 		}
-
-		// If we still have variables after replacement, continue to next iteration
-		// But check if we made progress (resolved should be different from before)
 		iteration++
 	}
 
 	if iteration >= maxIterations {
 		return "", fmt.Errorf("maximum resolution iterations reached for variable '%s', possible circular reference. Last resolved value: '%s'", varName, resolved)
 	}
-
 	return resolved, nil
 }
 
-// ResolveLogpathVariables resolves all variables in a logpath string.
-// Returns the fully resolved path. If no variables are present, returns the original path.
-// Keeps resolving until no more variables are found (handles nested variables).
+// Expands %(var)s patterns in logpath using fail2ban config.
 func ResolveLogpathVariables(logpath string) (string, error) {
 	if logpath == "" {
 		return "", nil
 	}
-
 	logpath = strings.TrimSpace(logpath)
 
-	// Keep resolving until no more variables are found
 	resolved := logpath
-	maxIterations := 10 // Prevent infinite loops
+	maxIterations := 10
 	iteration := 0
 
 	for iteration < maxIterations {
 		variables := extractVariablesFromString(resolved)
 		if len(variables) == 0 {
-			// No more variables, we're done
 			break
 		}
 
 		config.DebugLog("ResolveLogpathVariables: iteration %d, found %d variables in '%s'", iteration+1, len(variables), resolved)
 
-		// Resolve all variables found in the current string
 		visited := make(map[string]bool)
 		for _, varName := range variables {
 			config.DebugLog("ResolveLogpathVariables: resolving variable '%s' from string '%s'", varName, resolved)
@@ -363,9 +334,6 @@ func ResolveLogpathVariables(logpath string) (string, error) {
 
 			config.DebugLog("ResolveLogpathVariables: resolved variable '%s' to '%s'", varName, varValue)
 
-			// Replace ALL occurrences of the variable in the resolved string
-			// Pattern: %(varName)s - need to escape parentheses for regex
-			// The pattern %(varName)s needs to be escaped as %\(varName\)s in regex
 			pattern := fmt.Sprintf("%%\\(%s\\)s", regexp.QuoteMeta(varName))
 			re := regexp.MustCompile(pattern)
 			beforeReplace := resolved

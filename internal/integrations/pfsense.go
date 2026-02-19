@@ -93,7 +93,7 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 	}
 	if cfg.SkipTLSVerify {
 		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 - user controlled
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 	}
 

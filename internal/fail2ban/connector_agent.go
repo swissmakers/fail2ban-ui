@@ -16,14 +16,22 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
-// AgentConnector connects to a remote fail2ban-agent via HTTP API.
+// =========================================================================
+//  Types
+// =========================================================================
+
+// Connector for a remote Fail2ban-Agent via HTTP API.
 type AgentConnector struct {
 	server config.Fail2banServer
 	base   *url.URL
 	client *http.Client
 }
 
-// NewAgentConnector constructs a new AgentConnector.
+// =========================================================================
+//  Constructor
+// =========================================================================
+
+// Create a new AgentConnector for the given server config.
 func NewAgentConnector(server config.Fail2banServer) (Connector, error) {
 	if server.AgentURL == "" {
 		return nil, fmt.Errorf("agentUrl is required for agent connector")
@@ -51,6 +59,10 @@ func NewAgentConnector(server config.Fail2banServer) (Connector, error) {
 	}
 	return conn, nil
 }
+
+// =========================================================================
+//  Connector Functions
+// =========================================================================
 
 func (ac *AgentConnector) ID() string {
 	return ac.server.ID
@@ -114,14 +126,16 @@ func (ac *AgentConnector) Restart(ctx context.Context) error {
 	return ac.post(ctx, "/v1/actions/restart", nil, nil)
 }
 
-// RestartWithMode restarts the remote agent-managed Fail2ban service and
-// always reports mode "restart". Any error is propagated to the caller.
 func (ac *AgentConnector) RestartWithMode(ctx context.Context) (string, error) {
 	if err := ac.Restart(ctx); err != nil {
 		return "restart", err
 	}
 	return "restart", nil
 }
+
+// =========================================================================
+//  Filter Operations
+// =========================================================================
 
 func (ac *AgentConnector) GetFilterConfig(ctx context.Context, jail string) (string, string, error) {
 	var resp struct {
@@ -131,10 +145,8 @@ func (ac *AgentConnector) GetFilterConfig(ctx context.Context, jail string) (str
 	if err := ac.get(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(jail)), &resp); err != nil {
 		return "", "", err
 	}
-	// If agent doesn't return filePath, construct it (agent should handle .local priority)
 	filePath := resp.FilePath
 	if filePath == "" {
-		// Default to .local path (agent should handle .local priority on its side)
 		filePath = fmt.Sprintf("/etc/fail2ban/filter.d/%s.local", jail)
 	}
 	return resp.Config, filePath, nil
@@ -183,6 +195,10 @@ func (ac *AgentConnector) FetchBanEvents(ctx context.Context, limit int) ([]BanE
 	}
 	return result, nil
 }
+
+// =========================================================================
+//  HTTP Helpers
+// =========================================================================
 
 func (ac *AgentConnector) get(ctx context.Context, endpoint string, out any) error {
 	req, err := ac.newRequest(ctx, http.MethodGet, endpoint, nil)
@@ -280,7 +296,10 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 	return json.Unmarshal(data, out)
 }
 
-// GetAllJails implements Connector.
+// =========================================================================
+//  Jail Operations
+// =========================================================================
+
 func (ac *AgentConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
 	var resp struct {
 		Jails []JailInfo `json:"jails"`
@@ -291,12 +310,10 @@ func (ac *AgentConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
 	return resp.Jails, nil
 }
 
-// UpdateJailEnabledStates implements Connector.
 func (ac *AgentConnector) UpdateJailEnabledStates(ctx context.Context, updates map[string]bool) error {
 	return ac.post(ctx, "/v1/jails/update-enabled", updates, nil)
 }
 
-// GetFilters implements Connector.
 func (ac *AgentConnector) GetFilters(ctx context.Context) ([]string, error) {
 	var resp struct {
 		Filters []string `json:"filters"`
@@ -307,7 +324,6 @@ func (ac *AgentConnector) GetFilters(ctx context.Context) ([]string, error) {
 	return resp.Filters, nil
 }
 
-// TestFilter implements Connector.
 func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (string, string, error) {
 	payload := map[string]any{
 		"filterName": filterName,
@@ -323,16 +339,13 @@ func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, log
 	if err := ac.post(ctx, "/v1/filters/test", payload, &resp); err != nil {
 		return "", "", err
 	}
-	// If agent doesn't return filterPath, construct it (agent should handle .local priority)
 	filterPath := resp.FilterPath
 	if filterPath == "" {
-		// Default to .conf path (agent should handle .local priority on its side)
 		filterPath = fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
 	}
 	return resp.Output, filterPath, nil
 }
 
-// GetJailConfig implements Connector.
 func (ac *AgentConnector) GetJailConfig(ctx context.Context, jail string) (string, string, error) {
 	var resp struct {
 		Config   string `json:"config"`
@@ -341,35 +354,33 @@ func (ac *AgentConnector) GetJailConfig(ctx context.Context, jail string) (strin
 	if err := ac.get(ctx, fmt.Sprintf("/v1/jails/%s/config", url.PathEscape(jail)), &resp); err != nil {
 		return "", "", err
 	}
-	// If agent doesn't return filePath, construct it (agent should handle .local priority)
 	filePath := resp.FilePath
 	if filePath == "" {
-		// Default to .local path (agent should handle .local priority on its side)
 		filePath = fmt.Sprintf("/etc/fail2ban/jail.d/%s.local", jail)
 	}
 	return resp.Config, filePath, nil
 }
 
-// SetJailConfig implements Connector.
 func (ac *AgentConnector) SetJailConfig(ctx context.Context, jail, content string) error {
 	payload := map[string]string{"config": content}
 	return ac.put(ctx, fmt.Sprintf("/v1/jails/%s/config", url.PathEscape(jail)), payload, nil)
 }
 
-// TestLogpath implements Connector.
+// =========================================================================
+//  Logpath Operations
+// =========================================================================
+
 func (ac *AgentConnector) TestLogpath(ctx context.Context, logpath string) ([]string, error) {
 	payload := map[string]string{"logpath": logpath}
 	var resp struct {
 		Files []string `json:"files"`
 	}
 	if err := ac.post(ctx, "/v1/jails/test-logpath", payload, &resp); err != nil {
-		return []string{}, nil // Return empty on error
+		return []string{}, nil
 	}
 	return resp.Files, nil
 }
 
-// TestLogpathWithResolution implements Connector.
-// Agent server should handle variable resolution.
 func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath string) (originalPath, resolvedPath string, files []string, err error) {
 	originalPath = strings.TrimSpace(logpath)
 	if originalPath == "" {
@@ -386,7 +397,7 @@ func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath
 
 	// Try new endpoint first, fallback to old endpoint
 	if err := ac.post(ctx, "/v1/jails/test-logpath-with-resolution", payload, &resp); err != nil {
-		// Fallback: use old endpoint and assume no resolution
+		// Fallback; use old endpoint if new endpoint fails and assume no resolution
 		files, err2 := ac.TestLogpath(ctx, originalPath)
 		if err2 != nil {
 			return originalPath, "", nil, fmt.Errorf("failed to test logpath: %w", err2)
@@ -408,14 +419,14 @@ func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath
 	return resp.OriginalLogpath, resp.ResolvedLogpath, resp.Files, nil
 }
 
-// UpdateDefaultSettings implements Connector.
+// =========================================================================
+//  Settings and Structure
+// =========================================================================
+
 func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
-	// Since the managed jail.local is fully owned by Fail2ban-UI, a complete
-	// rewrite from current settings is always correct and self-healing.
 	return ac.EnsureJailLocalStructure(ctx)
 }
 
-// CheckJailLocalIntegrity implements Connector.
 func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
 	var result struct {
 		Exists      bool `json:"exists"`
@@ -431,10 +442,8 @@ func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 	return result.Exists, result.HasUIAction, nil
 }
 
-// EnsureJailLocalStructure implements Connector.
 func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
-	// Safety: if jail.local exists but is not managed by Fail2ban-UI,
-	// it belongs to the user; never overwrite it.
+	// If jail.local exists but is not managed by Fail2ban-UI, it belongs to the user, we do not overwrite it.
 	if exists, hasUI, err := ac.CheckJailLocalIntegrity(ctx); err == nil && exists && !hasUI {
 		config.DebugLog("jail.local on agent server %s exists but is not managed by Fail2ban-UI -- skipping overwrite", ac.server.Name)
 		return nil
@@ -443,7 +452,10 @@ func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
 	return ac.post(ctx, "/v1/jails/ensure-structure", nil, nil)
 }
 
-// CreateJail implements Connector.
+// =========================================================================
+//  Filter and Jail Management
+// =========================================================================
+
 func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content string) error {
 	payload := map[string]interface{}{
 		"name":    jailName,
@@ -452,12 +464,10 @@ func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content stri
 	return ac.post(ctx, "/v1/jails", payload, nil)
 }
 
-// DeleteJail implements Connector.
 func (ac *AgentConnector) DeleteJail(ctx context.Context, jailName string) error {
 	return ac.delete(ctx, fmt.Sprintf("/v1/jails/%s", jailName), nil)
 }
 
-// CreateFilter implements Connector.
 func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content string) error {
 	payload := map[string]interface{}{
 		"name":    filterName,
@@ -466,7 +476,6 @@ func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content 
 	return ac.post(ctx, "/v1/filters", payload, nil)
 }
 
-// DeleteFilter implements Connector.
 func (ac *AgentConnector) DeleteFilter(ctx context.Context, filterName string) error {
 	return ac.delete(ctx, fmt.Sprintf("/v1/filters/%s", filterName), nil)
 }

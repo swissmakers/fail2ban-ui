@@ -14,6 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// LEGACY, WILL BE REMOVED IN FUTURE VERSIONS.
 package fail2ban
 
 import (
@@ -24,13 +25,13 @@ import (
 	"time"
 )
 
-var (
-	// Typical fail2ban log line:
-	//  2023-01-20 10:15:30,123 fail2ban.actions [1234]: NOTICE  [sshd] Ban 192.168.0.101
-	logRegex = regexp.MustCompile(`^(\S+\s+\S+) fail2ban\.actions.*?\[\d+\]: NOTICE\s+\[(\S+)\]\s+Ban\s+(\S+)`)
-)
+// =========================================================================
+//  Types
+// =========================================================================
 
-// BanEvent holds details about a ban
+var logRegex = regexp.MustCompile(`^(\S+\s+\S+) fail2ban\.actions.*?\[\d+\]: NOTICE\s+\[(\S+)\]\s+Ban\s+(\S+)`)
+
+// This is a single ban event from the fail2ban log. REMOVE THIS TYPE.
 type BanEvent struct {
 	Time    time.Time
 	Jail    string
@@ -38,7 +39,11 @@ type BanEvent struct {
 	LogLine string
 }
 
-// ParseBanLog returns a map[jailName]BanEvents and also the last 5 ban events overall.
+// =========================================================================
+//  Log Parsing
+// =========================================================================
+
+// ParseBanLog reads the fail2ban log and returns events grouped by jail.
 func ParseBanLog(logPath string) (map[string][]BanEvent, error) {
 	file, err := os.Open(logPath)
 	if err != nil {
@@ -54,17 +59,12 @@ func ParseBanLog(logPath string) (map[string][]BanEvent, error) {
 
 		matches := logRegex.FindStringSubmatch(line)
 		if len(matches) == 4 {
-			// matches[1] -> "2023-01-20 10:15:30,123"
-			// matches[2] -> jail name, e.g. "sshd"
-			// matches[3] -> IP, e.g. "192.168.0.101"
 			timestampStr := matches[1]
 			jail := matches[2]
 			ip := matches[3]
 
-			// parse "2023-01-20 10:15:30,123" -> time.Time
 			parsedTime, err := time.Parse("2006-01-02 15:04:05,000", timestampStr)
 			if err != nil {
-				// If parse fails, skip or set parsedTime=zero
 				continue
 			}
 

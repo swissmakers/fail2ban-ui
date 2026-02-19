@@ -1,8 +1,11 @@
-// Validation functions for Fail2ban UI
+// Validation for Fail2ban UI settings and forms.
+
+// =========================================================================
+//  Field Validators
+// =========================================================================
 
 function validateTimeFormat(value, fieldName) {
-  if (!value || !value.trim()) return { valid: true }; // Empty is OK
-  // Support: s (seconds), m (minutes), h (hours), d (days), w (weeks), mo (months), y (years)
+  if (!value || !value.trim()) return { valid: true };
   const timePattern = /^\d+([smhdwy]|mo)$/i;
   if (!timePattern.test(value.trim())) {
     return { 
@@ -14,7 +17,7 @@ function validateTimeFormat(value, fieldName) {
 }
 
 function validateMaxRetry(value) {
-  if (!value || value.trim() === '') return { valid: true }; // Empty is OK
+  if (!value || value.trim() === '') return { valid: true };
   const num = parseInt(value, 10);
   if (isNaN(num) || num < 1) {
     return { 
@@ -26,7 +29,7 @@ function validateMaxRetry(value) {
 }
 
 function validateEmail(value) {
-  if (!value || !value.trim()) return { valid: true }; // Empty is OK
+  if (!value || !value.trim()) return { valid: true };
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailPattern.test(value.trim())) {
     return { 
@@ -37,24 +40,18 @@ function validateEmail(value) {
   return { valid: true };
 }
 
-// Validate IP address (IPv4, IPv6, CIDR, or hostname)
 function isValidIP(ip) {
   if (!ip || !ip.trim()) return false;
   ip = ip.trim();
-  
-  // Allow hostnames (fail2ban supports DNS hostnames)
-  // Basic hostname validation: alphanumeric, dots, hyphens
+  // fail2ban accepts hostnames in addition to IPs
   const hostnamePattern = /^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?)*$/;
-  
   // IPv4 with optional CIDR
   const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-  
-  // IPv6 with optional CIDR (simplified - allows various IPv6 formats)
+  // IPv6 with optional CIDR
   const ipv6Pattern = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(\/\d{1,3})?$/;
   const ipv6CompressedPattern = /^::([0-9a-fA-F]{0,4}:){0,6}[0-9a-fA-F]{0,4}(\/\d{1,3})?$/;
   const ipv6FullPattern = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}(\/\d{1,3})?$/;
-  
-  // Check IPv4
+
   if (ipv4Pattern.test(ip)) {
     const parts = ip.split('/');
     const octets = parts[0].split('.');
@@ -68,8 +65,6 @@ function isValidIP(ip) {
     }
     return true;
   }
-  
-  // Check IPv6
   if (ipv6Pattern.test(ip) || ipv6CompressedPattern.test(ip) || ipv6FullPattern.test(ip)) {
     if (ip.includes('/')) {
       const parts = ip.split('/');
@@ -78,40 +73,39 @@ function isValidIP(ip) {
     }
     return true;
   }
-  
-  // Check hostname
   if (hostnamePattern.test(ip)) {
     return true;
   }
-  
   return false;
 }
 
 function validateIgnoreIPs() {
   if (typeof getIgnoreIPsArray !== 'function') {
     console.error('getIgnoreIPsArray function not found');
-    return { valid: true }; // Skip validation if function not available
+    return { valid: true };
   }
-  
   const ignoreIPs = getIgnoreIPsArray();
   const invalidIPs = [];
-  
+
   for (let i = 0; i < ignoreIPs.length; i++) {
     const ip = ignoreIPs[i];
     if (!isValidIP(ip)) {
       invalidIPs.push(ip);
     }
   }
-  
+
   if (invalidIPs.length > 0) {
     return {
       valid: false,
       message: 'Invalid IP addresses, CIDR notation, or hostnames: ' + invalidIPs.join(', ')
     };
   }
-  
   return { valid: true };
 }
+
+// =========================================================================
+//  Error Display
+// =========================================================================
 
 function showFieldError(fieldId, message) {
   const errorElement = document.getElementById(fieldId + 'Error');
@@ -139,10 +133,12 @@ function clearFieldError(fieldId) {
   }
 }
 
+// =========================================================================
+//  Form Validation
+// =========================================================================
+
 function validateAllSettings() {
   let isValid = true;
-  
-  // Validate bantime
   const banTime = document.getElementById('banTime');
   if (banTime) {
     const banTimeValidation = validateTimeFormat(banTime.value, 'bantime');
@@ -153,8 +149,7 @@ function validateAllSettings() {
       clearFieldError('banTime');
     }
   }
-  
-  // Validate findtime
+
   const findTime = document.getElementById('findTime');
   if (findTime) {
     const findTimeValidation = validateTimeFormat(findTime.value, 'findtime');
@@ -165,8 +160,7 @@ function validateAllSettings() {
       clearFieldError('findTime');
     }
   }
-  
-  // Validate max retry
+
   const maxRetry = document.getElementById('maxRetry');
   if (maxRetry) {
     const maxRetryValidation = validateMaxRetry(maxRetry.value);
@@ -177,8 +171,7 @@ function validateAllSettings() {
       clearFieldError('maxRetry');
     }
   }
-  
-  // Validate email
+
   const destEmail = document.getElementById('destEmail');
   if (destEmail) {
     const emailValidation = validateEmail(destEmail.value);
@@ -189,11 +182,9 @@ function validateAllSettings() {
       clearFieldError('destEmail');
     }
   }
-  
-  // Validate IgnoreIPs
+
   const ignoreIPsValidation = validateIgnoreIPs();
   if (!ignoreIPsValidation.valid) {
-    // Show error for ignoreIPs field
     const errorContainer = document.getElementById('ignoreIPsError');
     if (errorContainer) {
       errorContainer.textContent = ignoreIPsValidation.message;
@@ -210,11 +201,9 @@ function validateAllSettings() {
       errorContainer.textContent = '';
     }
   }
-  
   return isValid;
 }
 
-// Setup validation on blur for all fields
 function setupFormValidation() {
   const banTimeInput = document.getElementById('banTime');
   const findTimeInput = document.getElementById('findTime');
@@ -231,7 +220,7 @@ function setupFormValidation() {
       }
     });
   }
-  
+
   if (findTimeInput) {
     findTimeInput.addEventListener('blur', function() {
       const validation = validateTimeFormat(this.value, 'findtime');
@@ -242,7 +231,7 @@ function setupFormValidation() {
       }
     });
   }
-  
+
   if (maxRetryInput) {
     maxRetryInput.addEventListener('blur', function() {
       const validation = validateMaxRetry(this.value);
@@ -253,7 +242,7 @@ function setupFormValidation() {
       }
     });
   }
-  
+
   if (destEmailInput) {
     destEmailInput.addEventListener('blur', function() {
       const validation = validateEmail(this.value);
@@ -265,4 +254,3 @@ function setupFormValidation() {
     });
   }
 }
-

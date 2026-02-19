@@ -83,7 +83,7 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 	}
 	if cfg.SkipTLSVerify {
 		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 - user controlled
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 	}
 

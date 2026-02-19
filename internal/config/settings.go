@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -38,7 +38,40 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
-// SMTPSettings holds the SMTP server configuration for sending alert emails
+// =========================================================================
+//  Types
+// =========================================================================
+
+type AppSettings struct {
+	Language             string                `json:"language"`
+	Port                 int                   `json:"port"`
+	Debug                bool                  `json:"debug"`
+	RestartNeeded        bool                  `json:"restartNeeded"`
+	AlertCountries       []string              `json:"alertCountries"`
+	SMTP                 SMTPSettings          `json:"smtp"`
+	CallbackURL          string                `json:"callbackUrl"`
+	CallbackSecret       string                `json:"callbackSecret"`
+	AdvancedActions      AdvancedActionsConfig `json:"advancedActions"`
+	Servers              []Fail2banServer      `json:"servers"`
+	BantimeIncrement     bool                  `json:"bantimeIncrement"`
+	DefaultJailEnable    bool                  `json:"defaultJailEnable"`
+	IgnoreIPs            []string              `json:"ignoreips"`
+	Bantime              string                `json:"bantime"`
+	Findtime             string                `json:"findtime"`
+	Maxretry             int                   `json:"maxretry"`
+	Destemail            string                `json:"destemail"`
+	Banaction            string                `json:"banaction"`
+	BanactionAllports    string                `json:"banactionAllports"`
+	Chain                string                `json:"chain"`
+	BantimeRndtime       string                `json:"bantimeRndtime"`
+	GeoIPProvider        string                `json:"geoipProvider"`
+	GeoIPDatabasePath    string                `json:"geoipDatabasePath"`
+	MaxLogLines          int                   `json:"maxLogLines"`
+	EmailAlertsForBans   bool                  `json:"emailAlertsForBans"`
+	EmailAlertsForUnbans bool                  `json:"emailAlertsForUnbans"`
+	ConsoleOutput        bool                  `json:"consoleOutput"`
+}
+
 type SMTPSettings struct {
 	Host               string `json:"host"`
 	Port               int    `json:"port"`
@@ -50,62 +83,26 @@ type SMTPSettings struct {
 	AuthMethod         string `json:"authMethod"`
 }
 
-// AppSettings holds the main UI settings and Fail2ban configuration
-type AppSettings struct {
-	Language        string                `json:"language"`
-	Port            int                   `json:"port"`
-	Debug           bool                  `json:"debug"`
-	RestartNeeded   bool                  `json:"restartNeeded"`
-	AlertCountries  []string              `json:"alertCountries"`
-	SMTP            SMTPSettings          `json:"smtp"`
-	CallbackURL     string                `json:"callbackUrl"`
-	CallbackSecret  string                `json:"callbackSecret"`
-	AdvancedActions AdvancedActionsConfig `json:"advancedActions"`
-
-	Servers []Fail2banServer `json:"servers"`
-
-	// Fail2Ban [DEFAULT] section values from jail.local
-	BantimeIncrement  bool     `json:"bantimeIncrement"`
-	DefaultJailEnable bool     `json:"defaultJailEnable"`
-	IgnoreIPs         []string `json:"ignoreips"` // Changed from string to []string for individual IP management
-	Bantime           string   `json:"bantime"`
-	Findtime          string   `json:"findtime"`
-	Maxretry          int      `json:"maxretry"`
-	Destemail         string   `json:"destemail"`
-	Banaction         string   `json:"banaction"`         // Default banning action
-	BanactionAllports string   `json:"banactionAllports"` // Allports banning action
-	Chain             string   `json:"chain"`             // Default iptables/nftables chain (INPUT, DOCKER-USER, FORWARD)
-	BantimeRndtime    string   `json:"bantimeRndtime"`    // Optional: bantime.rndtime in seconds (e.g. 2048) for bantime increment formula
-	//Sender           string `json:"sender"`
-
-	// GeoIP and Whois settings
-	GeoIPProvider     string `json:"geoipProvider"`     // "maxmind" or "builtin"
-	GeoIPDatabasePath string `json:"geoipDatabasePath"` // Path to MaxMind database (optional)
-	MaxLogLines       int    `json:"maxLogLines"`       // Maximum log lines to include (default: 50)
-
-	// Email alert preferences
-	EmailAlertsForBans   bool `json:"emailAlertsForBans"`   // Enable email alerts for ban events (default: true)
-	EmailAlertsForUnbans bool `json:"emailAlertsForUnbans"` // Enable email alerts for unban events (default: false)
-
-	// Console output preferences
-	ConsoleOutput bool `json:"consoleOutput"` // Enable console output in web UI (default: false)
-}
-
-// OIDCConfig holds OIDC authentication configuration
-type OIDCConfig struct {
-	Enabled       bool     `json:"enabled"`
-	Provider      string   `json:"provider"` // keycloak, authentik, pocketid
-	IssuerURL     string   `json:"issuerURL"`
-	ClientID      string   `json:"clientID"`
-	ClientSecret  string   `json:"clientSecret"`
-	RedirectURL   string   `json:"redirectURL"`
-	Scopes        []string `json:"scopes"`        // Default: ["openid", "profile", "email"]
-	SessionSecret string   `json:"sessionSecret"` // For session encryption
-	SessionMaxAge int      `json:"sessionMaxAge"` // Session timeout in seconds
-	SkipVerify    bool     `json:"skipVerify"`    // Skip TLS verification (dev only)
-	UsernameClaim string   `json:"usernameClaim"` // Claim to use as username
-	LogoutURL     string   `json:"logoutURL"`     // Provider logout URL (optional)
-	SkipLoginPage bool     `json:"skipLoginPage"` // Skip login page and redirect directly to OIDC provider (default: false)
+type Fail2banServer struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Type          string    `json:"type"`
+	Host          string    `json:"host,omitempty"`
+	Port          int       `json:"port,omitempty"`
+	SocketPath    string    `json:"socketPath,omitempty"`
+	LogPath       string    `json:"logPath,omitempty"`
+	SSHUser       string    `json:"sshUser,omitempty"`
+	SSHKeyPath    string    `json:"sshKeyPath,omitempty"`
+	AgentURL      string    `json:"agentUrl,omitempty"`
+	AgentSecret   string    `json:"agentSecret,omitempty"`
+	Hostname      string    `json:"hostname,omitempty"`
+	Tags          []string  `json:"tags,omitempty"`
+	IsDefault     bool      `json:"isDefault"`
+	Enabled       bool      `json:"enabled"`
+	RestartNeeded bool      `json:"restartNeeded"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	enabledSet    bool
 }
 
 type AdvancedActionsConfig struct {
@@ -142,6 +139,22 @@ type OPNsenseIntegrationSettings struct {
 	SkipTLSVerify bool   `json:"skipTLSVerify"`
 }
 
+type OIDCConfig struct {
+	Enabled       bool     `json:"enabled"`
+	Provider      string   `json:"provider"`
+	IssuerURL     string   `json:"issuerURL"`
+	ClientID      string   `json:"clientID"`
+	ClientSecret  string   `json:"clientSecret"`
+	RedirectURL   string   `json:"redirectURL"`
+	Scopes        []string `json:"scopes"`
+	SessionSecret string   `json:"sessionSecret"`
+	SessionMaxAge int      `json:"sessionMaxAge"`
+	SkipVerify    bool     `json:"skipVerify"`
+	UsernameClaim string   `json:"usernameClaim"`
+	LogoutURL     string   `json:"logoutURL"`
+	SkipLoginPage bool     `json:"skipLoginPage"`
+}
+
 func defaultAdvancedActionsConfig() AdvancedActionsConfig {
 	return AdvancedActionsConfig{
 		Enabled:     false,
@@ -167,9 +180,12 @@ func normalizeAdvancedActionsConfig(cfg AdvancedActionsConfig) AdvancedActionsCo
 	return cfg
 }
 
-// init paths to key-files
+// =========================================================================
+//  Constants
+// =========================================================================
+
 const (
-	settingsFile              = "fail2ban-ui-settings.json" // this file is created, relatively to where the app was started
+	settingsFile              = "fail2ban-ui-settings.json"
 	jailFile                  = "/etc/fail2ban/jail.local"
 	actionFile                = "/etc/fail2ban/action.d/ui-custom-action.conf"
 	actionCallbackPlaceholder = "__CALLBACK_URL__"
@@ -178,7 +194,6 @@ const (
 	actionCurlInsecureFlag    = "__CURL_INSECURE_FLAG__"
 )
 
-// jailLocalBanner is the standard banner for jail.local files
 const jailLocalBanner = `################################################################################
 # Fail2Ban-UI Managed Configuration
 # 
@@ -190,20 +205,12 @@ const jailLocalBanner = `#######################################################
 ################################################################################
 
 `
-
-// JailLocalBanner returns the standard banner for jail.local files
-func JailLocalBanner() string {
-	return jailLocalBanner
-}
-
 const fail2banActionTemplate = `[Definition]
 
-# Bypass ban/unban for restored tickets
+# Bypasses ban/unban for restored bans
 norestored = 1
 
-# Option: actionban
-# This executes a cURL request to notify our API when an IP is banned.
-
+# Executes a cURL request to notify our API when an IP is banned.
 actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban \
      -H "Content-Type: application/json" \
      -H "X-Callback-Secret: __CALLBACK_SECRET__" \
@@ -215,9 +222,7 @@ actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban
                  --arg logs "$(tac <logpath> | grep <grepopts> -wF <ip>)" \
                  '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
 
-# Option: actionunban
-# This executes a cURL request to notify our API when an IP is unbanned.
-
+# Executes a cURL request to notify our API when an IP is unbanned.
 actionunban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/unban \
      -H "Content-Type: application/json" \
      -H "X-Callback-Secret: __CALLBACK_SECRET__" \
@@ -239,41 +244,18 @@ logpath = /dev/null
 grepmax = 200
 grepopts = -m <grepmax>`
 
-// in-memory copy of settings
-var (
-	currentSettings AppSettings
-	settingsLock    sync.RWMutex
-)
+// =========================================================================
+//  Package Variables
+// =========================================================================
 
 var (
+	currentSettings     AppSettings
+	settingsLock        sync.RWMutex
 	errSettingsNotFound = errors.New("settings not found")
 	backgroundCtx       = context.Background()
 )
 
-// Fail2banServer represents a Fail2ban instance the UI can manage.
-type Fail2banServer struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Type          string    `json:"type"` // local, ssh, agent
-	Host          string    `json:"host,omitempty"`
-	Port          int       `json:"port,omitempty"`
-	SocketPath    string    `json:"socketPath,omitempty"`
-	LogPath       string    `json:"logPath,omitempty"`
-	SSHUser       string    `json:"sshUser,omitempty"`
-	SSHKeyPath    string    `json:"sshKeyPath,omitempty"`
-	AgentURL      string    `json:"agentUrl,omitempty"`
-	AgentSecret   string    `json:"agentSecret,omitempty"`
-	Hostname      string    `json:"hostname,omitempty"`
-	Tags          []string  `json:"tags,omitempty"`
-	IsDefault     bool      `json:"isDefault"`
-	Enabled       bool      `json:"enabled"`
-	RestartNeeded bool      `json:"restartNeeded"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-
-	enabledSet bool
-}
-
+// Customizes JSON unmarshaling to distinguish between explicit false and unset values.
 func (s *Fail2banServer) UnmarshalJSON(data []byte) error {
 	type Alias Fail2banServer
 	aux := &struct {
@@ -294,16 +276,18 @@ func (s *Fail2banServer) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// =========================================================================
+//  Initialization
+// =========================================================================
+
 func init() {
 	if err := storage.Init(""); err != nil {
 		panic(fmt.Sprintf("failed to initialise storage: %v", err))
 	}
-
 	if err := loadSettingsFromStorage(); err != nil {
 		if !errors.Is(err, errSettingsNotFound) {
 			fmt.Println("Error loading settings from storage:", err)
 		}
-
 		if err := migrateLegacySettings(); err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
 				fmt.Println("Error migrating legacy settings:", err)
@@ -315,7 +299,6 @@ func init() {
 			setDefaults()
 			fmt.Println("Initialized with defaults.")
 		}
-
 		if err := persistAll(); err != nil {
 			fmt.Println("Failed to persist settings:", err)
 		}
@@ -338,10 +321,8 @@ func loadSettingsFromStorage() error {
 	if !found {
 		return errSettingsNotFound
 	}
-
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
-
 	applyAppSettingsRecordLocked(appRec)
 	applyServerRecordsLocked(serverRecs)
 	setDefaultsLocked()
@@ -353,18 +334,19 @@ func migrateLegacySettings() error {
 	if err != nil {
 		return err
 	}
-
 	var legacy AppSettings
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return err
 	}
-
 	settingsLock.Lock()
 	currentSettings = legacy
 	settingsLock.Unlock()
-
 	return nil
 }
+
+// =========================================================================
+//  Persistence
+// =========================================================================
 
 func persistAll() error {
 	settingsLock.Lock()
@@ -404,7 +386,6 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.RestartNeeded = rec.RestartNeeded
 	currentSettings.BantimeIncrement = rec.BantimeIncrement
 	currentSettings.DefaultJailEnable = rec.DefaultJailEnable
-	// Convert IgnoreIP string to array (backward compatibility)
 	if rec.IgnoreIP != "" {
 		currentSettings.IgnoreIPs = strings.Fields(rec.IgnoreIP)
 	} else {
@@ -432,7 +413,6 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 		InsecureSkipVerify: rec.SMTPInsecureSkipVerify,
 		AuthMethod:         rec.SMTPAuthMethod,
 	}
-
 	if rec.AlertCountriesJSON != "" {
 		var countries []string
 		if err := json.Unmarshal([]byte(rec.AlertCountriesJSON), &countries); err == nil {
@@ -503,19 +483,15 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 	}
 
 	return storage.AppSettingsRecord{
-		// Basic app settings
-		Language:      currentSettings.Language,
-		Port:          currentSettings.Port,
-		Debug:         currentSettings.Debug,
-		RestartNeeded: currentSettings.RestartNeeded,
-		// Callback settings
-		CallbackURL:    currentSettings.CallbackURL,
-		CallbackSecret: currentSettings.CallbackSecret,
-		// Alert settings
-		AlertCountriesJSON:   string(countryBytes),
-		EmailAlertsForBans:   currentSettings.EmailAlertsForBans,
-		EmailAlertsForUnbans: currentSettings.EmailAlertsForUnbans,
-		// SMTP settings
+		Language:               currentSettings.Language,
+		Port:                   currentSettings.Port,
+		Debug:                  currentSettings.Debug,
+		RestartNeeded:          currentSettings.RestartNeeded,
+		CallbackURL:            currentSettings.CallbackURL,
+		CallbackSecret:         currentSettings.CallbackSecret,
+		AlertCountriesJSON:     string(countryBytes),
+		EmailAlertsForBans:     currentSettings.EmailAlertsForBans,
+		EmailAlertsForUnbans:   currentSettings.EmailAlertsForUnbans,
 		SMTPHost:               currentSettings.SMTP.Host,
 		SMTPPort:               currentSettings.SMTP.Port,
 		SMTPUsername:           currentSettings.SMTP.Username,
@@ -524,26 +500,22 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		SMTPUseTLS:             currentSettings.SMTP.UseTLS,
 		SMTPInsecureSkipVerify: currentSettings.SMTP.InsecureSkipVerify,
 		SMTPAuthMethod:         currentSettings.SMTP.AuthMethod,
-		// Fail2Ban DEFAULT settings
-		BantimeIncrement:  currentSettings.BantimeIncrement,
-		DefaultJailEnable: currentSettings.DefaultJailEnable,
-		// Convert IgnoreIPs array to space-separated string for storage
-		IgnoreIP:          strings.Join(currentSettings.IgnoreIPs, " "),
-		Bantime:           currentSettings.Bantime,
-		Findtime:          currentSettings.Findtime,
-		MaxRetry:          currentSettings.Maxretry,
-		DestEmail:         currentSettings.Destemail,
-		Banaction:         currentSettings.Banaction,
-		BanactionAllports: currentSettings.BanactionAllports,
-		Chain:             currentSettings.Chain,
-		BantimeRndtime:    currentSettings.BantimeRndtime,
-		// Advanced features
-		AdvancedActionsJSON: string(advancedBytes),
-		GeoIPProvider:       currentSettings.GeoIPProvider,
-		GeoIPDatabasePath:   currentSettings.GeoIPDatabasePath,
-		MaxLogLines:         currentSettings.MaxLogLines,
-		// Console output settings
-		ConsoleOutput: currentSettings.ConsoleOutput,
+		BantimeIncrement:       currentSettings.BantimeIncrement,
+		DefaultJailEnable:      currentSettings.DefaultJailEnable,
+		IgnoreIP:               strings.Join(currentSettings.IgnoreIPs, " "),
+		Bantime:                currentSettings.Bantime,
+		Findtime:               currentSettings.Findtime,
+		MaxRetry:               currentSettings.Maxretry,
+		DestEmail:              currentSettings.Destemail,
+		Banaction:              currentSettings.Banaction,
+		BanactionAllports:      currentSettings.BanactionAllports,
+		Chain:                  currentSettings.Chain,
+		BantimeRndtime:         currentSettings.BantimeRndtime,
+		AdvancedActionsJSON:    string(advancedBytes),
+		GeoIPProvider:          currentSettings.GeoIPProvider,
+		GeoIPDatabasePath:      currentSettings.GeoIPDatabasePath,
+		MaxLogLines:            currentSettings.MaxLogLines,
+		ConsoleOutput:          currentSettings.ConsoleOutput,
 	}, nil
 }
 
@@ -590,7 +562,6 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 	return records, nil
 }
 
-// setDefaults populates default values in currentSettings
 func setDefaults() {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
@@ -601,19 +572,13 @@ func setDefaultsLocked() {
 	if currentSettings.Language == "" {
 		currentSettings.Language = "en"
 	}
-
-	// Set email alert defaults
+	// Set email alert defaults only when uninitialized.
 	if !currentSettings.EmailAlertsForBans && !currentSettings.EmailAlertsForUnbans {
-		// Check if it is uninitialized by checking if we have other initialized values
-		// If we have a callback secret or port set, it means we've loaded from storage, so we don't override
 		if currentSettings.CallbackSecret == "" && currentSettings.Port == 0 {
-			// Uninitialized so we set defaults
 			currentSettings.EmailAlertsForBans = true
 			currentSettings.EmailAlertsForUnbans = false
 		}
 	}
-
-	// Check for PORT environment variable first - it always takes priority
 	if portEnv := os.Getenv("PORT"); portEnv != "" {
 		if port, err := strconv.Atoi(portEnv); err == nil && port > 0 && port <= 65535 {
 			currentSettings.Port = port
@@ -623,22 +588,16 @@ func setDefaultsLocked() {
 	} else if currentSettings.Port == 0 {
 		currentSettings.Port = 8080
 	}
-	// CALLBACK_URL env var always takes priority (external address where Fail2ban
-	// instances send back ban/unban API calls). If not set, fall back to the
-	// stored value or auto-generate from the port.
 	if cbURL := os.Getenv("CALLBACK_URL"); cbURL != "" {
 		currentSettings.CallbackURL = strings.TrimRight(strings.TrimSpace(cbURL), "/")
 	} else if currentSettings.CallbackURL == "" {
 		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 	} else {
-		// If callback URL matches the old default pattern, update it to match the current port
 		oldPattern := regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
 		if oldPattern.MatchString(currentSettings.CallbackURL) {
 			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 		}
 	}
-	// CALLBACK_SECRET env var always takes priority.
-	// If not set, keep stored value or generate a new one (only once).
 	if cbSecret := os.Getenv("CALLBACK_SECRET"); cbSecret != "" {
 		currentSettings.CallbackSecret = strings.TrimSpace(cbSecret)
 	} else if currentSettings.CallbackSecret == "" {
@@ -706,21 +665,18 @@ func setDefaultsLocked() {
 		currentSettings.AdvancedActions = defaultAdvancedActionsConfig()
 	}
 	currentSettings.AdvancedActions = normalizeAdvancedActionsConfig(currentSettings.AdvancedActions)
-
 	normalizeServersLocked()
 }
 
-// initializeFromJailFile reads Fail2ban jail.local and merges its settings into currentSettings.
+// Reads the jail.local file and merges its [DEFAULT] section values into currentSettings. (experimental)
 func initializeFromJailFile() error {
 	file, err := os.Open(jailFile)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-
 	scanner := bufio.NewScanner(file)
 	re := regexp.MustCompile(`^\s*(?P<key>[a-zA-Z0-9_]+)\s*=\s*(?P<value>.+)$`)
-
 	settings := map[string]string{}
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -730,10 +686,8 @@ func initializeFromJailFile() error {
 			settings[key] = value
 		}
 	}
-
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
-
 	if val, ok := settings["bantime"]; ok {
 		currentSettings.Bantime = val
 	}
@@ -746,7 +700,6 @@ func initializeFromJailFile() error {
 		}
 	}
 	if val, ok := settings["ignoreip"]; ok {
-		// Convert space-separated string to array
 		if val != "" {
 			currentSettings.IgnoreIPs = strings.Fields(val)
 		} else {
@@ -765,10 +718,6 @@ func initializeFromJailFile() error {
 	if val, ok := settings["bantime.rndtime"]; ok && val != "" {
 		currentSettings.BantimeRndtime = val
 	}
-	/*if val, ok := settings["destemail"]; ok {
-		currentSettings.Destemail = val
-	}*/
-
 	return nil
 }
 
@@ -791,7 +740,6 @@ func normalizeServersLocked() {
 		}}
 		return
 	}
-
 	hasDefault := false
 	for idx := range currentSettings.Servers {
 		server := &currentSettings.Servers[idx]
@@ -834,7 +782,6 @@ func normalizeServersLocked() {
 			hasDefault = true
 		}
 	}
-
 	if !hasDefault {
 		for idx := range currentSettings.Servers {
 			if currentSettings.Servers[idx].Enabled {
@@ -844,11 +791,9 @@ func normalizeServersLocked() {
 			}
 		}
 	}
-
 	sort.SliceStable(currentSettings.Servers, func(i, j int) bool {
 		return currentSettings.Servers[i].CreatedAt.Before(currentSettings.Servers[j].CreatedAt)
 	})
-
 	updateGlobalRestartFlagLocked()
 }
 
@@ -860,28 +805,26 @@ func generateServerID() string {
 	return "srv-" + hex.EncodeToString(b[:])
 }
 
-// ensureFail2banActionFiles writes the local action files if Fail2ban is present.
+// =========================================================================
+//  Fail2ban File Management --> TODO: create a new connector_global.go for functions that are used by all connectors
+// =========================================================================
+
+// Ensures the local action files exist. (local connector only) -> will be moved to the connector_local.go
 func ensureFail2banActionFiles(callbackURL, serverID string) error {
 	DebugLog("----------------------------")
 	DebugLog("ensureFail2banActionFiles called (settings.go)")
-
 	if _, err := os.Stat(filepath.Dir(jailFile)); os.IsNotExist(err) {
 		return nil
 	}
-
-	// Ensure jail.local has proper structure (banner, DEFAULT, action_mwlg, action override)
 	if err := EnsureJailLocalStructure(); err != nil {
 		return err
 	}
 	return writeFail2banAction(callbackURL, serverID)
 }
 
-// BuildJailLocalContent builds the complete managed jail.local file content
-// from the current settings. This is the single source of truth for the file
-// format, shared by all connectors (local, SSH, agent).
+// Builds the content of our fail2ban-UI managed jail.local file. (used by all connectors)
 func BuildJailLocalContent() string {
 	settings := GetSettings()
-
 	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
 	if ignoreIPStr == "" {
 		ignoreIPStr = "127.0.0.1/8 ::1"
@@ -928,56 +871,42 @@ action = %(action_mwlg)s
 	return jailLocalBanner + defaultSection + actionMwlgConfig + actionOverride
 }
 
-// EnsureJailLocalStructure writes a complete managed jail.local to the local filesystem.
+// Ensures that the managed jail.local file is valid and exists. (used by all connectors)
 func EnsureJailLocalStructure() error {
 	DebugLog("Running EnsureJailLocalStructure()")
-
-	// Check if /etc/fail2ban directory exists (fail2ban must be installed)
 	if _, err := os.Stat(filepath.Dir(jailFile)); os.IsNotExist(err) {
 		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban directory does not exist. Please install fail2ban package first")
 	}
-
-	// Read existing jail.local content if it exists
 	var existingContent string
 	fileExists := false
 	if content, err := os.ReadFile(jailFile); err == nil {
 		existingContent = string(content)
 		fileExists = len(strings.TrimSpace(existingContent)) > 0
 	}
-
-	// If jail.local exists but is NOT managed by Fail2ban-UI,
-	// it belongs to the user — never overwrite it.
 	if fileExists && !strings.Contains(existingContent, "ui-custom-action") {
-		DebugLog("jail.local exists but is not managed by Fail2ban-UI - skipping overwrite")
+		DebugLog("jail.local file exists but is not managed by Fail2ban-UI - skipping overwrite")
 		return nil
 	}
-
-	// Full rewrite from current settings (self-healing, no stale keys)
 	if err := os.WriteFile(jailFile, []byte(BuildJailLocalContent()), 0644); err != nil {
 		return fmt.Errorf("failed to write jail.local: %v", err)
 	}
-
-	DebugLog("Created/updated jail.local with proper structure")
+	DebugLog("Created/updated jail.local with proper content.")
 	return nil
 }
 
-// writeFail2banAction creates or updates the action file with the AlertCountries.
+// Writes the custom-action file. (for local connector only) -> will be moved to the connector_local.go
 func writeFail2banAction(callbackURL, serverID string) error {
-	DebugLog("Running initial writeFail2banAction()") // entry point
+	DebugLog("Running initial writeFail2banAction()")
 	DebugLog("----------------------------")
-
-	// Check if /etc/fail2ban/action.d directory exists (fail2ban must be installed)
 	if _, err := os.Stat(filepath.Dir(actionFile)); os.IsNotExist(err) {
 		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban/action.d directory does not exist. Please install fail2ban package first")
 	}
-
 	settings := GetSettings()
 	actionConfig := BuildFail2banActionConfig(callbackURL, serverID, settings.CallbackSecret)
 	err := os.WriteFile(actionFile, []byte(actionConfig), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write action file: %w", err)
 	}
-
 	DebugLog("Custom-action file successfully written to %s\n", actionFile)
 	return nil
 }
@@ -991,6 +920,7 @@ func cloneServer(src Fail2banServer) Fail2banServer {
 	return dst
 }
 
+// Builds the content of our fail2ban-UI custom-action file. (used by all connectors)
 func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 	trimmed := strings.TrimRight(strings.TrimSpace(callbackURL), "/")
 	if trimmed == "" {
@@ -1000,22 +930,16 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 		serverID = "local"
 	}
 	if secret == "" {
-		// If secret is empty, get it from settings (should be generated by setDefaultsLocked)
 		settings := GetSettings()
 		secret = settings.CallbackSecret
-		// Last resort: if still empty, generate one (shouldn't happen)
 		if secret == "" {
 			secret = generateCallbackSecret()
 		}
 	}
-	// Determine if we need to use -k flag for HTTPS with self-signed certificates
-	// This allows curl to work with self-signed, in-house CA certificates
-	// For HTTP URLs, we use a empty string.
 	curlInsecureFlag := ""
 	if strings.HasPrefix(strings.ToLower(trimmed), "https://") {
 		curlInsecureFlag = " -k"
 	}
-
 	config := strings.ReplaceAll(fail2banActionTemplate, actionCallbackPlaceholder, trimmed)
 	config = strings.ReplaceAll(config, actionServerIDPlaceholder, serverID)
 	config = strings.ReplaceAll(config, actionSecretPlaceholder, secret)
@@ -1023,27 +947,21 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 	return config
 }
 
-// generateCallbackSecret generates a 42-character random secret using crypto/rand.
+// Generates a 42-character random secret for the callback secret.
 func generateCallbackSecret() string {
-	// Generate 32 random bytes (256 bits of entropy)
+	// Generate first 32 random bytes (256 bits of entropy)
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
-		// Fallback to hex encoding if crypto/rand fails (shouldn't happen)
-		fallbackBytes := make([]byte, 21) // 21 bytes = 42 hex chars
+		fallbackBytes := make([]byte, 21)
 		if _, err := rand.Read(fallbackBytes); err != nil {
-			// Last resort: use time-based seed (not ideal but better than nothing)
 			return fmt.Sprintf("%042x", time.Now().UnixNano())
 		}
 		return hex.EncodeToString(fallbackBytes)
 	}
-	// Use base64 URL-safe encoding, which gives us 43 chars for 32 bytes
-	// We need exactly 42, so we'll truncate the last character (which is padding anyway)
 	encoded := base64.URLEncoding.EncodeToString(bytes)
-	// Base64 URL encoding of 32 bytes = 43 chars, take first 42
 	if len(encoded) >= 42 {
 		return encoded[:42]
 	}
-	// If somehow shorter, pad with random hex
 	return encoded + hex.EncodeToString(bytes)[:42-len(encoded)]
 }
 
@@ -1059,14 +977,13 @@ func getCallbackURLLocked() string {
 	return strings.TrimRight(url, "/")
 }
 
-// GetCallbackURL returns the callback URL used by Fail2ban agents.
 func GetCallbackURL() string {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
 	return getCallbackURLLocked()
 }
 
-// EnsureLocalFail2banAction ensures the local Fail2ban action files exist when the local connector is enabled.
+// Ensures the local Fail2ban action but only when the server is enabled. (local connector only)
 func EnsureLocalFail2banAction(server Fail2banServer) error {
 	if !server.Enabled {
 		return nil
@@ -1077,6 +994,10 @@ func EnsureLocalFail2banAction(server Fail2banServer) error {
 	return ensureFail2banActionFiles(callbackURL, server.ID)
 }
 
+// =========================================================================
+//  Server Management
+// =========================================================================
+
 func serverByIDLocked(id string) (Fail2banServer, bool) {
 	for _, srv := range currentSettings.Servers {
 		if srv.ID == id {
@@ -1086,7 +1007,6 @@ func serverByIDLocked(id string) (Fail2banServer, bool) {
 	return Fail2banServer{}, false
 }
 
-// ListServers returns a copy of the configured Fail2ban servers.
 func ListServers() []Fail2banServer {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
@@ -1098,7 +1018,6 @@ func ListServers() []Fail2banServer {
 	return out
 }
 
-// GetServerByID returns the server matching the supplied ID.
 func GetServerByID(id string) (Fail2banServer, bool) {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
@@ -1109,7 +1028,6 @@ func GetServerByID(id string) (Fail2banServer, bool) {
 	return cloneServer(srv), true
 }
 
-// GetServerByHostname returns the first server matching the hostname.
 func GetServerByHostname(hostname string) (Fail2banServer, bool) {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
@@ -1121,7 +1039,6 @@ func GetServerByHostname(hostname string) (Fail2banServer, bool) {
 	return Fail2banServer{}, false
 }
 
-// GetDefaultServer returns the default server.
 func GetDefaultServer() Fail2banServer {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
@@ -1139,7 +1056,7 @@ func GetDefaultServer() Fail2banServer {
 	return Fail2banServer{}
 }
 
-// UpsertServer adds or updates a Fail2ban server and persists the settings.
+// Adds or updates a Fail2ban server.
 func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
@@ -1188,7 +1105,6 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 			if input.IsDefault {
 				clearDefaultLocked()
 			}
-			// preserve created timestamp if incoming zero
 			if input.CreatedAt.IsZero() {
 				input.CreatedAt = srv.CreatedAt
 			}
@@ -1222,7 +1138,7 @@ func clearDefaultLocked() {
 	}
 }
 
-func setServerRestartFlagLocked(serverID string, value bool) bool {
+/*func setServerRestartFlagLocked(serverID string, value bool) bool {
 	for idx := range currentSettings.Servers {
 		if currentSettings.Servers[idx].ID == serverID {
 			currentSettings.Servers[idx].RestartNeeded = value
@@ -1230,7 +1146,7 @@ func setServerRestartFlagLocked(serverID string, value bool) bool {
 		}
 	}
 	return false
-}
+}*/
 
 func anyServerNeedsRestartLocked() bool {
 	for _, srv := range currentSettings.Servers {
@@ -1251,15 +1167,13 @@ func markAllServersRestartLocked() {
 	}
 }
 
-// DeleteServer removes a server by ID.
+// Deletes a server by ID.
 func DeleteServer(id string) error {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
-
 	if len(currentSettings.Servers) == 0 {
 		return fmt.Errorf("no servers configured")
 	}
-
 	index := -1
 	for i, srv := range currentSettings.Servers {
 		if srv.ID == id {
@@ -1270,17 +1184,15 @@ func DeleteServer(id string) error {
 	if index == -1 {
 		return fmt.Errorf("server %s not found", id)
 	}
-
 	currentSettings.Servers = append(currentSettings.Servers[:index], currentSettings.Servers[index+1:]...)
 	normalizeServersLocked()
 	return persistServersLocked()
 }
 
-// SetDefaultServer marks the specified server as default.
+// Marks the specified server as default.
 func SetDefaultServer(id string) (Fail2banServer, error) {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
-
 	found := false
 	for idx := range currentSettings.Servers {
 		srv := &currentSettings.Servers[idx]
@@ -1299,7 +1211,6 @@ func SetDefaultServer(id string) (Fail2banServer, error) {
 	if !found {
 		return Fail2banServer{}, fmt.Errorf("server %s not found", id)
 	}
-
 	normalizeServersLocked()
 	if err := persistServersLocked(); err != nil {
 		return Fail2banServer{}, err
@@ -1308,8 +1219,10 @@ func SetDefaultServer(id string) (Fail2banServer, error) {
 	return cloneServer(srv), nil
 }
 
-// GetSettings returns a copy of the current settings
-// GetPortFromEnv returns the PORT environment variable value if set, and whether it's set
+// =========================================================================
+//  Get Settings from Environment Variables
+// =========================================================================
+
 func GetPortFromEnv() (int, bool) {
 	portEnv := os.Getenv("PORT")
 	if portEnv == "" {
@@ -1321,7 +1234,6 @@ func GetPortFromEnv() (int, bool) {
 	return 0, false
 }
 
-// GetCallbackURLFromEnv returns the CALLBACK_URL environment variable value and whether it's set.
 func GetCallbackURLFromEnv() (string, bool) {
 	v := strings.TrimSpace(os.Getenv("CALLBACK_URL"))
 	if v == "" {
@@ -1330,35 +1242,30 @@ func GetCallbackURLFromEnv() (string, bool) {
 	return strings.TrimRight(v, "/"), true
 }
 
-// GetBindAddressFromEnv returns the BIND_ADDRESS environment variable value if set, and whether it's set
-// If not set, returns "0.0.0.0" as the default bind address
-// Validates that the address is a valid IP address format
 func GetBindAddressFromEnv() (string, bool) {
 	bindAddrEnv := os.Getenv("BIND_ADDRESS")
 	if bindAddrEnv == "" {
 		return "0.0.0.0", false
 	}
-	// Validate that it's a valid IP address format using net.ParseIP
 	if ip := net.ParseIP(bindAddrEnv); ip != nil {
 		return bindAddrEnv, true
 	}
-	// Invalid format, return default
 	return "0.0.0.0", false
 }
 
-// GetOIDCConfigFromEnv reads OIDC configuration from environment variables
-// Returns nil if OIDC is not enabled
+// =========================================================================
+//  OIDC Configuration from Env
+// =========================================================================
+
+// Returns the OIDC configuration from environment. Returns nil if OIDC is not enabled.
 func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 	enabled := os.Getenv("OIDC_ENABLED")
 	if enabled != "true" && enabled != "1" {
-		return nil, nil // OIDC not enabled
+		return nil, nil
 	}
-
 	config := &OIDCConfig{
 		Enabled: true,
 	}
-
-	// Required fields
 	config.Provider = os.Getenv("OIDC_PROVIDER")
 	if config.Provider == "" {
 		return nil, fmt.Errorf("OIDC_PROVIDER environment variable is required when OIDC_ENABLED=true")
@@ -1366,24 +1273,19 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 	if config.Provider != "keycloak" && config.Provider != "authentik" && config.Provider != "pocketid" {
 		return nil, fmt.Errorf("OIDC_PROVIDER must be one of: keycloak, authentik, pocketid")
 	}
-
 	config.IssuerURL = os.Getenv("OIDC_ISSUER_URL")
 	if config.IssuerURL == "" {
 		return nil, fmt.Errorf("OIDC_ISSUER_URL environment variable is required when OIDC_ENABLED=true")
 	}
-
 	config.ClientID = os.Getenv("OIDC_CLIENT_ID")
 	if config.ClientID == "" {
 		return nil, fmt.Errorf("OIDC_CLIENT_ID environment variable is required when OIDC_ENABLED=true")
 	}
-
 	config.ClientSecret = os.Getenv("OIDC_CLIENT_SECRET")
-	// If client secret is "auto-configured", try to read from file
-	// This is primarily used for Keycloak's automatic client setup in development
 	if config.ClientSecret == "auto-configured" {
 		secretFile := os.Getenv("OIDC_CLIENT_SECRET_FILE")
 		if secretFile == "" {
-			secretFile = "/config/keycloak-client-secret" // Default path for Keycloak auto-configuration
+			secretFile = "/config/keycloak-client-secret"
 		}
 		if secretBytes, err := os.ReadFile(secretFile); err == nil {
 			config.ClientSecret = strings.TrimSpace(string(secretBytes))
@@ -1394,14 +1296,12 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 	if config.ClientSecret == "" {
 		return nil, fmt.Errorf("OIDC_CLIENT_SECRET environment variable is required when OIDC_ENABLED=true")
 	}
-
 	config.RedirectURL = os.Getenv("OIDC_REDIRECT_URL")
 	if config.RedirectURL == "" {
 		return nil, fmt.Errorf("OIDC_REDIRECT_URL environment variable is required when OIDC_ENABLED=true")
 	}
-
-	// Optional fields with defaults
 	scopesEnv := os.Getenv("OIDC_SCOPES")
+
 	if scopesEnv != "" {
 		config.Scopes = strings.Split(scopesEnv, ",")
 		for i := range config.Scopes {
@@ -1411,22 +1311,20 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 		config.Scopes = []string{"openid", "profile", "email"}
 	}
 
-	// Set default session max age
-	config.SessionMaxAge = 3600 // Default: 1 hour
+	config.SessionMaxAge = 3600
 	sessionMaxAgeEnv := os.Getenv("OIDC_SESSION_MAX_AGE")
+
 	if sessionMaxAgeEnv != "" {
 		if maxAge, err := strconv.Atoi(sessionMaxAgeEnv); err == nil && maxAge > 0 {
 			config.SessionMaxAge = maxAge
 		}
 	}
 
-	// Skip login page option (default: false)
 	skipLoginPageEnv := os.Getenv("OIDC_SKIP_LOGINPAGE")
 	config.SkipLoginPage = skipLoginPageEnv == "true" || skipLoginPageEnv == "1"
-
 	config.SessionSecret = os.Getenv("OIDC_SESSION_SECRET")
+
 	if config.SessionSecret == "" {
-		// Generate a random session secret
 		secretBytes := make([]byte, 32)
 		if _, err := rand.Read(secretBytes); err != nil {
 			return nil, fmt.Errorf("failed to generate session secret: %w", err)
@@ -1436,25 +1334,27 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 
 	skipVerifyEnv := os.Getenv("OIDC_SKIP_VERIFY")
 	config.SkipVerify = (skipVerifyEnv == "true" || skipVerifyEnv == "1")
-
 	config.UsernameClaim = os.Getenv("OIDC_USERNAME_CLAIM")
 	if config.UsernameClaim == "" {
-		config.UsernameClaim = "preferred_username" // Default claim
+		config.UsernameClaim = "preferred_username"
 	}
-
-	config.LogoutURL = os.Getenv("OIDC_LOGOUT_URL") // Optional
-
+	config.LogoutURL = os.Getenv("OIDC_LOGOUT_URL")
 	return config, nil
 }
 
+// Returns a copy of the current app settings.
 func GetSettings() AppSettings {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
 	return currentSettings
 }
 
-// MarkRestartNeeded marks the specified server as requiring a restart.
-func MarkRestartNeeded(serverID string) error {
+// =========================================================================
+//  Restart Tracking
+// =========================================================================
+
+// Marks the specified server as requiring a restart. -- currently not used
+/*func MarkRestartNeeded(serverID string) error {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
 
@@ -1473,7 +1373,7 @@ func MarkRestartNeeded(serverID string) error {
 	return persistAppSettingsLocked()
 }
 
-// MarkRestartDone marks the specified server as no longer requiring a restart.
+// Marks the specified server as no longer requiring a restart.
 func MarkRestartDone(serverID string) error {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
@@ -1492,18 +1392,13 @@ func MarkRestartDone(serverID string) error {
 	}
 	return persistAppSettingsLocked()
 }
+*/
 
-// UpdateSettings merges new settings with old and sets restartNeeded if needed
 func UpdateSettings(new AppSettings) (AppSettings, error) {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
-
-	DebugLog("--- Locked settings for update ---") // Log lock acquisition
-
+	DebugLog("--- Locked settings for update ---")
 	old := currentSettings
-
-	// If certain fields change, we mark reload needed
-	// Compare IgnoreIPs arrays
 	ignoreIPsChanged := false
 	if len(old.IgnoreIPs) != len(new.IgnoreIPs) {
 		ignoreIPsChanged = true
@@ -1526,20 +1421,14 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	} else {
 		new.RestartNeeded = anyServerNeedsRestartLocked()
 	}
-
 	new.CallbackURL = strings.TrimSpace(new.CallbackURL)
-
-	// Auto-update callback URL if port changed and callback URL is still using default localhost pattern
 	oldPort := currentSettings.Port
 	if new.Port != oldPort && new.Port > 0 {
-		// Check if callback URL matches the default localhost pattern
 		oldPattern := regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
 		if oldPattern.MatchString(new.CallbackURL) || new.CallbackURL == "" {
-			// Update to match new port
 			new.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", new.Port)
 		}
 	}
-
 	if len(new.Servers) == 0 && len(currentSettings.Servers) > 0 {
 		new.Servers = make([]Fail2banServer, len(currentSettings.Servers))
 		for i, srv := range currentSettings.Servers {
@@ -1552,15 +1441,10 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 		markAllServersRestartLocked()
 		updateGlobalRestartFlagLocked()
 	}
-	DebugLog("New settings applied: %v", currentSettings) // Log settings applied
-
-	// Update console log enabled state if it changed
+	DebugLog("New settings applied: %v", currentSettings)
 	if old.ConsoleOutput != new.ConsoleOutput {
-		// Import web package to update console log state
-		// We'll handle this via a callback or direct call
 		updateConsoleLogState(new.ConsoleOutput)
 	}
-
 	if err := persistAllLocked(); err != nil {
 		fmt.Println("Error saving settings:", err)
 		return currentSettings, err
@@ -1568,11 +1452,13 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	return currentSettings, nil
 }
 
-// updateConsoleLogState updates the console log writer enabled state
-// This is called from UpdateSettings when console output setting changes
+// =========================================================================
+//  Console Log State
+// =========================================================================
+
 var updateConsoleLogStateFunc func(bool)
 
-// SetUpdateConsoleLogStateFunc sets the callback function to update console log state
+// Sets the callback to update console log enabled state.
 func SetUpdateConsoleLogStateFunc(fn func(bool)) {
 	updateConsoleLogStateFunc = fn
 }
