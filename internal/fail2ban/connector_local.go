@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
@@ -36,71 +33,13 @@ func (lc *LocalConnector) Server() config.Fail2banServer {
 	return lc.server
 }
 
-// Get jail information.
+// Collects jail status for every active local jail.
 func (lc *LocalConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
 	jails, err := lc.getJails(ctx)
 	if err != nil {
 		return nil, err
 	}
-	logPath := lc.server.LogPath // LEGACY, WILL BE REMOVED IN FUTURE VERSIONS.
-	if logPath == "" {
-		logPath = "/var/log/fail2ban.log"
-	}
-	banHistory, err := ParseBanLog(logPath) // LEGACY, WILL BE REMOVED IN FUTURE VERSIONS.
-	if err != nil {
-		banHistory = make(map[string][]BanEvent)
-	}
-	oneHourAgo := time.Now().Add(-1 * time.Hour)
-	type jailResult struct {
-		jail JailInfo
-		err  error
-	}
-	results := make(chan jailResult, len(jails))
-	var wg sync.WaitGroup
-
-	for _, jail := range jails {
-		wg.Add(1)
-		go func(j string) {
-			defer wg.Done()
-			bannedIPs, err := lc.GetBannedIPs(ctx, j)
-			if err != nil {
-				results <- jailResult{err: err}
-				return
-			}
-			newInLastHour := 0
-			if events, ok := banHistory[j]; ok {
-				for _, e := range events {
-					if e.Time.After(oneHourAgo) {
-						newInLastHour++
-					}
-				}
-			}
-			results <- jailResult{
-				jail: JailInfo{
-					JailName:      j,
-					TotalBanned:   len(bannedIPs),
-					NewInLastHour: newInLastHour,
-					BannedIPs:     bannedIPs,
-					Enabled:       true,
-				},
-			}
-		}(jail)
-	}
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-	var finalResults []JailInfo
-	for result := range results {
-		if result.err != nil {
-			continue
-		}
-		finalResults = append(finalResults, result.jail)
-	}
-	sort.SliceStable(finalResults, func(i, j int) bool {
-		return finalResults[i].JailName < finalResults[j].JailName
-	})
-	return finalResults, nil
+	return collectJailInfos(ctx, jails, lc.GetBannedIPs)
 }
 
 // Get banned IPs for a given jail.
@@ -194,29 +133,6 @@ func (lc *LocalConnector) GetFilterConfig(ctx context.Context, jail string) (str
 
 func (lc *LocalConnector) SetFilterConfig(ctx context.Context, jail, content string) error {
 	return SetFilterConfigLocal(jail, content)
-}
-
-// REMOVE THIS FUNCTION
-func (lc *LocalConnector) FetchBanEvents(ctx context.Context, limit int) ([]BanEvent, error) {
-	logPath := lc.server.LogPath
-	if logPath == "" {
-		logPath = "/var/log/fail2ban.log"
-	}
-	eventsByJail, err := ParseBanLog(logPath)
-	if err != nil {
-		return nil, err
-	}
-	var all []BanEvent
-	for _, evs := range eventsByJail {
-		all = append(all, evs...)
-	}
-	sort.SliceStable(all, func(i, j int) bool {
-		return all[i].Time.After(all[j].Time)
-	})
-	if limit > 0 && len(all) > limit {
-		all = all[:limit]
-	}
-	return all, nil
 }
 
 // Get all jails.

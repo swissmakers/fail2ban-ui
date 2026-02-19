@@ -218,7 +218,6 @@ function resetServerForm() {
   document.getElementById('serverHost').value = '';
   document.getElementById('serverPort').value = '22';
   document.getElementById('serverSocket').value = '/var/run/fail2ban/fail2ban.sock';
-  document.getElementById('serverLogPath').value = '/var/log/fail2ban.log';
   document.getElementById('serverHostname').value = '';
   document.getElementById('serverSSHUser').value = '';
   document.getElementById('serverSSHKey').value = '';
@@ -240,7 +239,6 @@ function editServer(serverId) {
   document.getElementById('serverHost').value = server.host || '';
   document.getElementById('serverPort').value = server.port || '';
   document.getElementById('serverSocket').value = server.socketPath || '/var/run/fail2ban/fail2ban.sock';
-  document.getElementById('serverLogPath').value = server.logPath || '/var/log/fail2ban.log';
   document.getElementById('serverHostname').value = server.hostname || '';
   document.getElementById('serverSSHUser').value = server.sshUser || '';
   document.getElementById('serverSSHKey').value = server.sshKeyPath || '';
@@ -299,7 +297,6 @@ function submitServerForm(event) {
     host: document.getElementById('serverHost').value.trim(),
     port: document.getElementById('serverPort').value ? parseInt(document.getElementById('serverPort').value, 10) : undefined,
     socketPath: document.getElementById('serverSocket').value.trim(),
-    logPath: document.getElementById('serverLogPath').value.trim(),
     hostname: document.getElementById('serverHostname').value.trim(),
     sshUser: document.getElementById('serverSSHUser').value.trim(),
     sshKeyPath: document.getElementById('serverSSHKey').value.trim(),
@@ -311,7 +308,6 @@ function submitServerForm(event) {
     enabled: document.getElementById('serverEnabled').checked
   };
   if (!payload.socketPath) delete payload.socketPath;
-  if (!payload.logPath) delete payload.logPath;
   if (!payload.hostname) delete payload.hostname;
   if (!payload.agentUrl) delete payload.agentUrl;
   if (!payload.agentSecret) delete payload.agentSecret;
@@ -323,9 +319,6 @@ function submitServerForm(event) {
 
   if (payload.type !== 'local' && payload.type !== 'ssh') {
     delete payload.socketPath;
-  }
-  if (payload.type !== 'local') {
-    delete payload.logPath;
   }
   if (payload.type !== 'ssh') {
     delete payload.sshUser;

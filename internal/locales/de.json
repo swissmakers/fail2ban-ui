@@ -309,7 +309,6 @@
   "servers.form.socket_path": "Fail2ban-Socket-Pfad",
   "servers.form.socket_path_placeholder": "/var/run/fail2ban/fail2ban.sock",
   "servers.form.log_path": "Fail2ban-Logpfad",
-  "servers.form.log_path_placeholder": "/var/log/fail2ban.log",
   "servers.form.hostname": "Server-Hostname",
   "servers.form.hostname_placeholder": "optional",
   "servers.form.ssh_user": "SSH-Benutzer",

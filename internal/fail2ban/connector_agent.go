@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -155,45 +154,6 @@ func (ac *AgentConnector) GetFilterConfig(ctx context.Context, jail string) (str
 func (ac *AgentConnector) SetFilterConfig(ctx context.Context, jail, content string) error {
 	payload := map[string]string{"config": content}
 	return ac.put(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(jail)), payload, nil)
-}
-
-func (ac *AgentConnector) FetchBanEvents(ctx context.Context, limit int) ([]BanEvent, error) {
-	query := url.Values{}
-	if limit > 0 {
-		query.Set("limit", strconv.Itoa(limit))
-	}
-	var resp struct {
-		Events []struct {
-			IP        string `json:"ip"`
-			Jail      string `json:"jail"`
-			Hostname  string `json:"hostname"`
-			Failures  string `json:"failures"`
-			Whois     string `json:"whois"`
-			Logs      string `json:"logs"`
-			Timestamp string `json:"timestamp"`
-		} `json:"events"`
-	}
-	endpoint := "/v1/events"
-	if encoded := query.Encode(); encoded != "" {
-		endpoint += "?" + encoded
-	}
-	if err := ac.get(ctx, endpoint, &resp); err != nil {
-		return nil, err
-	}
-	result := make([]BanEvent, 0, len(resp.Events))
-	for _, evt := range resp.Events {
-		ts, err := time.Parse(time.RFC3339, evt.Timestamp)
-		if err != nil {
-			ts = time.Now()
-		}
-		result = append(result, BanEvent{
-			Time:    ts,
-			Jail:    evt.Jail,
-			IP:      evt.IP,
-			LogLine: fmt.Sprintf("%s %s", evt.Hostname, evt.Failures),
-		})
-	}
-	return result, nil
 }
 
 // =========================================================================

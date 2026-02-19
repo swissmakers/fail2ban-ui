@@ -25,7 +25,6 @@ type Connector interface {
 	Restart(ctx context.Context) error
 	GetFilterConfig(ctx context.Context, jail string) (string, string, error)
 	SetFilterConfig(ctx context.Context, jail, content string) error
-	FetchBanEvents(ctx context.Context, limit int) ([]BanEvent, error)
 
 	// Jail management
 	GetAllJails(ctx context.Context) ([]JailInfo, error)

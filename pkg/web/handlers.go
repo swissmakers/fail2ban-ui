@@ -2313,42 +2313,6 @@ func DeleteFilterHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' deleted successfully", filterName)})
 }
 
-// Updates /etc/fail2ban/jail.local [DEFAULT] with our JSON
-// TODO: @matthias we need to further enhance this
-func ApplyFail2banSettings(jailLocalPath string) error {
-	config.DebugLog("----------------------------")
-	config.DebugLog("ApplyFail2banSettings called (handlers.go)")
-	s := config.GetSettings()
-
-	// open /etc/fail2ban/jail.local, parse or do a simplistic approach:
-	// TODO: -> maybe we store [DEFAULT] block in memory, replace lines
-	// or do a line-based approach. Example is simplistic:
-
-	chain := s.Chain
-	if chain == "" {
-		chain = "INPUT"
-	}
-	newLines := []string{
-		"[DEFAULT]",
-		fmt.Sprintf("enabled = %t", s.DefaultJailEnable),
-		fmt.Sprintf("bantime.increment = %t", s.BantimeIncrement),
-		fmt.Sprintf("ignoreip = %s", strings.Join(s.IgnoreIPs, " ")),
-		fmt.Sprintf("bantime = %s", s.Bantime),
-		fmt.Sprintf("findtime = %s", s.Findtime),
-		fmt.Sprintf("maxretry = %d", s.Maxretry),
-		fmt.Sprintf("banaction = %s", s.Banaction),
-		fmt.Sprintf("banaction_allports = %s", s.BanactionAllports),
-		fmt.Sprintf("chain = %s", chain),
-	}
-	if s.BantimeRndtime != "" {
-		newLines = append(newLines, fmt.Sprintf("bantime.rndtime = %s", s.BantimeRndtime))
-	}
-	newLines = append(newLines, "")
-	content := strings.Join(newLines, "\n")
-
-	return os.WriteFile(jailLocalPath, []byte(content), 0644)
-}
-
 // =========================================================================
 //  Restart
 // =========================================================================
@@ -2484,18 +2448,6 @@ func getEmailStyle() string {
 	return "modern"
 }
 
-// Checks whether "LOTR" is among the configured alert countries.
-func isLOTRModeActive(alertCountries []string) bool {
-	if len(alertCountries) == 0 {
-		return false
-	}
-	for _, country := range alertCountries {
-		if strings.EqualFold(country, "LOTR") {
-			return true
-		}
-	}
-	return false
-}
 
 // Connects to the SMTP server and delivers a single HTML message.
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
@@ -3005,7 +2957,7 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 	if lang == "" {
 		lang = "en"
 	}
-	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
+	isLOTRMode := config.IsLOTRModeActive(settings.AlertCountries)
 	var subject string
 	if isLOTRMode {
 		subject = fmt.Sprintf("[Middle-earth] %s: %s %s %s",
@@ -3092,7 +3044,7 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 	if lang == "" {
 		lang = "en"
 	}
-	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
+	isLOTRMode := config.IsLOTRModeActive(settings.AlertCountries)
 	var subject string
 	if isLOTRMode {
 		subject = fmt.Sprintf("[Middle-earth] %s: %s %s %s",
