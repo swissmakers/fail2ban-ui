@@ -102,7 +102,6 @@ type ServerRecord struct {
 	Host         string
 	Port         int
 	SocketPath   string
-	LogPath      string
 	SSHUser      string
 	SSHKeyPath   string
 	AgentURL     string
@@ -344,7 +343,7 @@ func ListServers(ctx context.Context) ([]ServerRecord, error) {
 	}
 
 	rows, err := db.QueryContext(ctx, `
-SELECT id, name, type, host, port, socket_path, log_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
+SELECT id, name, type, host, port, socket_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
 FROM servers
 ORDER BY created_at`)
 	if err != nil {
@@ -355,7 +354,7 @@ ORDER BY created_at`)
 	var records []ServerRecord
 	for rows.Next() {
 		var rec ServerRecord
-		var host, socket, logPath, sshUser, sshKey, agentURL, agentSecret, hostname, tags sql.NullString
+		var host, socket, sshUser, sshKey, agentURL, agentSecret, hostname, tags sql.NullString
 		var name, serverType sql.NullString
 		var created, updated sql.NullString
 		var port sql.NullInt64
@@ -368,7 +367,6 @@ ORDER BY created_at`)
 			&host,
 			&port,
 			&socket,
-			&logPath,
 			&sshUser,
 			&sshKey,
 			&agentURL,
@@ -389,7 +387,6 @@ ORDER BY created_at`)
 		rec.Host = stringFromNull(host)
 		rec.Port = intFromNull(port)
 		rec.SocketPath = stringFromNull(socket)
-		rec.LogPath = stringFromNull(logPath)
 		rec.SSHUser = stringFromNull(sshUser)
 		rec.SSHKeyPath = stringFromNull(sshKey)
 		rec.AgentURL = stringFromNull(agentURL)
@@ -438,9 +435,9 @@ func ReplaceServers(ctx context.Context, servers []ServerRecord) error {
 
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO servers (
-	id, name, type, host, port, socket_path, log_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
+	id, name, type, host, port, socket_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
 ) VALUES (
-	?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )`)
 	if err != nil {
 		return err
@@ -463,7 +460,6 @@ INSERT INTO servers (
 			srv.Host,
 			srv.Port,
 			srv.SocketPath,
-			srv.LogPath,
 			srv.SSHUser,
 			srv.SSHKeyPath,
 			srv.AgentURL,
@@ -1028,7 +1024,6 @@ CREATE TABLE IF NOT EXISTS servers (
 	host TEXT,
 	port INTEGER,
 	socket_path TEXT,
-	log_path TEXT,
 	ssh_user TEXT,
 	ssh_key_path TEXT,
 	agent_url TEXT,

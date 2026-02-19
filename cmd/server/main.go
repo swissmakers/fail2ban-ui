@@ -22,7 +22,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -106,7 +105,7 @@ func main() {
 
 	// Register routes
 	web.RegisterRoutes(router, wsHub)
-	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
+	isLOTRMode := config.IsLOTRModeActive(settings.AlertCountries)
 	printWelcomeBanner(bindAddress, serverPort, isLOTRMode)
 	if isLOTRMode {
 		log.Println("--- Middle-earth Security Realm activated ---")
@@ -119,17 +118,6 @@ func main() {
 	if err := router.Run(serverAddr); err != nil {
 		log.Fatalf("Could not start server: %v\n", err)
 	}
-}
-func isLOTRModeActive(alertCountries []string) bool {
-	if len(alertCountries) == 0 {
-		return false
-	}
-	for _, country := range alertCountries {
-		if strings.EqualFold(country, "LOTR") {
-			return true
-		}
-	}
-	return false
 }
 
 // Print welcome banner.

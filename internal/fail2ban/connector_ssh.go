@@ -84,55 +84,13 @@ func (sc *SSHConnector) Server() config.Fail2banServer {
 	return sc.server
 }
 
-// Get jail infos for all jails.
+// Collects jail status for every active remote jail.
 func (sc *SSHConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
 	jails, err := sc.getJails(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	type jailResult struct {
-		jail JailInfo
-		err  error
-	}
-	results := make(chan jailResult, len(jails))
-	var wg sync.WaitGroup
-
-	for _, jail := range jails {
-		wg.Add(1)
-		go func(j string) {
-			defer wg.Done()
-			ips, err := sc.GetBannedIPs(ctx, j)
-			if err != nil {
-				results <- jailResult{err: err}
-				return
-			}
-			results <- jailResult{
-				jail: JailInfo{
-					JailName:      j,
-					TotalBanned:   len(ips),
-					NewInLastHour: 0,
-					BannedIPs:     ips,
-					Enabled:       true,
-				},
-			}
-		}(jail)
-	}
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-	var infos []JailInfo
-	for result := range results {
-		if result.err != nil {
-			continue
-		}
-		infos = append(infos, result.jail)
-	}
-	sort.SliceStable(infos, func(i, j int) bool {
-		return infos[i].JailName < infos[j].JailName
-	})
-	return infos, nil
+	return collectJailInfos(ctx, jails, sc.GetBannedIPs)
 }
 
 // Get banned IPs for a given jail.
@@ -250,10 +208,6 @@ func (sc *SSHConnector) SetFilterConfig(ctx context.Context, filterName, content
 	}
 
 	return nil
-}
-
-func (sc *SSHConnector) FetchBanEvents(ctx context.Context, limit int) ([]BanEvent, error) {
-	return []BanEvent{}, nil
 }
 
 func (sc *SSHConnector) ensureAction(ctx context.Context) error {

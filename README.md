@@ -61,7 +61,7 @@ podman run -d --name fail2ban-ui --network=host \
 Verification:
 
 * Open `http://localhost:8080`
-* In the UI: Settings → Manage Servers → enable “Local connector” and run “Test connection”
+* In the UI: Settings → Manage Servers → enable "Local connector” and run "Test connection”
 
 Next steps:
 
