@@ -13,20 +13,7 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
-var (
-	migrationOnce sync.Once
-)
-
-// Auto-migration of an existing jail.local into jail.d/ is experimental and disabled by default;
-// it is always best to migrate a pre-existing jail.local by hand.
-func isJailAutoMigrationEnabled() bool {
-	return strings.EqualFold(os.Getenv("JAIL_AUTOMIGRATION"), "true")
-}
-
-// ensureJailLocalFile ensures that a .local file exists for the given jail.
-// If .local doesn't exist, it copies from .conf if available, or creates a minimal section.
 func ensureJailLocalFile(jailName string) error {
-	// Validate jail name - must not be empty
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return fmt.Errorf("jail name cannot be empty")
@@ -36,13 +23,11 @@ func ensureJailLocalFile(jailName string) error {
 	localPath := filepath.Join(jailDPath, jailName+".local")
 	confPath := filepath.Join(jailDPath, jailName+".conf")
 
-	// Check if .local already exists
 	if _, err := os.Stat(localPath); err == nil {
 		config.DebugLog("Jail .local file already exists: %s", localPath)
 		return nil
 	}
 
-	// Try to copy from .conf if it exists
 	if _, err := os.Stat(confPath); err == nil {
 		config.DebugLog("Copying jail config from .conf to .local: %s -> %s", confPath, localPath)
 		content, err := os.ReadFile(confPath)
@@ -56,7 +41,6 @@ func ensureJailLocalFile(jailName string) error {
 		return nil
 	}
 
-	// Neither exists, create minimal section
 	config.DebugLog("Creating minimal jail .local file: %s", localPath)
 	if err := os.MkdirAll(jailDPath, 0755); err != nil {
 		return fmt.Errorf("failed to create jail.d directory: %w", err)
@@ -69,10 +53,11 @@ func ensureJailLocalFile(jailName string) error {
 	return nil
 }
 
-// readJailConfigWithFallback reads jail config from .local first, then falls back to .conf.
-// Returns (content, filePath, error)
+// =========================================================================
+//  Config Read/Write
+// =========================================================================
+
 func readJailConfigWithFallback(jailName string) (string, string, error) {
-	// Validate jail name - must not be empty
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return "", "", fmt.Errorf("jail name cannot be empty")
@@ -82,32 +67,30 @@ func readJailConfigWithFallback(jailName string) (string, string, error) {
 	localPath := filepath.Join(jailDPath, jailName+".local")
 	confPath := filepath.Join(jailDPath, jailName+".conf")
 
-	// Try .local first
 	if content, err := os.ReadFile(localPath); err == nil {
 		config.DebugLog("Reading jail config from .local: %s", localPath)
 		return string(content), localPath, nil
 	}
 
-	// Fallback to .conf
 	if content, err := os.ReadFile(confPath); err == nil {
 		config.DebugLog("Reading jail config from .conf: %s", confPath)
 		return string(content), confPath, nil
 	}
 
-	// Neither exists, return empty section with .local path (will be created on save)
 	config.DebugLog("Neither .local nor .conf exists for jail %s, returning empty section", jailName)
 	return fmt.Sprintf("[%s]\n", jailName), localPath, nil
 }
 
-// ValidateJailName validates a jail name format.
-// Returns an error if the name is invalid (empty, contains invalid characters, or is reserved).
+// =========================================================================
+//  Validation
+// =========================================================================
+
 func ValidateJailName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return fmt.Errorf("jail name cannot be empty")
 	}
 
-	// Reserved names that should not be used
 	reservedNames := map[string]bool{
 		"DEFAULT":  true,
 		"INCLUDES": true,
@@ -125,8 +108,10 @@ func ValidateJailName(name string) error {
 	return nil
 }
 
-// ListJailFiles lists all jail config files in the specified directory.
-// Returns full paths to .local and .conf files.
+// =========================================================================
+//  Jail Discovery
+// =========================================================================
+
 func ListJailFiles(directory string) ([]string, error) {
 	var files []string
 
@@ -141,7 +126,6 @@ func ListJailFiles(directory string) ([]string, error) {
 		}
 
 		name := entry.Name()
-		// Skip hidden files and invalid names
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
@@ -156,29 +140,24 @@ func ListJailFiles(directory string) ([]string, error) {
 	return files, nil
 }
 
-// DiscoverJailsFromFiles discovers all jails from the filesystem.
-// Reads from /etc/fail2ban/jail.d/ directory, preferring .local files over .conf files.
-// Returns all jails found (enabled and disabled).
+// Returns all jails from /etc/fail2ban/jail.d directory.
 func DiscoverJailsFromFiles() ([]JailInfo, error) {
 	jailDPath := "/etc/fail2ban/jail.d"
 
-	// Check if directory exists
 	if _, err := os.Stat(jailDPath); os.IsNotExist(err) {
-		// Directory doesn't exist, return empty list
 		return []JailInfo{}, nil
 	}
 
-	// List all jail files
 	files, err := ListJailFiles(jailDPath)
 	if err != nil {
 		return nil, err
 	}
 
 	var allJails []JailInfo
-	processedFiles := make(map[string]bool) // Track base names to avoid duplicates
-	processedJails := make(map[string]bool) // Track jail names to avoid duplicates
+	processedFiles := make(map[string]bool)
+	processedJails := make(map[string]bool)
 
-	// First pass: process all .local files
+	// Parse .local files
 	for _, filePath := range files {
 		if !strings.HasSuffix(filePath, ".local") {
 			continue
@@ -189,22 +168,17 @@ func DiscoverJailsFromFiles() ([]JailInfo, error) {
 		if baseName == "" {
 			continue
 		}
-
-		// Skip if we've already processed this base name
 		if processedFiles[baseName] {
 			continue
 		}
-
 		processedFiles[baseName] = true
 
-		// Parse the file
 		jails, err := parseJailConfigFile(filePath)
 		if err != nil {
 			config.DebugLog("Failed to parse jail file %s: %v", filePath, err)
 			continue
 		}
 
-		// Add jails from this file
 		for _, jail := range jails {
 			if jail.JailName != "" && jail.JailName != "DEFAULT" && !processedJails[jail.JailName] {
 				allJails = append(allJails, jail)
@@ -212,8 +186,6 @@ func DiscoverJailsFromFiles() ([]JailInfo, error) {
 			}
 		}
 	}
-
-	// Second pass: process .conf files that don't have corresponding .local files
 	for _, filePath := range files {
 		if !strings.HasSuffix(filePath, ".conf") {
 			continue
@@ -224,22 +196,17 @@ func DiscoverJailsFromFiles() ([]JailInfo, error) {
 		if baseName == "" {
 			continue
 		}
-
-		// Skip if we've already processed a .local file with the same base name
 		if processedFiles[baseName] {
 			continue
 		}
-
 		processedFiles[baseName] = true
 
-		// Parse the file
 		jails, err := parseJailConfigFile(filePath)
 		if err != nil {
 			config.DebugLog("Failed to parse jail file %s: %v", filePath, err)
 			continue
 		}
 
-		// Add jails from this file
 		for _, jail := range jails {
 			if jail.JailName != "" && jail.JailName != "DEFAULT" && !processedJails[jail.JailName] {
 				allJails = append(allJails, jail)
@@ -251,8 +218,10 @@ func DiscoverJailsFromFiles() ([]JailInfo, error) {
 	return allJails, nil
 }
 
-// CreateJail creates a new jail in jail.d/{name}.local.
-// If the jail already exists, it will be overwritten.
+// =========================================================================
+//  Jail Creation
+// =========================================================================
+
 func CreateJail(jailName, content string) error {
 	if err := ValidateJailName(jailName); err != nil {
 		return err
@@ -261,20 +230,16 @@ func CreateJail(jailName, content string) error {
 	jailDPath := "/etc/fail2ban/jail.d"
 	localPath := filepath.Join(jailDPath, jailName+".local")
 
-	// Ensure directory exists
 	if err := os.MkdirAll(jailDPath, 0755); err != nil {
 		return fmt.Errorf("failed to create jail.d directory: %w", err)
 	}
 
-	// Validate content starts with correct section header
 	trimmed := strings.TrimSpace(content)
 	expectedSection := fmt.Sprintf("[%s]", jailName)
 	if !strings.HasPrefix(trimmed, expectedSection) {
-		// Prepend the section header if missing
 		content = expectedSection + "\n" + content
 	}
 
-	// Write the file
 	if err := os.WriteFile(localPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to create jail file %s: %w", localPath, err)
 	}
@@ -283,8 +248,11 @@ func CreateJail(jailName, content string) error {
 	return nil
 }
 
-// DeleteJail deletes a jail's .local and .conf files from jail.d/ if they exist.
-// Both files are deleted to ensure complete removal of the jail configuration.
+// =========================================================================
+//
+//	Jail Deletion
+//
+// =========================================================================
 func DeleteJail(jailName string) error {
 	if err := ValidateJailName(jailName); err != nil {
 		return err
@@ -297,7 +265,6 @@ func DeleteJail(jailName string) error {
 	var deletedFiles []string
 	var lastErr error
 
-	// Delete .local file if it exists
 	if _, err := os.Stat(localPath); err == nil {
 		if err := os.Remove(localPath); err != nil {
 			lastErr = fmt.Errorf("failed to delete jail file %s: %w", localPath, err)
@@ -307,7 +274,6 @@ func DeleteJail(jailName string) error {
 		}
 	}
 
-	// Delete .conf file if it exists
 	if _, err := os.Stat(confPath); err == nil {
 		if err := os.Remove(confPath); err != nil {
 			lastErr = fmt.Errorf("failed to delete jail file %s: %w", confPath, err)
@@ -317,12 +283,10 @@ func DeleteJail(jailName string) error {
 		}
 	}
 
-	// If no files were deleted and no error occurred, it means neither file existed
 	if len(deletedFiles) == 0 && lastErr == nil {
 		return fmt.Errorf("jail file %s or %s does not exist", localPath, confPath)
 	}
 
-	// Return the last error if any occurred
 	if lastErr != nil {
 		return lastErr
 	}
@@ -330,7 +294,7 @@ func DeleteJail(jailName string) error {
 	return nil
 }
 
-// GetAllJails reads jails from /etc/fail2ban/jail.d directory.
+// Returns all jails.
 func GetAllJails() ([]JailInfo, error) {
 	// Run migration once if enabled (experimental, off by default)
 	if isJailAutoMigrationEnabled() {
@@ -342,7 +306,6 @@ func GetAllJails() ([]JailInfo, error) {
 		})
 	}
 
-	// Discover jails from filesystem
 	jails, err := DiscoverJailsFromFiles()
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover jails from files: %w", err)
@@ -351,8 +314,6 @@ func GetAllJails() ([]JailInfo, error) {
 	return jails, nil
 }
 
-// parseJailConfigFile parses a jail configuration file and returns a slice of JailInfo.
-// It assumes each jail section is defined by [JailName] and that an "enabled" line may exist.
 func parseJailConfigFile(path string) ([]JailInfo, error) {
 	var jails []JailInfo
 	file, err := os.Open(path)
@@ -364,38 +325,30 @@ func parseJailConfigFile(path string) ([]JailInfo, error) {
 	scanner := bufio.NewScanner(file)
 	var currentJail string
 
-	// Sections that should be ignored (not jails)
 	ignoredSections := map[string]bool{
 		"DEFAULT":  true,
 		"INCLUDES": true,
 	}
 
-	// default value is true if "enabled" is missing; we set it for each section.
 	enabled := true
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			// When a new section starts, save the previous jail if exists.
 			if currentJail != "" && !ignoredSections[currentJail] {
 				jails = append(jails, JailInfo{
 					JailName: currentJail,
 					Enabled:  enabled,
 				})
 			}
-			// Start a new jail section.
 			currentJail = strings.TrimSpace(strings.Trim(line, "[]"))
-			// Skip empty jail names (e.g., from malformed config files with [])
 			if currentJail == "" {
-				currentJail = "" // Reset to empty to skip this section
+				currentJail = ""
 				enabled = true
 				continue
 			}
-			// Reset to default for the new section.
 			enabled = true
 		} else if strings.HasPrefix(strings.ToLower(line), "enabled") {
-			// Only process enabled line if we have a valid jail name
 			if currentJail != "" {
-				// Expect format: enabled = true/false
 				parts := strings.Split(line, "=")
 				if len(parts) == 2 {
 					value := strings.TrimSpace(parts[1])
@@ -404,7 +357,6 @@ func parseJailConfigFile(path string) ([]JailInfo, error) {
 			}
 		}
 	}
-	// Add the final jail if one exists.
 	if currentJail != "" && !ignoredSections[currentJail] {
 		jails = append(jails, JailInfo{
 			JailName: currentJail,
@@ -414,52 +366,38 @@ func parseJailConfigFile(path string) ([]JailInfo, error) {
 	return jails, scanner.Err()
 }
 
-// UpdateJailEnabledStates updates the enabled state for each jail based on the provided updates map.
-// Updates only the corresponding .local file in /etc/fail2ban/jail.d/ for each jail.
-// Creates .local file by copying from .conf if needed, preserving original .conf files.
+// =========================================================================
+//  Jail Enabled from "Manage Jails"
+// =========================================================================
+
 func UpdateJailEnabledStates(updates map[string]bool) error {
 	config.DebugLog("UpdateJailEnabledStates called with %d updates: %+v", len(updates), updates)
 	jailDPath := "/etc/fail2ban/jail.d"
 
-	// Ensure jail.d directory exists
-	if err := os.MkdirAll(jailDPath, 0755); err != nil {
-		return fmt.Errorf("failed to create jail.d directory: %w", err)
-	}
-
-	// Update each jail in its own .local file
 	for jailName, enabled := range updates {
-		// Validate jail name - skip empty or invalid names
 		jailName = strings.TrimSpace(jailName)
 		if jailName == "" {
 			config.DebugLog("Skipping empty jail name in updates map")
 			continue
 		}
-
 		config.DebugLog("Processing jail: %s, enabled: %t", jailName, enabled)
 
-		// Ensure .local file exists (copy from .conf if needed)
+		// Ensure .local file exists
 		if err := ensureJailLocalFile(jailName); err != nil {
 			return fmt.Errorf("failed to ensure .local file for jail %s: %w", jailName, err)
 		}
-
 		jailFilePath := filepath.Join(jailDPath, jailName+".local")
 		config.DebugLog("Jail file path: %s", jailFilePath)
-
-		// Read existing .local file
 		content, err := os.ReadFile(jailFilePath)
 		if err != nil {
 			return fmt.Errorf("failed to read jail .local file %s: %w", jailFilePath, err)
 		}
-
 		var lines []string
 		if len(content) > 0 {
 			lines = strings.Split(string(content), "\n")
 		} else {
-			// Create new file with jail section
 			lines = []string{fmt.Sprintf("[%s]", jailName)}
 		}
-
-		// Update or add enabled line
 		var outputLines []string
 		var foundEnabled bool
 		var currentJail string
@@ -480,8 +418,6 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 				outputLines = append(outputLines, line)
 			}
 		}
-
-		// If enabled line not found, add it after the jail section header
 		if !foundEnabled {
 			var newLines []string
 			for i, line := range outputLines {
@@ -489,7 +425,6 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 				if strings.TrimSpace(line) == fmt.Sprintf("[%s]", jailName) {
 					// Insert enabled line after the section header
 					newLines = append(newLines, fmt.Sprintf("enabled = %t", enabled))
-					// Add remaining lines
 					if i+1 < len(outputLines) {
 						newLines = append(newLines, outputLines[i+1:]...)
 					}
@@ -499,12 +434,9 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 			if len(newLines) > len(outputLines) {
 				outputLines = newLines
 			} else {
-				// Fallback: append at the end
 				outputLines = append(outputLines, fmt.Sprintf("enabled = %t", enabled))
 			}
 		}
-
-		// Write updated content
 		newContent := strings.Join(outputLines, "\n")
 		if !strings.HasSuffix(newContent, "\n") {
 			newContent += "\n"
@@ -517,239 +449,8 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 	return nil
 }
 
-// parseJailSectionsUncommented parses jail.local content and returns:
-// - map of jail name to jail content (excluding DEFAULT, INCLUDES, and commented sections)
-// - DEFAULT section content (including commented lines)
-func parseJailSectionsUncommented(content string) (map[string]string, string, error) {
-	sections := make(map[string]string)
-	var defaultContent strings.Builder
-
-	// Sections that should be ignored (not jails)
-	ignoredSections := map[string]bool{
-		"DEFAULT":  true,
-		"INCLUDES": true,
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	var currentSection string
-	var currentContent strings.Builder
-	inDefault := false
-	sectionIsCommented := false
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-
-		// Check if this is a section header
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			// Check if the section is commented
-			originalLine := strings.TrimSpace(line)
-			isCommented := strings.HasPrefix(originalLine, "#")
-
-			// Save previous section
-			if currentSection != "" {
-				sectionContent := strings.TrimSpace(currentContent.String())
-				if inDefault {
-					// Always include DEFAULT section content (even if commented)
-					defaultContent.WriteString(sectionContent)
-					if !strings.HasSuffix(sectionContent, "\n") {
-						defaultContent.WriteString("\n")
-					}
-				} else if !ignoredSections[currentSection] && !sectionIsCommented {
-					// Only save non-commented, non-ignored sections
-					sections[currentSection] = sectionContent
-				}
-			}
-
-			// Start new section
-			if isCommented {
-				// Remove the # from the section name
-				sectionName := strings.Trim(trimmed, "[]")
-				if strings.HasPrefix(sectionName, "#") {
-					sectionName = strings.TrimSpace(strings.TrimPrefix(sectionName, "#"))
-				}
-				currentSection = sectionName
-				sectionIsCommented = true
-			} else {
-				currentSection = strings.Trim(trimmed, "[]")
-				sectionIsCommented = false
-			}
-			currentContent.Reset()
-			currentContent.WriteString(line)
-			currentContent.WriteString("\n")
-			inDefault = (currentSection == "DEFAULT")
-		} else {
-			currentContent.WriteString(line)
-			currentContent.WriteString("\n")
-		}
-	}
-
-	// Save final section
-	if currentSection != "" {
-		sectionContent := strings.TrimSpace(currentContent.String())
-		if inDefault {
-			defaultContent.WriteString(sectionContent)
-		} else if !ignoredSections[currentSection] && !sectionIsCommented {
-			// Only save if it's not an ignored section and not commented
-			sections[currentSection] = sectionContent
-		}
-	}
-
-	return sections, defaultContent.String(), scanner.Err()
-}
-
-// MigrateJailsFromJailLocal migrates non-commented jail sections from jail.local to jail.d/*.local files.
-// EXPERIMENTAL: Only called when JAIL_AUTOMIGRATION=true. It is always best to migrate a pre-existing jail.local by hand.
-func MigrateJailsFromJailLocal() error {
-	localPath := "/etc/fail2ban/jail.local"
-	jailDPath := "/etc/fail2ban/jail.d"
-
-	// Check if jail.local exists
-	if _, err := os.Stat(localPath); os.IsNotExist(err) {
-		return nil // Nothing to migrate
-	}
-
-	// Read jail.local content
-	content, err := os.ReadFile(localPath)
-	if err != nil {
-		return fmt.Errorf("failed to read jail.local: %w", err)
-	}
-
-	// Parse content to extract non-commented sections
-	sections, defaultContent, err := parseJailSectionsUncommented(string(content))
-	if err != nil {
-		return fmt.Errorf("failed to parse jail.local: %w", err)
-	}
-
-	// If no non-commented, non-DEFAULT jails found, nothing to migrate
-	if len(sections) == 0 {
-		config.DebugLog("No jails to migrate from jail.local")
-		return nil
-	}
-
-	// Create backup of jail.local
-	backupPath := localPath + ".backup." + fmt.Sprintf("%d", time.Now().Unix())
-	if err := os.WriteFile(backupPath, content, 0644); err != nil {
-		return fmt.Errorf("failed to create backup: %w", err)
-	}
-	config.DebugLog("Created backup of jail.local at %s", backupPath)
-
-	// Ensure jail.d directory exists
-	if err := os.MkdirAll(jailDPath, 0755); err != nil {
-		return fmt.Errorf("failed to create jail.d directory: %w", err)
-	}
-
-	// Write each jail to its own .local file in jail.d/
-	migratedCount := 0
-	for jailName, jailContent := range sections {
-		// Skip empty jail names
-		if jailName == "" {
-			continue
-		}
-
-		jailFilePath := filepath.Join(jailDPath, jailName+".local")
-
-		// Check if .local file already exists
-		if _, err := os.Stat(jailFilePath); err == nil {
-			// File already exists - skip migration for this jail
-			config.DebugLog("Skipping migration for jail %s: .local file already exists", jailName)
-			continue
-		}
-
-		// Ensure enabled = false is set by default for migrated jails
-		// Check if enabled is already set in the content
-		enabledSet := strings.Contains(jailContent, "enabled") || strings.Contains(jailContent, "Enabled")
-		if !enabledSet {
-			// Add enabled = false at the beginning of the jail section
-			// Find the first line after [jailName]
-			lines := strings.Split(jailContent, "\n")
-			modifiedContent := ""
-			for i, line := range lines {
-				modifiedContent += line + "\n"
-				// After the section header, add enabled = false
-				if i == 0 && strings.HasPrefix(strings.TrimSpace(line), "[") && strings.HasSuffix(strings.TrimSpace(line), "]") {
-					modifiedContent += "enabled = false\n"
-				}
-			}
-			jailContent = modifiedContent
-		} else {
-			// If enabled is set, ensure it's false by replacing any enabled = true
-			jailContent = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`).ReplaceAllString(jailContent, "enabled = false")
-		}
-
-		// Write jail content to .local file
-		if err := os.WriteFile(jailFilePath, []byte(jailContent), 0644); err != nil {
-			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
-		}
-		config.DebugLog("Migrated jail %s to %s (enabled = false)", jailName, jailFilePath)
-		migratedCount++
-	}
-
-	// Only rewrite jail.local if we actually migrated something
-	if migratedCount > 0 {
-		// Rewrite jail.local with only DEFAULT section and commented jails
-		// We need to preserve commented sections, so we'll reconstruct the file
-		newLocalContent := defaultContent
-
-		// Add back commented sections that weren't migrated
-		scanner := bufio.NewScanner(strings.NewReader(string(content)))
-		var inCommentedJail bool
-		var commentedJailContent strings.Builder
-		var commentedJailName string
-		for scanner.Scan() {
-			line := scanner.Text()
-			trimmed := strings.TrimSpace(line)
-
-			if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-				// Check if this is a commented section
-				originalLine := strings.TrimSpace(line)
-				if strings.HasPrefix(originalLine, "#[") {
-					// Save previous commented jail if any
-					if inCommentedJail && commentedJailName != "" {
-						newLocalContent += commentedJailContent.String()
-					}
-					inCommentedJail = true
-					commentedJailContent.Reset()
-					commentedJailName = strings.Trim(trimmed, "[]")
-					if strings.HasPrefix(commentedJailName, "#") {
-						commentedJailName = strings.TrimSpace(strings.TrimPrefix(commentedJailName, "#"))
-					}
-					commentedJailContent.WriteString(line)
-					commentedJailContent.WriteString("\n")
-				} else {
-					// Non-commented section - save previous commented jail if any
-					if inCommentedJail && commentedJailName != "" {
-						newLocalContent += commentedJailContent.String()
-						inCommentedJail = false
-						commentedJailContent.Reset()
-					}
-				}
-			} else if inCommentedJail {
-				commentedJailContent.WriteString(line)
-				commentedJailContent.WriteString("\n")
-			}
-		}
-		// Save final commented jail if any
-		if inCommentedJail && commentedJailName != "" {
-			newLocalContent += commentedJailContent.String()
-		}
-
-		if !strings.HasSuffix(newLocalContent, "\n") {
-			newLocalContent += "\n"
-		}
-		if err := os.WriteFile(localPath, []byte(newLocalContent), 0644); err != nil {
-			return fmt.Errorf("failed to rewrite jail.local: %w", err)
-		}
-		config.DebugLog("Migration completed: moved %d jails to jail.d/", migratedCount)
-	}
-
-	return nil
-}
-
-// GetJailConfig reads the full jail configuration from /etc/fail2ban/jail.d/{jailName}.local
-// Falls back to .conf if .local doesn't exist.
+// Returns the full jail configuration from /etc/fail2ban/jail.d/{jailName}.local
 func GetJailConfig(jailName string) (string, string, error) {
-	// Validate jail name
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return "", "", fmt.Errorf("jail name cannot be empty")
@@ -761,37 +462,46 @@ func GetJailConfig(jailName string) (string, string, error) {
 		config.DebugLog("Failed to read jail config: %v", err)
 		return "", "", fmt.Errorf("failed to read jail config for %s: %w", jailName, err)
 	}
+
 	config.DebugLog("Jail config read successfully, length: %d, file: %s", len(content), filePath)
 	return content, filePath, nil
 }
 
-// SetJailConfig writes the full jail configuration to /etc/fail2ban/jail.d/{jailName}.local
-// Ensures .local file exists first by copying from .conf if needed.
+// Extracts the filter name from the jail configuration.
+func ExtractFilterFromJailConfig(jailContent string) string {
+	scanner := bufio.NewScanner(strings.NewReader(jailContent))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(line), "filter") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				filterValue := strings.TrimSpace(parts[1])
+				if idx := strings.Index(filterValue, "["); idx >= 0 {
+					filterValue = filterValue[:idx]
+				}
+				return strings.TrimSpace(filterValue)
+			}
+		}
+	}
+	return ""
+}
+
+// Writes the full jail configuration to /etc/fail2ban/jail.d/{jailName}.local
 func SetJailConfig(jailName, content string) error {
-	// Validate jail name
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return fmt.Errorf("jail name cannot be empty")
 	}
-
 	config.DebugLog("SetJailConfig called for jail: %s, content length: %d", jailName, len(content))
 
 	jailDPath := "/etc/fail2ban/jail.d"
-
-	// Ensure jail.d directory exists
-	if err := os.MkdirAll(jailDPath, 0755); err != nil {
-		config.DebugLog("Failed to create jail.d directory: %v", err)
-		return fmt.Errorf("failed to create jail.d directory: %w", err)
-	}
-	config.DebugLog("jail.d directory ensured")
-
-	// Ensure .local file exists (copy from .conf if needed)
 	if err := ensureJailLocalFile(jailName); err != nil {
 		return fmt.Errorf("failed to ensure .local file for jail %s: %w", jailName, err)
 	}
 
-	// Validate and fix the jail section header
-	// The content might start with comments, so we need to find the section header
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
 		config.DebugLog("Content is empty, creating minimal jail config")
@@ -824,8 +534,6 @@ func SetJailConfig(jailName, content string) error {
 				}
 			}
 		}
-
-		// Remove duplicate section headers (keep only the first correct one)
 		if len(sectionIndices) > 1 {
 			config.DebugLog("Found %d section headers, removing duplicates", len(sectionIndices))
 			var newLines []string
@@ -836,12 +544,10 @@ func SetJailConfig(jailName, content string) error {
 
 				if isSectionHeader {
 					if !keptFirst && trimmedLine == expectedSection {
-						// Keep the first correct section header
 						newLines = append(newLines, expectedSection)
 						keptFirst = true
 						config.DebugLog("Keeping section header at line %d", i)
 					} else {
-						// Skip duplicate or incorrect section headers
 						config.DebugLog("Removing duplicate/incorrect section header at line %d: %s", i, trimmedLine)
 						continue
 					}
@@ -854,17 +560,14 @@ func SetJailConfig(jailName, content string) error {
 
 		if !sectionFound {
 			if sectionIndex >= 0 {
-				// Replace incorrect section header
 				config.DebugLog("Replacing incorrect section header at line %d", sectionIndex)
 				lines[sectionIndex] = expectedSection
 			} else {
-				// No section header found, prepend it
 				config.DebugLog("No section header found, prepending %s", expectedSection)
 				lines = append([]string{expectedSection}, lines...)
 			}
 			content = strings.Join(lines, "\n")
 		} else {
-			// Section header is correct, but we may have removed duplicates
 			content = strings.Join(lines, "\n")
 		}
 	}
@@ -880,41 +583,36 @@ func SetJailConfig(jailName, content string) error {
 	return nil
 }
 
-// TestLogpath tests a logpath pattern and returns matching files.
-// Supports wildcards/glob patterns (e.g., /var/log/*.log) and directory paths.
-// This function tests the path as-is without variable resolution.
+// =========================================================================
+//  Logpath Operations
+// =========================================================================
+
 func TestLogpath(logpath string) ([]string, error) {
 	if logpath == "" {
 		return []string{}, nil
 	}
 
-	// Trim whitespace
 	logpath = strings.TrimSpace(logpath)
-
-	// Check if it's a glob pattern (contains *, ?, or [)
 	hasWildcard := strings.ContainsAny(logpath, "*?[")
 
 	var matches []string
 
 	if hasWildcard {
-		// Use filepath.Glob for pattern matching
 		matched, err := filepath.Glob(logpath)
 		if err != nil {
 			return nil, fmt.Errorf("invalid glob pattern: %w", err)
 		}
 		matches = matched
 	} else {
-		// Check if it's a directory
 		info, err := os.Stat(logpath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return []string{}, nil // Path doesn't exist, return empty
+				return []string{}, nil
 			}
 			return nil, fmt.Errorf("failed to stat path: %w", err)
 		}
 
 		if info.IsDir() {
-			// List files in directory
 			entries, err := os.ReadDir(logpath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read directory: %w", err)
@@ -926,7 +624,6 @@ func TestLogpath(logpath string) ([]string, error) {
 				}
 			}
 		} else {
-			// It's a file, return it
 			matches = []string{logpath}
 		}
 	}
@@ -934,26 +631,19 @@ func TestLogpath(logpath string) ([]string, error) {
 	return matches, nil
 }
 
-// TestLogpathWithResolution resolves variables in logpath and tests the resolved path.
-// Returns the original path, resolved path, matching files, and any error.
+// Resolves variables in logpath and tests the resolved path.
 func TestLogpathWithResolution(logpath string) (originalPath, resolvedPath string, files []string, err error) {
 	originalPath = strings.TrimSpace(logpath)
 	if originalPath == "" {
 		return originalPath, "", []string{}, nil
 	}
-
-	// Resolve variables
 	resolvedPath, err = ResolveLogpathVariables(originalPath)
 	if err != nil {
 		return originalPath, "", nil, fmt.Errorf("failed to resolve logpath variables: %w", err)
 	}
-
-	// If resolution didn't change the path, resolvedPath will be the same
 	if resolvedPath == "" {
 		resolvedPath = originalPath
 	}
-
-	// Test the resolved path
 	files, err = TestLogpath(resolvedPath)
 	if err != nil {
 		return originalPath, resolvedPath, nil, fmt.Errorf("failed to test logpath: %w", err)
@@ -962,15 +652,7 @@ func TestLogpathWithResolution(logpath string) (originalPath, resolvedPath strin
 	return originalPath, resolvedPath, files, nil
 }
 
-// ExtractLogpathFromJailConfig extracts the logpath value(s) from jail configuration content.
-// Supports multiple logpaths in a single line (space-separated) or multiple lines.
-// Fail2ban supports both formats:
-//
-//	logpath = /var/log/file1.log /var/log/file2.log
-//	logpath = /var/log/file1.log
-//	         /var/log/file2.log
-//
-// Returns all logpaths joined by newlines.
+// Extracts the logpath from the jail configuration.
 func ExtractLogpathFromJailConfig(jailContent string) string {
 	var logpaths []string
 	scanner := bufio.NewScanner(strings.NewReader(jailContent))
@@ -979,10 +661,8 @@ func ExtractLogpathFromJailConfig(jailContent string) string {
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		// Skip comments
 		if strings.HasPrefix(line, "#") {
 			if inLogpathLine && currentLogpath != "" {
-				// End of logpath block at comment, process current logpath
 				paths := strings.Fields(currentLogpath)
 				logpaths = append(logpaths, paths...)
 				currentLogpath = ""
@@ -991,7 +671,6 @@ func ExtractLogpathFromJailConfig(jailContent string) string {
 			continue
 		}
 
-		// Check if this line starts with logpath =
 		if strings.HasPrefix(strings.ToLower(line), "logpath") {
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) == 2 {
@@ -1001,24 +680,20 @@ func ExtractLogpathFromJailConfig(jailContent string) string {
 					inLogpathLine = true
 				}
 			}
+
 		} else if inLogpathLine {
-			// Continuation line (indented or starting with space)
-			// Fail2ban allows continuation lines for logpath
 			if line != "" && !strings.Contains(line, "=") {
-				// This is a continuation line, append to current logpath
 				currentLogpath += " " + line
 			} else {
-				// End of logpath block, process current logpath
 				if currentLogpath != "" {
-					// Split by spaces to handle multiple logpaths in one line
 					paths := strings.Fields(currentLogpath)
 					logpaths = append(logpaths, paths...)
 					currentLogpath = ""
 				}
 				inLogpathLine = false
 			}
+
 		} else if inLogpathLine && line == "" {
-			// Empty line might end the logpath block
 			if currentLogpath != "" {
 				paths := strings.Fields(currentLogpath)
 				logpaths = append(logpaths, paths...)
@@ -1028,44 +703,208 @@ func ExtractLogpathFromJailConfig(jailContent string) string {
 		}
 	}
 
-	// Process any remaining logpath
 	if currentLogpath != "" {
 		paths := strings.Fields(currentLogpath)
 		logpaths = append(logpaths, paths...)
 	}
 
-	// Join multiple logpaths with newlines
 	return strings.Join(logpaths, "\n")
 }
 
-// ExtractFilterFromJailConfig extracts the filter name from jail configuration content.
-// Handles formats like: filter = sshd, filter = sshd[mode=aggressive], etc.
-// Returns the base filter name (without parameters in brackets).
-func ExtractFilterFromJailConfig(jailContent string) string {
-	scanner := bufio.NewScanner(strings.NewReader(jailContent))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		// Skip comments
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasPrefix(strings.ToLower(line), "filter") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				filterValue := strings.TrimSpace(parts[1])
-				// Extract base filter name (before [ if present)
-				if idx := strings.Index(filterValue, "["); idx >= 0 {
-					filterValue = filterValue[:idx]
-				}
-				return strings.TrimSpace(filterValue)
-			}
-		}
-	}
-	return ""
-}
-
-// UpdateDefaultSettingsLocal rewrites /etc/fail2ban/jail.local with the current settings.
+// Updates /etc/fail2ban/jail.local with the current settings.
 func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
 	config.DebugLog("UpdateDefaultSettingsLocal called")
 	return config.EnsureJailLocalStructure()
+}
+
+// =========================================================================
+//  Jail Auto Migration (EXPERIMENTAL, runs only when JAIL_AUTOMIGRATION=true)
+// =========================================================================
+
+var (
+	migrationOnce sync.Once
+)
+
+func isJailAutoMigrationEnabled() bool {
+	return strings.EqualFold(os.Getenv("JAIL_AUTOMIGRATION"), "true")
+}
+
+// Migrates jail.local to jail.d/*.local.
+func MigrateJailsFromJailLocal() error {
+	localPath := "/etc/fail2ban/jail.local"
+	jailDPath := "/etc/fail2ban/jail.d"
+
+	if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		return nil
+	}
+	content, err := os.ReadFile(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to read jail.local: %w", err)
+	}
+	sections, defaultContent, err := parseJailSectionsUncommented(string(content))
+	if err != nil {
+		return fmt.Errorf("failed to parse jail.local: %w", err)
+	}
+	if len(sections) == 0 {
+		config.DebugLog("No jails to migrate from jail.local")
+		return nil
+	}
+	backupPath := localPath + ".backup." + fmt.Sprintf("%d", time.Now().Unix())
+	if err := os.WriteFile(backupPath, content, 0644); err != nil {
+		return fmt.Errorf("failed to create backup: %w", err)
+	}
+	config.DebugLog("Created backup of jail.local at %s", backupPath)
+
+	if err := os.MkdirAll(jailDPath, 0755); err != nil {
+		return fmt.Errorf("failed to create jail.d directory: %w", err)
+	}
+	migratedCount := 0
+	for jailName, jailContent := range sections {
+		if jailName == "" {
+			continue
+		}
+		jailFilePath := filepath.Join(jailDPath, jailName+".local")
+		if _, err := os.Stat(jailFilePath); err == nil {
+			config.DebugLog("Skipping migration for jail %s: .local file already exists", jailName)
+			continue
+		}
+		enabledSet := strings.Contains(jailContent, "enabled") || strings.Contains(jailContent, "Enabled")
+		if !enabledSet {
+			lines := strings.Split(jailContent, "\n")
+			modifiedContent := ""
+			for i, line := range lines {
+				modifiedContent += line + "\n"
+				if i == 0 && strings.HasPrefix(strings.TrimSpace(line), "[") && strings.HasSuffix(strings.TrimSpace(line), "]") {
+					modifiedContent += "enabled = false\n"
+				}
+			}
+			jailContent = modifiedContent
+		} else {
+			jailContent = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`).ReplaceAllString(jailContent, "enabled = false")
+		}
+		if err := os.WriteFile(jailFilePath, []byte(jailContent), 0644); err != nil {
+			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
+		}
+		config.DebugLog("Migrated jail %s to %s (enabled = false)", jailName, jailFilePath)
+		migratedCount++
+	}
+	if migratedCount > 0 {
+		newLocalContent := defaultContent
+
+		scanner := bufio.NewScanner(strings.NewReader(string(content)))
+		var inCommentedJail bool
+		var commentedJailContent strings.Builder
+		var commentedJailName string
+		for scanner.Scan() {
+			line := scanner.Text()
+			trimmed := strings.TrimSpace(line)
+
+			if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+				originalLine := strings.TrimSpace(line)
+				if strings.HasPrefix(originalLine, "#[") {
+					if inCommentedJail && commentedJailName != "" {
+						newLocalContent += commentedJailContent.String()
+					}
+					inCommentedJail = true
+					commentedJailContent.Reset()
+					commentedJailName = strings.Trim(trimmed, "[]")
+					if strings.HasPrefix(commentedJailName, "#") {
+						commentedJailName = strings.TrimSpace(strings.TrimPrefix(commentedJailName, "#"))
+					}
+					commentedJailContent.WriteString(line)
+					commentedJailContent.WriteString("\n")
+				} else {
+					if inCommentedJail && commentedJailName != "" {
+						newLocalContent += commentedJailContent.String()
+						inCommentedJail = false
+						commentedJailContent.Reset()
+					}
+				}
+			} else if inCommentedJail {
+				commentedJailContent.WriteString(line)
+				commentedJailContent.WriteString("\n")
+			}
+		}
+		if inCommentedJail && commentedJailName != "" {
+			newLocalContent += commentedJailContent.String()
+		}
+
+		if !strings.HasSuffix(newLocalContent, "\n") {
+			newLocalContent += "\n"
+		}
+		if err := os.WriteFile(localPath, []byte(newLocalContent), 0644); err != nil {
+			return fmt.Errorf("failed to rewrite jail.local: %w", err)
+		}
+		config.DebugLog("Migration completed: moved %d jails to jail.d/", migratedCount)
+	}
+	return nil
+}
+
+// Parses an existing jail configuration and returns all jail sections from the file.
+func parseJailSectionsUncommented(content string) (map[string]string, string, error) {
+	sections := make(map[string]string)
+	var defaultContent strings.Builder
+
+	ignoredSections := map[string]bool{
+		"DEFAULT":  true,
+		"INCLUDES": true,
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	var currentSection string
+	var currentContent strings.Builder
+	inDefault := false
+	sectionIsCommented := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			originalLine := strings.TrimSpace(line)
+			isCommented := strings.HasPrefix(originalLine, "#")
+
+			if currentSection != "" {
+				sectionContent := strings.TrimSpace(currentContent.String())
+				if inDefault {
+					defaultContent.WriteString(sectionContent)
+					if !strings.HasSuffix(sectionContent, "\n") {
+						defaultContent.WriteString("\n")
+					}
+				} else if !ignoredSections[currentSection] && !sectionIsCommented {
+					sections[currentSection] = sectionContent
+				}
+			}
+
+			if isCommented {
+				sectionName := strings.Trim(trimmed, "[]")
+				if strings.HasPrefix(sectionName, "#") {
+					sectionName = strings.TrimSpace(strings.TrimPrefix(sectionName, "#"))
+				}
+				currentSection = sectionName
+				sectionIsCommented = true
+			} else {
+				currentSection = strings.Trim(trimmed, "[]")
+				sectionIsCommented = false
+			}
+			currentContent.Reset()
+			currentContent.WriteString(line)
+			currentContent.WriteString("\n")
+			inDefault = (currentSection == "DEFAULT")
+		} else {
+			currentContent.WriteString(line)
+			currentContent.WriteString("\n")
+		}
+	}
+
+	if currentSection != "" {
+		sectionContent := strings.TrimSpace(currentContent.String())
+		if inDefault {
+			defaultContent.WriteString(sectionContent)
+		} else if !ignoredSections[currentSection] && !sectionIsCommented {
+			sections[currentSection] = sectionContent
+		}
+	}
+
+	return sections, defaultContent.String(), scanner.Err()
 }

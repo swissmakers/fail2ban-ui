@@ -15,12 +15,20 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// =========================================================================
+//  Database Connection
+// =========================================================================
+
 var (
 	db          *sql.DB
 	initOnce    sync.Once
 	initErr     error
 	defaultPath = "fail2ban-ui.db"
 )
+
+// =========================================================================
+//  Conversion Helpers
+// =========================================================================
 
 func boolToInt(b bool) int {
 	if b {
@@ -47,22 +55,21 @@ func intFromNull(ni sql.NullInt64) int {
 	return 0
 }
 
+// =========================================================================
+//  Types
+// =========================================================================
+
 type AppSettingsRecord struct {
-	// Basic app settings
-	Language      string
-	Port          int
-	Debug         bool
-	RestartNeeded bool
-	// Callback settings
-	CallbackURL    string
-	CallbackSecret string
-	// Alert settings
-	AlertCountriesJSON   string
-	EmailAlertsForBans   bool
-	EmailAlertsForUnbans bool
-	// Console output settings
-	ConsoleOutput bool
-	// SMTP settings
+	Language               string
+	Port                   int
+	Debug                  bool
+	RestartNeeded          bool
+	CallbackURL            string
+	CallbackSecret         string
+	AlertCountriesJSON     string
+	EmailAlertsForBans     bool
+	EmailAlertsForUnbans   bool
+	ConsoleOutput          bool
 	SMTPHost               string
 	SMTPPort               int
 	SMTPUsername           string
@@ -71,23 +78,21 @@ type AppSettingsRecord struct {
 	SMTPUseTLS             bool
 	SMTPInsecureSkipVerify bool
 	SMTPAuthMethod         string
-	// Fail2Ban DEFAULT settings
-	BantimeIncrement  bool
-	DefaultJailEnable bool
-	IgnoreIP          string // Stored as space-separated string, converted to array in AppSettings
-	Bantime           string
-	Findtime          string
-	MaxRetry          int
-	DestEmail         string
-	Banaction         string
-	BanactionAllports string
-	Chain             string
-	BantimeRndtime    string
-	// Advanced features
-	AdvancedActionsJSON string
-	GeoIPProvider       string
-	GeoIPDatabasePath   string
-	MaxLogLines         int
+	BantimeIncrement       bool
+	DefaultJailEnable      bool
+	IgnoreIP               string
+	Bantime                string
+	Findtime               string
+	MaxRetry               int
+	DestEmail              string
+	Banaction              string
+	BanactionAllports      string
+	Chain                  string
+	BantimeRndtime         string
+	AdvancedActionsJSON    string
+	GeoIPProvider          string
+	GeoIPDatabasePath      string
+	MaxLogLines            int
 }
 
 type ServerRecord struct {
@@ -111,7 +116,6 @@ type ServerRecord struct {
 	UpdatedAt    time.Time
 }
 
-// BanEventRecord represents a single ban or unban event stored in the internal database.
 type BanEventRecord struct {
 	ID         int64     `json:"id"`
 	ServerID   string    `json:"serverId"`
@@ -128,7 +132,6 @@ type BanEventRecord struct {
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
-// RecurringIPStat represents aggregation info for repeatedly banned IPs.
 type RecurringIPStat struct {
 	IP       string    `json:"ip"`
 	Country  string    `json:"country"`
@@ -148,7 +151,7 @@ type PermanentBlockRecord struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// Init initializes the internal storage. Safe to call multiple times.
+// Initialize the database.
 func Init(dbPath string) error {
 	initOnce.Do(func() {
 		if dbPath == "" {
@@ -159,9 +162,7 @@ func Init(dbPath string) error {
 			return
 		}
 
-		// Ensure .ssh directory exists (for SSH key storage)
 		if err := ensureSSHDirectory(); err != nil {
-			// Log but don't fail - .ssh directory creation is not critical
 			log.Printf("Warning: failed to ensure .ssh directory: %v", err)
 		}
 
@@ -182,7 +183,7 @@ func Init(dbPath string) error {
 	return initErr
 }
 
-// Close closes the underlying database if it has been initialised.
+// Close the database.
 func Close() error {
 	if db == nil {
 		return nil
@@ -190,6 +191,7 @@ func Close() error {
 	return db.Close()
 }
 
+// Get the app settings.
 func GetAppSettings(ctx context.Context) (AppSettingsRecord, bool, error) {
 	if db == nil {
 		return AppSettingsRecord{}, false, errors.New("storage not initialised")
@@ -215,19 +217,15 @@ WHERE id = 1`)
 	}
 
 	rec := AppSettingsRecord{
-		// Basic app settings
-		Language:      stringFromNull(lang),
-		Port:          intFromNull(port),
-		Debug:         intToBool(intFromNull(debug)),
-		RestartNeeded: intToBool(intFromNull(restartNeeded)),
-		// Callback settings
-		CallbackURL:    stringFromNull(callback),
-		CallbackSecret: stringFromNull(callbackSecret),
-		// Alert settings
-		AlertCountriesJSON:   stringFromNull(alerts),
-		EmailAlertsForBans:   intToBool(intFromNull(emailAlertsForBans)),
-		EmailAlertsForUnbans: intToBool(intFromNull(emailAlertsForUnbans)),
-		// SMTP settings
+		Language:               stringFromNull(lang),
+		Port:                   intFromNull(port),
+		Debug:                  intToBool(intFromNull(debug)),
+		RestartNeeded:          intToBool(intFromNull(restartNeeded)),
+		CallbackURL:            stringFromNull(callback),
+		CallbackSecret:         stringFromNull(callbackSecret),
+		AlertCountriesJSON:     stringFromNull(alerts),
+		EmailAlertsForBans:     intToBool(intFromNull(emailAlertsForBans)),
+		EmailAlertsForUnbans:   intToBool(intFromNull(emailAlertsForUnbans)),
 		SMTPHost:               stringFromNull(smtpHost),
 		SMTPPort:               intFromNull(smtpPort),
 		SMTPUsername:           stringFromNull(smtpUser),
@@ -236,25 +234,22 @@ WHERE id = 1`)
 		SMTPUseTLS:             intToBool(intFromNull(smtpTLS)),
 		SMTPInsecureSkipVerify: intToBool(intFromNull(smtpInsecureSkipVerify)),
 		SMTPAuthMethod:         stringFromNull(smtpAuthMethod),
-		// Fail2Ban DEFAULT settings
-		BantimeIncrement:  intToBool(intFromNull(bantimeInc)),
-		DefaultJailEnable: intToBool(intFromNull(defaultJailEn)),
-		IgnoreIP:          stringFromNull(ignoreIP),
-		Bantime:           stringFromNull(bantime),
-		Findtime:          stringFromNull(findtime),
-		MaxRetry:          intFromNull(maxretry),
-		DestEmail:         stringFromNull(destemail),
-		Banaction:         stringFromNull(banaction),
-		BanactionAllports: stringFromNull(banactionAllports),
-		Chain:             stringFromNull(chain),
-		BantimeRndtime:    stringFromNull(bantimeRndtime),
-		// Advanced features
-		AdvancedActionsJSON: stringFromNull(advancedActions),
-		GeoIPProvider:       stringFromNull(geoipProvider),
-		GeoIPDatabasePath:   stringFromNull(geoipDatabasePath),
-		MaxLogLines:         intFromNull(maxLogLines),
-		// Console output settings
-		ConsoleOutput: intToBool(intFromNull(consoleOutput)),
+		BantimeIncrement:       intToBool(intFromNull(bantimeInc)),
+		DefaultJailEnable:      intToBool(intFromNull(defaultJailEn)),
+		IgnoreIP:               stringFromNull(ignoreIP),
+		Bantime:                stringFromNull(bantime),
+		Findtime:               stringFromNull(findtime),
+		MaxRetry:               intFromNull(maxretry),
+		DestEmail:              stringFromNull(destemail),
+		Banaction:              stringFromNull(banaction),
+		BanactionAllports:      stringFromNull(banactionAllports),
+		Chain:                  stringFromNull(chain),
+		BantimeRndtime:         stringFromNull(bantimeRndtime),
+		AdvancedActionsJSON:    stringFromNull(advancedActions),
+		GeoIPProvider:          stringFromNull(geoipProvider),
+		GeoIPDatabasePath:      stringFromNull(geoipDatabasePath),
+		MaxLogLines:            intFromNull(maxLogLines),
+		ConsoleOutput:          intToBool(intFromNull(consoleOutput)),
 	}
 
 	return rec, true, nil
@@ -338,6 +333,10 @@ INSERT INTO app_settings (
 		rec.BantimeRndtime)
 	return err
 }
+
+// =========================================================================
+//  Servers
+// =========================================================================
 
 func ListServers(ctx context.Context) ([]ServerRecord, error) {
 	if db == nil {
@@ -493,7 +492,11 @@ func DeleteServer(ctx context.Context, id string) error {
 	return err
 }
 
-// RecordBanEvent stores a ban event in the database.
+// =========================================================================
+//  Ban Events Records
+// =========================================================================
+
+// Stores a ban/unban event into the database.
 func RecordBanEvent(ctx context.Context, record BanEventRecord) error {
 	if db == nil {
 		return errors.New("storage not initialised")
@@ -509,8 +512,7 @@ func RecordBanEvent(ctx context.Context, record BanEventRecord) error {
 	if record.OccurredAt.IsZero() {
 		record.OccurredAt = now
 	}
-
-	// Default to 'ban' if event type is not set
+	// If the event type is not set, we set it to "ban" by default.
 	eventType := record.EventType
 	if eventType == "" {
 		eventType = "ban"
@@ -544,7 +546,7 @@ INSERT INTO ban_events (
 	return nil
 }
 
-// ListBanEvents returns ban events ordered by creation date descending.
+// Returns ban events ordered by creation date descending.
 func ListBanEvents(ctx context.Context, serverID string, limit int, since time.Time) ([]BanEventRecord, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
@@ -599,7 +601,6 @@ WHERE 1=1`
 		); err != nil {
 			return nil, err
 		}
-		// Default to 'ban' if event_type is NULL (for backward compatibility)
 		if eventType.Valid {
 			rec.EventType = eventType.String
 		} else {
@@ -618,7 +619,7 @@ const (
 	MaxBanEventsOffset = 1000
 )
 
-// ListBanEventsFiltered returns ban events with optional search and country filter, ordered by occurred_at DESC.
+// Returns ban events with optional search and country filter, ordered by occurred_at DESC.
 // search is applied as LIKE %search% on ip, jail, server_name, hostname, country.
 // limit is capped at MaxBanEventsLimit; offset is capped at MaxBanEventsOffset.
 func ListBanEventsFiltered(ctx context.Context, serverID string, limit, offset int, since time.Time, search, country string) ([]BanEventRecord, error) {
@@ -703,7 +704,7 @@ WHERE 1=1`
 	return results, rows.Err()
 }
 
-// CountBanEventsFiltered returns the total count of ban events matching the same filters as ListBanEventsFiltered.
+// Returns the total count of ban events matching the same filters as ListBanEventsFiltered.
 func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Time, search, country string) (int64, error) {
 	if db == nil {
 		return 0, errors.New("storage not initialised")
@@ -744,7 +745,7 @@ func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Tim
 	return total, nil
 }
 
-// CountBanEventsByServer returns simple aggregation per server.
+// Returns simple aggregation per server.
 func CountBanEventsByServer(ctx context.Context, since time.Time) (map[string]int64, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
@@ -782,7 +783,7 @@ WHERE 1=1`
 	return result, rows.Err()
 }
 
-// CountBanEvents returns total number of ban events optionally filtered by time and server.
+// Returns total number of ban events optionally filtered by time and server.
 func CountBanEvents(ctx context.Context, since time.Time, serverID string) (int64, error) {
 	if db == nil {
 		return 0, errors.New("storage not initialised")
@@ -811,7 +812,7 @@ WHERE 1=1`
 	return total, nil
 }
 
-// CountBanEventsByIP returns total number of ban events for a specific IP and optional server.
+// Returns total number of ban events for a specific IP and optional server.
 func CountBanEventsByIP(ctx context.Context, ip, serverID string) (int64, error) {
 	if db == nil {
 		return 0, errors.New("storage not initialised")
@@ -838,7 +839,7 @@ WHERE ip = ? AND (event_type = 'ban' OR event_type IS NULL)`
 	return total, nil
 }
 
-// CountBanEventsByCountry returns aggregation per country code, optionally filtered by server.
+// Returns aggregation per country code, optionally filtered by server.
 func CountBanEventsByCountry(ctx context.Context, since time.Time, serverID string) (map[string]int64, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
@@ -881,7 +882,11 @@ WHERE 1=1`
 	return result, rows.Err()
 }
 
-// ListRecurringIPStats returns IPs that have been banned at least minCount times, optionally filtered by server.
+// =========================================================================
+//  Recurring IP Statistics
+// =========================================================================
+
+// Returns IPs that have been banned at least minCount times, optionally filtered by server.
 func ListRecurringIPStats(ctx context.Context, since time.Time, minCount, limit int, serverID string) ([]RecurringIPStat, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
@@ -927,20 +932,14 @@ LIMIT ?`
 	var results []RecurringIPStat
 	for rows.Next() {
 		var stat RecurringIPStat
-		// First, scan as string to see what format SQLite returns
-		// Then parse it properly
 		var lastSeenStr sql.NullString
 		if err := rows.Scan(&stat.IP, &stat.Country, &stat.Count, &lastSeenStr); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 
 		if lastSeenStr.Valid && lastSeenStr.String != "" {
-			// Try to parse the datetime string
-			// SQLite stores DATETIME as TEXT, format depends on how it was inserted
-			// The modernc.org/sqlite driver returns MAX(occurred_at) in format:
-			// "2006-01-02 15:04:05.999999999 -0700 MST" (e.g., "2025-11-22 12:17:24.697430041 +0000 UTC")
 			formats := []string{
-				"2006-01-02 15:04:05.999999999 -0700 MST", // Format returned by MAX() in SQLite
+				"2006-01-02 15:04:05.999999999 -0700 MST",
 				time.RFC3339Nano,
 				time.RFC3339,
 				"2006-01-02 15:04:05.999999999+00:00",
@@ -952,20 +951,18 @@ LIMIT ?`
 				"2006-01-02T15:04:05.999999999",
 				"2006-01-02T15:04:05",
 			}
-			parsed := time.Time{} // zero time
+			parsed := time.Time{}
 			for _, format := range formats {
 				if t, parseErr := time.Parse(format, lastSeenStr.String); parseErr == nil {
 					parsed = t.UTC()
 					break
 				}
 			}
-			// If still zero, log the actual string for debugging
 			if parsed.IsZero() {
 				log.Printf("ERROR: Could not parse lastSeen datetime '%s' (length: %d) for IP %s. All format attempts failed.", lastSeenStr.String, len(lastSeenStr.String), stat.IP)
 			}
 			stat.LastSeen = parsed
 		} else {
-			// Log when lastSeen is NULL or empty
 			log.Printf("WARNING: lastSeen is NULL or empty for IP %s", stat.IP)
 		}
 		results = append(results, stat)
@@ -973,6 +970,10 @@ LIMIT ?`
 
 	return results, rows.Err()
 }
+
+// =========================================================================
+//  Schema Management
+// =========================================================================
 
 func ensureSchema(ctx context.Context) error {
 	if db == nil {
@@ -1080,25 +1081,11 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 	if _, err := db.ExecContext(ctx, createTable); err != nil {
 		return err
 	}
-
-	// NOTE: Database migrations for feature releases
-	// For this version, we start with a fresh schema. Future feature releases
-	// that require database schema changes should add migration logic here.
-	// Example migration pattern:
-	//   if _, err := db.ExecContext(ctx, `ALTER TABLE table_name ADD COLUMN new_column TYPE DEFAULT value`); err != nil {
-	//     if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-	//       return err
-	//     }
-	//   }
-
-	// Migration: Add console_output column if it doesn't exist
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN console_output INTEGER DEFAULT 0`); err != nil {
 		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
-
-	// Migration: Add new SMTP columns if they don't exist
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN smtp_insecure_skip_verify INTEGER DEFAULT 0`); err != nil {
 		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
@@ -1119,8 +1106,6 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 			return err
 		}
 	}
-	_ = strings.Contains // Keep strings import for migration example above
-
 	return nil
 }
 
@@ -1135,16 +1120,12 @@ func ensureDirectory(path string) error {
 	return os.MkdirAll(dir, 0o755)
 }
 
-// ensureSSHDirectory ensures the .ssh directory exists for SSH key storage.
-// In containers, this is /config/.ssh, on the host it's ~/.ssh
+// Ensures .ssh exists for SSH key storage (/config/.ssh in container, ~/.ssh on host).
 func ensureSSHDirectory() error {
 	var sshDir string
-	// Check if running inside a container
 	if _, container := os.LookupEnv("CONTAINER"); container {
-		// In container, use /config/.ssh
 		sshDir = "/config/.ssh"
 	} else {
-		// On host, use ~/.ssh
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("failed to get user home directory: %w", err)
@@ -1152,7 +1133,6 @@ func ensureSSHDirectory() error {
 		sshDir = filepath.Join(home, ".ssh")
 	}
 
-	// Create directory with proper permissions (0700 for .ssh)
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create .ssh directory at %s: %w", sshDir, err)
 	}
@@ -1160,7 +1140,11 @@ func ensureSSHDirectory() error {
 	return nil
 }
 
-// UpsertPermanentBlock records or updates a permanent block entry.
+// =========================================================================
+//  Permanent Blocks Records
+// =========================================================================
+
+// Stores or updates a permanent block entry.
 func UpsertPermanentBlock(ctx context.Context, rec PermanentBlockRecord) error {
 	if db == nil {
 		return errors.New("storage not initialised")
@@ -1200,7 +1184,7 @@ ON CONFLICT(ip, integration) DO UPDATE SET
 	return err
 }
 
-// GetPermanentBlock retrieves a permanent block entry.
+// Returns a permanent block entry.
 func GetPermanentBlock(ctx context.Context, ip, integration string) (PermanentBlockRecord, bool, error) {
 	if db == nil {
 		return PermanentBlockRecord{}, false, errors.New("storage not initialised")
@@ -1235,7 +1219,7 @@ WHERE ip = ? AND integration = ?`, ip, integration)
 	return rec, true, nil
 }
 
-// ListPermanentBlocks returns recent permanent block entries.
+// Returns recent permanent block entries.
 func ListPermanentBlocks(ctx context.Context, limit int) ([]PermanentBlockRecord, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
@@ -1276,7 +1260,7 @@ LIMIT ?`, limit)
 	return records, rows.Err()
 }
 
-// IsPermanentBlockActive returns true when IP is currently blocked by integration.
+// Returns true when IP is currently blocked by integration.
 func IsPermanentBlockActive(ctx context.Context, ip, integration string) (bool, error) {
 	rec, found, err := GetPermanentBlock(ctx, ip, integration)
 	if err != nil || !found {

@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -53,7 +53,10 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/version"
 )
 
-// wsHub is the global WebSocket hub instance
+// =========================================================================
+//  Types and Variables
+// =========================================================================
+
 var wsHub *Hub
 
 // SetWebSocketHub sets the global WebSocket hub instance
@@ -61,15 +64,17 @@ func SetWebSocketHub(hub *Hub) {
 	wsHub = hub
 }
 
-// SummaryResponse is what we return from /api/summary
 type SummaryResponse struct {
 	Jails            []fail2ban.JailInfo `json:"jails"`
 	JailLocalWarning bool                `json:"jailLocalWarning,omitempty"`
 }
-
 type emailDetail struct {
 	Label string
 	Value string
+}
+
+type githubReleaseResponse struct {
+	TagName string `json:"tag_name"`
 }
 
 var (
@@ -93,6 +98,12 @@ var (
 	localeCacheLock sync.RWMutex
 )
 
+// =========================================================================
+//  Request Helpers
+// =========================================================================
+
+// Resolves the Fail2ban connector for the current request.
+// Uses the "serverId" query param, "X-F2B-Server" header, or the default server.
 func resolveConnector(c *gin.Context) (fail2ban.Connector, error) {
 	serverID := c.Query("serverId")
 	if serverID == "" {
@@ -105,6 +116,7 @@ func resolveConnector(c *gin.Context) (fail2ban.Connector, error) {
 	return manager.DefaultConnector()
 }
 
+// Resolves a server by ID, hostname, or falls back to default.
 func resolveServerForNotification(serverID, hostname string) (config.Fail2banServer, error) {
 	if serverID != "" {
 		if srv, ok := config.GetServerByID(serverID); ok {
@@ -133,8 +145,11 @@ func resolveServerForNotification(serverID, hostname string) (config.Fail2banSer
 	return srv, nil
 }
 
-// SummaryHandler returns a JSON summary of all jails, including
-// number of banned IPs, how many are new in the last hour, etc.
+// =========================================================================
+//  Dashboard
+// =========================================================================
+
+// Returns a JSON summary of all jails for the selected server.
 func SummaryHandler(c *gin.Context) {
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -152,8 +167,7 @@ func SummaryHandler(c *gin.Context) {
 		Jails: jailInfos,
 	}
 
-	// Check jail.local integrity on every summary request so the dashboard
-	// can display a persistent warning banner when the file is not managed by us.
+	// Checks the jail.local integrity on every summary request to warn the user if not managed by Fail2ban-UI.
 	if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil {
 		if exists && !hasUI {
 			resp.JailLocalWarning = true
@@ -170,33 +184,14 @@ func SummaryHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// UnbanIPHandler unbans a given IP in a specific jail.
-func UnbanIPHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("UnbanIPHandler called (handlers.go)") // entry point
-	jail := c.Param("jail")
-	ip := c.Param("ip")
+// =========================================================================
+//  Ban / Unban Actions
+// =========================================================================
 
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := conn.UnbanIP(c.Request.Context(), jail, ip); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	fmt.Println(ip + " from jail " + jail + " unbanned successfully.")
-	c.JSON(http.StatusOK, gin.H{
-		"message": "IP unbanned successfully",
-	})
-}
-
-// BanIPHandler bans a given IP in a specific jail.
+// Bans a given IP in a specific jail.
 func BanIPHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("BanIPHandler called (handlers.go)") // entry point
+	config.DebugLog("BanIPHandler called (handlers.go)")
 	jail := c.Param("jail")
 	ip := c.Param("ip")
 
@@ -216,14 +211,35 @@ func BanIPHandler(c *gin.Context) {
 	})
 }
 
-// BanNotificationHandler processes incoming ban notifications from Fail2Ban.
+// Unbans a given IP from a specific jail.
+func UnbanIPHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("UnbanIPHandler called (handlers.go)")
+	jail := c.Param("jail")
+	ip := c.Param("ip")
+
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := conn.UnbanIP(c.Request.Context(), jail, ip); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	fmt.Println(ip + " from jail " + jail + " unbanned successfully.")
+	c.JSON(http.StatusOK, gin.H{
+		"message": "IP unbanned successfully",
+	})
+}
+
+// Processes incoming ban callbacks from Fail2Ban action scripts.
 func BanNotificationHandler(c *gin.Context) {
-	// Validate callback secret
 	settings := config.GetSettings()
 	providedSecret := c.GetHeader("X-Callback-Secret")
 	expectedSecret := settings.CallbackSecret
 
-	// Use constant-time comparison to prevent timing attacks
 	if expectedSecret == "" {
 		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
@@ -236,7 +252,6 @@ func BanNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	// Constant-time comparison
 	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
 		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
@@ -249,11 +264,11 @@ func BanNotificationHandler(c *gin.Context) {
 		Jail     string `json:"jail" binding:"required"`
 		Hostname string `json:"hostname"`
 		Failures string `json:"failures"`
-		Whois    string `json:"whois"` // Optional for backward compatibility
+		Whois    string `json:"whois"`
 		Logs     string `json:"logs"`
 	}
 
-	// **DEBUGGING: Log Raw JSON Body**
+	// Logs the raw JSON body of the request
 	body, _ := io.ReadAll(c.Request.Body)
 	log.Printf("----------------------------------------------------")
 	log.Printf("Request Content-Length: %d", c.Request.ContentLength)
@@ -264,90 +279,12 @@ func BanNotificationHandler(c *gin.Context) {
 
 	config.DebugLog("📩 Incoming Ban Notification: %s\n", string(body))
 
-	// Rebind body so Gin can parse it again (important!)
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	log.Printf("Request Content-Length: %d", c.Request.ContentLength)
 	log.Printf("Request Headers: %v", c.Request.Header)
 	log.Printf("Request Headers: %v", c.Request.Body)
 
-	// Parse JSON request body
-	if err := c.ShouldBindJSON(&request); err != nil {
-		var verr validator.ValidationErrors
-		if errors.As(err, &verr) {
-			for _, fe := range verr {
-				log.Printf("❌ Validierungsfehler: Feld '%s' verletzt Regel '%s'", fe.Field(), fe.ActualTag())
-			}
-		} else {
-			log.Printf("❌ JSON-Parsing Fehler: %v", err)
-		}
-		log.Printf("Raw JSON: %s", string(body))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
-		return
-	}
-
-	// **DEBUGGING: Log Parsed Request**
-	log.Printf("✅ Parsed Ban Request - IP: %s, Jail: %s, Hostname: %s, Failures: %s",
-		request.IP, request.Jail, request.Hostname, request.Failures)
-
-	server, err := resolveServerForNotification(request.ServerID, request.Hostname)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Handle the Fail2Ban notification
-	if err := HandleBanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, request.Failures, request.Whois, request.Logs); err != nil {
-		log.Printf("❌ Failed to process ban notification: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process ban notification: " + err.Error()})
-		return
-	}
-
-	// Respond with success
-	c.JSON(http.StatusOK, gin.H{"message": "Ban notification processed successfully"})
-}
-
-// UnbanNotificationHandler processes incoming unban notifications from Fail2Ban.
-func UnbanNotificationHandler(c *gin.Context) {
-	// Validate callback secret
-	settings := config.GetSettings()
-	providedSecret := c.GetHeader("X-Callback-Secret")
-	expectedSecret := settings.CallbackSecret
-
-	// Use constant-time comparison to prevent timing attacks
-	if expectedSecret == "" {
-		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
-		return
-	}
-
-	if providedSecret == "" {
-		log.Printf("⚠️ Missing X-Callback-Secret header in request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing X-Callback-Secret header"})
-		return
-	}
-
-	// Constant-time comparison
-	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
-		return
-	}
-
-	var request struct {
-		ServerID string `json:"serverId"`
-		IP       string `json:"ip" binding:"required"`
-		Jail     string `json:"jail" binding:"required"`
-		Hostname string `json:"hostname"`
-	}
-
-	body, _ := io.ReadAll(c.Request.Body)
-	config.DebugLog("📩 Incoming Unban Notification: %s\n", string(body))
-
-	// Rebind body so Gin can parse it again
-	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-	// Parse JSON request body
 	if err := c.ShouldBindJSON(&request); err != nil {
 		var verr validator.ValidationErrors
 		if errors.As(err, &verr) {
@@ -362,7 +299,76 @@ func UnbanNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	log.Printf("✅ Parsed Unban Request - IP: %s, Jail: %s, Hostname: %s",
+	// Logs the parsed request
+	log.Printf("✅ Parsed ban request - IP: %s, Jail: %s, Hostname: %s, Failures: %s",
+		request.IP, request.Jail, request.Hostname, request.Failures)
+
+	server, err := resolveServerForNotification(request.ServerID, request.Hostname)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := HandleBanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, request.Failures, request.Whois, request.Logs); err != nil {
+		log.Printf("❌ Failed to process ban notification: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process ban notification: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Ban notification processed successfully"})
+}
+
+// Processes incoming unban callbacks from Fail2Ban action scripts.
+func UnbanNotificationHandler(c *gin.Context) {
+	settings := config.GetSettings()
+	providedSecret := c.GetHeader("X-Callback-Secret")
+	expectedSecret := settings.CallbackSecret
+
+	if expectedSecret == "" {
+		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
+		return
+	}
+
+	if providedSecret == "" {
+		log.Printf("⚠️ Missing X-Callback-Secret header in request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing X-Callback-Secret header"})
+		return
+	}
+
+	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
+		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
+		return
+	}
+
+	var request struct {
+		ServerID string `json:"serverId"`
+		IP       string `json:"ip" binding:"required"`
+		Jail     string `json:"jail" binding:"required"`
+		Hostname string `json:"hostname"`
+	}
+
+	body, _ := io.ReadAll(c.Request.Body)
+	config.DebugLog("📩 Incoming unban notification: %s\n", string(body))
+
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var verr validator.ValidationErrors
+		if errors.As(err, &verr) {
+			for _, fe := range verr {
+				log.Printf("❌ Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
+			}
+		} else {
+			log.Printf("❌ JSON parsing error: %v", err)
+		}
+		log.Printf("Raw JSON: %s", string(body))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	log.Printf("✅ Parsed unban request - IP: %s, Jail: %s, Hostname: %s",
 		request.IP, request.Jail, request.Hostname)
 
 	server, err := resolveServerForNotification(request.ServerID, request.Hostname)
@@ -371,20 +377,20 @@ func UnbanNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	// Handle the Fail2Ban notification
 	if err := HandleUnbanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, "", ""); err != nil {
 		log.Printf("❌ Failed to process unban notification: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process unban notification: " + err.Error()})
 		return
 	}
 
-	// Respond with success
 	c.JSON(http.StatusOK, gin.H{"message": "Unban notification processed successfully"})
 }
 
-// ListBanEventsHandler returns stored ban events from the internal database with optional search and pagination.
-// Query params: serverId, limit (default 50, max 50), offset (default 0, max 1000), since, search, country.
-// When offset=0, response includes total (matching count). Response includes hasMore when more results exist.
+// =========================================================================
+//  Ban Events Records
+// =========================================================================
+
+// Returns paginated, filterable ban/unban events.
 func ListBanEventsHandler(c *gin.Context) {
 	serverID := c.Query("serverId")
 	limit := storage.MaxBanEventsLimit
@@ -430,7 +436,7 @@ func ListBanEventsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// BanStatisticsHandler returns aggregated ban counts per server.
+// Returns aggregated ban event counts per server.
 func BanStatisticsHandler(c *gin.Context) {
 	var since time.Time
 	if sinceStr := c.Query("since"); sinceStr != "" {
@@ -448,7 +454,7 @@ func BanStatisticsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"counts": stats})
 }
 
-// BanInsightsHandler returns aggregate stats for countries and recurring IPs.
+// Returns aggregate stats for countries and recurring IPs for ban events.
 func BanInsightsHandler(c *gin.Context) {
 	var since time.Time
 	if sinceStr := c.Query("since"); sinceStr != "" {
@@ -549,13 +555,17 @@ func BanInsightsHandler(c *gin.Context) {
 	})
 }
 
-// ListServersHandler returns configured Fail2ban servers.
+// =========================================================================
+//  Fail2ban Servers Management
+// =========================================================================
+
+// Returns all configured Fail2ban servers.
 func ListServersHandler(c *gin.Context) {
 	servers := config.ListServers()
 	c.JSON(http.StatusOK, gin.H{"servers": servers})
 }
 
-// UpsertServerHandler creates or updates a Fail2ban server configuration.
+// Creates or updates a Fail2ban server configuration.
 func UpsertServerHandler(c *gin.Context) {
 	var req config.Fail2banServer
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -599,19 +609,13 @@ func UpsertServerHandler(c *gin.Context) {
 		return
 	}
 
-	// Only update action files if:
-	// 1. Server was just enabled (transition from disabled to enabled)
-	// 2. Server is a remote server (SSH or Agent)
-	// Note: ReloadFromSettings already calls ensureAction when creating connectors,
-	// but we need to update if the server was just enabled to ensure it has the latest callback URL
 	if justEnabled && (server.Type == "ssh" || server.Type == "agent") {
 		if err := fail2ban.GetManager().UpdateActionFileForServer(c.Request.Context(), server.ID); err != nil {
 			config.DebugLog("Warning: failed to update action file for server %s: %v", server.Name, err)
-			// Don't fail the request, just log the warning
 		}
 	}
 
-	// Ensure jail.local structure is properly initialized for newly enabled/added servers
+	// Ensures the jail.local structure is properly initialized for newly enabled/added servers
 	var jailLocalWarning bool
 	if justEnabled || !wasEnabled {
 		conn, err := fail2ban.GetManager().Connector(server.ID)
@@ -626,14 +630,13 @@ func UpsertServerHandler(c *gin.Context) {
 				config.DebugLog("Successfully ensured jail.local structure for server %s", server.Name)
 			}
 
-			// Check integrity AFTER ensuring structure so fresh servers don't
-			// trigger a false-positive warning.
+			// Checks the integrity AFTER ensuring structure so fresh servers don't trigger a false-positive warning.
 			if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil && exists && !hasUI {
 				jailLocalWarning = true
 				log.Printf("⚠️ Server %s: jail.local is not managed by Fail2ban-UI. Please migrate your jail.local manually (see documentation).", server.Name)
 			}
 
-			// If the server was just enabled, try to restart fail2ban and perform a basic health check.
+			// Tries to restart Fail2ban and performs a basic health check after the server was enabled
 			if justEnabled {
 				if err := conn.Restart(c.Request.Context()); err != nil {
 					msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
@@ -661,7 +664,7 @@ func UpsertServerHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// DeleteServerHandler removes a server configuration.
+// Removes a server configuration by ID.
 func DeleteServerHandler(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -679,7 +682,7 @@ func DeleteServerHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "server deleted"})
 }
 
-// SetDefaultServerHandler marks a server as default.
+// Marks a server as the default.
 func SetDefaultServerHandler(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -698,15 +701,14 @@ func SetDefaultServerHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"server": server})
 }
 
-// ListSSHKeysHandler returns SSH keys available on the UI host.
+// Returns available SSH private keys from the host or container.
 func ListSSHKeysHandler(c *gin.Context) {
 	var dir string
-	// Check if running inside a container
 	if _, container := os.LookupEnv("CONTAINER"); container {
-		// In container, check /config/.ssh
+		// In container, we look for SSH keys in the /config/.ssh directory
 		dir = "/config/.ssh"
 	} else {
-		// On host, check ~/.ssh
+		// On host, we look for SSH keys in the user's home directory
 		home, err := os.UserHomeDir()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -731,8 +733,6 @@ func ListSSHKeysHandler(c *gin.Context) {
 			continue
 		}
 		name := entry.Name()
-		// Only include private keys, not public keys (.pub files)
-		// SSH requires the private key file, not the public key
 		if (strings.HasPrefix(name, "id_") && !strings.HasSuffix(name, ".pub")) ||
 			strings.HasSuffix(name, ".pem") ||
 			(strings.HasSuffix(name, ".key") && !strings.HasSuffix(name, ".pub")) {
@@ -747,7 +747,7 @@ func ListSSHKeysHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"keys": keys})
 }
 
-// TestServerHandler verifies connectivity to a configured Fail2ban server.
+// Verifies connectivity to a configured Fail2ban server by ID.
 func TestServerHandler(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -789,8 +789,8 @@ func TestServerHandler(c *gin.Context) {
 		return
 	}
 
-	// Check jail.local integrity: if it exists but is not managed by fail2ban-ui, warn the user.
-	// If the file was removed (user finished migration), initialize a fresh managed file.
+	// Checks the jail.local integrity: if it exists but is not managed by Fail2ban-UI, we warn the user.
+	// If the file was removed (e.g. after finished migration or just deleted), we initialize a fresh managed file.
 	resp := gin.H{"messageKey": "servers.actions.test_success"}
 	if exists, hasUI, err := conn.CheckJailLocalIntegrity(ctx); err == nil {
 		if exists && !hasUI {
@@ -806,15 +806,18 @@ func TestServerHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// HandleBanNotification processes Fail2Ban notifications, checks geo-location, stores the event, and sends alerts.
-func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
-	// Load settings to get alert countries and GeoIP provider
-	settings := config.GetSettings()
+// =========================================================================
+//  Notification Processing (Internal)
+// =========================================================================
 
-	// Perform whois lookup if not provided (backward compatibility)
+// Records a ban event, broadcasts it via WebSocket,
+// evaluates advanced actions, and sends an email alert if enabled.
+func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
+	// Loads the settings to get alert countries and GeoIP provider from the database
+	settings := config.GetSettings()
 	var whoisData string
 	var err error
-	if whois == "" || whois == "missing whois program" {
+	if whois == "" {
 		log.Printf("Performing whois lookup for IP %s", ip)
 		whoisData, err = lookupWhois(ip)
 		if err != nil {
@@ -826,14 +829,13 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		whoisData = whois
 	}
 
-	// Filter logs to show relevant lines
+	// Filters the logs for the email alert to show relevant lines
 	filteredLogs := filterRelevantLogs(logs, ip, settings.MaxLogLines)
 
-	// Lookup the country for the given IP using configured provider
+	// Looks up the country for the given IP using the configured GeoIP provider
 	country, err := lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
 	if err != nil {
 		log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
-		// Try to extract country from whois as fallback
 		if whoisData != "" {
 			country = extractCountryFromWhois(whoisData)
 			if country != "" {
@@ -862,14 +864,13 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		log.Printf("⚠️ Failed to record ban event: %v", err)
 	}
 
-	// Broadcast ban event to WebSocket clients
+	// Broadcasts the ban event to WebSocket clients
 	if wsHub != nil {
 		wsHub.BroadcastBanEvent(event)
 	}
 
 	evaluateAdvancedActions(ctx, settings, server, ip)
 
-	// Check if country is in alert list
 	displayCountry := country
 	if displayCountry == "" {
 		displayCountry = "UNKNOWN"
@@ -880,28 +881,24 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		return nil
 	}
 
-	// Check if email alerts for bans are enabled
 	if !settings.EmailAlertsForBans {
 		log.Printf("❌ Email alerts for bans are disabled. No alert sent for IP %s", ip)
 		return nil
 	}
 
-	// Send email notification (best-effort; the ban event is already recorded)
 	if err := sendBanAlert(ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
 		log.Printf("❌ Failed to send ban alert email: %v", err)
 	}
 	return nil
 }
 
-// HandleUnbanNotification processes Fail2Ban unban notifications, stores the event, and sends alerts.
+// Records an unban event, broadcasts it via WebSocket, and sends an email alert if enabled.
 func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string) error {
-	// Load settings to get alert countries and GeoIP provider
+	// Loads the settings to get alert countries and GeoIP provider from the database
 	settings := config.GetSettings()
-
-	// Perform whois lookup if not provided
 	var whoisData string
 	var err error
-	if whois == "" || whois == "missing whois program" {
+	if whois == "" {
 		log.Printf("Performing whois lookup for IP %s", ip)
 		whoisData, err = lookupWhois(ip)
 		if err != nil {
@@ -912,13 +909,10 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		log.Printf("Using provided whois data for IP %s", ip)
 		whoisData = whois
 	}
-
-	// Lookup the country for the given IP if not provided
 	if country == "" {
 		country, err = lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
 		if err != nil {
 			log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
-			// Try to extract country from whois as fallback
 			if whoisData != "" {
 				country = extractCountryFromWhois(whoisData)
 				if country != "" {
@@ -948,48 +942,49 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		log.Printf("⚠️ Failed to record unban event: %v", err)
 	}
 
-	// Broadcast unban event to WebSocket clients
+	// Broadcasts the unban event to WebSocket clients
 	if wsHub != nil {
 		wsHub.BroadcastUnbanEvent(event)
 	}
 
-	// Check if email alerts for unbans are enabled
 	if !settings.EmailAlertsForUnbans {
-		log.Printf("❌ Email alerts for unbans are disabled. No alert sent for IP %s", ip)
+		log.Printf("🔕 Email alerts for unbans are disabled. No alert sent for IP %s", ip)
 		return nil
 	}
 
-	// Check if country is in alert list
 	displayCountry := country
 	if displayCountry == "" {
 		displayCountry = "UNKNOWN"
 	}
 
 	if !shouldAlertForCountry(country, settings.AlertCountries) {
-		log.Printf("❌ IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
+		log.Printf("🔕 IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
 		return nil
 	}
 
-	// Send email notification (best-effort; the unban event is already recorded)
+	// Sends an unban email notification (if enabled)
 	if err := sendUnbanAlert(ip, jail, hostname, whoisData, country, settings); err != nil {
 		log.Printf("❌ Failed to send unban alert email: %v", err)
 	}
 	return nil
 }
 
-// lookupCountry finds the country ISO code for a given IP using the configured provider.
+// =========================================================================
+//  GeoIP and Helpers
+// =========================================================================
+
+// Resolves the ISO country code for an IP using the configured GeoIP provider.
 func lookupCountry(ip, provider, dbPath string) (string, error) {
 	switch provider {
 	case "builtin":
 		return lookupCountryBuiltin(ip)
 	case "maxmind", "":
-		// Default to maxmind if empty
 		if dbPath == "" {
 			dbPath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
 		}
 		return lookupCountryMaxMind(ip, dbPath)
 	default:
-		// Unknown provider, try maxmind as fallback
+		// Unknown GeoIP provider, falls back to MaxMind
 		log.Printf("Unknown GeoIP provider '%s', falling back to MaxMind", provider)
 		if dbPath == "" {
 			dbPath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
@@ -998,46 +993,40 @@ func lookupCountry(ip, provider, dbPath string) (string, error) {
 	}
 }
 
-// lookupCountryMaxMind finds the country ISO code using MaxMind GeoLite2 database.
+// Looks up the country ISO code using MaxMind GeoLite2 database.
 func lookupCountryMaxMind(ip, dbPath string) (string, error) {
-	// Convert the IP string to net.IP
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
 		return "", fmt.Errorf("invalid IP address: %s", ip)
 	}
 
-	// Open the GeoIP database
 	db, err := maxminddb.Open(dbPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open GeoIP database at %s: %w", dbPath, err)
 	}
 	defer db.Close()
 
-	// Define the structure to store the lookup result
 	var record struct {
 		Country struct {
 			ISOCode string `maxminddb:"iso_code"`
 		} `maxminddb:"country"`
 	}
 
-	// Perform the lookup using net.IP type
 	if err := db.Lookup(parsedIP, &record); err != nil {
 		return "", fmt.Errorf("GeoIP lookup error: %w", err)
 	}
 
-	// Return the country code
 	return record.Country.ISOCode, nil
 }
 
-// lookupCountryBuiltin finds the country ISO code using ip-api.com free API.
+// Looks up the country ISO code using ip-api.com free API.
 func lookupCountryBuiltin(ip string) (string, error) {
-	// Convert the IP string to net.IP to validate
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
 		return "", fmt.Errorf("invalid IP address: %s", ip)
 	}
 
-	// Use ip-api.com free API (no account needed, rate limited to 45 requests/minute)
+	// Uses ip-api.com free API (no account needed, rate limited to 45 requests/minute)
 	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=countryCode", ip)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1079,63 +1068,49 @@ func lookupCountryBuiltin(ip string) (string, error) {
 	return result.CountryCode, nil
 }
 
-// filterRelevantLogs filters log lines to show the most relevant ones that caused the block.
+// Filters relevant logs for the email alert to show relevant lines.
 func filterRelevantLogs(logs, ip string, maxLines int) string {
 	if logs == "" {
 		return ""
 	}
-
 	if maxLines <= 0 {
-		maxLines = 50 // Default
+		maxLines = 50
 	}
-
 	lines := strings.Split(logs, "\n")
 	if len(lines) <= maxLines {
-		return logs // Return as-is if within limit
+		return logs
 	}
-
-	// Priority indicators for relevant log lines
+	// Priority patterns to identify relevant log lines
 	priorityPatterns := []string{
 		"denied", "deny", "forbidden", "unauthorized", "failed", "failure",
 		"error", "403", "404", "401", "500", "502", "503",
 		"invalid", "rejected", "blocked", "ban",
 	}
-
-	// Score each line based on relevance
 	type scoredLine struct {
 		line  string
 		score int
 		index int
 	}
-
 	scored := make([]scoredLine, len(lines))
 	for i, line := range lines {
 		lineLower := strings.ToLower(line)
 		score := 0
 
-		// Check if line contains the IP
 		if strings.Contains(line, ip) {
 			score += 10
 		}
-
-		// Check for priority patterns
 		for _, pattern := range priorityPatterns {
 			if strings.Contains(lineLower, pattern) {
 				score += 5
 			}
 		}
-
-		// Recent lines get higher score (lines at the end are more recent)
 		score += (len(lines) - i) / 10
-
 		scored[i] = scoredLine{
 			line:  line,
 			score: score,
 			index: i,
 		}
 	}
-
-	// Sort by score (descending)
 	for i := 0; i < len(scored)-1; i++ {
 		for j := i + 1; j < len(scored); j++ {
 			if scored[i].score < scored[j].score {
@@ -1143,8 +1118,6 @@ func filterRelevantLogs(logs, ip string, maxLines int) string {
 			}
 		}
 	}
-
-	// Take top N lines and sort by original index to maintain chronological order
 	selected := scored[:maxLines]
 	for i := 0; i < len(selected)-1; i++ {
 		for j := i + 1; j < len(selected); j++ {
@@ -1153,14 +1126,10 @@ func filterRelevantLogs(logs, ip string, maxLines int) string {
 			}
 		}
 	}
-
-	// Build result
 	result := make([]string, len(selected))
 	for i, s := range selected {
 		result[i] = s.line
 	}
-
-	// Remove duplicate consecutive lines
 	filtered := []string{}
 	lastLine := ""
 	for _, line := range result {
@@ -1169,14 +1138,13 @@ func filterRelevantLogs(logs, ip string, maxLines int) string {
 			lastLine = line
 		}
 	}
-
 	return strings.Join(filtered, "\n")
 }
 
-// shouldAlertForCountry checks if an IP’s country is in the allowed alert list.
+// Checks if an IP's country is in the allowed alert list.
 func shouldAlertForCountry(country string, alertCountries []string) bool {
 	if len(alertCountries) == 0 || strings.Contains(strings.Join(alertCountries, ","), "ALL") {
-		return true // If "ALL" is selected, alert for all bans
+		return true
 	}
 	for _, c := range alertCountries {
 		if strings.EqualFold(country, c) {
@@ -1186,13 +1154,15 @@ func shouldAlertForCountry(country string, alertCountries []string) bool {
 	return false
 }
 
-// renderIndexPage renders the index.html template with common data
+// =========================================================================
+//  Page Rendering
+// =========================================================================
+
+// Renders the main SPA page with template variables.
 func renderIndexPage(c *gin.Context) {
-	// Check if external IP lookup is disabled via environment variable
-	// Default is enabled (false means enabled, true means disabled)
 	disableExternalIP := os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "true" || os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "1"
 
-	// Check if OIDC is enabled and skip login page setting
+	// Checks if OIDC is enabled and skip login page setting
 	oidcEnabled := auth.IsEnabled()
 	skipLoginPage := false
 	if oidcEnabled {
@@ -1202,7 +1172,7 @@ func renderIndexPage(c *gin.Context) {
 		}
 	}
 
-	// Update check: default true; set UPDATE_CHECK=false to disable external GitHub request
+	// Checks is a user wants to disable the github versioning check
 	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
 
 	c.HTML(http.StatusOK, "index.html", gin.H{
@@ -1216,44 +1186,11 @@ func renderIndexPage(c *gin.Context) {
 	})
 }
 
-// githubReleaseResponse is used to parse the GitHub releases/latest API response
-type githubReleaseResponse struct {
-	TagName string `json:"tag_name"`
-}
+// =========================================================================
+//  Version
+// =========================================================================
 
-// versionLess returns true if a < b (e.g. "1.3.5" < "1.3.6")
-func versionLess(a, b string) bool {
-	parse := func(s string) []int {
-		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
-		parts := strings.Split(s, ".")
-		out := make([]int, 0, len(parts))
-		for _, p := range parts {
-			n, _ := strconv.Atoi(p)
-			out = append(out, n)
-		}
-		return out
-	}
-	pa, pb := parse(a), parse(b)
-	for i := 0; i < len(pa) || i < len(pb); i++ {
-		va, vb := 0, 0
-		if i < len(pa) {
-			va = pa[i]
-		}
-		if i < len(pb) {
-			vb = pb[i]
-		}
-		if va < vb {
-			return true
-		}
-		if va > vb {
-			return false
-		}
-	}
-	return false
-}
-
-// GetVersionHandler returns the current app version and optionally the latest GitHub release.
-// UPDATE_CHECK=false disables the external request to GitHub.
+// Returns the app version and checks GitHub for updates.
 func GetVersionHandler(c *gin.Context) {
 	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
 	out := gin.H{
@@ -1293,10 +1230,45 @@ func GetVersionHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// GetJailFilterConfigHandler returns both the filter config and jail config for a given jail
+// Checks if a version is less than another version.
+func versionLess(a, b string) bool {
+	parse := func(s string) []int {
+		s = strings.TrimPrefix(strings.TrimSpace(s), "v")
+		parts := strings.Split(s, ".")
+		out := make([]int, 0, len(parts))
+		for _, p := range parts {
+			n, _ := strconv.Atoi(p)
+			out = append(out, n)
+		}
+		return out
+	}
+	pa, pb := parse(a), parse(b)
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		va, vb := 0, 0
+		if i < len(pa) {
+			va = pa[i]
+		}
+		if i < len(pb) {
+			vb = pb[i]
+		}
+		if va < vb {
+			return true
+		}
+		if va > vb {
+			return false
+		}
+	}
+	return false
+}
+
+// =========================================================================
+//  Jail Config
+// =========================================================================
+
+// Returns the filter and jail config for a given jail.
 func GetJailFilterConfigHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("GetJailFilterConfigHandler called (handlers.go)") // entry point
+	config.DebugLog("GetJailFilterConfigHandler called (handlers.go)")
 	jail := c.Param("jail")
 	config.DebugLog("Jail name: %s", jail)
 
@@ -1325,22 +1297,21 @@ func GetJailFilterConfigHandler(c *gin.Context) {
 	}
 	config.DebugLog("Jail config loaded, length: %d, file: %s", len(jailCfg), jailFilePath)
 
-	// Extract filter name from jail config, or use jail name as fallback
+	// Extracts the filter name from the jail config, or uses the jail name as fallback
 	filterName := fail2ban.ExtractFilterFromJailConfig(jailCfg)
 	if filterName == "" {
-		// No filter directive found, use jail name as filter name (default behavior)
+		// No filter directive found, uses the jail name as filter name
 		filterName = jail
 		config.DebugLog("No filter directive found in jail config, using jail name as filter name: %s", filterName)
 	} else {
 		config.DebugLog("Found filter directive in jail config: %s", filterName)
 	}
 
-	// Load filter config using the determined filter name
+	// Loads the filter config using the filter name determined from the jail config
 	config.DebugLog("Loading filter config for filter: %s", filterName)
 	filterCfg, filterFilePath, filterErr = conn.GetFilterConfig(c.Request.Context(), filterName)
 	if filterErr != nil {
 		config.DebugLog("Failed to load filter config for %s: %v", filterName, filterErr)
-		// Don't fail completely - allow editing even if filter doesn't exist yet
 		config.DebugLog("Continuing without filter config (filter may not exist yet)")
 		filterCfg = ""
 		filterFilePath = ""
@@ -1357,7 +1328,7 @@ func GetJailFilterConfigHandler(c *gin.Context) {
 	})
 }
 
-// SetJailFilterConfigHandler overwrites both the filter config and jail config with new content
+// Saves updated filter/jail config and reloads Fail2ban.
 func SetJailFilterConfigHandler(c *gin.Context) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -1365,9 +1336,8 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Internal server error: %v", r)})
 		}
 	}()
-
 	config.DebugLog("----------------------------")
-	config.DebugLog("SetJailFilterConfigHandler called (handlers.go)") // entry point
+	config.DebugLog("SetJailFilterConfigHandler called (handlers.go)")
 	jail := c.Param("jail")
 	config.DebugLog("Jail name: %s", jail)
 
@@ -1379,7 +1349,6 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 	}
 	config.DebugLog("Connector resolved: %s (type: %s)", conn.Server().Name, conn.Server().Type)
 
-	// Parse JSON body (containing both filter and jail content)
 	var req struct {
 		Filter string `json:"filter"`
 		Jail   string `json:"jail"`
@@ -1397,33 +1366,30 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 		config.DebugLog("Jail preview (first 100 chars): %s", req.Jail[:min(100, len(req.Jail))])
 	}
 
-	// Save filter config - use original filter name, not the one from the new jail config
 	if req.Filter != "" {
-		// Load the original jail config to determine which filter was originally loaded
 		originalJailCfg, _, err := conn.GetJailConfig(c.Request.Context(), jail)
 		if err != nil {
 			config.DebugLog("Failed to load original jail config to determine filter name: %v", err)
-			// Fallback: extract from new jail config
 			originalJailCfg = req.Jail
 		}
 
-		// Extract the ORIGINAL filter name (the one that was loaded when the modal opened)
+		// Extracts the original filter name (the one that was loaded when the modal opened)
 		originalFilterName := fail2ban.ExtractFilterFromJailConfig(originalJailCfg)
 		if originalFilterName == "" {
-			// No filter directive found in original config, use jail name as filter name (default behavior)
+			// No filter directive found in original config, uses the jail name as filter name
 			originalFilterName = jail
 			config.DebugLog("No filter directive found in original jail config, using jail name as filter name: %s", originalFilterName)
 		} else {
 			config.DebugLog("Found original filter directive in jail config: %s", originalFilterName)
 		}
 
-		// Extract the NEW filter name from the updated jail config
+		// Extracts the new filter name from the updated jail config
 		newFilterName := fail2ban.ExtractFilterFromJailConfig(req.Jail)
 		if newFilterName == "" {
 			newFilterName = jail
 		}
 
-		// If the filter name changed, save to the ORIGINAL filter name (not the new one)
+		// If the filter name changed, saves to the original filter name
 		// This prevents overwriting a different filter with the old filter's content
 		if originalFilterName != newFilterName {
 			config.DebugLog("Filter name changed from %s to %s, saving filter to original name: %s", originalFilterName, newFilterName, originalFilterName)
@@ -1442,7 +1408,6 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 		config.DebugLog("No filter config provided, skipping")
 	}
 
-	// Save jail config
 	if req.Jail != "" {
 		config.DebugLog("Saving jail config for jail: %s", jail)
 		if err := conn.SetJailConfig(c.Request.Context(), jail, req.Jail); err != nil {
@@ -1455,11 +1420,11 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 		config.DebugLog("No jail config provided, skipping")
 	}
 
-	// Reload fail2ban
+	// Reloads Fail2ban
 	config.DebugLog("Reloading fail2ban")
 	if err := conn.Reload(c.Request.Context()); err != nil {
 		log.Printf("⚠️ Config saved but fail2ban reload failed: %v", err)
-		// Auto-disable this jail so fail2ban won't crash on next restart (invalid filter/jail config)
+		// If reload fails, we automatically disable the jail so Fail2ban won't crash on next restart (invalid filter/jail config)
 		disableUpdate := map[string]bool{jail: false}
 		if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
 			log.Printf("⚠️ Failed to auto-disable jail %s after reload failure: %v", jail, disableErr)
@@ -1481,18 +1446,9 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 		return
 	}
 	config.DebugLog("Fail2ban reloaded successfully")
-
 	c.JSON(http.StatusOK, gin.H{"message": "Filter and jail config updated and fail2ban reloaded"})
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// equalStringSlices compares two string slices for equality
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -1505,12 +1461,10 @@ func equalStringSlices(a, b []string) bool {
 	return true
 }
 
-// TestLogpathHandler tests a logpath and returns matching files
-// Resolves Fail2Ban variables before testing
-// Accepts optional logpath in request body, otherwise reads from saved jail config
+// Validates that a jail's log path resolves to real files.
 func TestLogpathHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("TestLogpathHandler called (handlers.go)") // entry point
+	config.DebugLog("TestLogpathHandler called (handlers.go)")
 	jail := c.Param("jail")
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -1520,23 +1474,23 @@ func TestLogpathHandler(c *gin.Context) {
 
 	var originalLogpath string
 
-	// Check if logpath is provided in request body
+	// Checks if a logpath is provided in the request body
 	var reqBody struct {
 		Logpath string `json:"logpath"`
 	}
 	if err := c.ShouldBindJSON(&reqBody); err == nil && reqBody.Logpath != "" {
-		// Use logpath from request body (from textarea)
+		// Uses the logpath from the request body (from textarea)
 		originalLogpath = strings.TrimSpace(reqBody.Logpath)
 		config.DebugLog("Using logpath from request body: %s", originalLogpath)
 	} else {
-		// Fall back to reading from saved jail config
+		// Falls back to reading from the saved jail config
 		jailCfg, _, err := conn.GetJailConfig(c.Request.Context(), jail)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load jail config: " + err.Error()})
 			return
 		}
 
-		// Extract logpath from jail config
+		// Extracts the logpath from the jail config
 		originalLogpath = fail2ban.ExtractLogpathFromJailConfig(jailCfg)
 		if originalLogpath == "" {
 			c.JSON(http.StatusOK, gin.H{
@@ -1555,19 +1509,18 @@ func TestLogpathHandler(c *gin.Context) {
 		return
 	}
 
-	// Get server type to determine test strategy
+	// Gets the server type to determine the test strategy
 	server := conn.Server()
 	isLocalServer := server.Type == "local"
 
-	// Split logpath by newlines and spaces (Fail2ban supports multiple logpaths separated by spaces or newlines)
-	// First split by newlines, then split each line by spaces
+	// Splits the logpath by newlines and spaces (Fail2ban supports multiple logpaths separated by spaces or newlines)
+	// First splits by newlines, then splits each line by spaces
 	var logpaths []string
 	for _, line := range strings.Split(originalLogpath, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		// Split by spaces to handle multiple logpaths in one line
 		paths := strings.Fields(line)
 		logpaths = append(logpaths, paths...)
 	}
@@ -1579,10 +1532,7 @@ func TestLogpathHandler(c *gin.Context) {
 		if logpathLine == "" {
 			continue
 		}
-
 		if isLocalServer {
-			// For local servers: only test in fail2ban-ui container (container can only see mounted paths)
-			// Resolve variables first
 			resolvedPath, err := fail2ban.ResolveLogpathVariables(logpathLine)
 			if err != nil {
 				allResults = append(allResults, map[string]interface{}{
@@ -1594,12 +1544,10 @@ func TestLogpathHandler(c *gin.Context) {
 				})
 				continue
 			}
-
 			if resolvedPath == "" {
 				resolvedPath = logpathLine
 			}
 
-			// Test in fail2ban-ui container
 			files, localErr := fail2ban.TestLogpath(resolvedPath)
 
 			allResults = append(allResults, map[string]interface{}{
@@ -1615,7 +1563,6 @@ func TestLogpathHandler(c *gin.Context) {
 				}(),
 			})
 		} else {
-			// For SSH/Agent servers: test on remote server (via connector)
 			_, resolvedPath, filesOnRemote, err := conn.TestLogpathWithResolution(c.Request.Context(), logpathLine)
 			if err != nil {
 				allResults = append(allResults, map[string]interface{}{
@@ -1627,7 +1574,6 @@ func TestLogpathHandler(c *gin.Context) {
 				})
 				continue
 			}
-
 			allResults = append(allResults, map[string]interface{}{
 				"logpath":       logpathLine,
 				"resolved_path": resolvedPath,
@@ -1637,7 +1583,6 @@ func TestLogpathHandler(c *gin.Context) {
 			})
 		}
 	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"original_logpath": originalLogpath,
 		"is_local_server":  isLocalServer,
@@ -1645,11 +1590,14 @@ func TestLogpathHandler(c *gin.Context) {
 	})
 }
 
-// ManageJailsHandler returns a list of all jails (from jail.local and jail.d)
-// including their enabled status.
+// =========================================================================
+//  Jail Management
+// =========================================================================
+
+// Returns all jails (enabled and disabled) for the manage-jails modal.
 func ManageJailsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("ManageJailsHandler called (handlers.go)") // entry point
+	config.DebugLog("ManageJailsHandler called (handlers.go)")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1663,7 +1611,11 @@ func ManageJailsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"jails": jails})
 }
 
-// ListPermanentBlocksHandler exposes the permanent block log.
+// =========================================================================
+//  Advanced Actions
+// =========================================================================
+
+// Returns the permanent block log entries.
 func ListPermanentBlocksHandler(c *gin.Context) {
 	limit := 100
 	if limitStr := c.DefaultQuery("limit", "100"); limitStr != "" {
@@ -1679,7 +1631,7 @@ func ListPermanentBlocksHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"blocks": records})
 }
 
-// AdvancedActionsTestHandler allows manual block/unblock tests.
+// Allows manual block/unblock against the configured integration.
 func AdvancedActionsTestHandler(c *gin.Context) {
 	var req struct {
 		Action string `json:"action"`
@@ -1704,34 +1656,29 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 
 	settings := config.GetSettings()
 
-	// Check if integration is configured
 	if settings.AdvancedActions.Integration == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration (MikroTik, pfSense, or OPNsense) in Advanced Actions settings first"})
 		return
 	}
 
-	// Verify integration exists
 	integration, ok := integrations.Get(settings.AdvancedActions.Integration)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration %s not found or not registered", settings.AdvancedActions.Integration)})
 		return
 	}
 
-	// Validate integration configuration
 	if err := integration.Validate(settings.AdvancedActions); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration configuration is invalid: %v", err)})
 		return
 	}
 
-	// Advanced actions work globally, not per server
 	server := config.Fail2banServer{}
 
-	// Check if IP is already blocked before attempting action (for block action only)
+	// Checks if the IP is already blocked before attempting the action (for block action only)
 	skipLoggingIfAlreadyBlocked := false
 	if action == "block" && settings.AdvancedActions.Integration != "" {
 		active, checkErr := storage.IsPermanentBlockActive(c.Request.Context(), req.IP, settings.AdvancedActions.Integration)
 		if checkErr == nil && active {
-			// IP is already blocked, we'll check the error message after the call
 			skipLoggingIfAlreadyBlocked = true
 		}
 	}
@@ -1746,13 +1693,12 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		skipLoggingIfAlreadyBlocked,
 	)
 	if err != nil {
-		// Check if error indicates IP is already blocked - show as info instead of error
 		if skipLoggingIfAlreadyBlocked {
 			errMsg := strings.ToLower(err.Error())
 			if strings.Contains(errMsg, "already have such entry") ||
 				strings.Contains(errMsg, "already exists") ||
 				strings.Contains(errMsg, "duplicate") {
-				// IP is already blocked, return info message with original error
+				// IP is already blocked, returns info message with original error
 				c.JSON(http.StatusOK, gin.H{"message": err.Error(), "info": true})
 				return
 			}
@@ -1763,9 +1709,7 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Action %s completed for %s", action, req.IP)})
 }
 
-// UpdateJailManagementHandler updates the enabled state for each jail.
-// Expected JSON format: { "JailName1": true, "JailName2": false, ... }
-// getJailNames converts a map of jail names to a sorted slice of jail names
+// Returns a sorted slice of jail names from the map.
 func getJailNames(jails map[string]bool) []string {
 	names := make([]string, 0, len(jails))
 	for name := range jails {
@@ -1784,30 +1728,23 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-// parseJailErrorsFromReloadOutput extracts jail names that have errors from reload output.
-// Looks for patterns like "Errors in jail 'jailname'. Skipping..." or "Unable to read the filter 'filtername'"
+// Extracts problematic jail names from Fail2ban reload output.
 func parseJailErrorsFromReloadOutput(output string) []string {
 	var problematicJails []string
 	lines := strings.Split(output, "\n")
 
 	for _, line := range lines {
-		// Look for "Errors in jail 'jailname'. Skipping..."
 		if strings.Contains(line, "Errors in jail") && strings.Contains(line, "Skipping") {
-			// Extract jail name between single quotes
 			re := regexp.MustCompile(`Errors in jail '([^']+)'`)
 			matches := re.FindStringSubmatch(line)
 			if len(matches) > 1 {
 				problematicJails = append(problematicJails, matches[1])
 			}
 		}
-		// Also check for filter errors that might indicate jail problems
-		// "Unable to read the filter 'filtername'" - this might be referenced by a jail
-		// Note: Filter errors are often associated with jails, but we primarily track
-		// jail errors directly via "Errors in jail" messages above
-		_ = strings.Contains(line, "Unable to read the filter") // Track for future enhancement
+		// Also checks for filter errors that might indicate jail problems
+		_ = strings.Contains(line, "Unable to read the filter")
 	}
 
-	// Remove duplicates
 	seen := make(map[string]bool)
 	uniqueJails := []string{}
 	for _, jail := range problematicJails {
@@ -1820,10 +1757,10 @@ func parseJailErrorsFromReloadOutput(output string) []string {
 	return uniqueJails
 }
 
-// After updating, fail2ban is reloaded to apply the changes.
+// Enables/disables jails and reloads Fail2ban.
 func UpdateJailManagementHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("UpdateJailManagementHandler called (handlers.go)") // entry point
+	config.DebugLog("UpdateJailManagementHandler called (handlers.go)")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		config.DebugLog("Error resolving connector: %v", err)
@@ -1843,7 +1780,7 @@ func UpdateJailManagementHandler(c *gin.Context) {
 		return
 	}
 
-	// Track which jails were enabled (for error recovery)
+	// Tracks which jails were enabled (for error recovery)
 	enabledJails := make(map[string]bool)
 	for jailName, enabled := range updates {
 		if enabled {
@@ -1851,7 +1788,6 @@ func UpdateJailManagementHandler(c *gin.Context) {
 		}
 	}
 
-	// Update jail configuration file(s) with the new enabled states.
 	if err := conn.UpdateJailEnabledStates(c.Request.Context(), updates); err != nil {
 		config.DebugLog("Error updating jail enabled states: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update jail settings: " + err.Error()})
@@ -1859,19 +1795,18 @@ func UpdateJailManagementHandler(c *gin.Context) {
 	}
 	config.DebugLog("Successfully updated jail enabled states")
 
-	// Reload fail2ban to apply the changes (reload is sufficient for jail enable/disable)
+	// Reloads fail2ban to apply the changes
 	reloadErr := conn.Reload(c.Request.Context())
 
-	// Check for errors in reload output even if reload "succeeded"
+	// Checks for errors in reload output
 	var problematicJails []string
 	var detailedErrorOutput string
 	if reloadErr != nil {
 		errMsg := reloadErr.Error()
 		config.DebugLog("Error: failed to reload fail2ban after updating jail settings: %v", reloadErr)
 
-		// Extract output from error message (format: "fail2ban reload completed but with errors (output: ...)")
+		// Extracts the output from the error message
 		if strings.Contains(errMsg, "(output:") {
-			// Extract the output part
 			outputStart := strings.Index(errMsg, "(output:") + 8
 			outputEnd := strings.LastIndex(errMsg, ")")
 			if outputEnd > outputStart {
@@ -1879,7 +1814,6 @@ func UpdateJailManagementHandler(c *gin.Context) {
 				problematicJails = parseJailErrorsFromReloadOutput(detailedErrorOutput)
 			}
 		} else if strings.Contains(errMsg, "output:") {
-			// Alternative format: "fail2ban reload error: ... (output: ...)"
 			outputStart := strings.Index(errMsg, "output:") + 7
 			if outputStart < len(errMsg) {
 				detailedErrorOutput = strings.TrimSpace(errMsg[outputStart:])
@@ -1887,17 +1821,15 @@ func UpdateJailManagementHandler(c *gin.Context) {
 			}
 		}
 
-		// If we found problematic jails, disable them
+		// If problematic jails are found, disables them // TODO: @matthias we need to further enhance this
 		if len(problematicJails) > 0 {
 			config.DebugLog("Found %d problematic jail(s) in reload output: %v", len(problematicJails), problematicJails)
 
-			// Create disable update for problematic jails
 			disableUpdate := make(map[string]bool)
 			for _, jailName := range problematicJails {
 				disableUpdate[jailName] = false
 			}
 
-			// Also disable any jails that were enabled in this request if they're in the problematic list
 			for jailName := range enabledJails {
 				if contains(problematicJails, jailName) {
 					disableUpdate[jailName] = false
@@ -1915,22 +1847,18 @@ func UpdateJailManagementHandler(c *gin.Context) {
 				}
 			}
 
-			// Update enabledJails to include problematic jails for response
 			for _, jailName := range problematicJails {
 				enabledJails[jailName] = true
 			}
 		}
 
 		if detailedErrorOutput != "" {
-			// We use only the extracted error output
 			errMsg = strings.TrimSpace(detailedErrorOutput)
 		}
 
-		// If any jails were enabled in this request and reload failed, disable them all
 		if len(enabledJails) > 0 {
 			config.DebugLog("Reload failed after enabling %d jail(s), auto-disabling all enabled jails: %v", len(enabledJails), enabledJails)
 
-			// Disable all jails that were just enabled
 			disableUpdate := make(map[string]bool)
 			for jailName := range enabledJails {
 				disableUpdate[jailName] = false
@@ -1946,7 +1874,7 @@ func UpdateJailManagementHandler(c *gin.Context) {
 				return
 			}
 
-			// Reload again after disabling
+			// Reloads again after disabling
 			if reloadErr = conn.Reload(c.Request.Context()); reloadErr != nil {
 				config.DebugLog("Error: failed to reload fail2ban after disabling jails: %v", reloadErr)
 				c.JSON(http.StatusOK, gin.H{
@@ -1977,7 +1905,6 @@ func UpdateJailManagementHandler(c *gin.Context) {
 			return
 		}
 
-		// Error occurred but no jails were enabled (only disabled), so just report the error
 		c.JSON(http.StatusOK, gin.H{
 			"error": fmt.Sprintf("Failed to reload fail2ban: %s", errMsg),
 		})
@@ -1986,7 +1913,7 @@ func UpdateJailManagementHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Jail settings updated and fail2ban reloaded successfully"})
 }
 
-// CreateJailHandler creates a new jail.
+// Creates a new jail with the given name and optional config.
 func CreateJailHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("CreateJailHandler called (handlers.go)")
@@ -2006,18 +1933,15 @@ func CreateJailHandler(c *gin.Context) {
 		return
 	}
 
-	// Validate jail name
 	if err := fail2ban.ValidateJailName(req.JailName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// If no content provided, create minimal jail config
 	if req.Content == "" {
 		req.Content = fmt.Sprintf("[%s]\nenabled = false\n", req.JailName)
 	}
 
-	// Create the jail
 	if err := conn.CreateJail(c.Request.Context(), req.JailName, req.Content); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create jail: " + err.Error()})
 		return
@@ -2026,7 +1950,7 @@ func CreateJailHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' created successfully", req.JailName)})
 }
 
-// DeleteJailHandler deletes a jail.
+// Removes a jail and its config file.
 func DeleteJailHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("DeleteJailHandler called (handlers.go)")
@@ -2043,13 +1967,11 @@ func DeleteJailHandler(c *gin.Context) {
 		return
 	}
 
-	// Validate jail name
 	if err := fail2ban.ValidateJailName(jailName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Delete the jail
 	if err := conn.DeleteJail(c.Request.Context(), jailName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete jail: " + err.Error()})
 		return
@@ -2058,30 +1980,27 @@ func DeleteJailHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' deleted successfully", jailName)})
 }
 
-// GetSettingsHandler returns the entire AppSettings struct as JSON
+// =========================================================================
+//  App Settings
+// =========================================================================
+
+// Returns the current AppSettings as JSON.
 func GetSettingsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("GetSettingsHandler called (handlers.go)") // entry point
+	config.DebugLog("GetSettingsHandler called (handlers.go)")
 	s := config.GetSettings()
 
-	// Check if PORT environment variable is set
 	envPort, envPortSet := config.GetPortFromEnv()
-
-	// Create response with PORT env info
 	response := make(map[string]interface{})
 	responseBytes, _ := json.Marshal(s)
 	json.Unmarshal(responseBytes, &response)
-
-	// Add PORT environment variable information
 	response["portFromEnv"] = envPort
 	response["portEnvSet"] = envPortSet
 
-	// If PORT env is set, override the port value in response
 	if envPortSet {
 		response["port"] = envPort
 	}
 
-	// Check if CALLBACK_URL environment variable is set
 	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
 	response["callbackUrlEnvSet"] = envCallbackURLSet
 	response["callbackUrlFromEnv"] = envCallbackURL
@@ -2092,13 +2011,13 @@ func GetSettingsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// UpdateSettingsHandler updates the AppSettings from a JSON body
+// Saves new settings, pushes defaults to servers, and reloads.
 func UpdateSettingsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("UpdateSettingsHandler called (handlers.go)") // entry point
+	config.DebugLog("UpdateSettingsHandler called (handlers.go)")
 	var req config.AppSettings
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fmt.Println("JSON binding error:", err) // Debug
+		fmt.Println("JSON binding error:", err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "invalid JSON",
 			"details": err.Error(),
@@ -2107,14 +2026,13 @@ func UpdateSettingsHandler(c *gin.Context) {
 	}
 	config.DebugLog("JSON binding successful, updating settings (handlers.go)")
 
-	// Check if PORT environment variable is set - if so, ignore port changes from request
+	// Ignores port changes from request if the PORT environment variable is set
 	envPort, envPortSet := config.GetPortFromEnv()
 	if envPortSet {
-		// Don't allow port changes when PORT env is set
 		req.Port = envPort
 	}
 
-	// Check if CALLBACK_URL environment variable is set - if so, ignore changes from request
+	// Ignores callback URL changes from request if the CALLBACK_URL environment variable is set
 	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
 	if envCallbackURLSet {
 		req.CallbackURL = envCallbackURL
@@ -2129,7 +2047,7 @@ func UpdateSettingsHandler(c *gin.Context) {
 	}
 	config.DebugLog("Settings updated successfully (handlers.go)")
 
-	// Check if callback URL changed - if so, update action files for all active remote servers
+	// Checks if the callback URL changed; if so, updates the action files for all active remote servers
 	callbackURLChanged := oldSettings.CallbackURL != newSettings.CallbackURL
 
 	if err := fail2ban.GetManager().ReloadFromSettings(config.GetSettings()); err != nil {
@@ -2140,17 +2058,16 @@ func UpdateSettingsHandler(c *gin.Context) {
 	if callbackURLChanged {
 		config.DebugLog("Callback URL changed, updating action files and reloading fail2ban on all servers")
 
-		// Update action files for remote servers (SSH and Agent)
+		// Updates the action files for remote servers (SSH and Agent)
 		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
 			config.DebugLog("Warning: failed to update some remote action files: %v", err)
-			// Don't fail the request, just log the warning
 		}
 
-		// Reload all remote servers after updating action files
+		// Reloads all remote servers after updating the action files
 		connectors := fail2ban.GetManager().Connectors()
 		for _, conn := range connectors {
 			server := conn.Server()
-			// Only reload remote servers (SSH and Agent), local will be handled separately
+			// Only reloads remote servers (SSH and Agent), local will be handled separately
 			if (server.Type == "ssh" || server.Type == "agent") && server.Enabled {
 				config.DebugLog("Reloading fail2ban on %s after callback URL change", server.Name)
 				if err := conn.Reload(c.Request.Context()); err != nil {
@@ -2161,14 +2078,14 @@ func UpdateSettingsHandler(c *gin.Context) {
 			}
 		}
 
-		// Also update local action file if callback URL changed
+		// Also updates the local action file if the callback URL changed
 		settings := config.GetSettings()
 		for _, server := range settings.Servers {
 			if server.Type == "local" && server.Enabled {
 				if err := config.EnsureLocalFail2banAction(server); err != nil {
 					config.DebugLog("Warning: failed to update local action file: %v", err)
 				} else {
-					// Reload local fail2ban after updating action file
+					// Reloads local fail2ban after updating the action file
 					if conn, err := fail2ban.GetManager().Connector(server.ID); err == nil {
 						config.DebugLog("Reloading local fail2ban after callback URL change")
 						if reloadErr := conn.Reload(c.Request.Context()); reloadErr != nil {
@@ -2182,8 +2099,6 @@ func UpdateSettingsHandler(c *gin.Context) {
 		}
 	}
 
-	// Check if Fail2Ban DEFAULT settings changed and push to all enabled servers
-	// Compare IgnoreIPs arrays
 	ignoreIPsChanged := !equalStringSlices(oldSettings.IgnoreIPs, newSettings.IgnoreIPs)
 	defaultSettingsChanged := oldSettings.BantimeIncrement != newSettings.BantimeIncrement ||
 		oldSettings.DefaultJailEnable != newSettings.DefaultJailEnable ||
@@ -2209,7 +2124,6 @@ func UpdateSettingsHandler(c *gin.Context) {
 				errors = append(errors, errorMsg)
 			} else {
 				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)
-				// Reload fail2ban to apply the changes
 				if err := conn.Reload(c.Request.Context()); err != nil {
 					config.DebugLog("Warning: failed to reload fail2ban on %s after updating DEFAULT settings: %v", server.Name, err)
 					errors = append(errors, fmt.Sprintf("Settings updated on %s, but reload failed: %v", server.Name, err))
@@ -2220,18 +2134,17 @@ func UpdateSettingsHandler(c *gin.Context) {
 		}
 		if len(errors) > 0 {
 			config.DebugLog("Some servers failed to update DEFAULT settings: %v", errors)
-			// Don't fail the request, but include warnings in response
 			c.JSON(http.StatusOK, gin.H{
 				"message":       "Settings updated",
-				"restartNeeded": false, // We reloaded, so no restart needed
+				"restartNeeded": false,
 				"warnings":      errors,
 			})
 			return
 		}
-		// Settings were updated and reloaded successfully, no restart needed
+		// Settings were updated and reloaded successfully
 		c.JSON(http.StatusOK, gin.H{
 			"message":       "Settings updated and fail2ban reloaded",
-			"restartNeeded": false, // We reloaded, so no restart needed
+			"restartNeeded": false,
 		})
 		return
 	}
@@ -2242,11 +2155,14 @@ func UpdateSettingsHandler(c *gin.Context) {
 	})
 }
 
-// ListFiltersHandler returns a JSON array of filter names
-// found as *.conf in /etc/fail2ban/filter.d
+// =========================================================================
+//  Filters
+// =========================================================================
+
+// Returns all available filter names for the selected server.
 func ListFiltersHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("ListFiltersHandler called (handlers.go)") // entry point
+	config.DebugLog("ListFiltersHandler called (handlers.go)")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2254,7 +2170,6 @@ func ListFiltersHandler(c *gin.Context) {
 	}
 	server := conn.Server()
 	if server.Type == "local" {
-		// For local, check if directory exists first
 		dir := "/etc/fail2ban/filter.d"
 		if _, statErr := os.Stat(dir); statErr != nil {
 			if os.IsNotExist(statErr) {
@@ -2274,6 +2189,7 @@ func ListFiltersHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"filters": filters})
 }
 
+// Returns the content of a specific filter file.
 func GetFilterContentHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("GetFilterContentHandler called (handlers.go)")
@@ -2290,7 +2206,6 @@ func GetFilterContentHandler(c *gin.Context) {
 		return
 	}
 
-	// Remove comments for display in Filter Debug page only
 	content = fail2ban.RemoveComments(content)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -2299,9 +2214,10 @@ func GetFilterContentHandler(c *gin.Context) {
 	})
 }
 
+// Runs fail2ban-regex against provided log lines and filter content.
 func TestFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("TestFilterHandler called (handlers.go)") // entry point
+	config.DebugLog("TestFilterHandler called (handlers.go)")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2310,7 +2226,7 @@ func TestFilterHandler(c *gin.Context) {
 	var req struct {
 		FilterName    string   `json:"filterName"`
 		LogLines      []string `json:"logLines"`
-		FilterContent string   `json:"filterContent"` // Optional: if provided, use this instead of reading from file
+		FilterContent string   `json:"filterContent"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
@@ -2328,7 +2244,7 @@ func TestFilterHandler(c *gin.Context) {
 	})
 }
 
-// CreateFilterHandler creates a new filter.
+// Creates a new filter definition file.
 func CreateFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("CreateFilterHandler called (handlers.go)")
@@ -2354,7 +2270,6 @@ func CreateFilterHandler(c *gin.Context) {
 		return
 	}
 
-	// If no content provided, create empty filter
 	if req.Content == "" {
 		req.Content = fmt.Sprintf("# Filter: %s\n", req.FilterName)
 	}
@@ -2368,7 +2283,7 @@ func CreateFilterHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' created successfully", req.FilterName)})
 }
 
-// DeleteFilterHandler deletes a filter.
+// Removes a filter definition file.
 func DeleteFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("DeleteFilterHandler called (handlers.go)")
@@ -2385,13 +2300,11 @@ func DeleteFilterHandler(c *gin.Context) {
 		return
 	}
 
-	// Validate filter name
 	if err := fail2ban.ValidateFilterName(filterName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Delete the filter
 	if err := conn.DeleteFilter(c.Request.Context(), filterName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete filter: " + err.Error()})
 		return
@@ -2400,10 +2313,11 @@ func DeleteFilterHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' deleted successfully", filterName)})
 }
 
-// ApplyFail2banSettings updates /etc/fail2ban/jail.local [DEFAULT] with our JSON
+// Updates /etc/fail2ban/jail.local [DEFAULT] with our JSON
+// TODO: @matthias we need to further enhance this
 func ApplyFail2banSettings(jailLocalPath string) error {
 	config.DebugLog("----------------------------")
-	config.DebugLog("ApplyFail2banSettings called (handlers.go)") // entry point
+	config.DebugLog("ApplyFail2banSettings called (handlers.go)")
 	s := config.GetSettings()
 
 	// open /etc/fail2ban/jail.local, parse or do a simplistic approach:
@@ -2435,18 +2349,20 @@ func ApplyFail2banSettings(jailLocalPath string) error {
 	return os.WriteFile(jailLocalPath, []byte(content), 0644)
 }
 
-// RestartFail2banHandler reloads the Fail2ban service
+// =========================================================================
+//  Restart
+// =========================================================================
+
+// Restarts (or reloads) the Fail2ban service on the selected server.
 func RestartFail2banHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("RestartFail2banHandler called (handlers.go)") // entry point
+	config.DebugLog("RestartFail2banHandler called (handlers.go)")
 
-	// Check if serverId is provided in query parameter
 	serverID := c.Query("serverId")
 	var conn fail2ban.Connector
 	var err error
 
 	if serverID != "" {
-		// Use specific server
 		manager := fail2ban.GetManager()
 		conn, err = manager.Connector(serverID)
 		if err != nil {
@@ -2454,7 +2370,7 @@ func RestartFail2banHandler(c *gin.Context) {
 			return
 		}
 	} else {
-		// Use default connector from context
+		// Uses the default connector from the context
 		conn, err = resolveConnector(c)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2464,19 +2380,18 @@ func RestartFail2banHandler(c *gin.Context) {
 
 	server := conn.Server()
 
-	// Attempt to restart the fail2ban service via the connector.
-	// Any error here means the service was not restarted, so we surface it to the UI.
+	// Attempts to restart the fail2ban service via the connector.
 	mode, err := fail2ban.RestartFail2ban(server.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Only call MarkRestartDone if we successfully restarted the service.
-	if err := config.MarkRestartDone(server.ID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	// Only calls MarkRestartDone if the service was successfully restarted
+	//if err := config.MarkRestartDone(server.ID); err != nil {
+	//	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	//	return
+	//}
 	msg := "Fail2ban service restarted successfully"
 	if mode == "reload" {
 		msg = "Fail2ban configuration reloaded successfully (no systemd service restart)"
@@ -2488,7 +2403,11 @@ func RestartFail2banHandler(c *gin.Context) {
 	})
 }
 
-// loadLocale loads a locale JSON file and returns a map of translations
+// =========================================================================
+//  Email Alerts and SMTP
+// =========================================================================
+
+// loadLocale returns cached translations for the given language, loading from disk if needed.
 func loadLocale(lang string) (map[string]string, error) {
 	localeCacheLock.RLock()
 	if cached, ok := localeCache[lang]; ok {
@@ -2497,7 +2416,7 @@ func loadLocale(lang string) (map[string]string, error) {
 	}
 	localeCacheLock.RUnlock()
 
-	// Determine locale file path
+	// Determines the locale file path
 	var localePath string
 	_, container := os.LookupEnv("CONTAINER")
 	if container {
@@ -2506,10 +2425,9 @@ func loadLocale(lang string) (map[string]string, error) {
 		localePath = fmt.Sprintf("./internal/locales/%s.json", lang)
 	}
 
-	// Read locale file
 	data, err := os.ReadFile(localePath)
 	if err != nil {
-		// Fallback to English if locale file not found
+		// Falls back to English if the locale file is not found
 		if lang != "en" {
 			return loadLocale("en")
 		}
@@ -2521,7 +2439,6 @@ func loadLocale(lang string) (map[string]string, error) {
 		return nil, fmt.Errorf("failed to parse locale file: %w", err)
 	}
 
-	// Cache the translations
 	localeCacheLock.Lock()
 	localeCache[lang] = translations
 	localeCacheLock.Unlock()
@@ -2529,15 +2446,14 @@ func loadLocale(lang string) (map[string]string, error) {
 	return translations, nil
 }
 
-// getEmailTranslation gets a translation key from the locale, with fallback to English
+// Resolves a translation key, falling back to English.
 func getEmailTranslation(lang, key string) string {
 	translations, err := loadLocale(lang)
 	if err != nil {
-		// Try English as fallback
 		if lang != "en" {
 			translations, err = loadLocale("en")
 			if err != nil {
-				return key // Return key if all else fails
+				return key
 			}
 		} else {
 			return key
@@ -2548,7 +2464,6 @@ func getEmailTranslation(lang, key string) string {
 		return translation
 	}
 
-	// Fallback to English if key not found
 	if lang != "en" {
 		enTranslations, err := loadLocale("en")
 		if err == nil {
@@ -2557,11 +2472,10 @@ func getEmailTranslation(lang, key string) string {
 			}
 		}
 	}
-
 	return key
 }
 
-// getEmailStyle returns the email style from environment variable, defaulting to "modern"
+// Reads the email template style from environment variable (default: "modern").
 func getEmailStyle() string {
 	style := os.Getenv("emailStyle")
 	if style == "classic" {
@@ -2570,7 +2484,7 @@ func getEmailStyle() string {
 	return "modern"
 }
 
-// isLOTRModeActive checks if LOTR mode is enabled in alert countries
+// Checks whether "LOTR" is among the configured alert countries.
 func isLOTRModeActive(alertCountries []string) bool {
 	if len(alertCountries) == 0 {
 		return false
@@ -2583,51 +2497,43 @@ func isLOTRModeActive(alertCountries []string) bool {
 	return false
 }
 
-// *******************************************************************
-// *                 Unified Email Sending Function :                *
-// *******************************************************************
+// Connects to the SMTP server and delivers a single HTML message.
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
-	// Skip sending if the destination email is still the default placeholder
+	// Skips sending if the destination email is still the default placeholder
 	if strings.EqualFold(strings.TrimSpace(to), "alerts@example.com") {
 		log.Printf("⚠️ sendEmail skipped: destination email is still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
 		return nil
 	}
 
-	// Validate SMTP settings
 	if settings.SMTP.Host == "" || settings.SMTP.Username == "" || settings.SMTP.Password == "" || settings.SMTP.From == "" {
 		err := errors.New("SMTP settings are incomplete. Please configure all required fields")
 		log.Printf("❌ sendEmail validation failed: %v (Host: %q, Username: %q, From: %q)", err, settings.SMTP.Host, settings.SMTP.Username, settings.SMTP.From)
 		return err
 	}
 
-	// Validate port range
 	if settings.SMTP.Port <= 0 || settings.SMTP.Port > 65535 {
 		err := errors.New("SMTP port must be between 1 and 65535")
 		log.Printf("❌ sendEmail validation failed: %v (Port: %d)", err, settings.SMTP.Port)
 		return err
 	}
 
-	// Format message with correct HTML headers
 	message := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n"+
 		"MIME-Version: 1.0\nContent-Type: text/html; charset=\"UTF-8\"\n\n%s",
 		settings.SMTP.From, to, subject, body)
 	msg := []byte(message)
 
-	// SMTP Connection Config
 	smtpHost := settings.SMTP.Host
 	smtpPort := settings.SMTP.Port
 	smtpAddr := net.JoinHostPort(smtpHost, fmt.Sprintf("%d", smtpPort))
 
-	// Determine TLS configuration
 	tlsConfig := &tls.Config{
 		ServerName:         smtpHost,
 		InsecureSkipVerify: settings.SMTP.InsecureSkipVerify,
 	}
 
-	// Determine authentication method
 	authMethod := settings.SMTP.AuthMethod
 	if authMethod == "" {
-		authMethod = "auto" // Default to auto if not set
+		authMethod = "auto"
 	}
 	auth, err := getSMTPAuth(settings.SMTP.Username, settings.SMTP.Password, authMethod, smtpHost)
 	if err != nil {
@@ -2636,17 +2542,15 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	}
 	log.Printf("📧 sendEmail: Using SMTP auth method: %q, host: %s, port: %d, useTLS: %v, insecureSkipVerify: %v", authMethod, smtpHost, smtpPort, settings.SMTP.UseTLS, settings.SMTP.InsecureSkipVerify)
 
-	// Determine connection type based on port and UseTLS setting
+	// Determines the connection type based on the port and UseTLS setting
 	// Port 465 typically uses implicit TLS (SMTPS)
 	// Port 587 typically uses STARTTLS
-	// Other ports: use UseTLS setting to determine behavior
 	useImplicitTLS := (smtpPort == 465) || (settings.SMTP.UseTLS && smtpPort != 587 && smtpPort != 25)
 	useSTARTTLS := settings.SMTP.UseTLS && (smtpPort == 587 || (smtpPort != 465 && smtpPort != 25))
 
 	var client *smtp.Client
 
 	if useImplicitTLS {
-		// SMTPS (Implicit TLS) - Connect directly with TLS
 		conn, err := tls.Dial("tcp", smtpAddr, tlsConfig)
 		if err != nil {
 			return fmt.Errorf("failed to connect via TLS: %w", err)
@@ -2658,7 +2562,6 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 			return fmt.Errorf("failed to create SMTP client: %w", err)
 		}
 	} else {
-		// Plain connection (may upgrade to STARTTLS)
 		conn, err := net.DialTimeout("tcp", smtpAddr, 30*time.Second)
 		if err != nil {
 			return fmt.Errorf("failed to connect to SMTP server: %w", err)
@@ -2670,7 +2573,6 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 			return fmt.Errorf("failed to create SMTP client: %w", err)
 		}
 
-		// Upgrade to STARTTLS if requested
 		if useSTARTTLS {
 			if err := client.StartTLS(tlsConfig); err != nil {
 				return fmt.Errorf("failed to start TLS: %w", err)
@@ -2678,14 +2580,12 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 		}
 	}
 
-	// Ensure client is closed
 	defer func() {
 		if client != nil {
 			client.Quit()
 		}
 	}()
 
-	// Authenticate if credentials are provided
 	if auth != nil {
 		if err := client.Auth(auth); err != nil {
 			log.Printf("❌ sendEmail: SMTP authentication failed: %v", err)
@@ -2703,33 +2603,28 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	return nil
 }
 
-// Helper Function to Send SMTP Message
+// Sends the actual message
+// Performs the MAIL/RCPT/DATA sequence on an open SMTP connection.
 func sendSMTPMessage(client *smtp.Client, from, to string, msg []byte) error {
-	// Set sender & recipient
 	if err := client.Mail(from); err != nil {
 		return fmt.Errorf("failed to set sender: %w", err)
 	}
 	if err := client.Rcpt(to); err != nil {
 		return fmt.Errorf("failed to set recipient: %w", err)
 	}
-
-	// Send email body
 	wc, err := client.Data()
 	if err != nil {
 		return fmt.Errorf("failed to start data command: %w", err)
 	}
 	defer wc.Close()
-
 	if _, err = wc.Write(msg); err != nil {
 		return fmt.Errorf("failed to write email content: %w", err)
 	}
-
-	// Close connection
 	client.Quit()
 	return nil
 }
 
-// renderClassicEmailDetails creates paragraph-based details for classic email template
+// Builds paragraph-based details for the classic email template.
 func renderClassicEmailDetails(details []emailDetail) string {
 	if len(details) == 0 {
 		return `<p>No metadata available.</p>`
@@ -2742,7 +2637,7 @@ func renderClassicEmailDetails(details []emailDetail) string {
 	return b.String()
 }
 
-// buildClassicEmailBody creates the classic email template (original design with multilingual support)
+// Renders the original email template layout.
 func buildClassicEmailBody(title, intro string, details []emailDetail, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText, supportEmail string) string {
 	detailRows := renderClassicEmailDetails(details)
 	year := time.Now().Year()
@@ -2810,7 +2705,7 @@ func buildClassicEmailBody(title, intro string, details []emailDetail, whoisHTML
 </html>`, html.EscapeString(title), html.EscapeString(title), html.EscapeString(intro), detailRows, html.EscapeString(whoisTitle), whoisHTML, html.EscapeString(logsTitle), logsHTML, html.EscapeString(footerText), html.EscapeString(supportEmail), html.EscapeString(supportEmail), year)
 }
 
-// buildLOTREmailBody creates the dramatic LOTR-themed email template with "You Shall Not Pass" styling
+// Renders the LOTR-themed email template.
 func buildLOTREmailBody(title, intro string, details []emailDetail, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText string) string {
 	detailRows := renderEmailDetails(details)
 	year := strconv.Itoa(time.Now().Year())
@@ -2909,7 +2804,7 @@ func buildLOTREmailBody(title, intro string, details []emailDetail, whoisHTML, l
 </html>`, html.EscapeString(title), html.EscapeString(intro), detailRows, html.EscapeString(whoisTitle), whoisHTML, html.EscapeString(logsTitle), logsHTML, html.EscapeString(footerText), year)
 }
 
-// buildModernEmailBody creates the modern responsive email template (new design)
+// Renders the default responsive email template.
 func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText string) string {
 	detailRows := renderEmailDetails(details)
 	year := strconv.Itoa(time.Now().Year())
@@ -3008,6 +2903,7 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
 </html>`, html.EscapeString(title), html.EscapeString(title), html.EscapeString(intro), detailRows, html.EscapeString(whoisTitle), whoisHTML, html.EscapeString(logsTitle), logsHTML, html.EscapeString(footerText), year)
 }
 
+// Builds table rows for the modern/LOTR email templates.
 func renderEmailDetails(details []emailDetail) string {
 	if len(details) == 0 {
 		return `<p class="email-muted">No metadata available.</p>`
@@ -3020,6 +2916,7 @@ func renderEmailDetails(details []emailDetail) string {
 	return b.String()
 }
 
+// Wraps raw WHOIS text in a styled <pre> block for email.
 func formatWhoisForEmail(whois string, lang string, isModern bool) string {
 	noDataMsg := getEmailTranslation(lang, "email.whois.no_data")
 	if strings.TrimSpace(whois) == "" {
@@ -3028,13 +2925,13 @@ func formatWhoisForEmail(whois string, lang string, isModern bool) string {
 		}
 		return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(noDataMsg) + `</pre>`
 	}
-	// Use <pre> to preserve all whitespace and newlines exactly as they are
 	if isModern {
 		return `<pre class="email-terminal">` + html.EscapeString(whois) + `</pre>`
 	}
 	return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(whois) + `</pre>`
 }
 
+// Highlights suspicious lines and HTTP status codes in email logs.
 func formatLogsForEmail(ip, logs string, lang string, isModern bool) string {
 	noLogsMsg := getEmailTranslation(lang, "email.logs.no_data")
 	if strings.TrimSpace(logs) == "" {
@@ -3043,7 +2940,6 @@ func formatLogsForEmail(ip, logs string, lang string, isModern bool) string {
 		}
 		return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(noLogsMsg) + `</pre>`
 	}
-
 	if isModern {
 		var b strings.Builder
 		b.WriteString(`<div class="email-log-stack">`)
@@ -3062,11 +2958,10 @@ func formatLogsForEmail(ip, logs string, lang string, isModern bool) string {
 		b.WriteString(`</div>`)
 		return b.String()
 	}
-
-	// Classic format: simple pre tag
 	return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(logs) + `</pre>`
 }
 
+// Checks if the line contains known attack indicators.
 func isSuspiciousLogLineEmail(line, ip string) bool {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
@@ -3089,6 +2984,7 @@ func isSuspiciousLogLineEmail(line, ip string) bool {
 	return (hasBadStatus || hasIndicator) && ip == ""
 }
 
+// Parses the HTTP status code from a log line.
 func extractStatusCodeFromLine(line string) int {
 	if match := httpQuotedStatusPattern.FindStringSubmatch(line); len(match) == 2 {
 		if code, err := strconv.Atoi(match[1]); err == nil {
@@ -3103,19 +2999,13 @@ func extractStatusCodeFromLine(line string) int {
 	return 0
 }
 
-// *******************************************************************
-// *                      sendBanAlert Function :                    *
-// *******************************************************************
+// Composes and sends the ban notification email.
 func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
 	lang := settings.Language
 	if lang == "" {
 		lang = "en"
 	}
-
-	// Check if LOTR mode is active for subject line
 	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
-
-	// Get translations
 	var subject string
 	if isLOTRMode {
 		subject = fmt.Sprintf("[Middle-earth] %s: %s %s %s",
@@ -3130,12 +3020,9 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 			getEmailTranslation(lang, "email.ban.subject.from"),
 			hostname)
 	}
-
-	// Determine email style and LOTR mode
 	emailStyle := getEmailStyle()
 	isModern := emailStyle == "modern"
 
-	// Get translations - use LOTR translations if in LOTR mode
 	var title, intro, whoisTitle, logsTitle, footerText string
 	if isLOTRMode {
 		title = getEmailTranslation(lang, "lotr.email.title")
@@ -3152,10 +3039,8 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 	}
 	supportEmail := "support@swissmakers.ch"
 
-	// Format details with LOTR terminology if in LOTR mode
 	var details []emailDetail
 	if isLOTRMode {
-		// Transform labels to LOTR terminology
 		bannedIPLabel := getEmailTranslation(lang, "lotr.email.details.dark_servant_location")
 		jailLabel := getEmailTranslation(lang, "lotr.email.details.realm_protection")
 		countryLabelKey := getEmailTranslation(lang, "lotr.email.details.origins")
@@ -3191,7 +3076,6 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 
 	var body string
 	if isLOTRMode {
-		// Use LOTR-themed email template
 		body = buildLOTREmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
 	} else if isModern {
 		body = buildModernEmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
@@ -3202,18 +3086,13 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 	return sendEmail(settings.Destemail, subject, body, settings)
 }
 
-// *******************************************************************
-// *                    sendUnbanAlert Function :                    *
-// *******************************************************************
+// Composes and sends the unban notification email.
 func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.AppSettings) error {
 	lang := settings.Language
 	if lang == "" {
 		lang = "en"
 	}
-
 	isLOTRMode := isLOTRModeActive(settings.AlertCountries)
-
-	// Get translations
 	var subject string
 	if isLOTRMode {
 		subject = fmt.Sprintf("[Middle-earth] %s: %s %s %s",
@@ -3228,12 +3107,9 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 			getEmailTranslation(lang, "email.unban.subject.from"),
 			hostname)
 	}
-
-	// Determine email style and LOTR mode
 	emailStyle := getEmailStyle()
 	isModern := emailStyle == "modern"
 
-	// Get translations - use LOTR translations if in LOTR mode
 	var title, intro, whoisTitle, footerText string
 	if isLOTRMode {
 		title = getEmailTranslation(lang, "lotr.email.unban.title")
@@ -3247,8 +3123,6 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 		footerText = getEmailTranslation(lang, "email.footer.text")
 	}
 	supportEmail := "support@swissmakers.ch"
-
-	// Format details - use shared keys for common fields, LOTR-specific only for restored_ip
 	var details []emailDetail
 	if isLOTRMode {
 		details = []emailDetail{
@@ -3272,20 +3146,16 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 
 	var body string
 	if isLOTRMode {
-		// Use LOTR-themed email template
 		body = buildLOTREmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText)
 	} else if isModern {
 		body = buildModernEmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText)
 	} else {
 		body = buildClassicEmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText, supportEmail)
 	}
-
 	return sendEmail(settings.Destemail, subject, body, settings)
 }
 
-// *******************************************************************
-// *               TestEmailHandler to send test-mail :              *
-// *******************************************************************
+// Sends a test email to verify the SMTP configuration.
 func TestEmailHandler(c *gin.Context) {
 	settings := config.GetSettings()
 
@@ -3293,8 +3163,6 @@ func TestEmailHandler(c *gin.Context) {
 	if lang == "" {
 		lang = "en"
 	}
-
-	// Get translations
 	testDetails := []emailDetail{
 		{Label: getEmailTranslation(lang, "email.test.details.recipient"), Value: settings.Destemail},
 		{Label: getEmailTranslation(lang, "email.test.details.smtp_host"), Value: settings.SMTP.Host},
@@ -3308,8 +3176,6 @@ func TestEmailHandler(c *gin.Context) {
 	footerText := getEmailTranslation(lang, "email.footer.text")
 	whoisNoData := getEmailTranslation(lang, "email.test.whois_no_data")
 	supportEmail := "support@swissmakers.ch"
-
-	// Determine email style
 	emailStyle := getEmailStyle()
 	isModern := emailStyle == "modern"
 
@@ -3336,35 +3202,25 @@ func TestEmailHandler(c *gin.Context) {
 		testBody,
 		settings,
 	)
-
 	if err != nil {
 		log.Printf("❌ Test email failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send test email: " + err.Error()})
 		return
 	}
-
 	log.Println("✅ Test email sent successfully!")
 	c.JSON(http.StatusOK, gin.H{"message": "Test email sent successfully!"})
 }
 
-// *******************************************************************
-// *                 SMTP Authentication Methods :                   *
-// *******************************************************************
-
-// getSMTPAuth returns the appropriate SMTP authentication mechanism
-// based on the authMethod parameter: "auto", "login", "plain", "cram-md5"
+// Returns the SMTP auth mechanism based on authMethod ("auto", "login", "plain", "cram-md5").
 func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error) {
 	if username == "" || password == "" {
-		return nil, nil // No auth if credentials are empty
+		return nil, nil
 	}
-
-	// Normalize auth method
 	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
 	if authMethod == "" || authMethod == "auto" {
-		// Auto-detect: prefer LOGIN for Office365/Gmail, fallback to PLAIN
+		// Auto-detect: prefers LOGIN for Office365/Gmail, falls back to PLAIN (default)
 		authMethod = "login"
 	}
-
 	switch authMethod {
 	case "login":
 		return LoginAuth(username, password), nil
@@ -3377,8 +3233,7 @@ func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error)
 	}
 }
 
-// LoginAuth implements the LOGIN authentication mechanism
-// Used by Office365, Gmail, and other providers that require LOGIN instead of PLAIN
+// Implements the LOGIN authentication mechanism used by Office365, Gmail, and other providers that require LOGIN instead of PLAIN
 type loginAuth struct {
 	username, password string
 }
@@ -3405,26 +3260,19 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 	return nil, nil
 }
 
-// *******************************************************************
-// *                    OIDC Authentication Handlers                  *
-// *******************************************************************
+// =========================================================================
+//  Auth Handlers
+// =========================================================================
 
-// LoginHandler shows the login page or initiates the OIDC login flow
-// If action=redirect query parameter is present, redirects to OIDC provider
-// If OIDC_SKIP_LOGINPAGE is true, redirects directly to OIDC provider
-// Otherwise, renders the login page
+// Initiates the OIDC login flow or renders the login page.
 func LoginHandler(c *gin.Context) {
 	oidcClient := auth.GetOIDCClient()
 	if oidcClient == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OIDC authentication is not configured"})
 		return
 	}
-
-	// Check if skip login page is enabled
 	oidcConfig := auth.GetConfig()
 	if oidcConfig != nil && oidcConfig.SkipLoginPage {
-		// Skip login page - redirect directly to OIDC provider
-		// Generate state parameter for CSRF protection
 		stateBytes := make([]byte, 32)
 		if _, err := rand.Read(stateBytes); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state parameter"})
@@ -3432,31 +3280,30 @@ func LoginHandler(c *gin.Context) {
 		}
 		state := base64.URLEncoding.EncodeToString(stateBytes)
 
-		// Determine if we're using HTTPS
+		// Determine if we're using HTTPS (if not, the state cookie is not secure)
 		isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
 
-		// Store state in session cookie for validation
+		// Stores the state in a session cookie for validation
 		stateCookie := &http.Cookie{
 			Name:     "oidc_state",
 			Value:    state,
 			Path:     "/",
-			MaxAge:   600, // 10 minutes
+			MaxAge:   600,
 			HttpOnly: true,
-			Secure:   isSecure, // Only secure over HTTPS
+			Secure:   isSecure,
 			SameSite: http.SameSiteLaxMode,
 		}
 		http.SetCookie(c.Writer, stateCookie)
 		config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
 
-		// Get authorization URL and redirect
+		// Gets the authorization URL and redirects to it
 		authURL := oidcClient.GetAuthURL(state)
 		c.Redirect(http.StatusFound, authURL)
 		return
 	}
 
-	// Check if this is a redirect action (triggered by clicking the login button)
+	// Checks if this is a redirect action (triggered by clicking the login button)
 	if c.Query("action") == "redirect" {
-		// Generate state parameter for CSRF protection
 		stateBytes := make([]byte, 32)
 		if _, err := rand.Read(stateBytes); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state parameter"})
@@ -3464,17 +3311,17 @@ func LoginHandler(c *gin.Context) {
 		}
 		state := base64.URLEncoding.EncodeToString(stateBytes)
 
-		// Determine if we're using HTTPS
+		// Determines if we're using HTTPS (if not, the state cookie is not secure)
 		isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
 
-		// Store state in session cookie for validation
+		// Stores the state in a session cookie for validation
 		stateCookie := &http.Cookie{
 			Name:     "oidc_state",
 			Value:    state,
 			Path:     "/",
-			MaxAge:   600, // 10 minutes
+			MaxAge:   600,
 			HttpOnly: true,
-			Secure:   isSecure, // Only secure over HTTPS
+			Secure:   isSecure,
 			SameSite: http.SameSiteLaxMode,
 		}
 		http.SetCookie(c.Writer, stateCookie)
@@ -3485,21 +3332,16 @@ func LoginHandler(c *gin.Context) {
 		c.Redirect(http.StatusFound, authURL)
 		return
 	}
-
-	// Otherwise, render the login page (index.html)
-	// The JavaScript will handle showing the login page and redirecting when button is clicked
 	renderIndexPage(c)
 }
 
-// CallbackHandler handles the OIDC callback after user authentication
+// Handles the OIDC callback, exchanging the code for a session.
 func CallbackHandler(c *gin.Context) {
 	oidcClient := auth.GetOIDCClient()
 	if oidcClient == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OIDC authentication is not configured"})
 		return
 	}
-
-	// Get state from cookie
 	stateCookie, err := c.Cookie("oidc_state")
 	if err != nil {
 		config.DebugLog("Failed to get state cookie: %v", err)
@@ -3508,29 +3350,21 @@ func CallbackHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing state parameter", "details": err.Error()})
 		return
 	}
-
-	// Determine if we're using HTTPS
 	isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
-
-	// Clear state cookie
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "oidc_state",
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isSecure, // Only secure over HTTPS
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
-
-	// Verify state parameter
 	returnedState := c.Query("state")
 	if returnedState != stateCookie {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state parameter"})
 		return
 	}
-
-	// Get authorization code
 	code := c.Query("code")
 	if code == "" {
 		errorDesc := c.Query("error_description")
@@ -3541,93 +3375,75 @@ func CallbackHandler(c *gin.Context) {
 		}
 		return
 	}
-
-	// Exchange code for tokens
 	token, err := oidcClient.ExchangeCode(c.Request.Context(), code)
 	if err != nil {
 		config.DebugLog("Failed to exchange code for token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange authorization code"})
 		return
 	}
-
-	// Verify token and extract user info
 	userInfo, err := oidcClient.VerifyToken(c.Request.Context(), token)
 	if err != nil {
 		config.DebugLog("Failed to verify token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify authentication token"})
 		return
 	}
-
-	// Create session
+	// Create the session
 	if err := auth.CreateSession(c.Writer, c.Request, userInfo, oidcClient.Config.SessionMaxAge); err != nil {
 		config.DebugLog("Failed to create session: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})
 		return
 	}
-
 	config.DebugLog("User authenticated: %s (%s)", userInfo.Username, userInfo.Email)
-
 	// Redirect to main page
 	c.Redirect(http.StatusFound, "/")
 }
 
-// LogoutHandler clears the session and optionally redirects to provider logout
+// Clears the session and redirects to the OIDC provider logout.
 func LogoutHandler(c *gin.Context) {
 	oidcClient := auth.GetOIDCClient()
-
-	// Clear session first
+	// Clears the session
 	auth.DeleteSession(c.Writer, c.Request)
-
-	// If provider logout URL is configured, redirect there
-	// Auto-construct logout URL for standard OIDC providers if not explicitly set
+	// If a provider logout URL is configured, redirects there
+	// Otherwise, auto-constructs the logout URL for standard OIDC providers
 	if oidcClient != nil {
 		logoutURL := oidcClient.Config.LogoutURL
 		if logoutURL == "" && oidcClient.Config.IssuerURL != "" {
-			// Auto-construct standard OIDC logout URL for Keycloak, Authentik, and Pocket-ID
 			issuerURL := oidcClient.Config.IssuerURL
 			redirectURI := oidcClient.Config.RedirectURL
-			// Extract base URL from redirect URI for logout redirect (remove /auth/callback)
 			if strings.Contains(redirectURI, "/auth/callback") {
 				redirectURI = strings.TrimSuffix(redirectURI, "/auth/callback")
 			}
-			// Redirect to login page after logout
 			redirectURI = redirectURI + "/auth/login"
-			// URL encode the redirect_uri parameter
 			redirectURIEncoded := url.QueryEscape(redirectURI)
 			clientIDEncoded := url.QueryEscape(oidcClient.Config.ClientID)
 
-			// Provider-specific logout URL construction
 			switch oidcClient.Config.Provider {
 			case "keycloak":
 				// Keycloak requires client_id when using post_logout_redirect_uri
 				// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
 				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
 			case "pocketid":
-				// Pocket-ID uses a different logout endpoint
+				// Pocket-ID uses a different logout endpoint (https://pocket-id.io/docs/oidc/#end-session)
 				// Format: {issuer}/api/oidc/end-session?redirect_uri={redirect}
 				logoutURL = fmt.Sprintf("%s/api/oidc/end-session?redirect_uri=%s", issuerURL, redirectURIEncoded)
 			case "authentik":
-				// Standard OIDC format for Authentik
+				// OIDC format for Authentik (https://docs.goauthentik.io/docs/providers/oidc/#logout)
 				// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
 				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
 			default:
-				// Fallback to standard OIDC format
 				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
 			}
 		}
-
 		if logoutURL != "" {
 			config.DebugLog("Redirecting to provider logout: %s", logoutURL)
 			c.Redirect(http.StatusFound, logoutURL)
 			return
 		}
 	}
-
-	// Otherwise, redirect to login page
 	c.Redirect(http.StatusFound, "/auth/login")
 }
 
-// AuthStatusHandler returns the current authentication status
+// Returns the current authentication status as JSON.
 func AuthStatusHandler(c *gin.Context) {
 	if !auth.IsEnabled() {
 		c.JSON(http.StatusOK, gin.H{
@@ -3666,7 +3482,7 @@ func AuthStatusHandler(c *gin.Context) {
 	})
 }
 
-// UserInfoHandler returns the current user information
+// Returns the authenticated user's profile information.
 func UserInfoHandler(c *gin.Context) {
 	if !auth.IsEnabled() {
 		c.JSON(http.StatusOK, gin.H{"authenticated": false})
