@@ -1412,6 +1412,16 @@
                   <div id="recurringIPsContainer" class="space-y-4 max-h-96 overflow-y-auto"></div>
                 </div>
               </div>
+              <div class="mt-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div class="flex items-center justify-between mb-4">
+                  <div>
+                    <h4 class="text-base font-semibold text-gray-900" data-i18n="logs.modal.threat_map_title">Global Threat Map</h4>
+                    <p class="text-xs text-gray-500 mt-1" data-i18n="logs.modal.threat_map_hint">Drag to rotate, scroll to zoom.</p>
+                  </div>
+                  <span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700">3D</span>
+                </div>
+                <div id="insightsGlobe" class="w-full flex justify-center overflow-hidden rounded-lg" style="height:420px; background:#0a1628;"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -1470,6 +1480,7 @@
   <!-- ******************************************************************* -->
   <script src="/static/vendor/jquery/jquery-3.6.0.min.js?v={{.version}}"></script>
   <script src="/static/vendor/select2/select2.min.js?v={{.version}}"></script>
+  <script src="/static/vendor/globe/globe.gl.min.js?v={{.version}}"></script>
   <script src="/static/js/globals.js?v={{.version}}"></script>
   <script src="/static/js/core.js?v={{.version}}"></script>
   <script src="/static/js/api.js?v={{.version}}"></script>
@@ -1479,6 +1490,7 @@
   <script src="/static/js/translations.js?v={{.version}}"></script>
   <script src="/static/js/ignoreips.js?v={{.version}}"></script>
   <script src="/static/js/dashboard.js?v={{.version}}"></script>
+  <script src="/static/js/globe.js?v={{.version}}"></script>
   <script src="/static/js/servers.js?v={{.version}}"></script>
   <script src="/static/js/jails.js?v={{.version}}"></script>
   <script src="/static/js/console.js?v={{.version}}"></script>
