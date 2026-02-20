@@ -18,6 +18,9 @@ function closeModal(modalId) {
   if (!modal || modal.classList.contains('hidden')) {
     return;
   }
+  if (modalId === 'banInsightsModal' && typeof destroyInsightsGlobe === 'function') {
+    destroyInsightsGlobe();
+  }
   modal.classList.add('hidden');
   openModalCount = Math.max(0, openModalCount - 1);
   updateBodyScrollLock();
@@ -186,6 +189,9 @@ function openBanInsightsModal() {
     updateTranslations();
   }
   openModal('banInsightsModal');
+  if (typeof renderInsightsGlobe === 'function') {
+    setTimeout(renderInsightsGlobe, 150);
+  }
 }
 
 // =========================================================================

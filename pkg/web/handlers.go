@@ -292,7 +292,7 @@ func BanNotificationHandler(c *gin.Context) {
 				log.Printf("❌ Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
 			}
 		} else {
-			log.Printf("❌ JSON parsing error: %v", err)
+			log.Printf("❌ JSON parsing error -> Action will not be recorded! Details: %v", err)
 		}
 		log.Printf("Raw JSON: %s", string(body))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
@@ -361,7 +361,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 				log.Printf("❌ Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
 			}
 		} else {
-			log.Printf("❌ JSON parsing error: %v", err)
+			log.Printf("❌ JSON parsing error -> Action will not be recorded! Details: %v", err)
 		}
 		log.Printf("Raw JSON: %s", string(body))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
@@ -2447,7 +2447,6 @@ func getEmailStyle() string {
 	}
 	return "modern"
 }
-
 
 // Connects to the SMTP server and delivers a single HTML message.
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
