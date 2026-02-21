@@ -454,7 +454,10 @@
             </div>
           </div>
           <div class="mt-6">
-            <h4 class="text-md font-semibold text-gray-800 mb-2" data-i18n="settings.advanced.log_title">Permanent Block Log</h4>
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="text-md font-semibold text-gray-800" data-i18n="settings.advanced.log_title">Permanent Block Log</h4>
+              <button type="button" class="px-3 py-1.5 text-xs rounded border border-red-300 text-red-600 hover:bg-red-50" onclick="clearPermanentBlockLog()" data-i18n="settings.advanced.clear_log">Clear</button>
+            </div>
             <div id="permanentBlockLog" class="overflow-x-auto border border-gray-200 rounded-md">
               <p class="text-sm text-gray-500 p-4" data-i18n="settings.advanced.log_empty">No permanent blocks recorded yet.</p>
             </div>

@@ -152,7 +152,7 @@ function renderInsightsGlobe() {
     .showAtmosphere(true)
     .atmosphereColor('#3b82f6')
     .atmosphereAltitude(0.15)
-    .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
+    .globeImageUrl('/static/images/earth.jpg?v={{.version}}')
     .pointsData(points)
     .pointLat('lat')
     .pointLng('lng')

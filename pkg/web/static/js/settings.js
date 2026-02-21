@@ -479,6 +479,23 @@ function refreshPermanentBlockLog() {
   loadPermanentBlockLog();
 }
 
+function clearPermanentBlockLog() {
+  var msg = t('settings.advanced.clear_log_confirm',
+    'This will permanently delete the entire block log. Fail2ban UI will assume that no IPs are currently blocked on the external firewall.\n\nThis action cannot be undone. Continue?');
+  if (!confirm(msg)) return;
+  fetch('/api/advanced-actions/blocks', { method: 'DELETE', headers: serverHeaders() })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) {
+        showToast(data.error, 'error');
+        return;
+      }
+      showToast(t('settings.advanced.clear_log_success', 'Permanent block log cleared.'), 'success');
+      loadPermanentBlockLog();
+    })
+    .catch(function(err) { showToast(String(err), 'error'); });
+}
+
 // =========================================================================
 //  Advanced Test
 // =========================================================================

@@ -483,7 +483,7 @@ function renderLogOverviewContent() {
   var todayCount = totalBansToday();
   var weekCount = totalBansWeek();
   if (statsKeys.length === 0 && totalStored === 0) {
-    html += '<p class="text-gray-500" data-i18n="logs.overview.empty">No ban events recorded yet.</p>';
+    //html += '<p class="text-gray-500" data-i18n="logs.overview.empty">No ban events recorded yet.</p>';
   } else {
     html += ''
       + '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">'
@@ -531,7 +531,10 @@ function renderLogOverviewContent() {
     }
     html += '      </tbody></table></div></div>';
   }
-  html += '<h4 class="text-md font-semibold text-gray-800 mb-3" data-i18n="logs.overview.recent_events_title">Recent stored events</h4>';
+  html += '<div class="flex items-center justify-between mb-3">'
+      + '<h4 class="text-md font-semibold text-gray-800" data-i18n="logs.overview.recent_events_title">Recent stored events</h4>'
+      + '<button type="button" class="px-3 py-1.5 text-xs rounded border border-red-300 text-red-600 hover:bg-red-50" onclick="clearStoredBanEvents()" data-i18n="logs.overview.clear_events">Clear</button>'
+      + '</div>';
   var countries = getBanEventCountries();
   var recurringMap = getRecurringIPMap();
   var searchQuery = (banEventsFilterText || '').trim();
@@ -647,6 +650,28 @@ function loadMoreBanEvents() {
   fetchBanEventsData({ append: true }).then(function() {
     renderLogOverviewSection();
   });
+}
+
+function clearStoredBanEvents() {
+  var msg = t('logs.overview.clear_events_confirm',
+    'This will permanently delete all stored ban events. Statistics, insights, and the event history will be reset to zero.\n\nThis action cannot be undone. Continue?');
+  if (!confirm(msg)) return;
+  fetch('/api/events/bans', { method: 'DELETE', headers: serverHeaders() })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) {
+        showToast(data.error, 'error');
+        return;
+      }
+      showToast(t('logs.overview.clear_events_success', 'All stored ban events cleared.'), 'success');
+      latestBanEvents = [];
+      latestBanStats = {};
+      latestBanInsights = null;
+      banEventsTotal = 0;
+      banEventsHasMore = false;
+      renderLogOverviewSection();
+    })
+    .catch(function(err) { showToast(String(err), 'error'); });
 }
 
 // Filtering function for the banned IPs for the dashboard.
