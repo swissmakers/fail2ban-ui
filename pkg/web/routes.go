@@ -80,6 +80,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// Internal API calls for advanced actions
 		api.GET("/advanced-actions/blocks", ListPermanentBlocksHandler)
+		api.DELETE("/advanced-actions/blocks", ClearPermanentBlocksHandler)
 		api.POST("/advanced-actions/test", AdvancedActionsTestHandler)
 
 		// Internal API calls for Fail2ban-UI server management
@@ -95,6 +96,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// Internal API calls to get the stats of the bans
 		api.GET("/events/bans", ListBanEventsHandler)
+		api.DELETE("/events/bans", ClearBanEventsHandler)
 		api.GET("/events/bans/stats", BanStatisticsHandler)
 		api.GET("/events/bans/insights", BanInsightsHandler)
 

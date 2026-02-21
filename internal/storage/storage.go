@@ -878,6 +878,18 @@ WHERE 1=1`
 	return result, rows.Err()
 }
 
+// Deletes all ban event records.
+func ClearBanEvents(ctx context.Context) (int64, error) {
+	if db == nil {
+		return 0, errors.New("storage not initialised")
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM ban_events`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // =========================================================================
 //  Recurring IP Statistics
 // =========================================================================
@@ -1262,4 +1274,16 @@ func IsPermanentBlockActive(ctx context.Context, ip, integration string) (bool, 
 		return false, err
 	}
 	return rec.Status == "blocked", nil
+}
+
+// Deletes all permanent block records.
+func ClearPermanentBlocks(ctx context.Context) (int64, error) {
+	if db == nil {
+		return 0, errors.New("storage not initialised")
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM permanent_blocks`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }

@@ -555,6 +555,16 @@ func BanInsightsHandler(c *gin.Context) {
 	})
 }
 
+// Deletes all stored ban event records.
+func ClearBanEventsHandler(c *gin.Context) {
+	deleted, err := storage.ClearBanEvents(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": deleted})
+}
+
 // =========================================================================
 //  Fail2ban Servers Management
 // =========================================================================
@@ -1629,6 +1639,16 @@ func ListPermanentBlocksHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"blocks": records})
+}
+
+// Deletes all permanent block records.
+func ClearPermanentBlocksHandler(c *gin.Context) {
+	deleted, err := storage.ClearPermanentBlocks(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": deleted})
 }
 
 // Allows manual block/unblock against the configured integration.
