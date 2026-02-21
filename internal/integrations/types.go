@@ -3,6 +3,8 @@ package integrations
 import (
 	"context"
 	"fmt"
+	"net"
+	"regexp"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
@@ -19,6 +21,38 @@ type Request struct {
 	Server  config.Fail2banServer
 
 	Logger func(format string, args ...interface{})
+}
+
+// =========================================================================
+//  Input Validation
+// =========================================================================
+
+// Matches only alphanumeric characters, hyphens, underscores and dots
+var safeIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+
+// Validates that the string is a valid IPv4/IPv6 address or CIDR notation and contains no shell metacharacters
+func ValidateIP(ip string) error {
+	if ip == "" {
+		return fmt.Errorf("IP address is required")
+	}
+	if net.ParseIP(ip) != nil {
+		return nil
+	}
+	if _, _, err := net.ParseCIDR(ip); err == nil {
+		return nil
+	}
+	return fmt.Errorf("invalid IP address or CIDR: %q", ip)
+}
+
+// Validates that a user-supplied name (address list, alias, etc.) contains only safe characters and cannot be used for injection attacks.
+func ValidateIdentifier(name, label string) error {
+	if name == "" {
+		return fmt.Errorf("%s is required", label)
+	}
+	if !safeIdentifier.MatchString(name) {
+		return fmt.Errorf("%s contains invalid characters: %q", label, name)
+	}
+	return nil
 }
 
 // Exposes functionality required by an external firewall vendor.

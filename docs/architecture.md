@@ -23,9 +23,11 @@ Fail2Ban UI consists of :
 
 ## Components (high level)
 
-- REST API: server management, jail/filter config read/write, ban/unban actions, settings
-- WebSocket hub: streams ban/unban events and (optional) debug console logs
+- REST API: server management, jail/filter config read/write, ban/unban actions, settings, data management (clear events/blocks)
+- WebSocket hub: streams real-time ban/unban events and (optional) debug console logs, protected by origin validation and session auth
 - Storage: server definitions, settings, ban history, permanent block records
+- Integrations: MikroTik (SSH), pfSense (REST API), OPNsense (REST API) with input validation on all parameters
+- Ban Insights: country-level analytics with interactive 3D threat globe visualization
 
 Additional resources:
 - Container deployment guide: `deployment/container/README.md`
@@ -62,11 +64,11 @@ Additional resources:
 │  │  • /auth/login | /auth/callback | /auth/logout                            │  │    │ e
 │  │  • /auth/status | /auth/user                                              │  │    │ t  
 │  │  • POST /api/ban | POST /api/unban ← Fail2ban callbacks (a valid Callback │  │    │
-│  │  • GET /api/ws   (WebSocket)                            Secret is needed) │  │    │
-│  │  • /static/* | /locales/*                                                 │  │----┘
+│  │  • /static/* | /locales/*                               Secret is needed) │  │----┘
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────────────────────────────┐  │
-│  │  PROTECTED (when OIDC enabled):  GET / | GET and POST to all other /api/* │  │
+│  │  PROTECTED (when OIDC enabled):                                           │  │
+│  │  GET / | all other /api/* | GET /api/ws (WebSocket, same-origin only)     │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -84,16 +86,19 @@ Additional resources:
 │  │  • POST /jails/:jail/unban/:ip  • POST /jails/:jail/ban/:ip                │  │
 │  │  • GET  /settings             • POST /settings                             │  │
 │  │  • GET  /events/bans          • GET /events/bans/stats | /insights         │  │
+│  │  • DELETE /events/bans        • DELETE /advanced-actions/blocks            │  │
 │  │  • GET  /version              (optional GitHub request if UPDATE_CHECK)    │  │
 │  │  • GET  /servers | POST/DELETE /servers | POST /servers/:id/test           │  │
 │  │  • GET  /filters/*            • POST /filters/test | POST/DELETE /filters  │  │
 │  │  • POST /fail2ban/restart     • GET/POST /advanced-actions/*               │  │
 │  │  • POST /ban  (callback)      • POST /unban (callback)                     │  │
+│  │  All IP inputs validated via net.ParseIP / net.ParseCIDR                   │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                             │
 │  ┌─────────────────────────────────┴──────────────────────────────────────────┐  │
-│  │  WebSocket Hub (GET /api/ws)                                               │  │
+│  │  WebSocket Hub (GET /api/ws — same-origin, auth required with OIDC)        │  │
 │  │  • register / unregister clients                                           │  │
+│  │  • Origin header validated against Host (rejects cross-site connections)   │  │
 │  │  • broadcast to all clients:                                               │  │
 │  │    - type: "heartbeat"   (every ~30s)                                      │  │
 │  │    - type: "console_log" (debug console lines)                             │  │
@@ -110,8 +115,10 @@ Additional resources:
 │  │  Connector Manager         │  │  Integrations + Email      │                  │
 │  │  • Local (fail2ban.sock)   │  │  • Mikrotik / pfSense /    │                  │
 │  │  • SSH (exec on remote)    │  │    OPNsense (block/unblock)│                  │
-│  │  • Agent (HTTP to agent)   │  │  • SMTP alert emails       │                  │
-│  │  • New server init: ensure │  └────────────────────────────┘                  │
+│  │  • Agent (HTTP to agent)   │  │  • Input validated (IP +   │                  │
+│  │  • New server init: ensure │  │    identifiers sanitized)  │                  │
+│  │                             │  │  • SMTP alert emails       │                  │
+│  │                             │  └────────────────────────────┘                  │
 │  │    action.d (ui-custom-    │                                                  │
 │  │    action.conf)            │                                                  │
 │  └────────────────────────────┘                                                  │
