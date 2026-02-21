@@ -53,6 +53,12 @@ func (m *mikrotikIntegration) BlockIP(req Request) error {
 	if err := m.Validate(req.Config); err != nil {
 		return err
 	}
+	if err := ValidateIP(req.IP); err != nil {
+		return fmt.Errorf("mikrotik block: %w", err)
+	}
+	if err := ValidateIdentifier(req.Config.Mikrotik.AddressList, "address list"); err != nil {
+		return fmt.Errorf("mikrotik block: %w", err)
+	}
 	cmd := fmt.Sprintf(`/ip firewall address-list add list=%s address=%s comment="Fail2ban-UI permanent block"`,
 		req.Config.Mikrotik.AddressList, req.IP)
 	return m.runCommand(req, cmd)
@@ -61,6 +67,12 @@ func (m *mikrotikIntegration) BlockIP(req Request) error {
 func (m *mikrotikIntegration) UnblockIP(req Request) error {
 	if err := m.Validate(req.Config); err != nil {
 		return err
+	}
+	if err := ValidateIP(req.IP); err != nil {
+		return fmt.Errorf("mikrotik unblock: %w", err)
+	}
+	if err := ValidateIdentifier(req.Config.Mikrotik.AddressList, "address list"); err != nil {
+		return fmt.Errorf("mikrotik unblock: %w", err)
 	}
 	cmd := fmt.Sprintf(`/ip firewall address-list remove [/ip firewall address-list find address=%s list=%s]`,
 		req.IP, req.Config.Mikrotik.AddressList)

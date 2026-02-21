@@ -70,12 +70,18 @@ func (p *pfSenseIntegration) BlockIP(req Request) error {
 	if err := p.Validate(req.Config); err != nil {
 		return err
 	}
+	if err := ValidateIP(req.IP); err != nil {
+		return fmt.Errorf("pfsense block: %w", err)
+	}
 	return p.modifyAliasIP(req, req.IP, "Fail2ban-UI permanent block", true)
 }
 
 func (p *pfSenseIntegration) UnblockIP(req Request) error {
 	if err := p.Validate(req.Config); err != nil {
 		return err
+	}
+	if err := ValidateIP(req.IP); err != nil {
+		return fmt.Errorf("pfsense unblock: %w", err)
 	}
 	return p.modifyAliasIP(req, req.IP, "", false)
 }

@@ -195,6 +195,11 @@ func BanIPHandler(c *gin.Context) {
 	jail := c.Param("jail")
 	ip := c.Param("ip")
 
+	if err := integrations.ValidateIP(ip); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -217,6 +222,11 @@ func UnbanIPHandler(c *gin.Context) {
 	config.DebugLog("UnbanIPHandler called (handlers.go)")
 	jail := c.Param("jail")
 	ip := c.Param("ip")
+
+	if err := integrations.ValidateIP(ip); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -303,6 +313,12 @@ func BanNotificationHandler(c *gin.Context) {
 	log.Printf("✅ Parsed ban request - IP: %s, Jail: %s, Hostname: %s, Failures: %s",
 		request.IP, request.Jail, request.Hostname, request.Failures)
 
+	if err := integrations.ValidateIP(request.IP); err != nil {
+		log.Printf("⚠️ Invalid IP in ban notification: %s", request.IP)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid IP: " + err.Error()})
+		return
+	}
+
 	server, err := resolveServerForNotification(request.ServerID, request.Hostname)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -370,6 +386,12 @@ func UnbanNotificationHandler(c *gin.Context) {
 
 	log.Printf("✅ Parsed unban request - IP: %s, Jail: %s, Hostname: %s",
 		request.IP, request.Jail, request.Hostname)
+
+	if err := integrations.ValidateIP(request.IP); err != nil {
+		log.Printf("⚠️ Invalid IP in unban notification: %s", request.IP)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid IP: " + err.Error()})
+		return
+	}
 
 	server, err := resolveServerForNotification(request.ServerID, request.Hostname)
 	if err != nil {
@@ -1663,6 +1685,10 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 	}
 	if req.IP == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ip is required"})
+		return
+	}
+	if err := integrations.ValidateIP(req.IP); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	action := strings.ToLower(req.Action)

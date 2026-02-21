@@ -53,12 +53,18 @@ func (o *opnsenseIntegration) BlockIP(req Request) error {
 	if err := o.Validate(req.Config); err != nil {
 		return err
 	}
+	if err := ValidateIP(req.IP); err != nil {
+		return fmt.Errorf("opnsense block: %w", err)
+	}
 	return o.callAPI(req, "add", req.IP)
 }
 
 func (o *opnsenseIntegration) UnblockIP(req Request) error {
 	if err := o.Validate(req.Config); err != nil {
 		return err
+	}
+	if err := ValidateIP(req.IP); err != nil {
+		return fmt.Errorf("opnsense unblock: %w", err)
 	}
 	return o.callAPI(req, "delete", req.IP)
 }
