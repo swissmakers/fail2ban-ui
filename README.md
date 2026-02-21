@@ -6,7 +6,7 @@
 **Enterprise-Grade Intrusion Detection System Management Platform**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://golang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://www.linux.org/)
 
 *Swissmade open-source solution for centralized Fail2Ban management across distributed infrastructure*
@@ -23,13 +23,15 @@ The project is maintained by Swissmakers GmbH and released under GPL-3.0.
 
 Fail2Ban UI does not replace Fail2Ban. It connects to existing Fail2Ban instances and adds:
 
-- A Dashboard for active jails and recent ban/unban activity
+- A Dashboard for active jails and recent ban/unban activity with real-time WebSocket updates
 - Server Manager for adding new fail2ban servers to Fail2ban-UI
-- Central search and unban across jails and servers
+- Central search and unban / ban across jails and servers
 - Remote editing / creating, of jail/filter configuration (depending on connector)
 - Filter debug integration and live log-pattern testing
-- Advanced ban actions for recurring offenders e.g. automatically ban on pfSense and Mikrotik, when threshold is reached.
-- Optional email alerts with GeoIP/Whois enrichment for selected "alert countries" only.
+- Ban Insights with an interactive 3D threat globe showing blocks per country
+- Advanced ban actions for recurring offenders e.g. automatically ban on pfSense, Mikrotik, or OPNsense when threshold is reached
+- Data management possibility for permanent block logs and stored ban events
+- Optional email alerts with GeoIP/Whois enrichment for selected "alert countries" only
 - Optional OIDC login (Keycloak, Authentik, Pocket-ID)
 - Least-privilege, SELinux-aware container deployment (policies provided)
 - .. and much more to come.
@@ -170,6 +172,8 @@ Global Fail2Ban settings including default bantime, findtime, maxretry, banactio
 
 * Do not expose the UI directly to the public Internet. Put it behind a reverse proxy, VPN, firewall rules, and/or OIDC.
 * SSH connector should use a dedicated service account with minimal sudo permissions and ACLs.
+* All IP addresses are validated (strict IPv4/IPv6/CIDR parsing) before being passed to any integration or command, preventing command injection.
+* WebSocket connections are protected by origin validation (same-origin only) and require authentication when OIDC is enabled.
 
 See [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md) for details.
 
