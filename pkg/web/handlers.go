@@ -914,12 +914,12 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 	}
 
 	if !settings.EmailAlertsForBans {
-		log.Printf("❌ Email alerts for bans are disabled. No alert sent for IP %s", ip)
+		log.Printf("❌ Alerts for bans are disabled. No alert sent for IP %s", ip)
 		return nil
 	}
 
-	if err := sendBanAlert(ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
-		log.Printf("❌ Failed to send ban alert email: %v", err)
+	if err := dispatchAlert("ban", ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
+		log.Printf("❌ Failed to send ban alert: %v", err)
 	}
 	return nil
 }
@@ -980,7 +980,7 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 	}
 
 	if !settings.EmailAlertsForUnbans {
-		log.Printf("🔕 Email alerts for unbans are disabled. No alert sent for IP %s", ip)
+		log.Printf("🔕 Alerts for unbans are disabled. No alert sent for IP %s", ip)
 		return nil
 	}
 
@@ -994,11 +994,190 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		return nil
 	}
 
-	// Sends an unban email notification (if enabled)
-	if err := sendUnbanAlert(ip, jail, hostname, whoisData, country, settings); err != nil {
-		log.Printf("❌ Failed to send unban alert email: %v", err)
+	if err := dispatchAlert("unban", ip, jail, hostname, "", whoisData, "", country, settings); err != nil {
+		log.Printf("❌ Failed to send unban alert: %v", err)
 	}
 	return nil
+}
+
+// =========================================================================
+//  Alert Dispatch
+// =========================================================================
+
+// Routes an alert to the configured provider (email, webhook, or elasticsearch).
+func dispatchAlert(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
+	switch settings.AlertProvider {
+	case "webhook":
+		return sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, country, settings)
+	case "elasticsearch":
+		return sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs, country, settings)
+	default:
+		if alertType == "ban" {
+			return sendBanAlert(ip, jail, hostname, failures, whois, logs, country, settings)
+		}
+		return sendUnbanAlert(ip, jail, hostname, whois, country, settings)
+	}
+}
+
+// Sends a JSON payload to the configured webhook URL.
+func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
+	cfg := settings.Webhook
+	if cfg.URL == "" {
+		return fmt.Errorf("webhook URL is not configured")
+	}
+
+	payload := map[string]interface{}{
+		"event":     alertType,
+		"ip":        ip,
+		"jail":      jail,
+		"hostname":  hostname,
+		"country":   country,
+		"failures":  failures,
+		"whois":     whois,
+		"logs":      logs,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
+
+	method := strings.ToUpper(cfg.Method)
+	if method == "" {
+		method = "POST"
+	}
+
+	req, err := http.NewRequest(method, cfg.URL, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create webhook request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range cfg.Headers {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	if cfg.SkipTLSVerify {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("webhook request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("Webhook alert sent: %s %s -> %d", method, cfg.URL, resp.StatusCode)
+	return nil
+}
+
+// Sends a document to the configured Elasticsearch index.
+func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
+	cfg := settings.Elasticsearch
+	if cfg.URL == "" {
+		return fmt.Errorf("elasticsearch URL is not configured")
+	}
+
+	index := cfg.Index
+	if index == "" {
+		index = "fail2ban-events"
+	}
+	dateSuffix := time.Now().UTC().Format("2006.01.02")
+	indexName := index + "-" + dateSuffix
+
+	doc := map[string]interface{}{
+		"@timestamp":                  time.Now().UTC().Format(time.RFC3339),
+		"event.kind":                  "alert",
+		"event.type":                  alertType,
+		"source.ip":                   ip,
+		"source.geo.country_iso_code": country,
+		"observer.hostname":           hostname,
+		"fail2ban.jail":               jail,
+		"fail2ban.failures":           failures,
+		"fail2ban.whois":              whois,
+		"fail2ban.logs":               logs,
+	}
+
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal elasticsearch document: %w", err)
+	}
+
+	esURL := strings.TrimSuffix(cfg.URL, "/")
+	reqURL := fmt.Sprintf("%s/%s/_doc", esURL, indexName)
+
+	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create elasticsearch request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	if cfg.APIKey != "" {
+		req.Header.Set("Authorization", "ApiKey "+cfg.APIKey)
+	} else if cfg.Username != "" {
+		req.SetBasicAuth(cfg.Username, cfg.Password)
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	if cfg.SkipTLSVerify {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("elasticsearch request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("elasticsearch returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Printf("Elasticsearch alert indexed: %s -> %d", reqURL, resp.StatusCode)
+	return nil
+}
+
+// Sends a test payload to the configured webhook URL.
+func TestWebhookHandler(c *gin.Context) {
+	settings := config.GetSettings()
+	if settings.Webhook.URL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "webhook URL is not configured"})
+		return
+	}
+
+	err := sendWebhookAlert("test", "203.0.113.1", "test-jail", "fail2ban-ui", "0", "", "This is a test webhook from Fail2ban-UI.", "XX", settings)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Test webhook sent successfully"})
+}
+
+// Sends a test document to the configured Elasticsearch instance.
+func TestElasticsearchHandler(c *gin.Context) {
+	settings := config.GetSettings()
+	if settings.Elasticsearch.URL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "elasticsearch URL is not configured"})
+		return
+	}
+
+	err := sendElasticsearchAlert("test", "203.0.113.1", "test-jail", "fail2ban-ui", "0", "", "This is a test document from Fail2ban-UI.", "XX", settings)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Test document indexed successfully"})
 }
 
 // =========================================================================
