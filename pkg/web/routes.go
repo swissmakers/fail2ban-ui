@@ -77,6 +77,8 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		api.GET("/settings", GetSettingsHandler)
 		api.POST("/settings", UpdateSettingsHandler)
 		api.POST("/settings/test-email", TestEmailHandler)
+		api.POST("/settings/test-webhook", TestWebhookHandler)
+		api.POST("/settings/test-elasticsearch", TestElasticsearchHandler)
 
 		// Internal API calls for advanced actions
 		api.GET("/advanced-actions/blocks", ListPermanentBlocksHandler)
