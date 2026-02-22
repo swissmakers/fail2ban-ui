@@ -2693,9 +2693,15 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 		return err
 	}
 
-	message := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n"+
-		"MIME-Version: 1.0\nContent-Type: text/html; charset=\"UTF-8\"\n\n%s",
-		settings.SMTP.From, to, subject, body)
+	msgID := fmt.Sprintf("<%d.%s@fail2ban-ui>", time.Now().UnixNano(), settings.SMTP.From)
+	message := "From: " + settings.SMTP.From + "\r\n" +
+		"To: " + to + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
+		"Message-ID: " + msgID + "\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: text/html; charset=\"UTF-8\"\r\n" +
+		"\r\n" + body
 	msg := []byte(message)
 
 	smtpHost := settings.SMTP.Host
