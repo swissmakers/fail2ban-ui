@@ -69,6 +69,9 @@ type AppSettings struct {
 	MaxLogLines          int                   `json:"maxLogLines"`
 	EmailAlertsForBans   bool                  `json:"emailAlertsForBans"`
 	EmailAlertsForUnbans bool                  `json:"emailAlertsForUnbans"`
+	AlertProvider        string                `json:"alertProvider"`
+	Webhook              WebhookSettings       `json:"webhook"`
+	Elasticsearch        ElasticsearchSettings `json:"elasticsearch"`
 	ConsoleOutput        bool                  `json:"consoleOutput"`
 }
 
@@ -135,6 +138,22 @@ type OPNsenseIntegrationSettings struct {
 	APIKey        string `json:"apiKey"`
 	APISecret     string `json:"apiSecret"`
 	Alias         string `json:"alias"`
+	SkipTLSVerify bool   `json:"skipTLSVerify"`
+}
+
+type WebhookSettings struct {
+	URL           string            `json:"url"`
+	Method        string            `json:"method"`
+	Headers       map[string]string `json:"headers"`
+	SkipTLSVerify bool              `json:"skipTLSVerify"`
+}
+
+type ElasticsearchSettings struct {
+	URL           string `json:"url"`
+	Index         string `json:"index"`
+	APIKey        string `json:"apiKey"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
 	SkipTLSVerify bool   `json:"skipTLSVerify"`
 }
 
@@ -430,6 +449,23 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.CallbackSecret = rec.CallbackSecret
 	currentSettings.EmailAlertsForBans = rec.EmailAlertsForBans
 	currentSettings.EmailAlertsForUnbans = rec.EmailAlertsForUnbans
+	if rec.AlertProvider != "" {
+		currentSettings.AlertProvider = rec.AlertProvider
+	} else {
+		currentSettings.AlertProvider = "email"
+	}
+	if rec.WebhookJSON != "" {
+		var wh WebhookSettings
+		if err := json.Unmarshal([]byte(rec.WebhookJSON), &wh); err == nil {
+			currentSettings.Webhook = wh
+		}
+	}
+	if rec.ElasticsearchJSON != "" {
+		var es ElasticsearchSettings
+		if err := json.Unmarshal([]byte(rec.ElasticsearchJSON), &es); err == nil {
+			currentSettings.Elasticsearch = es
+		}
+	}
 	currentSettings.ConsoleOutput = rec.ConsoleOutput
 }
 
@@ -480,6 +516,21 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		return storage.AppSettingsRecord{}, err
 	}
 
+	webhookBytes, err := json.Marshal(currentSettings.Webhook)
+	if err != nil {
+		return storage.AppSettingsRecord{}, err
+	}
+
+	esBytes, err := json.Marshal(currentSettings.Elasticsearch)
+	if err != nil {
+		return storage.AppSettingsRecord{}, err
+	}
+
+	alertProvider := currentSettings.AlertProvider
+	if alertProvider == "" {
+		alertProvider = "email"
+	}
+
 	return storage.AppSettingsRecord{
 		Language:               currentSettings.Language,
 		Port:                   currentSettings.Port,
@@ -513,6 +564,9 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		GeoIPProvider:          currentSettings.GeoIPProvider,
 		GeoIPDatabasePath:      currentSettings.GeoIPDatabasePath,
 		MaxLogLines:            currentSettings.MaxLogLines,
+		AlertProvider:          alertProvider,
+		WebhookJSON:            string(webhookBytes),
+		ElasticsearchJSON:      string(esBytes),
 		ConsoleOutput:          currentSettings.ConsoleOutput,
 	}, nil
 }
