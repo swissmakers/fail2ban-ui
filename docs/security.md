@@ -72,6 +72,29 @@ If SELinux is enabled, use the policies provided in (according to your specific 
 
 Do not disable SELinux as a shortcut. Fix always labeling and policy issues instead. -> Everytime you read "to disable SELinux" you can close that guide :)
 
+## Alert provider security
+
+Fail2Ban UI supports three alert providers: Email (SMTP), Webhook, and Elasticsearch. Each has specific security considerations.
+
+### Email (SMTP)
+
+- Use TLS (`Use TLS` enabled) for all SMTP connections to maximize security here.
+- Avoid disabling TLS verification (`Skip TLS Verification`) in production. If you must, ensure the network path to the SMTP server is trusted.
+- Use application-specific passwords or OAuth tokens where supported (e.g. Gmail, Office365) instead of primary account passwords.
+
+### Webhook
+
+- Use HTTPS endpoints whenever possible.
+- If the webhook endpoint requires authentication, use custom headers (e.g. `Authorization: Bearer <token>`) rather than embedding credentials in the URL.
+- Avoid disabling TLS verification for production endpoints. The `Skip TLS Verification` option exists for development/self-signed environments only.
+
+### Elasticsearch
+
+- Use API key authentication over basic auth when possible. API keys can be scoped to specific indices and rotated independently.
+- Restrict the API key to write-only access on the `fail2ban-events-*` index pattern. Avoid cluster-wide or admin-level keys.
+- Consider using Elasticsearch's built-in role-based access control to limit what the Fail2Ban UI service account can do.
+
+
 ## Audit and operational practices
 
 - Back up `/config` (DB + settings) regularly.

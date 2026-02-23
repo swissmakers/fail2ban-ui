@@ -60,7 +60,27 @@ Callbacks must include:
 ## Email template selection
 
 * `emailStyle=classic`
-  Switches back alert emails from the modern template to the classic template.
+  Switches back alert emails from the modern template to the classic template (only applies when the Email alert provider is selected).
+
+## Alert providers
+
+Alert settings are configured through the UI (Settings → Alert Settings). Three providers are available:
+
+| Provider | Description |
+|---|---|
+| Email (SMTP) | Default. Sends HTML-formatted alert emails via SMTP. |
+| Webhook | Sends JSON payloads to any HTTP endpoint (ntfy, Matrix, Slack, Gotify, custom APIs). |
+| Elasticsearch | Indexes events as ECS-compatible documents into Elasticsearch for Kibana analysis. |
+
+All providers share the same global settings:
+- Enable/disable alerts for bans and unbans independently
+- Country-based alert filtering (only alert on selected countries)
+- GeoIP provider selection (built-in API or local MaxMind database)
+- Maximum log lines included in alert payloads
+
+Provider-specific settings (SMTP credentials, webhook URL/headers, Elasticsearch URL/auth) are configured in the same UI section and stored in the database.
+
+For full provider documentation, setup hints, payload formats, and examples, see [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md).
 
 ## OIDC authentication
 

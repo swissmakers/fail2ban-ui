@@ -31,7 +31,7 @@ Fail2Ban UI does not replace Fail2Ban. It connects to existing Fail2Ban instance
 - Ban Insights with an interactive 3D threat globe showing blocks per country
 - Advanced ban actions for recurring offenders e.g. automatically ban on pfSense, Mikrotik, or OPNsense when threshold is reached
 - Data management possibility for permanent block logs and stored ban events
-- Optional email alerts with GeoIP/Whois enrichment for selected "alert countries" only
+- Configurable alert notifications (Email/SMTP, Webhook, or Elasticsearch) with GeoIP/Whois enrichment and country-based filtering
 - Optional OIDC login (Keycloak, Authentik, Pocket-ID)
 - Least-privilege, SELinux-aware container deployment (policies provided)
 - .. and much more to come.
@@ -76,6 +76,7 @@ Next steps:
 * Security guidance (recommended deployment posture): [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md)
 * Architecture overview: [`docs/architecture.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/architecture.md)
 * API reference: [`docs/api.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/api.md)
+* Alert providers (Email, Webhook, Elasticsearch): [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md)
 * Troubleshooting: [`docs/troubleshooting.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/troubleshooting.md)
 
 Existing deployment guides in this repository:
@@ -162,7 +163,7 @@ Configuration for advanced ban actions including permanent blocking, firewall in
 
 #### Alert Settings
 ![Alert Settings](screenshots/4.3_Settings_AlertSettings.png)
-Email alert configuration with SMTP settings, country-based filtering (blocks from what country to raport), GeoIP provider selection, and alert preferences for bans and unbans.
+Alert configuration supporting three providers: Email (SMTP), Webhook, and Elasticsearch. Includes country-based filtering, GeoIP provider selection, and per-event toggles for bans and unbans. See [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md) for details.
 
 #### Global Settings
 ![Global Settings](screenshots/4.4_Settings_GlobalSettings.png)
