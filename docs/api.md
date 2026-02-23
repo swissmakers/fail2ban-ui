@@ -52,7 +52,11 @@ All endpoints that accept IP addresses validate them server-side using Go's `net
 ### Settings
 - `GET /api/settings` -> Get current application settings
 - `POST /api/settings` -> Update application settings
-- `POST /api/settings/test-email` -> Send a test email
+- `POST /api/settings/test-email` -> Send a test email (Email provider)
+- `POST /api/settings/test-webhook` -> Send a test webhook payload (Webhook provider)
+- `POST /api/settings/test-elasticsearch` -> Index a test document (Elasticsearch provider)
+
+The settings payload includes alert provider configuration (`alertProvider`, `webhook`, `elasticsearch` fields). See [`alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md) for the full provider documentation.
 
 ### Filter management
 - `GET /api/filters` -> List available filters
@@ -87,6 +91,11 @@ Callbacks require:
 - JSON body fields (typical): `serverId`, `ip`, `jail`, `hostname`, `failures`, `logs`
 
 All IPs in callback payloads are validated before processing.
+
+After validation, the callback triggers:
+1. Event storage in the database
+2. WebSocket broadcast to connected clients
+3. Alert dispatch to the configured provider (Email, Webhook, or Elasticsearch) if alerts are enabled and the country filter matches
 
 ### Authentication routes (OIDC)
 - `GET /auth/login` -> Initiate OIDC login flow

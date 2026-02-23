@@ -4,7 +4,7 @@ Fail2Ban UI consists of :
 - a Go HTTP API (Gin)
 - a single-template web frontend (with static assets)
 - an embedded SQLite database for state and event history
-- optional integrations (Email, GeoIP/Whois, firewalls)
+- optional integrations (alert providers, GeoIP/Whois, firewall-integrations)
 
 ## Data flows
 
@@ -26,12 +26,14 @@ Fail2Ban UI consists of :
 - REST API: server management, jail/filter config read/write, ban/unban actions, settings, data management (clear events/blocks)
 - WebSocket hub: streams real-time ban/unban events and (optional) debug console logs, protected by origin validation and session auth
 - Storage: server definitions, settings, ban history, permanent block records
+- Alert providers: pluggable notification dispatch (Email/SMTP, Webhook, Elasticsearch) with country-based filtering and GeoIP enrichment
 - Integrations: MikroTik (SSH), pfSense (REST API), OPNsense (REST API) with input validation on all parameters
 - Ban Insights: country-level analytics with interactive 3D threat globe visualization
 
 Additional resources:
-- Container deployment guide: `deployment/container/README.md`
-- systemd setup guide: `deployment/systemd/README.md`
+- Alert provider documentation: [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md)
+- Container deployment guide: [`deployment/container/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/container/README.md)
+- systemd setup guide: [`deployment/systemd/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/systemd/README.md)
 
 ## More detailed diagrams
 
@@ -109,15 +111,16 @@ Additional resources:
 │  │  SQLite Storage            │  │  Whois / GeoIP             │                  │
 │  │  • ban_events              │  │  • IP → country/hostname   │                  │
 │  │  • app_settings, servers   │  │    MaxMind or ip-api.com   │                  │
-│  │  • permanent_blocks        │  │  • Used in UI and emails   │                  │
+│  │  • permanent_blocks        │  │  • Used in UI and alerts   │                  │
 │  └────────────────────────────┘  └────────────────────────────┘                  │
 │  ┌────────────────────────────┐  ┌────────────────────────────┐                  │
-│  │  Connector Manager         │  │  Integrations + Email      │                  │
+│  │  Connector Manager         │  │  Integrations + Alerts     │                  │
 │  │  • Local (fail2ban.sock)   │  │  • Mikrotik / pfSense /    │                  │
 │  │  • SSH (exec on remote)    │  │    OPNsense (block/unblock)│                  │
 │  │  • Agent (HTTP to agent)   │  │  • Input validated (IP +   │                  │
 │  │  • New server init: ensure │  │    identifiers sanitized)  │                  │
-│  │                             │  │  • SMTP alert emails       │                  │
+│  │                             │  │  • Alert dispatch (Email / │                  │
+│  │                             │  │    Webhook / Elasticsearch)│                  │
 │  │                             │  └────────────────────────────┘                  │
 │  │    action.d (ui-custom-    │                                                  │
 │  │    action.conf)            │                                                  │
@@ -148,7 +151,7 @@ Additional resources:
 │  │  3. Whois/GeoIP enrichment                                                 │  │
 │  │  4. Store event in SQLite DB (ban_events) if nothing was invalid           │  │
 │  │  5. Broadcast current event to WebSocket clients (ban_event / unban_event) │  │
-│  │  6. Optional: send SMTP alert                                              │  │
+│  │  6. Optional: dispatch alert (Email / Webhook / Elasticsearch)             │  │
 │  │  7  Run additional actions (e.g. block on pfSense for recurring offenders) │  │
 │  │  8. Respond status 200 OK - if all above was without an error              │  │
 │  └────────────────────────────────────────────────────────────────────────────┘  │

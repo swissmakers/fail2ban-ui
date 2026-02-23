@@ -89,7 +89,11 @@ function loadSettings() {
       document.getElementById('destEmail').value = data.destemail || '';
       document.getElementById('emailAlertsForBans').checked = data.emailAlertsForBans !== undefined ? data.emailAlertsForBans : true;
       document.getElementById('emailAlertsForUnbans').checked = data.emailAlertsForUnbans !== undefined ? data.emailAlertsForUnbans : false;
-      updateEmailFieldsState();
+      document.getElementById('alertProvider').value = data.alertProvider || 'email';
+      applyWebhookSettings(data.webhook || {});
+      applyElasticsearchSettings(data.elasticsearch || {});
+      updateAlertProviderFields();
+      updateAlertFieldsState();
 
       const select = document.getElementById('alertCountries');
       for (let i = 0; i < select.options.length; i++) {
@@ -212,7 +216,10 @@ function saveSettings(event) {
     geoipProvider: document.getElementById('geoipProvider').value || 'builtin',
     geoipDatabasePath: document.getElementById('geoipDatabasePath').value || '/usr/share/GeoIP/GeoLite2-Country.mmdb',
     maxLogLines: parseInt(document.getElementById('maxLogLines').value, 10) || 50,
+    alertProvider: document.getElementById('alertProvider').value || 'email',
     smtp: smtpSettings,
+    webhook: collectWebhookSettings(),
+    elasticsearch: collectElasticsearchSettings(),
     advancedActions: collectAdvancedActionsSettings()
   };
 
@@ -247,13 +254,23 @@ function saveSettings(event) {
 }
 
 // =========================================================================
-//  Email Settings
+//  Alert Provider
 // =========================================================================
 
-function updateEmailFieldsState() {
-  const emailAlertsForBans = document.getElementById('emailAlertsForBans').checked;
-  const emailAlertsForUnbans = document.getElementById('emailAlertsForUnbans').checked;
-  const emailEnabled = emailAlertsForBans || emailAlertsForUnbans;
+function updateAlertProviderFields() {
+  const selected = document.getElementById('alertProvider').value;
+  const emailDiv = document.getElementById('alertEmailFields');
+  const webhookDiv = document.getElementById('alertWebhookFields');
+  const esDiv = document.getElementById('alertElasticsearchFields');
+  if (emailDiv) emailDiv.classList.toggle('hidden', selected !== 'email');
+  if (webhookDiv) webhookDiv.classList.toggle('hidden', selected !== 'webhook');
+  if (esDiv) esDiv.classList.toggle('hidden', selected !== 'elasticsearch');
+}
+
+function updateAlertFieldsState() {
+  const alertsForBans = document.getElementById('emailAlertsForBans').checked;
+  const alertsForUnbans = document.getElementById('emailAlertsForUnbans').checked;
+  const alertsEnabled = alertsForBans || alertsForUnbans;
 
   const emailFields = [
     document.getElementById('destEmail'),
@@ -267,17 +284,24 @@ function updateEmailFieldsState() {
     document.getElementById('smtpInsecureSkipVerify'),
     document.getElementById('sendTestEmailBtn')
   ];
-
   emailFields.forEach(field => {
-    if (field) {
-      field.disabled = !emailEnabled;
-    }
+    if (field) field.disabled = !alertsEnabled;
   });
+
+  const providerSelect = document.getElementById('alertProvider');
+  if (providerSelect) providerSelect.disabled = !alertsEnabled;
 }
+
+function updateEmailFieldsState() {
+  updateAlertFieldsState();
+}
+
+// =========================================================================
+//  Email Alert
+// =========================================================================
 
 function sendTestEmail() {
   showLoading(true);
-
   fetch('/api/settings/test-email', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
@@ -291,6 +315,103 @@ function sendTestEmail() {
       }
     })
     .catch(error => showToast('Error sending test email: ' + error, 'error'))
+    .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Webhook Alert
+// =========================================================================
+
+function applyWebhookSettings(cfg) {
+  cfg = cfg || {};
+  document.getElementById('webhookUrl').value = cfg.url || '';
+  document.getElementById('webhookMethod').value = cfg.method || 'POST';
+  document.getElementById('webhookSkipTLS').checked = cfg.skipTLSVerify || false;
+  const headersEl = document.getElementById('webhookHeaders');
+  if (headersEl && cfg.headers && typeof cfg.headers === 'object') {
+    headersEl.value = Object.entries(cfg.headers).map(([k, v]) => k + ': ' + v).join('\n');
+  } else if (headersEl) {
+    headersEl.value = '';
+  }
+}
+
+function collectWebhookSettings() {
+  const headersText = (document.getElementById('webhookHeaders').value || '').trim();
+  const headers = {};
+  if (headersText) {
+    headersText.split('\n').forEach(line => {
+      const idx = line.indexOf(':');
+      if (idx > 0) {
+        headers[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+      }
+    });
+  }
+  return {
+    url: document.getElementById('webhookUrl').value.trim(),
+    method: document.getElementById('webhookMethod').value || 'POST',
+    headers: headers,
+    skipTLSVerify: document.getElementById('webhookSkipTLS').checked
+  };
+}
+
+function sendTestWebhook() {
+  showLoading(true);
+  fetch('/api/settings/test-webhook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        showToast('Webhook test failed: ' + data.error, 'error');
+      } else {
+        showToast('Test webhook sent successfully!', 'success');
+      }
+    })
+    .catch(error => showToast('Webhook test failed: ' + error, 'error'))
+    .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Elasticsearch Alert
+// =========================================================================
+
+function applyElasticsearchSettings(cfg) {
+  cfg = cfg || {};
+  document.getElementById('elasticsearchUrl').value = cfg.url || '';
+  document.getElementById('elasticsearchIndex').value = cfg.index || 'fail2ban-events';
+  document.getElementById('elasticsearchApiKey').value = cfg.apiKey || '';
+  document.getElementById('elasticsearchUsername').value = cfg.username || '';
+  document.getElementById('elasticsearchPassword').value = cfg.password || '';
+  document.getElementById('elasticsearchSkipTLS').checked = cfg.skipTLSVerify || false;
+}
+
+function collectElasticsearchSettings() {
+  return {
+    url: document.getElementById('elasticsearchUrl').value.trim(),
+    index: document.getElementById('elasticsearchIndex').value.trim() || 'fail2ban-events',
+    apiKey: document.getElementById('elasticsearchApiKey').value.trim(),
+    username: document.getElementById('elasticsearchUsername').value.trim(),
+    password: document.getElementById('elasticsearchPassword').value.trim(),
+    skipTLSVerify: document.getElementById('elasticsearchSkipTLS').checked
+  };
+}
+
+function sendTestElasticsearch() {
+  showLoading(true);
+  fetch('/api/settings/test-elasticsearch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) {
+        showToast('Elasticsearch test failed: ' + data.error, 'error');
+      } else {
+        showToast('Test document indexed successfully!', 'success');
+      }
+    })
+    .catch(error => showToast('Elasticsearch test failed: ' + error, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -563,6 +684,11 @@ function advancedUnblockIP(ip, event) {
 const advancedIntegrationSelect = document.getElementById('advancedIntegrationSelect');
 if (advancedIntegrationSelect) {
   advancedIntegrationSelect.addEventListener('change', updateAdvancedIntegrationFields);
+}
+
+const alertProviderSelect = document.getElementById('alertProvider');
+if (alertProviderSelect) {
+  alertProviderSelect.addEventListener('change', updateAlertProviderFields);
 }
 
 function toggleCallbackSecretVisibility() {

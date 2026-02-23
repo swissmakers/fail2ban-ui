@@ -249,10 +249,81 @@ Fail2Ban detects intrusion
           → Fail2ban-UI resolves server (by serverId)
             → Stores event in SQLite (ban_events table)
               → Broadcasts via WebSocket to all connected browsers
-                → Optional: sends email alert, evaluates advanced actions
+                → Optional: dispatches alert (Email / Webhook / Elasticsearch)
+                  → Optional: evaluates advanced actions (recurring offenders)
 ```
 
 If any step fails, the chain stops and the event will not appear in the UI.
+
+## Alert provider issues
+
+### Alerts not being sent (any provider)
+
+1. Verify that alerts are enabled for the event type (ban and/or unban) in Settings → Alert Settings
+2. Check which alert provider is selected - check all your settings for the active provider again.
+3. Check country filtering: if specific countries are selected, only IPs geolocated to those countries trigger alerts. Set to `ALL` to alert on every event.
+4. Use the Fail2ban-UI logs + (with enabled Debug-logs) to confirm the alert dispatch:
+
+```bash
+podman logs -f fail2ban-ui
+
+# Successful email alert:
+#   📧 sendEmail: Successfully sent email to ...
+# Successful webhook:
+#   ✅ Webhook alert sent successfully
+# Successful Elasticsearch:
+#   ✅ Elasticsearch alert indexed successfully
+```
+
+### Email alerts: test-email works but ban alerts don't arrive
+
+This typically happens because the ban-alert message looks differently (having IPs, special characters and maybe also payloads in it) vs. the test emails, that won't trigger a Spam mechanism.
+Check:
+
+- The Fail2ban-UI logs show "Successfully sent email" for the ban event. -> then you know the problem is not on fail2ban-UI
+- The email may be landing in spam. Check your spam/junk folder.
+- Some SMTP servers (especially Office365) are strict about what is allowed and what not. Fail2ban-UI uses `\r\n` line endings and includes `Message-ID` and `Date` headers for compliance. It should work like this, but it can be always disliked by Microsoft and maybe needs a whitelist in the companies spam-policy. Ensure also you are running the latest version.
+
+### Webhook: HTTP 400 or connection errors
+
+Common issues:
+
+- **ntfy returns 400 "topic invalid"**: ntfy requires the topic in the URL path (e.g. `https://ntfy.sh/fail2ban-alerts`), not just the base URL. When sending JSON payloads, the topic must either be in the URL path or in the JSON body as a `topic` field.
+- **Connection refused**: The webhook URL is unreachable from the Fail2ban-UI host. Test with curl from the same host/container.
+- **401/403**: The endpoint requires authentication. Add the appropriate header (e.g. `Authorization: Bearer <token>`) in the Custom Headers field.
+- **TLS certificate errors**: For self-signed endpoints, enable `Skip TLS Verification`
+
+Test manually:
+```bash
+curl -v -X POST https://your-webhook-url \
+  -H "Content-Type: application/json" \
+  -d '{"event":"test","ip":"203.0.113.1","jail":"sshd","hostname":"testhost","country":"US","failures":"3","timestamp":"2026-02-23T00:00:00Z"}'
+```
+
+### Elasticsearch: connection or indexing failures
+
+Common issues:
+
+- **Connection refused / timeout**: Verify the Elasticsearch URL is reachable from the Fail2ban-UI host
+- **401 Unauthorized**: API key or credentials are incorrect. Verify the API key in Kibana → Stack Management → API Keys
+- **403 Forbidden**: The API key lacks write permissions on the target index. Create a key with `write` and `create_index` privileges for `fail2ban-events-*`
+- **Index template missing**: Without an index template, Elasticsearch uses dynamic mapping which may produce suboptimal field types. Create the template as described in [`alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md)
+
+Test manually:
+```bash
+curl -v -X POST "https://your-es-url/fail2ban-events-test/_doc" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: ApiKey YOUR_BASE64_KEY" \
+  -d '{"@timestamp":"2026-02-23T00:00:00Z","event.kind":"alert","event.type":"test","source.ip":"203.0.113.1"}'
+```
+
+### Switching providers
+
+When switching alert providers (e.g. from Email to Webhook):
+
+1. The previous provider's settings are preserved in the database. Switching back restores them.
+2. Make sure to save settings after changing the provider.
+3. Always use the test button for the new provider before relying on it for real events.
 
 ## Bans fail due to firewall backend (nftables / firewalld)
 

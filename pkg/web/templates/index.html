@@ -468,23 +468,25 @@
         <div class="bg-white rounded-lg shadow p-6">
           <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.alert">Alert Settings</h3>
           <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.email_alerts">Email Alert Preferences</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.alerts">Alert Preferences</label>
             <div class="space-y-2">
               <label class="flex items-center">
-                <input type="checkbox" id="emailAlertsForBans" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" onchange="updateEmailFieldsState()">
-                <span class="ml-2 text-sm text-gray-700" data-i18n="settings.email_alerts_for_bans">Enable email alerts for bans</span>
+                <input type="checkbox" id="emailAlertsForBans" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" onchange="updateAlertFieldsState()">
+                <span class="ml-2 text-sm text-gray-700" data-i18n="settings.alerts_for_bans">Enable alerts for bans</span>
               </label>
               <label class="flex items-center">
-                <input type="checkbox" id="emailAlertsForUnbans" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" onchange="updateEmailFieldsState()">
-                <span class="ml-2 text-sm text-gray-700" data-i18n="settings.email_alerts_for_unbans">Enable email alerts for unbans</span>
+                <input type="checkbox" id="emailAlertsForUnbans" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" onchange="updateAlertFieldsState()">
+                <span class="ml-2 text-sm text-gray-700" data-i18n="settings.alerts_for_unbans">Enable alerts for unbans</span>
               </label>
             </div>
           </div>
-          <div class="mb-4" id="emailFieldsContainer">
-            <label for="destEmail" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.destination_email">Destination Email (Alerts Receiver)</label>
-            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
-                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch" />
-            <p class="text-xs text-red-600 mt-1 hidden" id="destEmailError"></p>
+          <div class="mb-4">
+            <label for="alertProvider" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.alert_provider">Alert Provider</label>
+            <select id="alertProvider" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="email" data-i18n="settings.alert_provider_email">Email (SMTP)</option>
+              <option value="webhook" data-i18n="settings.alert_provider_webhook">Webhook</option>
+              <option value="elasticsearch" data-i18n="settings.alert_provider_elasticsearch">Elasticsearch</option>
+            </select>
           </div>
           <div class="mb-4">
             <label for="geoipProvider" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.geoip_provider">GeoIP Provider</label>
@@ -507,7 +509,7 @@
           <div class="mb-4">
             <label for="alertCountries" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.alert_countries">Alert Countries</label>
             <p class="text-sm text-gray-500 mb-2" data-i18n="settings.alert_countries_description">
-              Choose the countries for which you want to receive email alerts when a block is triggered.
+              Choose the countries for which you want to receive alerts when a block is triggered.
             </p>
             <select id="alertCountries" class="w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" multiple>
               <option value="ALL">ALL (Every Country)</option>
@@ -710,7 +712,16 @@
           </div>
         </div>
 
-        <!-- ========================= SMTP Configuration ======================= -->
+        <!-- ========================= Email Configuration ========================= -->
+        <div id="alertEmailFields" class="space-y-6">
+        <div class="bg-white rounded-lg shadow p-6" id="emailFieldsContainer">
+          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Email (Alerts Receiver)</h3>
+          <div class="mb-4">
+            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
+                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch" />
+            <p class="text-xs text-red-600 mt-1 hidden" id="destEmailError"></p>
+          </div>
+        </div>
         <div class="bg-white rounded-lg shadow p-6" id="smtpFieldsContainer">
           <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.smtp">SMTP Configuration</h3>
           <div class="mb-4">
@@ -761,6 +772,76 @@
           <div class="mb-4">
             <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed" onclick="sendTestEmail()" id="sendTestEmailBtn" data-i18n="settings.send_test_email">Send Test Email</button>
             <p class="mt-2 text-xs text-amber-600" data-i18n="settings.send_test_email_hint">⚠️ Please save your SMTP settings first before sending a test email.</p>
+          </div>
+        </div>
+        </div>
+
+        <!-- ========================= Webhook Configuration ========================= -->
+        <div id="alertWebhookFields" class="hidden bg-white rounded-lg shadow p-6">
+          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.webhook.title">Webhook Configuration</h3>
+          <div class="mb-4">
+            <label for="webhookUrl" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.webhook.url">Webhook URL</label>
+            <input type="url" id="webhookUrl" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.webhook.url_placeholder" placeholder="https://my-ntfy-server/fail2ban-topic">
+          </div>
+          <div class="mb-4">
+            <label for="webhookMethod" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.webhook.method">HTTP Method</label>
+            <select id="webhookMethod" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+            </select>
+          </div>
+          <div class="mb-4">
+            <label for="webhookHeaders" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.webhook.headers">Custom Headers</label>
+            <textarea id="webhookHeaders" rows="3" class="w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.webhook.headers_placeholder" placeholder="Authorization: Bearer your-token&#10;X-Custom-Header: value"></textarea>
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.webhook.headers_hint">One header per line in Key: Value format.</p>
+          </div>
+          <div class="flex items-center mb-4">
+            <input type="checkbox" id="webhookSkipTLS" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out">
+            <label for="webhookSkipTLS" class="ml-2 block text-sm text-gray-700" data-i18n="settings.webhook.skip_tls">Skip TLS Certificate Verification</label>
+            <span class="ml-2 text-xs text-red-600" data-i18n="settings.smtp_insecure_skip_verify_warning">⚠️ Not recommended for production</span>
+          </div>
+          <div class="mb-4">
+            <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="sendTestWebhook()" id="sendTestWebhookBtn" data-i18n="settings.webhook.test">Send Test Webhook</button>
+            <p class="mt-2 text-xs text-amber-600" data-i18n="settings.webhook.test_hint">⚠️ Please save your webhook settings first before testing.</p>
+          </div>
+        </div>
+
+        <!-- ========================= Elasticsearch Configuration ========================= -->
+        <div id="alertElasticsearchFields" class="hidden bg-white rounded-lg shadow p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-medium text-gray-900" data-i18n="settings.elasticsearch.title">Elasticsearch Configuration</h3>
+            <button type="button" onclick="openModal('elasticsearchHelpModal')" class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs font-medium" aria-label="Elasticsearch help" title="Elasticsearch help">?</button>
+          </div>
+          <div class="mb-4">
+            <label for="elasticsearchUrl" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.url">Elasticsearch URL</label>
+            <input type="url" id="elasticsearchUrl" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.elasticsearch.url_placeholder" placeholder="https://elasticsearch.example.com:9200">
+          </div>
+          <div class="mb-4">
+            <label for="elasticsearchIndex" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.index">Index Name</label>
+            <input type="text" id="elasticsearchIndex" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.elasticsearch.index_placeholder" placeholder="fail2ban-events">
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.elasticsearch.index_hint">A daily date suffix (-YYYY.MM.DD) is appended automatically for index lifecycle management.</p>
+          </div>
+          <div class="mb-4">
+            <label for="elasticsearchApiKey" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.api_key">API Key</label>
+            <input type="password" id="elasticsearchApiKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.elasticsearch.api_key_placeholder" placeholder="Base64-encoded API key">
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.elasticsearch.api_key_hint">Preferred authentication method. Leave empty to use username/password instead.</p>
+          </div>
+          <div class="mb-4">
+            <label for="elasticsearchUsername" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.username">Username</label>
+            <input type="text" id="elasticsearchUsername" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.elasticsearch.username_placeholder" placeholder="elastic">
+          </div>
+          <div class="mb-4">
+            <label for="elasticsearchPassword" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.password">Password</label>
+            <input type="password" id="elasticsearchPassword" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••">
+          </div>
+          <div class="flex items-center mb-4">
+            <input type="checkbox" id="elasticsearchSkipTLS" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out">
+            <label for="elasticsearchSkipTLS" class="ml-2 block text-sm text-gray-700" data-i18n="settings.elasticsearch.skip_tls">Skip TLS Certificate Verification</label>
+            <span class="ml-2 text-xs text-red-600" data-i18n="settings.smtp_insecure_skip_verify_warning">⚠️ Not recommended for production</span>
+          </div>
+          <div class="mb-4">
+            <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="sendTestElasticsearch()" id="sendTestElasticsearchBtn" data-i18n="settings.elasticsearch.test">Test Connection</button>
+            <p class="mt-2 text-xs text-amber-600" data-i18n="settings.elasticsearch.test_hint">⚠️ Please save your Elasticsearch settings first before testing.</p>
           </div>
         </div>
 
@@ -1430,6 +1511,94 @@
         </div>
         <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
           <button type="button" class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('banInsightsModal')" data-i18n="modal.close">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= Elasticsearch Help Modal ========================= -->
+  <div id="elasticsearchHelpModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
+      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 680px;">
+        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <div class="sm:flex sm:items-start">
+            <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.elasticsearch.help_title">Elasticsearch Setup Guide</h3>
+                <button type="button" onclick="closeModal('elasticsearchHelpModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                  <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div class="mt-4 space-y-4 text-sm">
+                <div>
+                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_template_title">1. Create an Index Template</h4>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_template_desc">Create an index template in Kibana Dev Tools or via the API so Elasticsearch maps the fields correctly:</p>
+                  <pre class="mt-2 bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">PUT _index_template/fail2ban
+{
+  "index_patterns": ["fail2ban-events-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp":      { "type": "date" },
+        "event.kind":      { "type": "keyword" },
+        "event.type":      { "type": "keyword" },
+        "source.ip":       { "type": "ip" },
+        "source.geo.country_iso_code": { "type": "keyword" },
+        "observer.hostname": { "type": "keyword" },
+        "fail2ban.jail":   { "type": "keyword" },
+        "fail2ban.failures": { "type": "keyword" },
+        "fail2ban.whois":  { "type": "text" },
+        "fail2ban.logs":   { "type": "text" }
+      }
+    }
+  }
+}</pre>
+                </div>
+                <div>
+                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_doc_title">2. Document Structure</h4>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_doc_desc">Fail2ban-UI sends ECS-compatible documents. Each ban/unban event is indexed to fail2ban-events-YYYY.MM.DD:</p>
+                  <pre class="mt-2 bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">{
+  "@timestamp": "2026-02-14T12:00:00Z",
+  "event.kind": "alert",
+  "event.type": "ban",
+  "source.ip": "1.2.3.4",
+  "source.geo.country_iso_code": "CN",
+  "observer.hostname": "webserver-01",
+  "fail2ban.jail": "sshd",
+  "fail2ban.failures": "5",
+  "fail2ban.whois": "...",
+  "fail2ban.logs": "..."
+}</pre>
+                </div>
+                <div>
+                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_auth_title">3. Authentication</h4>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_auth_desc">Use an API key (preferred) or basic auth with a user that has write access to the fail2ban-events-* indices. Create an API key in Kibana under Stack Management &rarr; API Keys.</p>
+                </div>
+                <div>
+                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_savetest_title">4. Save and Test</h4>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_savetest_desc">Save the Fail2ban-UI settings and test the connection to Elasticsearch by clicking the Test button. (This will create the fail2ban-events-* index and ingests as well the first event.)</p>
+                </div>
+                <div>
+                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_dataview_title">5. Kibana Data View</h4>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_dataview_desc">In Kibana, go to Stack Management &rarr; Data Views &rarr; Create data view. Use the pattern fail2ban-events-* as name and as index pattern and select @timestamp as the time field.</p>
+                </div>
+                <div>
+                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_review_title">6. Review the Data</h4>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_review_desc">In Kibana, go to Discover &rarr; Select the fail2ban-events-* index and you should see your first ingested event.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+          <button type="button" class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('elasticsearchHelpModal')" data-i18n="modal.close">Close</button>
         </div>
       </div>
     </div>
