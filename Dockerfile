@@ -1,8 +1,7 @@
 # =========================================
 #  STAGE 1 -- Build Fail2Ban-UI Binary
 # =========================================
-FROM golang:1.25.7 AS builder
-
+FROM --platform=$BUILDPLATFORM golang:1.25.7 AS builder
 WORKDIR /app
 
 # Copy module files and download dependencies
@@ -12,8 +11,19 @@ RUN go mod download
 # Copy application source code to buildcontainer
 COPY . .
 
-# Build Go application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o fail2ban-ui ./cmd/server/main.go
+# BuildKit auto-args
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+# Cross-compile for requested target platform
+RUN set -eux; \
+    export GOOS="${TARGETOS}"; \
+    export GOARCH="${TARGETARCH}"; \
+    if [ "${TARGETARCH}" = "arm" ] && [ -n "${TARGETVARIANT}" ]; then \
+      export GOARM="${TARGETVARIANT#v}"; \
+    fi; \
+    CGO_ENABLED=0 go build -trimpath -o fail2ban-ui ./cmd/server/main.go
 
 # ===================================
 #  STAGE 2 -- Standalone UI Version
@@ -51,4 +61,4 @@ COPY --from=builder /app/pkg/web/static /app/static
 RUN chown fail2ban:0 /app/fail2ban-ui && chmod +x /app/fail2ban-ui
 
 EXPOSE 8080
-CMD ["/app/fail2ban-ui"]
+ENTRYPOINT ["/app/fail2ban-ui"]
