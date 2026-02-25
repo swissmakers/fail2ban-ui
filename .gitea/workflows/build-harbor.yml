@@ -35,7 +35,7 @@ jobs:
       - name: Build multi-arch manifest locally
         env:
           LOCAL_MANIFEST: localhost/fail2ban-ui:${{ github.sha }}
-          PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
+          PLATFORMS: linux/amd64,linux/arm64
         run: |
           podman build --pull \
             --platform "$PLATFORMS" \

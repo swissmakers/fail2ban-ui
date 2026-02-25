@@ -28,7 +28,7 @@ RUN set -eux; \
 # ===================================
 #  STAGE 2 -- Standalone UI Version
 # ===================================
-FROM alpine:3.23 AS standalone-ui
+FROM --platform=$TARGETPLATFORM alpine:3.23 AS standalone-ui
 
 # Install required container dependencies
 RUN set -eux; \
