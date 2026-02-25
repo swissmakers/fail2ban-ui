@@ -415,6 +415,20 @@ function sendTestElasticsearch() {
     .finally(() => showLoading(false));
 }
 
+function copyElasticsearchTemplate(btn) {
+  const pre = document.getElementById('esIndexTemplate');
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    const label = btn.querySelector('span');
+    if (label) {
+      label.textContent = 'Copied!';
+      setTimeout(() => { label.textContent = 'Copy'; }, 2000);
+    }
+  }).catch(() => {
+    showToast('Failed to copy to clipboard', 'error');
+  });
+}
+
 // =========================================================================
 //  Advanced Actions
 // =========================================================================
