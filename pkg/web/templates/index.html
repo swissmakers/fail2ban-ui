@@ -1014,7 +1014,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-2 sm:p-4">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all my-4 sm:my-8" style="max-width: 90vw; max-height: calc(100vh - 2rem); display: flex; flex-direction: column;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all my-4 sm:my-8" style="max-width: 90vw; max-height: calc(100vh - 2rem); display: flex; flex-direction: column;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4" style="flex: 1; overflow-y: auto; min-height: 0;">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1088,7 +1088,7 @@
                 </div>
                 <div id="testLogpathSection" class="hidden">
                   <div id="localServerLogpathHint" class="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-800 hidden">
-                    <strong data-i18n="modal.local_server_logpath_note">ℹ️ Note:</strong> <span data-i18n="modal.local_server_logpath_text_prefix">For a local fail2ban server (e.g. installed on container host system or in a container on same host), log files must also be mounted to the fail2ban-ui container (e.g.,</span> <code class="font-mono">-v /var/log:/var/log:ro</code> <span data-i18n="modal.local_server_logpath_text_suffix">) this is required so that the fail2ban-ui can verify logpath variables or paths when updating jails.</span>
+                    <strong data-i18n="modal.local_server_logpath_note">⚠️ Note:</strong> <span data-i18n="modal.local_server_logpath_text_prefix">For a local fail2ban server (e.g. installed on container host system or in a container on same host), log files must also be mounted to the fail2ban-ui container (e.g.,</span> <code class="font-mono">-v /var/log:/var/log:ro</code> <span data-i18n="modal.local_server_logpath_text_suffix">) this is required so that the fail2ban-ui can verify logpath variables or paths when updating jails.</span>
                   </div>
                   <button type="button" 
                     class="inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
@@ -1113,7 +1113,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
       
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1000px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1000px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1153,7 +1153,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
       
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 600px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 600px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1200,7 +1200,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
       
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 600px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 600px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1240,7 +1240,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1000px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1000px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-6">
           <div class="flex flex-col gap-6">
             <div>
@@ -1359,7 +1359,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 800px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 800px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1391,7 +1391,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 800px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 800px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1425,7 +1425,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1200px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1200px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1460,7 +1460,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1200px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 1200px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1520,7 +1520,7 @@
   <div id="elasticsearchHelpModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 680px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 680px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1536,7 +1536,13 @@
                 <div>
                   <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_template_title">1. Create an Index Template</h4>
                   <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_template_desc">Create an index template in Kibana Dev Tools or via the API so Elasticsearch maps the fields correctly:</p>
-                  <pre class="mt-2 bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">PUT _index_template/fail2ban
+                  <div class="flex justify-end mt-2 mb-1">
+                    <button type="button" onclick="copyElasticsearchTemplate(this)" class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-200 border border-gray-300 text-gray-600 hover:bg-gray-300 hover:text-gray-800 shadow-sm transition-colors" title="Copy to clipboard">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                  <pre id="esIndexTemplate" class="bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">PUT _index_template/fail2ban
 {
   "index_patterns": ["fail2ban-events-*"],
   "template": {
@@ -1546,16 +1552,66 @@
     },
     "mappings": {
       "properties": {
-        "@timestamp":      { "type": "date" },
-        "event.kind":      { "type": "keyword" },
-        "event.type":      { "type": "keyword" },
-        "source.ip":       { "type": "ip" },
+        "@timestamp":                  { "type": "date" },
+        "event.kind":                  { "type": "keyword" },
+        "event.type":                  { "type": "keyword" },
+        "event.action":                { "type": "keyword" },
+        "source.ip":                   { "type": "ip" },
+        "source.address":              { "type": "keyword" },
+        "source.port":                 { "type": "integer" },
+        "source.user.name":            { "type": "keyword" },
         "source.geo.country_iso_code": { "type": "keyword" },
-        "observer.hostname": { "type": "keyword" },
-        "fail2ban.jail":   { "type": "keyword" },
-        "fail2ban.failures": { "type": "keyword" },
-        "fail2ban.whois":  { "type": "text" },
-        "fail2ban.logs":   { "type": "text" }
+        "observer.hostname":           { "type": "keyword" },
+        "server.address":              { "type": "keyword" },
+        "http.request.method":         { "type": "keyword" },
+        "http.response.status_code":   { "type": "integer" },
+        "http.response.body.bytes":    { "type": "long" },
+        "http.request.referrer":       { "type": "keyword" },
+        "http.version":                { "type": "keyword" },
+        "url.original":                { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+        "url.path":                    { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+        "url.query":                   { "type": "text" },
+        "user_agent.original":         { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 }}},
+        "process.name":                { "type": "keyword" },
+        "process.pid":                 { "type": "integer" },
+        "log.timestamp":               { "type": "keyword" },
+        "log.level":                   { "type": "keyword" },
+        "log.syslog.hostname":         { "type": "keyword" },
+        "message":                     { "type": "text" },
+        "fail2ban.jail":               { "type": "keyword" },
+        "fail2ban.failures":           { "type": "keyword" },
+        "fail2ban.whois":              { "type": "text" },
+        "fail2ban.logs":               { "type": "text" },
+        "fail2ban.parsed_logs": {
+          "type": "nested",
+          "properties": {
+            "log.original":              { "type": "text" },
+            "log.timestamp":             { "type": "keyword" },
+            "server.address":            { "type": "keyword" },
+            "source.address":            { "type": "keyword" },
+            "source.user.name":          { "type": "keyword" },
+            "source.port":               { "type": "integer" },
+            "http.request.method":       { "type": "keyword" },
+            "http.response.status_code": { "type": "integer" },
+            "http.response.body.bytes":  { "type": "long" },
+            "http.version":              { "type": "keyword" },
+            "url.original":              { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+            "user_agent.original":       { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 }}},
+            "log.level":                 { "type": "keyword" },
+            "message":                   { "type": "text" }
+          }
+        },
+        "whois.net_range":             { "type": "keyword" },
+        "whois.cidr":                  { "type": "keyword" },
+        "whois.net_name":              { "type": "keyword" },
+        "whois.org_name":              { "type": "text", "fields": { "keyword": { "type": "keyword" }}},
+        "whois.org_id":                { "type": "keyword" },
+        "whois.country":               { "type": "keyword" },
+        "whois.abuse_email":           { "type": "keyword" },
+        "whois.abuse_phone":           { "type": "keyword" },
+        "whois.asn":                   { "type": "keyword" },
+        "whois.registration_date":     { "type": "keyword" },
+        "whois.updated_date":          { "type": "keyword" }
       }
     }
   }
@@ -1563,18 +1619,36 @@
                 </div>
                 <div>
                   <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_doc_title">2. Document Structure</h4>
-                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_doc_desc">Fail2ban-UI sends ECS-compatible documents. Each ban/unban event is indexed to fail2ban-events-YYYY.MM.DD:</p>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_doc_desc">Fail2ban-UI sends ECS-compatible documents with automatic log and WHOIS normalisation. Each ban/unban event can be indexed to fail2ban-events-YYYY.MM.DD:</p>
                   <pre class="mt-2 bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">{
-  "@timestamp": "2026-02-14T12:00:00Z",
+  "@timestamp": "2026-03-05T12:00:00Z",
   "event.kind": "alert",
   "event.type": "ban",
+  "event.action": "http_request",
   "source.ip": "1.2.3.4",
-  "source.geo.country_iso_code": "CN",
+  "source.geo.country_iso_code": "CH",
   "observer.hostname": "webserver-01",
   "fail2ban.jail": "sshd",
   "fail2ban.failures": "5",
-  "fail2ban.whois": "...",
-  "fail2ban.logs": "..."
+  "fail2ban.whois": "... (raw text) ...",
+  "fail2ban.logs": "... (raw text) ...",
+
+  "server.address": "code.example.com",
+  "source.address": "1.2.3.4",
+  "http.request.method": "GET",
+  "http.response.status_code": 301,
+  "url.original": "/.git/config?foo=bar",
+  "url.path": "/.git/config",
+  "url.query": "foo=bar",
+  "user_agent.original": "Mozilla/5.0 ...",
+  "process.name": "httpd",
+  "log.timestamp": "05/Mar/2026:12:00:00 +0100",
+
+  "whois.org_name": "Swissmakers GmbH",
+  "whois.country": "CH",
+  "whois.abuse_email": "abuse@example.com",
+  "whois.asn": "200373",
+  "whois.cidr": "1.1.1.0/24"
 }</pre>
                 </div>
                 <div>
@@ -1609,7 +1683,7 @@
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
 
-      <div class="relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 560px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 560px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">

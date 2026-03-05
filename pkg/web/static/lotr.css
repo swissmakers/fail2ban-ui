@@ -35,7 +35,7 @@ body.lotr-mode {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  backdrop-filter: blur(5px);
+  backdrop-filter: none;
   color: var(--lotr-text-light);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
@@ -75,7 +75,7 @@ body.lotr-mode h3 {
    Cards and Panels
    ========================================================================= */
 
-body.lotr-mode .bg-white {
+body.lotr-mode .bg-white:not(.modal-content) {
   background: linear-gradient(135deg, var(--lotr-parchment) 0%, var(--lotr-warm-parchment) 100%) !important;
   border: 4px solid var(--lotr-gold);
   border-radius: 12px;
@@ -88,7 +88,7 @@ body.lotr-mode .bg-white {
   overflow: hidden;
 }
 
-body.lotr-mode .bg-white::before {
+body.lotr-mode .bg-white:not(.modal-content)::before {
   content: '';
   position: absolute;
   top: 0;
@@ -109,7 +109,7 @@ body.lotr-mode .bg-white::before {
   border-radius: 12px;
 }
 
-body.lotr-mode .bg-white::after {
+body.lotr-mode .bg-white:not(.modal-content)::after {
   content: '';
   position: absolute;
   top: -2px;
@@ -128,6 +128,22 @@ body.lotr-mode .bg-white::after {
 
 body.lotr-mode footer.bg-gray-100 {
   background-color: var(--lotr-dark-brown) !important;
+}
+
+body.lotr-mode footer .text-gray-600,
+body.lotr-mode #footer {
+  color: var(--lotr-text-light) !important;
+}
+
+body.lotr-mode #footer a {
+  color: var(--lotr-bright-gold) !important;
+}
+
+body.lotr-mode #footer a:hover {
+  color: var(--lotr-gold) !important;
+  text-shadow:
+    1px 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 8px rgba(212, 175, 55, 0.5);
 }
 
 body.lotr-mode .bg-white .text-gray-800,
@@ -261,6 +277,64 @@ body.lotr-mode nav a:hover {
   text-shadow:
     1px 1px 2px rgba(0, 0, 0, 0.7),
     0 0 10px rgba(212, 175, 55, 0.5);
+}
+
+/* =========================================================================
+   WebSocket Status Indicator + Tooltip
+   ========================================================================= */
+
+body.lotr-mode #backendStatus {
+  color: var(--lotr-bright-gold) !important;
+  border: 2px solid rgba(212, 175, 55, 0.45);
+  background: rgba(13, 40, 24, 0.55);
+  border-radius: 9999px;
+  padding: 0.2rem 0.6rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+body.lotr-mode #backendStatus:hover {
+  background: rgba(26, 77, 46, 0.65);
+  border-color: var(--lotr-bright-gold);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.35);
+}
+
+body.lotr-mode #statusText {
+  color: var(--lotr-bright-gold) !important;
+}
+
+body.lotr-mode #statusDot {
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
+}
+
+body.lotr-mode #wsTooltip {
+  background: linear-gradient(135deg, var(--lotr-dark-brown) 0%, var(--lotr-dark-green) 100%) !important;
+  border: 2px solid var(--lotr-gold) !important;
+  color: var(--lotr-text-light) !important;
+}
+
+body.lotr-mode #wsTooltip .text-gray-400,
+body.lotr-mode #wsTooltip .text-gray-500 {
+  color: var(--lotr-light-stone) !important;
+}
+
+body.lotr-mode #wsTooltip .text-green-400 {
+  color: #7ee787 !important;
+}
+
+body.lotr-mode #wsTooltip .text-blue-400 {
+  color: #7dcfff !important;
+}
+
+body.lotr-mode #wsTooltip .text-yellow-400 {
+  color: #f4d03f !important;
+}
+
+body.lotr-mode #wsTooltip .text-orange-400 {
+  color: #ffb066 !important;
+}
+
+body.lotr-mode #wsTooltip .border-gray-700 {
+  border-color: rgba(212, 175, 55, 0.35) !important;
 }
 
 /* =========================================================================
@@ -526,7 +600,9 @@ body.lotr-mode .modal-content {
     0 12px 48px rgba(0, 0, 0, 0.6),
     inset 0 0 60px rgba(212, 175, 55, 0.15);
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: calc(100vh - 2rem);
 }
 
 body.lotr-mode .modal-content::before {
