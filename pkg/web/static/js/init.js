@@ -131,16 +131,25 @@ function initializeApp() {
     $('#alertCountries').on('select2:select', function(e) {
       var selectedValue = e.params.data.id;
       var currentValues = $('#alertCountries').val() || [];
+      var hLTR = currentValues.indexOf('LOTR') !== -1;
       if (selectedValue === 'ALL') {
         if (currentValues.length > 1) {
-          $('#alertCountries').val(['ALL']).trigger('change');
+          if (hLTR) {
+            $('#alertCountries').val(['ALL', 'LOTR']).trigger('change');
+          } else {
+            $('#alertCountries').val(['ALL']).trigger('change');
+          }
         }
       } else {
         if (currentValues.indexOf('ALL') !== -1) {
-          var newValues = currentValues.filter(function(value) {
-            return value !== 'ALL';
-          });
-          $('#alertCountries').val(newValues).trigger('change');
+          if (selectedValue === 'LOTR') {
+            $('#alertCountries').val(['ALL', 'LOTR']).trigger('change');
+          } else {
+            var newValues = currentValues.filter(function(value) {
+              return value !== 'ALL';
+            });
+            $('#alertCountries').val(newValues).trigger('change');
+          }
         }
       }
       setTimeout(function() {
