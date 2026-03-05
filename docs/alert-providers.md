@@ -120,7 +120,11 @@ Indexes ban/unban events as structured documents into Elasticsearch, using ECS (
 
 ### Document structure
 
-Each event is indexed to `<index>-YYYY.MM.DD` (e.g. `fail2ban-events-2026.02.23`):
+Each event is indexed to `<index>-YYYY.MM.DD` (e.g. `fail2ban-events-2026.02.23`).
+
+The raw `fail2ban.logs` and `fail2ban.whois` fields will keep present. Additionally, Fail2Ban UI automatically parses these fields using grok patterns and extracts structured, searchable ECS fields. The enrichment is currently best-effort: if a log format is not recognised, only the raw text is indexed.
+
+**Core fields**:
 
 ```json
 {
@@ -136,6 +140,62 @@ Each event is indexed to `<index>-YYYY.MM.DD` (e.g. `fail2ban-events-2026.02.23`
   "fail2ban.logs": "..."
 }
 ```
+
+**Normalize fields from "fail2ban.logs"** (only present when log was correctly pharsed):
+
+| Field | Type | Description |
+|---|---|---|
+| `event.action` | keyword | Action (e.g. `http_request`, `failed_password`, `invalid_user`, `http_error`) |
+| `log.timestamp` | keyword | Timestamp extracted from the log line |
+| `log.level` | keyword | Log severity (e.g. `error`, `warn`) |
+| `log.syslog.hostname` | keyword | Hostname from syslog prefix |
+| `process.name` | keyword | Service name (e.g. `sshd`, `nginx`, `apache`) |
+| `process.pid` | integer | Process ID |
+| `http.request.method` | keyword | HTTP method (GET, POST, etc.) |
+| `http.response.status_code` | integer | HTTP response status |
+| `http.response.body.bytes` | integer | Response body size |
+| `http.version` | keyword | HTTP protocol version |
+| `http.request.referrer` | keyword | HTTP referrer |
+| `url.original` | keyword | Full request URL as seen in the log |
+| `url.path` | keyword | URL path component |
+| `url.query` | text | URL query string |
+| `user_agent.original` | text | Full user-agent string |
+| `source.address` | keyword | Client address from the log line |
+| `source.port` | integer | Client port (sshd connections) |
+| `source.user.name` | keyword | Target username (sshd attacks, HTTP auth) |
+| `server.address` | keyword | Server/vhost name (when present in log) |
+| `message` | text | Error message body (error logs) |
+| `fail2ban.parsed_logs` | nested | Array of individually parsed log lines (multi-line events) |
+
+**Normalize fields from "fail2ban.whois"** (only present when was correctly pharsed):
+
+| Field | Type | Description |
+|---|---|---|
+| `whois.net_range` | keyword | Network range (e.g. `45.3.32.0 - 45.3.63.255`) |
+| `whois.cidr` | keyword | CIDR notation (e.g. `45.3.32.0/19`) |
+| `whois.net_name` | keyword | Network name |
+| `whois.org_name` | text | Organisation name |
+| `whois.org_id` | keyword | Organisation ID |
+| `whois.country` | keyword | Country from WHOIS record |
+| `whois.abuse_email` | keyword | Abuse contact email |
+| `whois.abuse_phone` | keyword | Abuse contact phone |
+| `whois.asn` | keyword | Autonomous System Number |
+| `whois.registration_date` | keyword | Registration date |
+| `whois.updated_date` | keyword | Last update date |
+
+**Currently supported log formats** (Sould pharse via grok patterns):
+
+| Format | Example jail names |
+|---|---|
+| Apache/Nginx combined (with or without vhost prefix) | `apache-*`, `nginx-*`, `npm-*` |
+| Apache error log (2.0 and 2.4) | `apache-*` |
+| Nginx error log | `nginx-*` |
+| sshd (failed password, invalid user, disconnect, PAM) | `sshd`, `ssh-*` |
+| Postfix (reject, SASL auth failure) | `postfix-*` |
+| Dovecot (auth failure) | `dovecot-*` |
+| Generic syslog (fallback) | any |
+
+The jail name is used as a hint to prioritise pattern matching (e.g. an `sshd` jail tries SSH patterns first), but all patterns are tried if the primary category does not match.
 
 ### Elasticsearch setup
 
@@ -157,18 +217,70 @@ PUT _index_template/fail2ban
         "@timestamp":                    { "type": "date" },
         "event.kind":                    { "type": "keyword" },
         "event.type":                    { "type": "keyword" },
+        "event.action":                  { "type": "keyword" },
         "source.ip":                     { "type": "ip" },
+        "source.address":                { "type": "keyword" },
+        "source.port":                   { "type": "integer" },
+        "source.user.name":              { "type": "keyword" },
         "source.geo.country_iso_code":   { "type": "keyword" },
         "observer.hostname":             { "type": "keyword" },
+        "server.address":                { "type": "keyword" },
+        "http.request.method":           { "type": "keyword" },
+        "http.response.status_code":     { "type": "integer" },
+        "http.response.body.bytes":      { "type": "long" },
+        "http.request.referrer":         { "type": "keyword" },
+        "http.version":                  { "type": "keyword" },
+        "url.original":                  { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+        "url.path":                      { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+        "url.query":                     { "type": "text" },
+        "user_agent.original":           { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 }}},
+        "process.name":                  { "type": "keyword" },
+        "process.pid":                   { "type": "integer" },
+        "log.timestamp":                 { "type": "keyword" },
+        "log.level":                     { "type": "keyword" },
+        "log.syslog.hostname":           { "type": "keyword" },
+        "message":                       { "type": "text" },
         "fail2ban.jail":                 { "type": "keyword" },
         "fail2ban.failures":             { "type": "keyword" },
         "fail2ban.whois":                { "type": "text" },
-        "fail2ban.logs":                 { "type": "text" }
+        "fail2ban.logs":                 { "type": "text" },
+        "fail2ban.parsed_logs": {
+          "type": "nested",
+          "properties": {
+            "log.original":              { "type": "text" },
+            "log.timestamp":             { "type": "keyword" },
+            "server.address":            { "type": "keyword" },
+            "source.address":            { "type": "keyword" },
+            "source.user.name":          { "type": "keyword" },
+            "source.port":               { "type": "integer" },
+            "http.request.method":       { "type": "keyword" },
+            "http.response.status_code": { "type": "integer" },
+            "http.response.body.bytes":  { "type": "long" },
+            "http.version":              { "type": "keyword" },
+            "url.original":              { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+            "user_agent.original":       { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 }}},
+            "log.level":                 { "type": "keyword" },
+            "message":                   { "type": "text" }
+          }
+        },
+        "whois.net_range":               { "type": "keyword" },
+        "whois.cidr":                    { "type": "keyword" },
+        "whois.net_name":                { "type": "keyword" },
+        "whois.org_name":                { "type": "text", "fields": { "keyword": { "type": "keyword" }}},
+        "whois.org_id":                  { "type": "keyword" },
+        "whois.country":                 { "type": "keyword" },
+        "whois.abuse_email":             { "type": "keyword" },
+        "whois.abuse_phone":             { "type": "keyword" },
+        "whois.asn":                     { "type": "keyword" },
+        "whois.registration_date":       { "type": "keyword" },
+        "whois.updated_date":            { "type": "keyword" }
       }
     }
   }
 }
 ```
+
+**Note:** If you already have a `fail2ban` index and index-template from an earlier version, you must update / recreate the inex-template with the new field mappings. Existing documents / inecies are not affected from the change. In Elasticsearch index-templates are only applied on index creation.
 
 **2. Create an API key**
 
@@ -216,7 +328,19 @@ Ban/Unban Event
   → Dispatch to provider:
       ├── email         → sendBanAlert() → sendEmail() via SMTP
       ├── webhook       → sendWebhookAlert() → HTTP POST/PUT
-      └── elasticsearch → sendElasticsearchAlert() → POST /<index>/_doc
+      └── elasticsearch → enrich logs (grok) + enrich whois (regex)
+                          → sendElasticsearchAlert() → POST /<index>/_doc
 ```
 
 Switching providers does not affect event storage or WebSocket broadcasting. Only the notification delivery channel changes.
+
+### Adding new log format patterns
+
+Log format patterns are defined in `internal/enrichment/patterns.go`. To add support for a new log format:
+
+1. Add a `PatternDef` entry to the appropriate category slice (`HTTPPatterns`, `SSHPatterns`, `MailPatterns`, or `FallbackPatterns`)
+2. The pattern uses standard grok syntax with ECS field names in the capture groups (e.g. `%{IP:source.address}`)
+3. Set the `Action` field to a normalised event action name
+4. Set the `Process` field to the service name (used as fallback if not captured from the log)
+
+No changes to other files are needed. The parser compiles all patterns at startup and tries them automatically.

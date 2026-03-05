@@ -47,6 +47,7 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/enrichment"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/integrations"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
@@ -1104,6 +1105,20 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 		"fail2ban.failures":           failures,
 		"fail2ban.whois":              whois,
 		"fail2ban.logs":               logs,
+	}
+
+	// Parses log lines into structured ECS fields
+	if logFields := enrichment.ParseLogLines(logs, jail); logFields != nil {
+		for k, v := range logFields {
+			doc[k] = v
+		}
+	}
+
+	// Parses whois text into structured fields
+	if whoisFields := enrichment.ParseWhois(whois); whoisFields != nil {
+		for k, v := range whoisFields {
+			doc[k] = v
+		}
 	}
 
 	data, err := json.Marshal(doc)
