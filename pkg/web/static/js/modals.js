@@ -101,6 +101,74 @@ function openLogsModal(eventIndex) {
 }
 
 // =========================================================================
+//  Threat Intelligence Modal
+// =========================================================================
+
+var threatIntelRequestToken = 0;
+
+function openThreatIntelModal(ip) {
+  var normalizedIP = (ip || '').trim();
+  if (!normalizedIP) {
+    showToast(t('threat.modal.invalid_ip', 'Invalid IP address'), 'error');
+    return;
+  }
+
+  var ipEl = document.getElementById('threatIntelModalIP');
+  if (ipEl) {
+    ipEl.textContent = normalizedIP;
+  }
+  openModal('threatIntelModal');
+  setThreatIntelLoadingState();
+
+  if (typeof fetchThreatIntelData !== 'function' || typeof renderThreatIntelData !== 'function') {
+    setThreatIntelErrorState(t('threat.modal.error_generic', 'Unable to load threat intelligence data.'));
+    return;
+  }
+
+  var token = ++threatIntelRequestToken;
+  fetchThreatIntelData(normalizedIP)
+    .then(function(data) {
+      if (token !== threatIntelRequestToken) {
+        return;
+      }
+      renderThreatIntelData(data || {}, normalizedIP);
+    })
+    .catch(function(err) {
+      if (token !== threatIntelRequestToken) {
+        return;
+      }
+      setThreatIntelErrorState((err && err.message) ? err.message : String(err));
+    });
+}
+
+function setThreatIntelLoadingState() {
+  var loading = document.getElementById('threatIntelLoadingState');
+  var error = document.getElementById('threatIntelErrorState');
+  var content = document.getElementById('threatIntelContent');
+  if (loading) loading.classList.remove('hidden');
+  if (error) error.classList.add('hidden');
+  if (content) content.innerHTML = '';
+}
+
+function setThreatIntelErrorState(message) {
+  var loading = document.getElementById('threatIntelLoadingState');
+  var error = document.getElementById('threatIntelErrorState');
+  var content = document.getElementById('threatIntelContent');
+  var text = document.getElementById('threatIntelErrorText');
+  if (loading) loading.classList.add('hidden');
+  if (error) error.classList.remove('hidden');
+  if (content) content.innerHTML = '';
+  if (text) text.textContent = message || t('threat.modal.error_generic', 'Unable to load threat intelligence data.');
+}
+
+function setThreatIntelContentState() {
+  var loading = document.getElementById('threatIntelLoadingState');
+  var error = document.getElementById('threatIntelErrorState');
+  if (loading) loading.classList.add('hidden');
+  if (error) error.classList.add('hidden');
+}
+
+// =========================================================================
 //  Ban Insights Modal
 // =========================================================================
 
