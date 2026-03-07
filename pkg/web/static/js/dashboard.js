@@ -1,6 +1,8 @@
 "use strict";
 // Dashboard data fetching and rendering.
 
+var threatIntelProvider = 'none';
+
 // =========================================================================
 //  Data Fetching
 // =========================================================================
@@ -23,7 +25,8 @@ function refreshData(options) {
     summaryPromise,
     fetchBanStatisticsData(),
     fetchBanEventsData(),
-    fetchBanInsightsData()
+    fetchBanInsightsData(),
+    fetchThreatIntelProviderData()
   ])
     .then(function() {
       renderDashboard();
@@ -37,6 +40,20 @@ function refreshData(options) {
       if (!options.silent) {
         showLoading(false);
       }
+    });
+}
+
+function fetchThreatIntelProviderData() {
+  return fetch('/api/settings')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      var provider = data && data.threatIntel && data.threatIntel.provider
+        ? String(data.threatIntel.provider).toLowerCase()
+        : 'none';
+      threatIntelProvider = provider;
+    })
+    .catch(function() {
+      threatIntelProvider = 'none';
     });
 }
 
@@ -426,9 +443,20 @@ function renderBannedIPs(jailName, ips) {
   function bannedIpRow(ip) {
     var safeIp = escapeHtml(ip);
     var encodedIp = encodeURIComponent(ip);
+    var ipLabel = '';
+    if (isThreatIntelEnabled()) {
+      ipLabel = ''
+        + '<span class="text-sm text-blue-600 hover:text-blue-800 cursor-pointer underline decoration-dotted"'
+        + '    data-ip-value="' + encodedIp + '"'
+        + '    role="button" tabindex="0"'
+        + '    onclick="openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')))"'
+        + '    onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')));}">' + safeIp + '</span>';
+    } else {
+      ipLabel = '<span class="text-sm" data-ip-value="' + encodedIp + '">' + safeIp + '</span>';
+    }
     return ''
       + '<div class="flex items-center justify-between banned-ip-item" data-ip="' + safeIp + '">'
-      + '  <span class="text-sm" data-ip-value="' + encodedIp + '">' + safeIp + '</span>'
+      + ipLabel
       + '  <button class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600 transition-colors"'
       + '    onclick="unbanIP(\'' + escapeHtml(jailName) + '\', \'' + escapeHtml(ip) + '\')">'
       + '    <span data-i18n="dashboard.unban">Unban</span>'
@@ -590,8 +618,9 @@ function renderLogOverviewContent() {
       var serverCell = highlightQueryMatch(serverValue, searchQuery);
       var jailCell = highlightQueryMatch(jailValue, searchQuery);
       var ipCell = highlightQueryMatch(ipValue, searchQuery);
+      var ipCellInteractive = renderThreatIntelIPTrigger(ipValue, ipCell);
       if (event.ip && recurringMap[event.ip]) {
-        ipCell += ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">' + t('logs.badge.recurring', 'Recurring') + '</span>';
+        ipCellInteractive += ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">' + t('logs.badge.recurring', 'Recurring') + '</span>';
       }
       var eventType = event.eventType || 'ban';
       var eventTypeBadge = '';
@@ -605,7 +634,7 @@ function renderLogOverviewContent() {
         + '        <td class="px-2 py-2 whitespace-nowrap">' + escapeHtml(formatDateTime(event.occurredAt || event.createdAt)) + '</td>'
         + '        <td class="px-2 py-2 whitespace-nowrap">' + serverCell + '</td>'
         + '        <td class="hidden sm:table-cell px-2 py-2 whitespace-nowrap">' + jailCell + '</td>'
-        + '        <td class="px-2 py-2 whitespace-nowrap">' + ipCell + eventTypeBadge + '</td>'
+        + '        <td class="px-2 py-2 whitespace-nowrap">' + ipCellInteractive + eventTypeBadge + '</td>'
         + '        <td class="hidden md:table-cell px-2 py-2 whitespace-nowrap">' + escapeHtml(event.country || '—') + '</td>'
         + '        <td class="px-2 py-2 whitespace-nowrap">'
         + '          <div class="flex gap-2">'
@@ -625,6 +654,23 @@ function renderLogOverviewContent() {
   }
   html += '</div>';
   return html;
+}
+
+function renderThreatIntelIPTrigger(ipValue, labelHTML) {
+  if (!ipValue || !isThreatIntelEnabled()) {
+    return labelHTML || '';
+  }
+  var encodedIp = encodeURIComponent(ipValue);
+  return ''
+    + '<button type="button" class="text-blue-600 hover:text-blue-800 underline decoration-dotted"'
+    + ' data-ip-value="' + encodedIp + '"'
+    + ' onclick="openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')))">'
+    + (labelHTML || escapeHtml(ipValue))
+    + '</button>';
+}
+
+function isThreatIntelEnabled() {
+  return threatIntelProvider === 'alienvault' || threatIntelProvider === 'abuseipdb';
 }
 
 // =========================================================================
