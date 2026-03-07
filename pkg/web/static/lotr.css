@@ -126,6 +126,21 @@ body.lotr-mode .bg-white:not(.modal-content)::after {
   opacity: 0.3;
 }
 
+/* Exclude inline switch handles from panel styling */
+body.lotr-mode label.inline-flex > span.bg-white {
+  position: absolute !important;
+  border: 0 !important;
+  border-radius: 9999px !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  background: #ffffff !important;
+}
+
+body.lotr-mode label.inline-flex > span.bg-white::before,
+body.lotr-mode label.inline-flex > span.bg-white::after {
+  content: none !important;
+}
+
 body.lotr-mode footer.bg-gray-100 {
   background-color: var(--lotr-dark-brown) !important;
 }
@@ -173,6 +188,7 @@ body.lotr-mode .bg-blue-600:not(.toast) {
   border-radius: 8px;
   color: var(--lotr-text-dark) !important;
   font-weight: 700;
+  /*padding: 0px 2px 0px 2px;*/
   text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
   box-shadow:
     0 4px 8px rgba(0, 0, 0, 0.4),
@@ -341,7 +357,7 @@ body.lotr-mode #wsTooltip .border-gray-700 {
    Form Elements
    ========================================================================= */
 
-body.lotr-mode input:not([type="checkbox"]):not([type="radio"]),
+body.lotr-mode input:not([type="checkbox"]):not([type="radio"]):not([type="search"]),
 body.lotr-mode select,
 body.lotr-mode textarea {
   background: var(--lotr-warm-parchment) !important;
@@ -641,6 +657,80 @@ body.lotr-mode .modal-content h3::after {
   opacity: 0.5;
 }
 
+body.lotr-mode .threat-intel-section {
+  background: linear-gradient(135deg, var(--lotr-dark-parchment) 0%, var(--lotr-warm-parchment) 100%);
+  border: 2px solid var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-hero {
+  background: linear-gradient(135deg, var(--lotr-dark-brown) 0%, #4a3b2b 55%, var(--lotr-brown) 100%);
+  border: 2px solid var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-hero.threat-intel-card-danger {
+  background: linear-gradient(135deg, #5c0f13 0%, #7e1218 100%);
+  border-color: var(--lotr-fire-orange);
+}
+
+body.lotr-mode .threat-intel-hero.threat-intel-card-safe {
+  background: linear-gradient(135deg, var(--lotr-forest-green) 0%, var(--lotr-dark-green) 100%);
+  border-color: var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-hero-kicker {
+  color: var(--lotr-bright-gold);
+}
+
+body.lotr-mode .threat-intel-hero-title {
+  color: var(--lotr-bright-gold);
+}
+
+body.lotr-mode .threat-intel-hero-subtitle {
+  color: #f3e5c4;
+}
+
+body.lotr-mode .threat-intel-card,
+body.lotr-mode .threat-intel-list-row {
+  background: var(--lotr-parchment);
+  border: 1px solid var(--lotr-brown);
+  color: var(--lotr-text-dark);
+}
+
+body.lotr-mode .threat-intel-card-label {
+  color: var(--lotr-stone-gray) !important;
+}
+
+body.lotr-mode .threat-intel-card-value,
+body.lotr-mode .threat-intel-card-text {
+  color: var(--lotr-text-dark) !important;
+}
+
+body.lotr-mode .threat-intel-card-danger {
+  background: linear-gradient(135deg, #5c0f13 0%, #7e1218 100%);
+  border-color: var(--lotr-fire-orange);
+}
+
+body.lotr-mode .threat-intel-card-danger .threat-intel-card-label,
+body.lotr-mode .threat-intel-card-danger .threat-intel-card-value {
+  color: var(--lotr-text-light);
+}
+
+body.lotr-mode .threat-intel-card-safe {
+  background: linear-gradient(135deg, var(--lotr-forest-green) 0%, var(--lotr-dark-green) 100%);
+  border-color: var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-card-safe .threat-intel-card-label,
+body.lotr-mode .threat-intel-card-safe .threat-intel-card-value {
+  color: var(--lotr-bright-gold);
+}
+
+body.lotr-mode .threat-intel-raw {
+  background: #121212;
+  border: 1px solid var(--lotr-gold);
+  color: #f3e5c4;
+}
+
 /* =========================================================================
    Badges and Labels
    ========================================================================= */
@@ -933,15 +1023,15 @@ body.lotr-mode * {
 
 body.lotr-mode a {
   color: var(--lotr-bright-gold) !important;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+  /*text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);*/
   transition: all 0.3s ease;
 }
 
 body.lotr-mode a:hover {
   color: var(--lotr-gold);
-  text-shadow:
+  /*text-shadow:
     1px 1px 2px rgba(0, 0, 0, 0.7),
-    0 0 10px rgba(212, 175, 55, 0.6);
+    0 0 10px rgba(212, 175, 55, 0.6);*/
 }
 
 body.lotr-mode input[type="checkbox"],
