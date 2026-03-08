@@ -45,7 +45,7 @@ For SSH-managed hosts:
 
 - Use a dedicated service account (not a human user).
 - Require key-based auth.
-- Restrict sudo to the minimum set of commands required to operate Fail2Ban (typically `fail2ban-client` and optionally `systemctl restart fail2ban`).
+- Restrict sudo to the minimum set of commands required to operate Fail2Ban (at minimum `fail2ban-client *` and `systemctl restart fail2ban`.
 - Use filesystem ACLs for `/etc/fail2ban` rather than broad permissions to allow full modification capabilities for the specific user.
 
 ## Integration connector hardening

@@ -131,7 +131,7 @@ environment:
 
 The SSH container is pre-configured with:
 - Passwordless SSH key authentication
-- Sudo permissions for fail2ban-client commands
+- Sudo permissions for `fail2ban-client *` and `systemctl restart fail2ban`
 - Proper file permissions (FACLs) for Fail2ban config directories
 - Root access for network management
 

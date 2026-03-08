@@ -43,6 +43,7 @@ All endpoints that accept IP addresses validate them server-side using Go's `net
 - `DELETE /api/events/bans` -> Delete all stored ban events
 - `GET /api/events/bans/stats` -> Ban statistics (counts, timeseries)
 - `GET /api/events/bans/insights` -> Ban insights (countries, top IPs, top jails)
+- `GET /api/threat-intel/:ip` -> Query configured threat-intel provider for an IP (AlienVault OTX / AbuseIPDB)
 
 ### Advanced actions
 - `GET /api/advanced-actions/blocks` -> List permanent block records
@@ -67,6 +68,18 @@ The settings payload includes alert provider configuration (`alertProvider`, `we
 
 ### Service control
 - `POST /api/fail2ban/restart` -> Restart / Reloads the Fail2Ban service
+
+### Threat intelligence
+- `GET /api/threat-intel/:ip`
+
+Notes:
+- Validates `:ip` server-side.
+- Requires threat-intel provider enabled in settings (`alienvault` or `abuseipdb`).
+- Returns `409` when provider is disabled (`none`).
+- Uses provider+IP cache (30 minutes) and upstream 429 retry/backoff handling.
+- May include `X-Threat-Intel-Cache: hit|stale` response header.
+
+For full setup and behavior details, see [`docs/threat-intel.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/threat-intel.md).
 
 ### Version
 - `GET /api/version` -> Get running version and optional update check
