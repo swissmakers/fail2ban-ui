@@ -446,7 +446,7 @@ function renderBannedIPs(jailName, ips) {
     var ipLabel = '';
     if (isThreatIntelEnabled()) {
       ipLabel = ''
-        + '<span class="text-sm text-blue-600 hover:text-blue-800 cursor-pointer underline decoration-dotted"'
+        + '<span class="text-sm text-blue-600 hover:text-blue-800 cursor-pointer decoration-dotted"'
         + '    data-ip-value="' + encodedIp + '"'
         + '    role="button" tabindex="0"'
         + '    onclick="openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')))"'
@@ -662,7 +662,7 @@ function renderThreatIntelIPTrigger(ipValue, labelHTML) {
   }
   var encodedIp = encodeURIComponent(ipValue);
   return ''
-    + '<button type="button" class="text-blue-600 hover:text-blue-800 underline decoration-dotted"'
+    + '<button type="button" class="text-blue-600 hover:text-blue-800 decoration-dotted"'
     + ' data-ip-value="' + encodedIp + '"'
     + ' onclick="openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')))">'
     + (labelHTML || escapeHtml(ipValue))

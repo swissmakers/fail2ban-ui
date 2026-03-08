@@ -189,7 +189,7 @@
           {{if not .disableExternalIP}}
           <div class="text-sm text-gray-500 sm:ml-2">
             <span data-i18n="dashboard.external_ip">Your ext. IP:</span>
-            <span id="external-ip" class="font-medium text-blue-600 hover:underline cursor-pointer">Loading…</span>
+            <span id="external-ip" class="font-medium text-blue-600 cursor-pointer">Loading…</span>
           </div>
           {{end}}
           <div class="flex flex-col sm:flex-row gap-3">
@@ -299,7 +299,7 @@
           <div class="mb-4">
             <div class="flex items-center justify-between mb-2">
               <label for="callbackSecret" class="block text-sm font-medium text-gray-700" data-i18n="settings.callback_secret">Fail2ban Callback URL Secret</label>
-              <a href="#" id="toggleCallbackSecretLink" class="text-sm text-blue-600 hover:text-blue-800 underline" onclick="toggleCallbackSecretVisibility(); return false;">show secret</a>
+              <a href="#" id="toggleCallbackSecretLink" class="text-sm text-blue-600 hover:text-blue-800" onclick="toggleCallbackSecretVisibility(); return false;">show secret</a>
             </div>
             <input type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 cursor-not-allowed" id="callbackSecret" readonly
                    data-i18n-placeholder="settings.callback_secret_placeholder" placeholder="Auto-generated 42-character secret" />
