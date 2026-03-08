@@ -96,11 +96,12 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		// Internal API to restart Fail2ban
 		api.POST("/fail2ban/restart", RestartFail2banHandler)
 
-		// Internal API calls to get the stats of the bans
+		// Internal API calls to get the stats and insights about bans
 		api.GET("/events/bans", ListBanEventsHandler)
 		api.DELETE("/events/bans", ClearBanEventsHandler)
 		api.GET("/events/bans/stats", BanStatisticsHandler)
 		api.GET("/events/bans/insights", BanInsightsHandler)
+		api.GET("/threat-intel/:ip", ThreatIntelHandler)
 
 		// WebSocket endpoint
 		api.GET("/ws", WebSocketHandler(hub))

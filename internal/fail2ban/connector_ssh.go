@@ -136,14 +136,14 @@ func (sc *SSHConnector) Restart(ctx context.Context) error {
 
 func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
 	// Try systemd restart on the remote host first.
-	out, err := sc.runRemoteCommand(ctx, []string{"systemctl", "restart", "fail2ban"})
+	out, err := sc.runRemoteCommand(ctx, []string{"sudo", "systemctl", "restart", "fail2ban"})
 	if err == nil {
 		if err := sc.checkFail2banHealthyRemote(ctx); err != nil {
 			return "restart", fmt.Errorf("remote fail2ban health check after systemd restart failed: %w", err)
 		}
 		return "restart", nil
 	}
-	// If systemd is not available, we will fall back to fail2ban-client.
+	// If systemd is not available or if there is an interactive authentication required, we will fall back to fail2ban-client.
 	if sc.isSystemctlUnavailable(out, err) {
 		reloadOut, reloadErr := sc.runFail2banCommand(ctx, "reload")
 		if reloadErr != nil {
@@ -311,12 +311,13 @@ func (sc *SSHConnector) runFail2banCommand(ctx context.Context, args ...string) 
 	return sc.runRemoteCommand(ctx, cmdArgs)
 }
 
-// Detects "no systemd” situations on the remote host.
+// Detects "no systemd” situations on the remote host or if an interactive authentication is required.
 func (sc *SSHConnector) isSystemctlUnavailable(output string, err error) bool {
 	msg := strings.ToLower(output + " " + err.Error())
 	return strings.Contains(msg, "command not found") ||
 		strings.Contains(msg, "system has not been booted with systemd") ||
-		strings.Contains(msg, "failed to connect to bus")
+		strings.Contains(msg, "failed to connect to bus") ||
+		strings.Contains(msg, "interactive authentication required")
 }
 
 func (sc *SSHConnector) checkFail2banHealthyRemote(ctx context.Context) error {

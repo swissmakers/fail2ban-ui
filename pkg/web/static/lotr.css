@@ -35,7 +35,7 @@ body.lotr-mode {
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  backdrop-filter: blur(5px);
+  backdrop-filter: none;
   color: var(--lotr-text-light);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
@@ -75,7 +75,7 @@ body.lotr-mode h3 {
    Cards and Panels
    ========================================================================= */
 
-body.lotr-mode .bg-white {
+body.lotr-mode .bg-white:not(.modal-content) {
   background: linear-gradient(135deg, var(--lotr-parchment) 0%, var(--lotr-warm-parchment) 100%) !important;
   border: 4px solid var(--lotr-gold);
   border-radius: 12px;
@@ -88,7 +88,7 @@ body.lotr-mode .bg-white {
   overflow: hidden;
 }
 
-body.lotr-mode .bg-white::before {
+body.lotr-mode .bg-white:not(.modal-content)::before {
   content: '';
   position: absolute;
   top: 0;
@@ -109,7 +109,7 @@ body.lotr-mode .bg-white::before {
   border-radius: 12px;
 }
 
-body.lotr-mode .bg-white::after {
+body.lotr-mode .bg-white:not(.modal-content)::after {
   content: '';
   position: absolute;
   top: -2px;
@@ -126,8 +126,39 @@ body.lotr-mode .bg-white::after {
   opacity: 0.3;
 }
 
+/* Exclude inline switch handles from panel styling */
+body.lotr-mode label.inline-flex > span.bg-white {
+  position: absolute !important;
+  border: 0 !important;
+  border-radius: 9999px !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  background: #ffffff !important;
+}
+
+body.lotr-mode label.inline-flex > span.bg-white::before,
+body.lotr-mode label.inline-flex > span.bg-white::after {
+  content: none !important;
+}
+
 body.lotr-mode footer.bg-gray-100 {
   background-color: var(--lotr-dark-brown) !important;
+}
+
+body.lotr-mode footer .text-gray-600,
+body.lotr-mode #footer {
+  color: var(--lotr-text-light) !important;
+}
+
+body.lotr-mode #footer a {
+  color: var(--lotr-bright-gold) !important;
+}
+
+body.lotr-mode #footer a:hover {
+  color: var(--lotr-gold) !important;
+  text-shadow:
+    1px 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 8px rgba(212, 175, 55, 0.5);
 }
 
 body.lotr-mode .bg-white .text-gray-800,
@@ -157,6 +188,7 @@ body.lotr-mode .bg-blue-600:not(.toast) {
   border-radius: 8px;
   color: var(--lotr-text-dark) !important;
   font-weight: 700;
+  /*padding: 0px 2px 0px 2px;*/
   text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
   box-shadow:
     0 4px 8px rgba(0, 0, 0, 0.4),
@@ -264,10 +296,68 @@ body.lotr-mode nav a:hover {
 }
 
 /* =========================================================================
+   WebSocket Status Indicator + Tooltip
+   ========================================================================= */
+
+body.lotr-mode #backendStatus {
+  color: var(--lotr-bright-gold) !important;
+  border: 2px solid rgba(212, 175, 55, 0.45);
+  background: rgba(13, 40, 24, 0.55);
+  border-radius: 9999px;
+  padding: 0.2rem 0.6rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+body.lotr-mode #backendStatus:hover {
+  background: rgba(26, 77, 46, 0.65);
+  border-color: var(--lotr-bright-gold);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.35);
+}
+
+body.lotr-mode #statusText {
+  color: var(--lotr-bright-gold) !important;
+}
+
+body.lotr-mode #statusDot {
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
+}
+
+body.lotr-mode #wsTooltip {
+  background: linear-gradient(135deg, var(--lotr-dark-brown) 0%, var(--lotr-dark-green) 100%) !important;
+  border: 2px solid var(--lotr-gold) !important;
+  color: var(--lotr-text-light) !important;
+}
+
+body.lotr-mode #wsTooltip .text-gray-400,
+body.lotr-mode #wsTooltip .text-gray-500 {
+  color: var(--lotr-light-stone) !important;
+}
+
+body.lotr-mode #wsTooltip .text-green-400 {
+  color: #7ee787 !important;
+}
+
+body.lotr-mode #wsTooltip .text-blue-400 {
+  color: #7dcfff !important;
+}
+
+body.lotr-mode #wsTooltip .text-yellow-400 {
+  color: #f4d03f !important;
+}
+
+body.lotr-mode #wsTooltip .text-orange-400 {
+  color: #ffb066 !important;
+}
+
+body.lotr-mode #wsTooltip .border-gray-700 {
+  border-color: rgba(212, 175, 55, 0.35) !important;
+}
+
+/* =========================================================================
    Form Elements
    ========================================================================= */
 
-body.lotr-mode input:not([type="checkbox"]):not([type="radio"]),
+body.lotr-mode input:not([type="checkbox"]):not([type="radio"]):not([type="search"]),
 body.lotr-mode select,
 body.lotr-mode textarea {
   background: var(--lotr-warm-parchment) !important;
@@ -526,7 +616,9 @@ body.lotr-mode .modal-content {
     0 12px 48px rgba(0, 0, 0, 0.6),
     inset 0 0 60px rgba(212, 175, 55, 0.15);
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: calc(100vh - 2rem);
 }
 
 body.lotr-mode .modal-content::before {
@@ -563,6 +655,80 @@ body.lotr-mode .modal-content h3::after {
   right: 0;
   color: var(--lotr-gold);
   opacity: 0.5;
+}
+
+body.lotr-mode .threat-intel-section {
+  background: linear-gradient(135deg, var(--lotr-dark-parchment) 0%, var(--lotr-warm-parchment) 100%);
+  border: 2px solid var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-hero {
+  background: linear-gradient(135deg, var(--lotr-dark-brown) 0%, #4a3b2b 55%, var(--lotr-brown) 100%);
+  border: 2px solid var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-hero.threat-intel-card-danger {
+  background: linear-gradient(135deg, #5c0f13 0%, #7e1218 100%);
+  border-color: var(--lotr-fire-orange);
+}
+
+body.lotr-mode .threat-intel-hero.threat-intel-card-safe {
+  background: linear-gradient(135deg, var(--lotr-forest-green) 0%, var(--lotr-dark-green) 100%);
+  border-color: var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-hero-kicker {
+  color: var(--lotr-bright-gold);
+}
+
+body.lotr-mode .threat-intel-hero-title {
+  color: var(--lotr-bright-gold);
+}
+
+body.lotr-mode .threat-intel-hero-subtitle {
+  color: #f3e5c4;
+}
+
+body.lotr-mode .threat-intel-card,
+body.lotr-mode .threat-intel-list-row {
+  background: var(--lotr-parchment);
+  border: 1px solid var(--lotr-brown);
+  color: var(--lotr-text-dark);
+}
+
+body.lotr-mode .threat-intel-card-label {
+  color: var(--lotr-stone-gray) !important;
+}
+
+body.lotr-mode .threat-intel-card-value,
+body.lotr-mode .threat-intel-card-text {
+  color: var(--lotr-text-dark) !important;
+}
+
+body.lotr-mode .threat-intel-card-danger {
+  background: linear-gradient(135deg, #5c0f13 0%, #7e1218 100%);
+  border-color: var(--lotr-fire-orange);
+}
+
+body.lotr-mode .threat-intel-card-danger .threat-intel-card-label,
+body.lotr-mode .threat-intel-card-danger .threat-intel-card-value {
+  color: var(--lotr-text-light);
+}
+
+body.lotr-mode .threat-intel-card-safe {
+  background: linear-gradient(135deg, var(--lotr-forest-green) 0%, var(--lotr-dark-green) 100%);
+  border-color: var(--lotr-gold);
+}
+
+body.lotr-mode .threat-intel-card-safe .threat-intel-card-label,
+body.lotr-mode .threat-intel-card-safe .threat-intel-card-value {
+  color: var(--lotr-bright-gold);
+}
+
+body.lotr-mode .threat-intel-raw {
+  background: #121212;
+  border: 1px solid var(--lotr-gold);
+  color: #f3e5c4;
 }
 
 /* =========================================================================
@@ -857,15 +1023,15 @@ body.lotr-mode * {
 
 body.lotr-mode a {
   color: var(--lotr-bright-gold) !important;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+  /*text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);*/
   transition: all 0.3s ease;
 }
 
 body.lotr-mode a:hover {
   color: var(--lotr-gold);
-  text-shadow:
+  /*text-shadow:
     1px 1px 2px rgba(0, 0, 0, 0.7),
-    0 0 10px rgba(212, 175, 55, 0.6);
+    0 0 10px rgba(212, 175, 55, 0.6);*/
 }
 
 body.lotr-mode input[type="checkbox"],

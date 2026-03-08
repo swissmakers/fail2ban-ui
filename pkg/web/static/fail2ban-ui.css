@@ -136,6 +136,151 @@ body.modal-open {
     overflow: hidden !important;
 }
 
+.threat-intel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+}
+
+.threat-intel-hero {
+    border: 1px solid #cbd5e1;
+    border-radius: 0.75rem;
+    background: linear-gradient(120deg, #f8fafc 0%, #eef2ff 100%);
+    padding: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.threat-intel-hero.threat-intel-card-danger {
+    border-color: #fca5a5;
+    background: linear-gradient(120deg, #fef2f2 0%, #ffe4e6 100%);
+}
+
+.threat-intel-hero.threat-intel-card-safe {
+    border-color: #86efac;
+    background: linear-gradient(120deg, #f0fdf4 0%, #dcfce7 100%);
+}
+
+.threat-intel-hero-main {
+    margin-bottom: 0.8rem;
+}
+
+.threat-intel-hero-kicker {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    font-weight: 700;
+}
+
+.threat-intel-hero-title {
+    margin-top: 0.25rem;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0f172a;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.threat-intel-hero-subtitle {
+    margin-top: 0.25rem;
+    font-size: 0.88rem;
+    color: #334155;
+}
+
+.threat-intel-priority-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.6rem;
+}
+
+.threat-intel-section {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #f9fafb;
+    padding: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.threat-intel-section h4 {
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 0.75rem;
+}
+
+.threat-intel-card {
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    background: #ffffff;
+    padding: 0.75rem;
+}
+
+.threat-intel-card-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+}
+
+.threat-intel-card-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #111827;
+    margin-top: 0.25rem;
+}
+
+.threat-intel-card-compact .threat-intel-card-value {
+    font-size: 1rem;
+}
+
+.threat-intel-card-text {
+    font-size: 0.95rem;
+    color: #111827;
+    margin-top: 0.25rem;
+    overflow-wrap: anywhere;
+}
+
+.threat-intel-card-danger {
+    border-color: #fca5a5;
+    background: #fef2f2;
+}
+
+.threat-intel-card-safe {
+    border-color: #86efac;
+    background: #f0fdf4;
+}
+
+.threat-intel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.threat-intel-list.hidden {
+    display: none;
+}
+
+.threat-intel-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    background: #ffffff;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.85rem;
+}
+
+.threat-intel-raw {
+    margin-top: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    background: #111827;
+    color: #e5e7eb;
+    padding: 0.75rem;
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    overflow-x: auto;
+}
+
 /* =========================================================================
    Tooltips
    ========================================================================= */

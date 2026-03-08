@@ -82,6 +82,21 @@ Provider-specific settings (SMTP credentials, webhook URL/headers, Elasticsearch
 
 For full provider documentation, setup hints, payload formats, and examples, see [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md).
 
+## Threat intelligence
+
+Threat intelligence settings are configured through the UI (Settings -> Alert Settings):
+
+- `threatIntel.provider`: `none` | `alienvault` | `abuseipdb`
+- `threatIntel.alienVaultApiKey`: required when provider is `alienvault`
+- `threatIntel.abuseIpDbApiKey`: required when provider is `abuseipdb`
+
+Runtime behavior:
+- Lookups are performed through the backend endpoint `GET /api/threat-intel/:ip`.
+- Successful results are cached per provider+IP for 30 minutes. (currently in-memory only -> if a modal is reopened multible times..)
+- Upstream 429 responses trigger retry-window handling and stale-cache fallback (if available).
+
+For full details (setup, response model, cache/rate-limit behavior, and troubleshooting), see [`docs/threat-intel.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/threat-intel.md).
+
 ## OIDC authentication
 
 OIDC can protect the UI with an external identity provider.

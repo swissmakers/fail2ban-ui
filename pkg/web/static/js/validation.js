@@ -201,6 +201,33 @@ function validateAllSettings() {
       errorContainer.textContent = '';
     }
   }
+
+  const threatIntelProviderEl = document.getElementById('threatIntelProvider');
+  if (threatIntelProviderEl) {
+    const provider = threatIntelProviderEl.value;
+    const alienKeyEl = document.getElementById('threatIntelAlienVaultApiKey');
+    const abuseKeyEl = document.getElementById('threatIntelAbuseIpDbApiKey');
+    if (provider === 'alienvault') {
+      if (!alienKeyEl || !alienKeyEl.value.trim()) {
+        showFieldError('threatIntelAlienVaultApiKey', 'AlienVault API key is required');
+        isValid = false;
+      } else {
+        clearFieldError('threatIntelAlienVaultApiKey');
+      }
+      clearFieldError('threatIntelAbuseIpDbApiKey');
+    } else if (provider === 'abuseipdb') {
+      if (!abuseKeyEl || !abuseKeyEl.value.trim()) {
+        showFieldError('threatIntelAbuseIpDbApiKey', 'AbuseIPDB API key is required');
+        isValid = false;
+      } else {
+        clearFieldError('threatIntelAbuseIpDbApiKey');
+      }
+      clearFieldError('threatIntelAlienVaultApiKey');
+    } else {
+      clearFieldError('threatIntelAlienVaultApiKey');
+      clearFieldError('threatIntelAbuseIpDbApiKey');
+    }
+  }
   return isValid;
 }
 

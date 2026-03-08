@@ -65,6 +65,18 @@ getfacl /etc/fail2ban
 sudo podman exec -it fail2ban-ui ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i /config/.ssh/id_rsa -p 2222 testuser@127.0.0.1
 ```
 
+Recommended minimum sudoers for SSH connector accounts:
+
+```bash
+<user> ALL=(ALL) NOPASSWD: /usr/bin/fail2ban-client *
+<user> ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban
+<user> ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload fail2ban
+```
+
+Notes:
+- Fail2Ban UI executes the commands for fail2ban with `sudo` over SSH. Because of that the NOPASSWD option is very important.
+
+
 ## Ban/unban notifications not showing up in the UI
 
 This is one of the most common issues. The UI receives ban/unban events from Fail2Ban via HTTP callbacks. If nothing appears in the dashboard or "Recent stored events", the callback chain is broken somewhere. Follow these steps systematically.

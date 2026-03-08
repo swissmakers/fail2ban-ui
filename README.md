@@ -41,7 +41,7 @@ Fail2Ban UI does not replace Fail2Ban. It connects to existing Fail2Ban instance
 | Connector | Typical use | Notes |
 |---|---|---|
 | Local | Fail2Ban runs on the same host as the UI | Uses the Fail2Ban socket and local files |
-| SSH | Manage remote Fail2Ban hosts without installing an agent | Uses key-based SSH and remote `fail2ban-client` |
+| SSH | Manage remote Fail2Ban hosts without installing an agent | Uses key-based SSH, remote `sudo fail2ban-client`, and `sudo systemctl restart fail2ban` (with reload fallback) |
 | Agent (technical preview) | Environments where SSH is not desired | Limited functionality; work in progress |
 
 ## Quick start (container)
@@ -77,6 +77,7 @@ Next steps:
 * Architecture overview: [`docs/architecture.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/architecture.md)
 * API reference: [`docs/api.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/api.md)
 * Alert providers (Email, Webhook, Elasticsearch): [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md)
+* Threat intelligence (AlienVault OTX / AbuseIPDB): [`docs/threat-intel.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/threat-intel.md)
 * Troubleshooting: [`docs/troubleshooting.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/troubleshooting.md)
 
 Existing deployment guides in this repository:
@@ -172,7 +173,7 @@ Global Fail2Ban settings including default bantime, findtime, maxretry, banactio
 ## Security notes (think before exposing the UI)
 
 * Do not expose the UI directly to the public Internet. Put it behind a reverse proxy, VPN, firewall rules, and/or OIDC.
-* SSH connector should use a dedicated service account with minimal sudo permissions and ACLs.
+* SSH connector should use a dedicated service account with minimal sudo permissions and ACLs (at minimum `sudo fail2ban-client *` and `sudo systemctl restart fail2ban`).
 * All IP addresses are validated (strict IPv4/IPv6/CIDR parsing) before being passed to any integration or command, preventing command injection.
 * WebSocket connections are protected by origin validation (same-origin only) and require authentication when OIDC is enabled.
 

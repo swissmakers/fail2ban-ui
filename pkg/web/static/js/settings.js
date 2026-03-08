@@ -92,7 +92,9 @@ function loadSettings() {
       document.getElementById('alertProvider').value = data.alertProvider || 'email';
       applyWebhookSettings(data.webhook || {});
       applyElasticsearchSettings(data.elasticsearch || {});
+      applyThreatIntelSettings(data.threatIntel || {});
       updateAlertProviderFields();
+      updateThreatIntelProviderFields();
       updateAlertFieldsState();
 
       const select = document.getElementById('alertCountries');
@@ -220,6 +222,7 @@ function saveSettings(event) {
     smtp: smtpSettings,
     webhook: collectWebhookSettings(),
     elasticsearch: collectElasticsearchSettings(),
+    threatIntel: collectThreatIntelSettings(),
     advancedActions: collectAdvancedActionsSettings()
   };
 
@@ -413,6 +416,60 @@ function sendTestElasticsearch() {
     })
     .catch(error => showToast('Elasticsearch test failed: ' + error, 'error'))
     .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Threat Intelligence Settings
+// =========================================================================
+
+function applyThreatIntelSettings(cfg) {
+  cfg = cfg || {};
+  var providerEl = document.getElementById('threatIntelProvider');
+  if (providerEl) {
+    providerEl.value = cfg.provider || 'none';
+  }
+  var alienKeyEl = document.getElementById('threatIntelAlienVaultApiKey');
+  if (alienKeyEl) {
+    alienKeyEl.value = cfg.alienVaultApiKey || '';
+  }
+  var abuseKeyEl = document.getElementById('threatIntelAbuseIpDbApiKey');
+  if (abuseKeyEl) {
+    abuseKeyEl.value = cfg.abuseIpDbApiKey || '';
+  }
+}
+
+function collectThreatIntelSettings() {
+  return {
+    provider: document.getElementById('threatIntelProvider').value || 'none',
+    alienVaultApiKey: document.getElementById('threatIntelAlienVaultApiKey').value.trim(),
+    abuseIpDbApiKey: document.getElementById('threatIntelAbuseIpDbApiKey').value.trim()
+  };
+}
+
+function updateThreatIntelProviderFields() {
+  var selected = document.getElementById('threatIntelProvider').value;
+  var alienDiv = document.getElementById('threatIntelAlienVaultFields');
+  var abuseDiv = document.getElementById('threatIntelAbuseIPDBFields');
+  if (alienDiv) {
+    alienDiv.classList.toggle('hidden', selected !== 'alienvault');
+  }
+  if (abuseDiv) {
+    abuseDiv.classList.toggle('hidden', selected !== 'abuseipdb');
+  }
+}
+
+function copyElasticsearchTemplate(btn) {
+  const pre = document.getElementById('esIndexTemplate');
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    const label = btn.querySelector('span');
+    if (label) {
+      label.textContent = 'Copied!';
+      setTimeout(() => { label.textContent = 'Copy'; }, 2000);
+    }
+  }).catch(() => {
+    showToast('Failed to copy to clipboard', 'error');
+  });
 }
 
 // =========================================================================
@@ -689,6 +746,10 @@ if (advancedIntegrationSelect) {
 const alertProviderSelect = document.getElementById('alertProvider');
 if (alertProviderSelect) {
   alertProviderSelect.addEventListener('change', updateAlertProviderFields);
+}
+const threatIntelProviderSelect = document.getElementById('threatIntelProvider');
+if (threatIntelProviderSelect) {
+  threatIntelProviderSelect.addEventListener('change', updateThreatIntelProviderFields);
 }
 
 function toggleCallbackSecretVisibility() {

@@ -72,6 +72,7 @@ type AppSettings struct {
 	AlertProvider        string                `json:"alertProvider"`
 	Webhook              WebhookSettings       `json:"webhook"`
 	Elasticsearch        ElasticsearchSettings `json:"elasticsearch"`
+	ThreatIntel          ThreatIntelSettings   `json:"threatIntel"`
 	ConsoleOutput        bool                  `json:"consoleOutput"`
 }
 
@@ -155,6 +156,12 @@ type ElasticsearchSettings struct {
 	Username      string `json:"username"`
 	Password      string `json:"password"`
 	SkipTLSVerify bool   `json:"skipTLSVerify"`
+}
+
+type ThreatIntelSettings struct {
+	Provider         string `json:"provider"`
+	AlienVaultAPIKey string `json:"alienVaultApiKey"`
+	AbuseIPDBAPIKey  string `json:"abuseIpDbApiKey"`
 }
 
 type OIDCConfig struct {
@@ -466,6 +473,12 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 			currentSettings.Elasticsearch = es
 		}
 	}
+	if rec.ThreatIntelJSON != "" {
+		var ti ThreatIntelSettings
+		if err := json.Unmarshal([]byte(rec.ThreatIntelJSON), &ti); err == nil {
+			currentSettings.ThreatIntel = ti
+		}
+	}
 	currentSettings.ConsoleOutput = rec.ConsoleOutput
 }
 
@@ -525,6 +538,10 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 	if err != nil {
 		return storage.AppSettingsRecord{}, err
 	}
+	threatIntelBytes, err := json.Marshal(currentSettings.ThreatIntel)
+	if err != nil {
+		return storage.AppSettingsRecord{}, err
+	}
 
 	alertProvider := currentSettings.AlertProvider
 	if alertProvider == "" {
@@ -567,6 +584,7 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		AlertProvider:          alertProvider,
 		WebhookJSON:            string(webhookBytes),
 		ElasticsearchJSON:      string(esBytes),
+		ThreatIntelJSON:        string(threatIntelBytes),
 		ConsoleOutput:          currentSettings.ConsoleOutput,
 	}, nil
 }
@@ -710,6 +728,12 @@ func setDefaultsLocked() {
 	}
 	if currentSettings.MaxLogLines == 0 {
 		currentSettings.MaxLogLines = 50
+	}
+	if currentSettings.ThreatIntel.Provider == "" {
+		currentSettings.ThreatIntel.Provider = "none"
+	}
+	if currentSettings.ThreatIntel.Provider != "none" && currentSettings.ThreatIntel.Provider != "alienvault" && currentSettings.ThreatIntel.Provider != "abuseipdb" {
+		currentSettings.ThreatIntel.Provider = "none"
 	}
 
 	if (currentSettings.AdvancedActions == AdvancedActionsConfig{}) {
