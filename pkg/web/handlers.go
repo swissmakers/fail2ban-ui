@@ -297,7 +297,7 @@ func BanNotificationHandler(c *gin.Context) {
 
 	log.Printf("----------------------------------------------------")
 
-	config.DebugLog("📩 Incoming Ban Notification: %s\n", string(body))
+	config.DebugLog("Incoming ban notification: %s\n", string(body))
 
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
@@ -320,7 +320,7 @@ func BanNotificationHandler(c *gin.Context) {
 	}
 
 	// Logs the parsed request
-	log.Printf("✅ Parsed ban request - IP: %s, Jail: %s, Hostname: %s, Failures: %s",
+	log.Printf("Parsed ban request successfully - IP: %s, Jail: %s, Hostname: %s, Failures: %s",
 		request.IP, request.Jail, request.Hostname, request.Failures)
 
 	if err := integrations.ValidateIP(request.IP); err != nil {
@@ -376,7 +376,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 	}
 
 	body, _ := io.ReadAll(c.Request.Body)
-	config.DebugLog("📩 Incoming unban notification: %s\n", string(body))
+	config.DebugLog("Incoming unban notification: %s\n", string(body))
 
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
@@ -394,7 +394,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	log.Printf("✅ Parsed unban request - IP: %s, Jail: %s, Hostname: %s",
+	log.Printf("Parsed unban request successfully - IP: %s, Jail: %s, Hostname: %s",
 		request.IP, request.Jail, request.Hostname)
 
 	if err := integrations.ValidateIP(request.IP); err != nil {
@@ -1172,7 +1172,7 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 	}
 
 	if !settings.EmailAlertsForUnbans {
-		log.Printf("🔕 Alerts for unbans are disabled. No alert sent for IP %s", ip)
+		log.Printf("Alerts for unbans are disabled. No alert sent for IP %s", ip)
 		return nil
 	}
 
@@ -1182,7 +1182,7 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 	}
 
 	if !shouldAlertForCountry(country, settings.AlertCountries) {
-		log.Printf("🔕 IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
+		log.Printf("IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
 		return nil
 	}
 
@@ -1578,6 +1578,7 @@ func shouldAlertForCountry(country string, alertCountries []string) bool {
 // Renders the main SPA page with template variables.
 func renderIndexPage(c *gin.Context) {
 	disableExternalIP := os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "true" || os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "1"
+	autoDark := os.Getenv("AUTODARK") == "true" || os.Getenv("AUTODARK") == "1"
 
 	// Checks if OIDC is enabled and skip login page setting
 	oidcEnabled := auth.IsEnabled()
@@ -1598,6 +1599,7 @@ func renderIndexPage(c *gin.Context) {
 		"appVersion":         version.Version,
 		"updateCheckEnabled": updateCheckEnabled,
 		"disableExternalIP":  disableExternalIP,
+		"autoDark":           autoDark,
 		"oidcEnabled":        oidcEnabled,
 		"skipLoginPage":      skipLoginPage,
 	})

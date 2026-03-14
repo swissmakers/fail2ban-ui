@@ -88,7 +88,7 @@ function openLogsModal(eventIndex) {
     for (var j = 0; j < logLines.length; j++) {
       var safeLine = escapeHtml(logLines[j] || '');
       if (highlightMap[j]) {
-        html += '<span style="display: block; background-color: #d97706; color: #fef3c7; padding: 0.25rem 0.5rem; margin: 0.125rem 0; border-radius: 0.25rem;">' + safeLine + '</span>';
+        html += '<span class="logs-highlighted-line">' + safeLine + '</span>';
       } else {
         html += safeLine + '\n';
       }
@@ -336,10 +336,10 @@ function openManageJailsModal() {
           + isEnabled
           + '      />'
           + '      <div'
-          + '        class="w-11 h-6 bg-gray-200 rounded-full peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:bg-blue-600 transition-colors"'
+          + '        class="jail-toggle-track w-11 h-6 bg-gray-200 rounded-full peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:bg-blue-600 transition-colors"'
           + '      ></div>'
           + '      <span'
-          + '        class="absolute left-1 top-1/2 -translate-y-1/2 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"'
+          + '        class="jail-toggle-thumb absolute left-1 top-1/2 -translate-y-1/2 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"'
           + '      ></span>'
           + '    </label>'
           + '  </div>'

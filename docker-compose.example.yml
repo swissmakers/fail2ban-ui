@@ -27,6 +27,9 @@ services:
       # the web UI to unprotected networks. Set to a specific IP (e.g., 127.0.0.1
       # or a specific interface IP) to restrict access.
       # - BIND_ADDRESS=127.0.0.1
+      # Optional: Enable automatic dark mode based on system preferences (default: false).
+      # When set to true, the web UI will automatically switch to dark mode based on the system's preferred color scheme.
+      # - AUTODARK=true
 
       # ============================================
       # Privacy Settings

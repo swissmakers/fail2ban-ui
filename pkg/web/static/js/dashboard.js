@@ -368,7 +368,7 @@ function renderDashboard() {
         + '      </div>'
         + '    </div>'
         + '  </div>'
-        + '  <div id="manualBlockFormContainer" class="hidden mt-4">'
+        + '  <div id="manualBlockFormContainer" class="hidden" style="margin-top: 35px;">'
         + '    <form id="manualBlockForm" onsubmit="return false;">'
         + '      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">'
         + '        <div>'
