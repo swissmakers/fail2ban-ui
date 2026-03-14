@@ -120,6 +120,11 @@ function renderInsightsGlobe() {
   countries.forEach(function(s) {
     if (s.count > maxCount) maxCount = s.count;
   });
+  var isDarkTheme = document.documentElement.getAttribute('data-theme') === 'dark'
+    && !(document.body && document.body.classList.contains('lotr-mode'));
+  var labelBg = isDarkTheme ? 'rgba(15,23,42,0.92)' : 'rgba(248,250,252,0.97)';
+  var labelColor = isDarkTheme ? '#f1f5f9' : '#0f172a';
+  var labelBorder = isDarkTheme ? '1px solid rgba(148,163,184,0.25)' : '1px solid rgba(100,116,139,0.35)';
 
   var points = [];
   countries.forEach(function(s) {
@@ -133,7 +138,7 @@ function renderInsightsGlobe() {
       alt: 0.06 + 0.7 * ratio,
       radius: 0.4 + 0.6 * ratio,
       color: _threatColor(ratio),
-      label: '<div style="padding:6px 10px;background:rgba(15,23,42,0.92);color:#f1f5f9;' +
+      label: '<div style="padding:6px 10px;background:' + labelBg + ';color:' + labelColor + ';border:' + labelBorder + ';' +
              'border-radius:6px;font-size:13px;line-height:1.4;pointer-events:none;">' +
              '<b>' + escapeHtml(s.country || '??') + '</b><br>' +
              formatNumber(s.count) + ' ban' + (s.count !== 1 ? 's' : '') + '</div>',

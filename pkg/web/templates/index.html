@@ -16,12 +16,24 @@
   limitations under the License.
 -->
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-auto-dark="{{if .autoDark}}true{{else}}false{{end}}">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title data-i18n="page.title">Fail2ban UI Dashboard</title>
+  <script>
+    (function() {
+      var theme = 'light';
+      var autoDark = document.documentElement.getAttribute('data-auto-dark') === 'true';
+      try {
+        if (autoDark && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          theme = 'dark';
+        }
+      } catch (e) { }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <link rel="stylesheet" href="/static/vendor/prism/prism-tomorrow.min.css?v={{.version}}" />
   <script src="/static/vendor/prism/prism-core.min.js?v={{.version}}"></script>
   <script src="/static/vendor/prism/prism-autoloader.min.js?v={{.version}}"></script>
@@ -238,7 +250,7 @@
           </div>
           <p class="text-xs text-gray-500 mb-2" data-i18n="filter_debug.filter_content_hint_readonly">Filter content is shown read-only. Click 'Edit' to modify for testing. Changes are temporary and not saved.</p>
           <p class="text-xs text-gray-500 mb-2 hidden" id="filterContentHintEditable" data-i18n="filter_debug.filter_content_hint">Edit the filter regex below for testing. Changes are temporary and not saved.</p>
-          <textarea id="filterContentTextarea" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40 font-mono text-sm bg-gray-50"
+          <textarea id="filterContentTextarea" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40 font-mono text-sm bg-gray-50" style="min-height: 300px;"
                     placeholder="Filter content will appear here when a filter is selected..." readonly></textarea>
         </div>
         <div class="mb-4">
@@ -788,11 +800,11 @@
           <div class="flex items-center mb-4">
             <input type="checkbox" id="smtpInsecureSkipVerify" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
             <label for="smtpInsecureSkipVerify" class="ml-2 block text-sm text-gray-700" data-i18n="settings.smtp_insecure_skip_verify">Skip TLS Certificate Verification</label>
-            <span class="ml-2 text-xs text-red-600" data-i18n="settings.smtp_insecure_skip_verify_warning">⚠️ Not recommended for production</span>
+            <span class="ml-2 text-xs text-red-600" data-i18n="settings.smtp_insecure_skip_verify_warning">Not recommended for production</span>
           </div>
           <div class="mb-4">
             <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed" onclick="sendTestEmail()" id="sendTestEmailBtn" data-i18n="settings.send_test_email">Send Test Email</button>
-            <p class="mt-2 text-xs text-amber-600" data-i18n="settings.send_test_email_hint">⚠️ Please save your SMTP settings first before sending a test email.</p>
+            <p class="mt-2 text-xs text-gray-500" data-i18n="settings.send_test_email_hint">Please save your SMTP settings first before sending a test email.</p>
           </div>
         </div>
         </div>
@@ -819,11 +831,10 @@
           <div class="flex items-center mb-4">
             <input type="checkbox" id="webhookSkipTLS" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out">
             <label for="webhookSkipTLS" class="ml-2 block text-sm text-gray-700" data-i18n="settings.webhook.skip_tls">Skip TLS Certificate Verification</label>
-            <span class="ml-2 text-xs text-red-600" data-i18n="settings.smtp_insecure_skip_verify_warning">⚠️ Not recommended for production</span>
           </div>
           <div class="mb-4">
             <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="sendTestWebhook()" id="sendTestWebhookBtn" data-i18n="settings.webhook.test">Send Test Webhook</button>
-            <p class="mt-2 text-xs text-amber-600" data-i18n="settings.webhook.test_hint">⚠️ Please save your webhook settings first before testing.</p>
+            <p class="mt-2 text-xs text-gray-500" data-i18n="settings.webhook.test_hint">Please save your webhook settings first before testing.</p>
           </div>
         </div>
 
@@ -858,11 +869,10 @@
           <div class="flex items-center mb-4">
             <input type="checkbox" id="elasticsearchSkipTLS" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out">
             <label for="elasticsearchSkipTLS" class="ml-2 block text-sm text-gray-700" data-i18n="settings.elasticsearch.skip_tls">Skip TLS Certificate Verification</label>
-            <span class="ml-2 text-xs text-red-600" data-i18n="settings.smtp_insecure_skip_verify_warning">⚠️ Not recommended for production</span>
           </div>
           <div class="mb-4">
             <button type="button" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="sendTestElasticsearch()" id="sendTestElasticsearchBtn" data-i18n="settings.elasticsearch.test">Test Connection</button>
-            <p class="mt-2 text-xs text-amber-600" data-i18n="settings.elasticsearch.test_hint">⚠️ Please save your Elasticsearch settings first before testing.</p>
+            <p class="mt-2 text-xs text-gray-500" data-i18n="settings.elasticsearch.test_hint">Please save your Elasticsearch settings first before testing.</p>
           </div>
         </div>
 
@@ -996,7 +1006,7 @@
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.ignore_ips">Ignore IPs</label>
             <p class="text-xs text-gray-500 mb-2" data-i18n="settings.ignore_ips.description">Space separated list of IP addresses, CIDR masks or DNS hosts. Fail2ban will not ban a host which matches an address in this list.</p>
-            <div class="border border-gray-300 rounded-md p-2 min-h-[60px] bg-gray-50" id="ignoreIPsContainer">
+            <div class="border border-gray-300 rounded-md p-2 min-h-[60px]" id="ignoreIPsContainer">
               <div id="ignoreIPsTags" class="flex flex-wrap gap-2 mb-2"></div>
               <input type="text" id="ignoreIPInput" class="w-full border-0 bg-transparent focus:outline-none focus:ring-0 text-sm" 
                      data-i18n-placeholder="settings.ignore_ips_placeholder" placeholder="Enter IP address and press Enter" />
@@ -1013,7 +1023,7 @@
   <!-- ******************************************************************* -->
   <!--                             Footer                                  -->
   <!-- ******************************************************************* -->
-  <footer id="footer" class="hidden bg-gray-100 py-4">
+  <footer id="footer" class="hidden bg-gray-100 py-4" style="display:none;">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-gray-600 text-sm">
       <p class="mb-0">
         Fail2ban-UI v<span id="footer-app-version">{{.appVersion}}</span>
@@ -1584,7 +1594,7 @@
   <div id="elasticsearchHelpModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
     <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
       <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
-      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 680px;">
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 980px;">
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="sm:flex sm:items-start">
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
@@ -1792,6 +1802,7 @@
   <script src="/static/vendor/select2/select2.min.js?v={{.version}}"></script>
   <script src="/static/vendor/globe/globe.gl.min.js?v={{.version}}"></script>
   <script src="/static/js/globals.js?v={{.version}}"></script>
+  <script src="/static/js/theme.js?v={{.version}}"></script>
   <script src="/static/js/core.js?v={{.version}}"></script>
   <script src="/static/js/api.js?v={{.version}}"></script>
   <script src="/static/js/utils.js?v={{.version}}"></script>

@@ -12,6 +12,8 @@ This project can perform security-sensitive operations (bans, configuration chan
 
 If you must publish it, put it behind TLS and an authentication layer, and restrict source IPs.
 
+See [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md) for hardened proxy examples and WebSocket forwarding requirements.
+
 ## Input validation
 
 All user-supplied IP addresses are validated using Go's `net.ParseIP` and `net.ParseCIDR` before they are passed to any integration, command, or database query. This applies to:
@@ -32,10 +34,10 @@ The WebSocket endpoint (`/api/ws`) is protected by:
 
 ## Callback endpoint protection
 
-The fail2ban callback endpoints (`/api/ban`, `/api/unban`) are only reachable with a correct `CALLBACK_SECRET`. This secret must be atleast 20 characters long. If not specified a secure secret, will be automatically genereated on first start. It can be further protected by:
+The callback endpoints (`/api/ban`, `/api/unban`) are protected by `CALLBACK_SECRET` (`X-Callback-Secret` header). If no secret is specified, Fail2Ban UI generates one on first start. Additional hardening:
 
-- Use even a stronger `CALLBACK_SECRET` than our default (32 characters)
-- Make network restrictions (only allow known Fail2Ban hosts to reach the callback endpoint)
+- Use a long, random secret and rotate it on suspected leakage
+- Restrict network access so only known Fail2Ban hosts can reach callback endpoints
 
 Rotate the secret if you suspect leakage.
 
@@ -45,7 +47,7 @@ For SSH-managed hosts:
 
 - Use a dedicated service account (not a human user).
 - Require key-based auth.
-- Restrict sudo to the minimum set of commands required to operate Fail2Ban (at minimum `fail2ban-client *` and `systemctl restart fail2ban`.
+- Restrict sudo to the minimum set of commands required to operate Fail2Ban (at minimum `fail2ban-client *` and `systemctl restart fail2ban`).
 - Use filesystem ACLs for `/etc/fail2ban` rather than broad permissions to allow full modification capabilities for the specific user.
 
 ## Integration connector hardening
@@ -67,7 +69,7 @@ Avoid running with more privileges than necessary. If you run in a container, us
 
 ## SELinux
 
-If SELinux is enabled, use the policies provided in (according to your specific setup they are not enough):
+If SELinux is enabled, use the policies provided in:
 - `deployment/container/SELinux/`
 
 Do not disable SELinux as a shortcut. Fix always labeling and policy issues instead. -> Everytime you read "to disable SELinux" you can close that guide :)
@@ -78,7 +80,7 @@ Fail2Ban UI supports three alert providers: Email (SMTP), Webhook, and Elasticse
 
 ### Email (SMTP)
 
-- Use TLS (`Use TLS` enabled) for all SMTP connections to maximize security here.
+- Use TLS (`Use TLS` enabled) for all SMTP connections.
 - Avoid disabling TLS verification (`Skip TLS Verification`) in production. If you must, ensure the network path to the SMTP server is trusted.
 - Use application-specific passwords or OAuth tokens where supported (e.g. Gmail, Office365) instead of primary account passwords.
 

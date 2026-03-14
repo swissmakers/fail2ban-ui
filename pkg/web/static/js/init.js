@@ -6,6 +6,9 @@
 // =========================================================================
 
 window.addEventListener('DOMContentLoaded', function() {
+  if (typeof initThemeManager === 'function') {
+    initThemeManager();
+  }
   showLoading(true);
   if (typeof checkAuthStatus === 'function') {
     checkAuthStatus().then(function(authStatus) {
@@ -87,9 +90,9 @@ function initializeApp() {
           ? translations['footer.update_available'].replace('{version}', data.latest_version || '')
           : ('Update available: v' + (data.latest_version || ''));
         if (data.update_available && data.latest_version) {
-          versionContainer.innerHTML = '<a href="https://github.com/swissmakers/fail2ban-ui/releases" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200" title="' + updateHint + '">' + updateHint + '</a>';
+          versionContainer.innerHTML = '<a href="https://github.com/swissmakers/fail2ban-ui/releases" target="_blank" rel="noopener" class="theme-badge-warning inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200" title="' + updateHint + '">' + updateHint + '</a>';
         } else {
-          versionContainer.innerHTML = '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title="' + latestLabel + '">' + latestLabel + '</span>';
+          versionContainer.innerHTML = '<span class="theme-badge-success inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800" title="' + latestLabel + '">' + latestLabel + '</span>';
         }
       })
       .catch(function() { });

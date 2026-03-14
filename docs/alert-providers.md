@@ -38,7 +38,7 @@ Click **Send Test Email** in the UI after saving settings. The test email uses t
 ### Notes
 
 - Office365 and Gmail typically require the `LOGIN` auth method (selected automatically by the `Auto` option).
-- Emails include RFC-compliant `Message-ID` and `Date` headers to minimize spam classification. (but can still happen because of the log-content that is sended within a ban-mail.)
+- Emails include RFC-compliant `Message-ID` and `Date` headers to improve deliverability.
 
 ## Webhook
 
@@ -91,6 +91,10 @@ The JSON payload will appear as the notification body. For ntfy with authenticat
 
 For Slack or Mattermost incoming webhooks, the endpoint expects a `text` field. Since Fail2Ban UI sends a generic JSON payload, use a middleware or Slack workflow to parse it, or use a webhook-to-Slack bridge.
 
+### Telegram example
+
+Telegram Bot API usually requires payload transformation (`chat_id`, `text`). Use a relay workflow (n8n, Node-RED, custom service) to convert Fail2Ban UI's generic JSON payload into Telegram `sendMessage` format.
+
 ### Testing
 
 Click **Send Test Webhook** after saving settings. This sends a test payload (`"event": "test"`) with a dummy IP (`203.0.113.1`) to verify connectivity.
@@ -98,8 +102,8 @@ Click **Send Test Webhook** after saving settings. This sends a test payload (`"
 ### Technical details
 
 - Timeout: 15 seconds per request.
-- The `Content-Type` header is always set to `application/json`.
-- Custom headers override any default header except `Content-Type`.
+- Default `Content-Type` is `application/json`.
+- Custom headers are applied after defaults and can override default headers (including `Content-Type`) if required by the receiver.
 - TLS verification can be disabled for self-signed certificates.
 - HTTP responses with status >= 400 are treated as errors and logged.
 
@@ -141,7 +145,7 @@ The raw `fail2ban.logs` and `fail2ban.whois` fields will keep present. Additiona
 }
 ```
 
-**Normalize fields from "fail2ban.logs"** (only present when log was correctly pharsed):
+**Normalized fields from `fail2ban.logs`** (only present when log parsing succeeds):
 
 | Field | Type | Description |
 |---|---|---|
@@ -167,7 +171,7 @@ The raw `fail2ban.logs` and `fail2ban.whois` fields will keep present. Additiona
 | `message` | text | Error message body (error logs) |
 | `fail2ban.parsed_logs` | nested | Array of individually parsed log lines (multi-line events) |
 
-**Normalize fields from "fail2ban.whois"** (only present when was correctly pharsed):
+**Normalized fields from `fail2ban.whois`** (only present when WHOIS parsing succeeds):
 
 | Field | Type | Description |
 |---|---|---|
@@ -183,7 +187,7 @@ The raw `fail2ban.logs` and `fail2ban.whois` fields will keep present. Additiona
 | `whois.registration_date` | keyword | Registration date |
 | `whois.updated_date` | keyword | Last update date |
 
-**Currently supported log formats** (Sould pharse via grok patterns):
+**Currently supported log formats** (parsed via grok patterns):
 
 | Format | Example jail names |
 |---|---|
@@ -280,7 +284,7 @@ PUT _index_template/fail2ban
 }
 ```
 
-**Note:** If you already have a `fail2ban` index and index-template from an earlier version, you must update / recreate the inex-template with the new field mappings. Existing documents / inecies are not affected from the change. In Elasticsearch index-templates are only applied on index creation.
+**Note:** If you already have an older index template, update/recreate it with the new mappings. Existing indices/documents are not modified retroactively; templates apply when new indices are created.
 
 **2. Create an API key**
 
@@ -313,7 +317,7 @@ Go to Kibana Discover, select the `fail2ban-events-*` data view, and you should 
 
 ## Alert dispatch flow
 
-When a ban or unban event arrives via the Fail2Ban callback (and the pharsing was valid):
+When a ban or unban event arrives via the Fail2Ban callback (and payload validation succeeds):
 
 1. The event is stored in the database and broadcast via WebSocket (always, regardless of alerts).
 2. The system checks whether alerts are enabled for the event type (ban/unban).

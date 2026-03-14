@@ -177,7 +177,7 @@ The Fail2Ban UI container requires several volume mounts to function properly. B
   - `.ssh/` - Directory for SSH keys used for remote server connections
   - Application configuration files
 
-#### `/etc/fail2ban` - Fail2Ban Configuration Directory (reqired for local fail2ban connector only)
+#### `/etc/fail2ban` - Fail2Ban configuration directory (required for local connector only)
 - **Host Path:** `/etc/fail2ban`
 - **Container Path:** `/etc/fail2ban`
 - **Purpose:** Access to Fail2Ban configuration files (jails, filters, actions)
@@ -185,7 +185,7 @@ The Fail2Ban UI container requires several volume mounts to function properly. B
 - **SELinux Context:** `:Z` flag required on SELinux-enabled systems
 - **Note:** Required if managing local Fail2Ban instance
 
-#### `/var/run/fail2ban` - Fail2Ban Socket Directory (reqired for local fail2ban connector only)
+#### `/var/run/fail2ban` - Fail2Ban socket directory (required for local connector only)
 - **Host Path:** `/var/run/fail2ban`
 - **Container Path:** `/var/run/fail2ban`
 - **Purpose:** Access to Fail2Ban control socket (`fail2ban.sock`)
@@ -193,10 +193,10 @@ The Fail2Ban UI container requires several volume mounts to function properly. B
 - **SELinux Context:** Not required (tmpfs)
 - **Note:** Required for local Fail2Ban management
 
-#### `/var/log` - Log Files (reqired for local fail2ban connector only)
+#### `/var/log` - Log files (required for local connector only)
 - **Host Path:** `/var/log`
 - **Container Path:** `/var/log`
-- **Purpose:** Read access to system logs for automatically logpath-tests on jail enabe
+- **Purpose:** Read access to system logs for automatic logpath tests when enabling jails
 - **Permissions:** Read-Only (`:ro`)
 - **Note:** If test fails, jail is auto-disabled to prevent fail2ban daemon errors
 
@@ -204,7 +204,7 @@ The Fail2Ban UI container requires several volume mounts to function properly. B
 
 #### GeoLite2-Country.mmdb - GeoIP Database
 - **Host Path:** `/path/to/your/GeoIPFolder`
-- **Container Path:** e.g. `/usr/share/GeoIP` paht must match the settings in the UI.
+- **Container Path:** e.g. `/usr/share/GeoIP` (path must match the setting in the UI)
 - **Purpose:** Only needed if you want to use the MaxMind provider.
 - **Permissions:** Read-Only (`:ro`)
 - **Note:** Fail2Ban UI uses the built-in ip-api.com by default, which requires no local database
@@ -293,7 +293,7 @@ services:
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
       - /opt/podman-fail2ban-ui:/config:Z
-      # Required for fail2ban-ui: Used for testing, that logpath is working, before enabeling a jail. Without this read only access the fail2ban-ui will not be able to enable jails (logpath-test would fail)
+      # Required for fail2ban-ui: used to validate logpaths before enabling jails
       - /var/log:/var/log:ro
 
       # Required for local fail2ban instance: Fail2Ban configuration directory, needed for managing a local Fail2Ban instance (e.g. on host system) via fail2ban-ui

@@ -26,7 +26,7 @@ This feature is optional and is disabled by default.
 
 Go to **Settings -> Alert Settings**:
 
-1. (If your have no API key jet, register a fresh one now)
+1. If you do not have an API key yet, create one with your selected provider.
 2. Set **Threat Intel Provider** to `AlienVault OTX` or `AbuseIPDB`.
 3. Enter the matching API key.
 4. Save settings.

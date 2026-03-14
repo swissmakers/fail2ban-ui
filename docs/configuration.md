@@ -1,129 +1,124 @@
 # Configuration reference
 
-This document describes common runtime settings. Some values are stored in the database via the UI; environment variables take precedence where noted.
+This document describes common runtime settings and related operational behavior. Most runtime options are configured in the UI and stored in the database. Environment variables override behavior where applicable.
 
-## Network settings
+## Network and listener settings
 
 - `PORT`  
-  TCP port for the HTTP server (default: 8080).
-
+  HTTP listen port. Default: `8080`.
 - `BIND_ADDRESS`  
-  Bind address for the HTTP server (default: `0.0.0.0`). Use `127.0.0.1` if you only publish through a reverse proxy on the same host.
+  Listen address. Default: `0.0.0.0`.  
+  Recommended with local reverse proxy: `127.0.0.1`.
 
 Example:
+
 ```bash
 -e PORT=3080 -e BIND_ADDRESS=127.0.0.1
-````
+```
+
+For production reverse proxy patterns, see [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md).
 
 ## Callback URL and secret (Fail2Ban -> UI)
 
 Fail2Ban UI receives ban/unban callbacks at:
 
-* `POST /api/ban`
-* `POST /api/unban`
+- `POST /api/ban`
+- `POST /api/unban`
 
-The callback action on each managed Fail2Ban host must be able to reach the UI callback URL.
+Required environment variables:
 
-* `CALLBACK_URL`
-  The external URL that Fail2Ban hosts use for callbacks.
-  Default behavior typically matches `http://127.0.0.1:<PORT>` (works for same-host deployments).
+- `CALLBACK_URL`  
+  URL reachable from managed Fail2Ban hosts.
+- `CALLBACK_SECRET`  
+  Shared secret validated via `X-Callback-Secret` header.  
+  If not set, Fail2Ban UI generates a secret on first start.
 
-* `CALLBACK_SECRET`
-  Shared secret for authenticating callbacks. If not set, the UI generates one on first start.
-  Recommended: set a fixed secret in production and keep it private.
-
-Example (container bridge / remote hosts):
+Example:
 
 ```bash
 -e CALLBACK_URL=http://10.88.0.1:3080 \
 -e CALLBACK_SECRET='replace-with-a-random-secret'
 ```
 
-Callbacks must include:
+## Privacy and telemetry controls
 
-* Header `X-Callback-Secret: <secret>`
+- `DISABLE_EXTERNAL_IP_LOOKUP=true`  
+  Disables external public-IP lookup used in UI display.
+- `UPDATE_CHECK=false`  
+  Disables GitHub release update checks.
 
-## Privacy-related settings
+## UI behavior flags
 
-* `DISABLE_EXTERNAL_IP_LOOKUP=true`
-  Disables any external lookup used to display the host’s public IP address in the UI.
+- `AUTODARK=false` (default)  
+  Enables automatic dark mode based on browser/OS preference only when `true`.  
+  Default behavior remains light mode.
 
-* `UPDATE_CHECK=false`
-  Disables checking GitHub for a newer release.
+## Fail2Ban configuration migration
 
-## Fail2Ban config migration
+- `JAIL_AUTOMIGRATION=true`  
+  EXPERIMENTAL migration from monolithic `jail.local` to `jail.d/*.local`.  
+  Recommended: migrage manually on production systems.
 
-* `JAIL_AUTOMIGRATION=true`
-  Experimental: attempts to migrate a monolithic `jail.local` into `jail.d/`.
-  Recommended: migrate manually on production systems.
+## Alert settings (UI-managed)
 
-## Email template selection
+Configure in **Settings -> Alert Settings**:
 
-* `emailStyle=classic`
-  Switches back alert emails from the modern template to the classic template (only applies when the Email alert provider is selected).
+- Provider: `email` | `webhook` | `elasticsearch`
+- Enable alerts for bans/unbans
+- Alert country filters
+- GeoIP provider and log-line limits
 
-## Alert providers
+Detailed provider behavior and payloads:
 
-Alert settings are configured through the UI (Settings → Alert Settings). Three providers are available:
+- [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md)
+- [`docs/webhooks.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/webhooks.md)
 
-| Provider | Description |
-|---|---|
-| Email (SMTP) | Default. Sends HTML-formatted alert emails via SMTP. |
-| Webhook | Sends JSON payloads to any HTTP endpoint (ntfy, Matrix, Slack, Gotify, custom APIs). |
-| Elasticsearch | Indexes events as ECS-compatible documents into Elasticsearch for Kibana analysis. |
+## Threat intelligence settings (UI-managed)
 
-All providers share the same global settings:
-- Enable/disable alerts for bans and unbans independently
-- Country-based alert filtering (only alert on selected countries)
-- GeoIP provider selection (built-in API or local MaxMind database)
-- Maximum log lines included in alert payloads
-
-Provider-specific settings (SMTP credentials, webhook URL/headers, Elasticsearch URL/auth) are configured in the same UI section and stored in the database.
-
-For full provider documentation, setup hints, payload formats, and examples, see [`docs/alert-providers.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/alert-providers.md).
-
-## Threat intelligence
-
-Threat intelligence settings are configured through the UI (Settings -> Alert Settings):
+Configure in **Settings -> Alert Settings**:
 
 - `threatIntel.provider`: `none` | `alienvault` | `abuseipdb`
-- `threatIntel.alienVaultApiKey`: required when provider is `alienvault`
-- `threatIntel.abuseIpDbApiKey`: required when provider is `abuseipdb`
+- `threatIntel.alienVaultApiKey` (for `alienvault`)
+- `threatIntel.abuseIpDbApiKey` (for `abuseipdb`)
 
-Runtime behavior:
-- Lookups are performed through the backend endpoint `GET /api/threat-intel/:ip`.
-- Successful results are cached per provider+IP for 30 minutes. (currently in-memory only -> if a modal is reopened multible times..)
-- Upstream 429 responses trigger retry-window handling and stale-cache fallback (if available).
+Runtime notes:
 
-For full details (setup, response model, cache/rate-limit behavior, and troubleshooting), see [`docs/threat-intel.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/threat-intel.md).
+- Queries are executed server-side via `GET /api/threat-intel/:ip`
+- Successful responses are cached for 30 minutes (provider+IP)
+- Upstream `429` triggers retry-window/backoff with stale-cache fallback
+
+See [`docs/threat-intel.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/threat-intel.md) for full details.
 
 ## OIDC authentication
 
-OIDC can protect the UI with an external identity provider.
+Required when enabled:
 
-Required:
+- `OIDC_ENABLED=true`
+- `OIDC_PROVIDER=keycloak|authentik|pocketid`
+- `OIDC_ISSUER_URL=...`
+- `OIDC_CLIENT_ID=...`
+- `OIDC_CLIENT_SECRET=...`
+- `OIDC_REDIRECT_URL=https://<ui-host>/auth/callback`
 
-* `OIDC_ENABLED=true`
-* `OIDC_PROVIDER=keycloak|authentik|pocketid`
-* `OIDC_ISSUER_URL=...`
-* `OIDC_CLIENT_ID=...`
-* `OIDC_CLIENT_SECRET=...`
-* `OIDC_REDIRECT_URL=https://<ui-host>/auth/callback`
+Common optional variables:
 
-Optional (common):
-
-* `OIDC_SCOPES=openid,profile,email`
-* `OIDC_SESSION_SECRET=<32+ bytes recommended>` (random is generated if omitted)
-* `OIDC_SESSION_MAX_AGE=3600`
-* `OIDC_USERNAME_CLAIM=preferred_username`
-* `OIDC_SKIP_VERIFY=false` (development only)
-* `OIDC_SKIP_LOGINPAGE=false`
+- `OIDC_SCOPES=openid,profile,email`
+- `OIDC_SESSION_SECRET=<32+ bytes recommended>`
+- `OIDC_SESSION_MAX_AGE=3600`
+- `OIDC_USERNAME_CLAIM=preferred_username`
+- `OIDC_SKIP_VERIFY=false` (development only)
+- `OIDC_SKIP_LOGINPAGE=false`
 
 Provider notes:
 
-* Keycloak: ensure your client allows the redirect URI (`/auth/callback`) and post-logout redirect (`/auth/login`).
-* Authentik/Pocket-ID: follow their OIDC client configuration and match the redirect URI exactly.
+- Keycloak: allow redirect URI `/auth/callback` and post-logout redirect `/auth/login`
+- Authentik/Pocket-ID: redirect URI must match exactly
 
-Additional resources:
+Related:
 
-* OIDC dev environment: `development/oidc/README.md`
+- OIDC dev stack: `development/oidc/README.md`
+
+## Email template style
+
+- `emailStyle=classic`  
+  Uses the classic email template instead of the default modern template (Email provider only).

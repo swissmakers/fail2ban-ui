@@ -32,7 +32,7 @@ This directory contains screenshots showcasing the features and the interface of
 
 ### Create Jail
 ![Create Jail](1.5_Dashboard_Manage_Jails_Create_Jail.png)
-**Description:** The second button opens the Jail creation modal for setting up new jails. Allows configuration of seperate jails with special parameters, filter selection, with automatic configuration generation.
+**Description:** The second button opens the jail creation modal for setting up new jails. It supports separate jail definitions with custom parameters and filter selection.
 
 ## Search Functionality
 ![Search](1.6_Dashboard_search.png)

@@ -28,7 +28,13 @@ function applyLOTRTheme(active) {
       lotrCSS.disabled = true;
     }
     isLOTRModeActive = false;
+    if (typeof syncSystemTheme === 'function') {
+      syncSystemTheme();
+    }
     console.log('🎭 LOTR Mode Deactivated');
+  }
+  if (active && typeof syncSystemTheme === 'function') {
+    syncSystemTheme();
   }
   void body.offsetHeight;
 }

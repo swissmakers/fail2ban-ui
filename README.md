@@ -23,25 +23,24 @@ The project is maintained by Swissmakers GmbH and released under GPL-3.0.
 
 Fail2Ban UI does not replace Fail2Ban. It connects to existing Fail2Ban instances and adds:
 
-- A Dashboard for active jails and recent ban/unban activity with real-time WebSocket updates
-- Server Manager for adding new fail2ban servers to Fail2ban-UI
-- Central search and unban / ban across jails and servers
-- Remote editing / creating, of jail/filter configuration (depending on connector)
-- Filter debug integration and live log-pattern testing
-- Ban Insights with an interactive 3D threat globe showing blocks per country
-- Advanced ban actions for recurring offenders e.g. automatically ban on pfSense, Mikrotik, or OPNsense when threshold is reached
-- Data management possibility for permanent block logs and stored ban events
-- Configurable alert notifications (Email/SMTP, Webhook, or Elasticsearch) with GeoIP/Whois enrichment and country-based filtering
+- Dashboard for active jails and recent ban/unban activity with real-time WebSocket updates
+- Server manager for local, SSH, and agent-managed Fail2Ban instances
+- Centralized search, ban, and unban operations across jails and servers
+- Remote jail/filter configuration management (connector-dependent)
+- Filter debug and live log-pattern testing
+- Ban insights with an interactive 3D globe by country
+- Advanced recurring-offender actions (MikroTik, pfSense, OPNsense)
+- Persistent event and permanent-block data management
+- Configurable alerts (Email/SMTP, Webhook, Elasticsearch) with GeoIP/Whois enrichment
 - Optional OIDC login (Keycloak, Authentik, Pocket-ID)
-- Least-privilege, SELinux-aware container deployment (policies provided)
-- .. and much more to come.
+- Least-privilege, SELinux-aware deployment patterns
 
 ## Connector types
 
 | Connector | Typical use | Notes |
 |---|---|---|
 | Local | Fail2Ban runs on the same host as the UI | Uses the Fail2Ban socket and local files |
-| SSH | Manage remote Fail2Ban hosts without installing an agent | Uses key-based SSH, remote `sudo fail2ban-client`, and `sudo systemctl restart fail2ban` (with reload fallback) |
+| SSH | Manage remote Fail2Ban hosts without installing an agent | Uses key-based SSH and remote `fail2ban-client` |
 | Agent (technical preview) | Environments where SSH is not desired | Limited functionality; work in progress |
 
 ## Quick start (container)
@@ -73,6 +72,8 @@ Next steps:
 
 * Installation: [`docs/installation.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/installation.md)
 * Configuration reference (env vars, callback URL/secret, OIDC): [`docs/configuration.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/configuration.md)
+* Reverse proxy guide: [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md)
+* Webhook integration guide: [`docs/webhooks.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/webhooks.md)
 * Security guidance (recommended deployment posture): [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md)
 * Architecture overview: [`docs/architecture.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/architecture.md)
 * API reference: [`docs/api.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/api.md)
@@ -124,7 +125,7 @@ The first button opens the modal for creating new Fail2Ban filter files. Include
 
 #### Create new Jail
 ![Create Jail](screenshots/1.5_Dashboard_Manage_Jails_Create_Jail.png)
-The second button opens the Jail creation modal for setting up new jails. Allows configuration of seperate jails with special parameters, filter selection, with automatic configuration generation.
+The second button opens the jail creation modal for setting up new jails. It supports separate jail definitions with custom parameters and filter selection.
 
 ### Search Functionality
 ![Search](screenshots/1.6_Dashboard_search.png)
@@ -176,6 +177,7 @@ Global Fail2Ban settings including default bantime, findtime, maxretry, banactio
 * SSH connector should use a dedicated service account with minimal sudo permissions and ACLs (at minimum `sudo fail2ban-client *` and `sudo systemctl restart fail2ban`).
 * All IP addresses are validated (strict IPv4/IPv6/CIDR parsing) before being passed to any integration or command, preventing command injection.
 * WebSocket connections are protected by origin validation (same-origin only) and require authentication when OIDC is enabled.
+* For production proxy examples and WebSocket requirements, see [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md).
 
 See [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md) for details.
 
