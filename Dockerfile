@@ -1,7 +1,7 @@
 # =========================================
 #  STAGE 1 -- Build Fail2Ban-UI Binary
 # =========================================
-FROM --platform=$BUILDPLATFORM golang:1.25.7 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25.8 AS builder
 WORKDIR /app
 
 # Copy module files and download dependencies
