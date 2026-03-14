@@ -39,7 +39,7 @@ systemctl status fail2ban
 ls -la /var/run/fail2ban/fail2ban.sock
 fail2ban-client status
 
-# check the socked in the container:
+# check the socket in the container:
 podman exec -it fail2ban-ui ls -la /var/run/fail2ban/fail2ban.sock
 
 # SELinux check for alerts (needs "setroubleshoot" linux package):
@@ -404,3 +404,21 @@ Example:
 ```bash
 ls -la /opt/fail2ban-ui
 sqlite3 /opt/fail2ban-ui/fail2ban-ui.db "PRAGMA integrity_check;"
+```
+
+Expected output:
+
+- `ok` -> database is healthy
+- Any other output -> investigate filesystem errors and restore from backup if needed
+
+## Reverse proxy checks
+
+If the UI loads but real-time updates fail:
+
+- Verify proxy forwards WebSocket upgrades to `/api/ws`
+- Ensure proxy preserves `Host` and does not create `Origin`/`Host` mismatches
+- Confirm TLS termination and backend route target are correct
+
+Reference configurations:
+
+- [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md)

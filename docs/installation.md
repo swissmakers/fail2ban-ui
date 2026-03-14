@@ -2,8 +2,6 @@
 
 This document provides a short installation path and points to the full deployment guides in the repository.
 
-Spoiler: They need to be reworked as well we already did with the main files here..
-
 ## Supported platforms
 
 Fail2Ban UI targets Linux hosts. Typical environments include RHEL/Rocky/Alma, Debian/Ubuntu, and container environments in general.
@@ -44,7 +42,8 @@ cp docker-compose-allinone.example.yml docker-compose.yml
 
 podman compose up -d
 ```
-You can also start and test the full dev-stacks from the development folders, it you only want to try it out.
+
+You can also run the development stacks under `development/` if you want to evaluate features first.
 
 ### Option C: Build the image yourself
 
@@ -75,9 +74,19 @@ cd /opt/fail2ban-ui
 # Build static CSS assets
 ./build-tailwind.sh
 
-# Build the go-binery
+# Build the Go binary
 go build -o fail2ban-ui ./cmd/server/main.go
 ```
 
 Then follow `deployment/systemd/README.md` to install the unit file and configure permissions.
+
+## Production recommendation
+
+For production deployments:
+
+- Enable OIDC if your environment supports centralized identity.
+- Keep the UI behind a reverse proxy (TLS termination + access controls).
+- Bind the UI to loopback (`BIND_ADDRESS=127.0.0.1`) when proxy and app share the host.
+
+Reference: [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md).
 
