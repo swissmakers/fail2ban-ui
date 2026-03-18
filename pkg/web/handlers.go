@@ -74,6 +74,11 @@ type emailDetail struct {
 	Value string
 }
 
+type localeOption struct {
+	Code  string
+	Label string
+}
+
 type githubReleaseResponse struct {
 	TagName string `json:"tag_name"`
 }
@@ -1579,6 +1584,7 @@ func shouldAlertForCountry(country string, alertCountries []string) bool {
 func renderIndexPage(c *gin.Context) {
 	disableExternalIP := os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "true" || os.Getenv("DISABLE_EXTERNAL_IP_LOOKUP") == "1"
 	autoDark := os.Getenv("AUTODARK") == "true" || os.Getenv("AUTODARK") == "1"
+	languageOptions := listLocaleOptions()
 
 	// Checks if OIDC is enabled and skip login page setting
 	oidcEnabled := auth.IsEnabled()
@@ -1600,9 +1606,69 @@ func renderIndexPage(c *gin.Context) {
 		"updateCheckEnabled": updateCheckEnabled,
 		"disableExternalIP":  disableExternalIP,
 		"autoDark":           autoDark,
+		"languageOptions":    languageOptions,
 		"oidcEnabled":        oidcEnabled,
 		"skipLoginPage":      skipLoginPage,
 	})
+}
+
+func listLocaleOptions() []localeOption {
+	localeDir := "./internal/locales"
+	if _, container := os.LookupEnv("CONTAINER"); container {
+		localeDir = "/app/locales"
+	}
+	entries, err := os.ReadDir(localeDir)
+	if err != nil {
+		return []localeOption{{Code: "en", Label: "en"}}
+	}
+	options := make([]localeOption, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if filepath.Ext(name) != ".json" {
+			continue
+		}
+		code := strings.TrimSuffix(name, ".json")
+		if code == "" {
+			continue
+		}
+		label := localeLabelFromFile(filepath.Join(localeDir, name), code)
+		options = append(options, localeOption{
+			Code:  code,
+			Label: label,
+		})
+	}
+	if len(options) == 0 {
+		return []localeOption{{Code: "en", Label: "en"}}
+	}
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Code == "en" {
+			return true
+		}
+		if options[j].Code == "en" {
+			return false
+		}
+		return strings.ToLower(options[i].Label) < strings.ToLower(options[j].Label)
+	})
+
+	return options
+}
+
+func localeLabelFromFile(path, fallback string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fallback
+	}
+	var translations map[string]string
+	if err := json.Unmarshal(data, &translations); err != nil {
+		return fallback
+	}
+	if label, ok := translations["meta.language_name"]; ok && strings.TrimSpace(label) != "" {
+		return label
+	}
+	return fallback
 }
 
 // =========================================================================

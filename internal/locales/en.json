@@ -1,4 +1,5 @@
 {
+  "meta.language_name": "English",
   "page.title": "Fail2ban UI Dashboard",
   "nav.dashboard": "Dashboard",
   "nav.filter_debug": "Filter Debug",
