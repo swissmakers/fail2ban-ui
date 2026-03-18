@@ -298,7 +298,7 @@ function renderDashboard() {
       + '    <p class="text-2xl font-semibold text-gray-800">' + newLastHour + '</p>'
       + '  </div>'
       + '  <div class="bg-white rounded-lg shadow p-4">'
-      + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.recurring_week">Recurring IPs (7 days)</p>'
+      + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.recurring_week">Recurring IPs</p>'
       + '    <p class="text-2xl font-semibold text-gray-800">' + recurringWeekCount + '</p>'
       + '    <p class="text-xs text-gray-500 mt-1" data-i18n="dashboard.cards.recurring_hint">Keep an eye on repeated offenders across all servers.</p>'
       + '  </div>'
