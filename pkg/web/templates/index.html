@@ -34,6 +34,24 @@
       document.documentElement.setAttribute('data-theme', theme);
     })();
   </script>
+  <link id="appFavicon" rel="icon" type="image/png" href="/static/images/favicon-dark.png?v={{.version}}" data-light-href="/static/images/favicon-dark.png?v={{.version}}" data-dark-href="/static/images/favicon-light.png?v={{.version}}" />
+  <link id="appAppleTouchIcon" rel="apple-touch-icon" href="/static/images/favicon-dark.png?v={{.version}}" data-light-href="/static/images/favicon-dark.png?v={{.version}}" data-dark-href="/static/images/favicon-light.png?v={{.version}}" />
+  <script>
+    (function() {
+      var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      var hrefAttr = theme === 'dark' ? 'data-dark-href' : 'data-light-href';
+      var favicon = document.getElementById('appFavicon');
+      var appleTouchIcon = document.getElementById('appAppleTouchIcon');
+      var faviconHref = favicon ? favicon.getAttribute(hrefAttr) : '';
+      var appleHref = appleTouchIcon ? appleTouchIcon.getAttribute(hrefAttr) : '';
+      if (favicon && faviconHref) {
+        favicon.setAttribute('href', faviconHref);
+      }
+      if (appleTouchIcon && appleHref) {
+        appleTouchIcon.setAttribute('href', appleHref);
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/static/vendor/prism/prism-tomorrow.min.css?v={{.version}}" />
   <script src="/static/vendor/prism/prism-core.min.js?v={{.version}}"></script>
   <script src="/static/vendor/prism/prism-autoloader.min.js?v={{.version}}"></script>
@@ -70,7 +88,9 @@
       <div class="flex items-center justify-between h-16">
         <div class="flex items-center">
           <div class="flex-shrink-0">
-            <a href="/" class="text-xl font-bold hover:text-blue-200 transition-colors cursor-pointer">Fail2ban UI</a>
+            <a href="/" class="inline-flex items-center transition-colors cursor-pointer" aria-label="Fail2ban UI home">
+              <img src="/static/images/logo-light.png?v={{.version}}" alt="Fail2ban UI" class="h-8 w-auto" />
+            </a>
           </div>
           <div id="backendStatus" class="ml-4 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-gray-400" id="statusDot"></span>

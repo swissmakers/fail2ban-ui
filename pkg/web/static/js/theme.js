@@ -21,6 +21,23 @@ function applyTheme(theme) {
   var root = document.documentElement;
 
   root.setAttribute('data-theme', resolvedTheme);
+  syncFavicons(resolvedTheme);
+}
+
+function syncFavicons(theme) {
+  var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
+  var hrefAttr = resolvedTheme === 'dark' ? 'data-dark-href' : 'data-light-href';
+  var favicon = document.getElementById('appFavicon');
+  var appleTouchIcon = document.getElementById('appAppleTouchIcon');
+  var faviconHref = favicon ? favicon.getAttribute(hrefAttr) : '';
+  var appleHref = appleTouchIcon ? appleTouchIcon.getAttribute(hrefAttr) : '';
+
+  if (favicon && faviconHref) {
+    favicon.setAttribute('href', faviconHref);
+  }
+  if (appleTouchIcon && appleHref) {
+    appleTouchIcon.setAttribute('href', appleHref);
+  }
 }
 
 function syncSystemTheme() {

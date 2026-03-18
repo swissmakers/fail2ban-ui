@@ -157,7 +157,7 @@ function renderInsightsGlobe() {
     .showAtmosphere(true)
     .atmosphereColor('#3b82f6')
     .atmosphereAltitude(0.15)
-    .globeImageUrl('/static/images/earth.jpg?v={{.version}}')
+    .globeImageUrl('/static/images/earth-dark.jpg?v={{.version}}')
     .pointsData(points)
     .pointLat('lat')
     .pointLng('lng')
