@@ -68,6 +68,7 @@
     --f2b-ui-bg-blue-500-hover: rgb(37 99 235);
     --f2b-ui-bg-blue-600-hover: rgb(29 78 216);
     --f2b-ui-bg-blue-700-hover: rgb(30 64 175);
+    --f2b-ui-bg-red-50-hover: #fef2f2;
     --f2b-ui-border: #d1d5db;
     --f2b-ui-text: #111827;
     --f2b-ui-text-muted: #6b7280;
@@ -186,6 +187,7 @@ html[data-theme="dark"] body:not(.lotr-mode) {
     --f2b-ui-bg-blue-500-hover: rgb(45 73 134);
     --f2b-ui-bg-blue-600-hover: rgb(39 64 118);
     --f2b-ui-bg-blue-700-hover: rgb(33 56 103);
+    --f2b-ui-bg-red-50-hover: #4a1e27;
     --f2b-ui-border: #334a67;
     --f2b-ui-text: #e6edf7;
     --f2b-ui-text-muted: #9cb1c9;
@@ -305,6 +307,7 @@ html[data-theme="dark"] body:not(.lotr-mode) .hover\:bg-blue-50:hover { backgrou
 html[data-theme="dark"] body:not(.lotr-mode) .hover\:bg-blue-500:hover { background-color: var(--f2b-ui-bg-blue-500-hover) !important; }
 html[data-theme="dark"] body:not(.lotr-mode) .hover\:bg-blue-600:hover { background-color: var(--f2b-ui-bg-blue-600-hover) !important; }
 html[data-theme="dark"] body:not(.lotr-mode) .hover\:bg-blue-700:hover { background-color: var(--f2b-ui-bg-blue-700-hover) !important; }
+html[data-theme="dark"] body:not(.lotr-mode) .hover\:bg-red-50:hover { background-color: var(--f2b-ui-bg-red-50-hover) !important; }
 html[data-theme="dark"] body:not(.lotr-mode) .hover\:text-gray-600:hover { color: var(--f2b-ui-text) !important; }
 
 html[data-theme="dark"] body:not(.lotr-mode) input,

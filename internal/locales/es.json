@@ -1,4 +1,5 @@
 {
+  "meta.language_name": "Español",
   "page.title": "Panel de control Fail2ban UI",
   "nav.dashboard": "Panel de control",
   "nav.filter_debug": "Depuración de filtros",
