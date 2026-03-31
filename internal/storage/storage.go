@@ -1,3 +1,19 @@
+// Fail2ban UI - A Swiss made, management interface for Fail2ban.
+//
+// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+//
+// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package storage
 
 import (
@@ -106,6 +122,7 @@ type ServerRecord struct {
 	Host         string
 	Port         int
 	SocketPath   string
+	ConfigPath   string
 	SSHUser      string
 	SSHKeyPath   string
 	AgentURL     string
@@ -207,7 +224,7 @@ WHERE id = 1`)
 
 	var (
 		lang, callback, callbackSecret, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, chain, bantimeRndtime, advancedActions, geoipProvider, geoipDatabasePath, smtpAuthMethod sql.NullString
-		alertProvider, webhookJSON, elasticsearchJSON, threatIntelJSON                                                                                                                                                                                  sql.NullString
+		alertProvider, webhookJSON, elasticsearchJSON, threatIntelJSON                                                                                                                                                                                 sql.NullString
 		port, smtpPort, maxretry, maxLogLines                                                                                                                                                                                                          sql.NullInt64
 		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans, consoleOutput, smtpInsecureSkipVerify                                                                                                      sql.NullInt64
 	)
@@ -360,7 +377,7 @@ func ListServers(ctx context.Context) ([]ServerRecord, error) {
 	}
 
 	rows, err := db.QueryContext(ctx, `
-SELECT id, name, type, host, port, socket_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
+SELECT id, name, type, host, port, socket_path, config_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
 FROM servers
 ORDER BY created_at`)
 	if err != nil {
@@ -371,7 +388,7 @@ ORDER BY created_at`)
 	var records []ServerRecord
 	for rows.Next() {
 		var rec ServerRecord
-		var host, socket, sshUser, sshKey, agentURL, agentSecret, hostname, tags sql.NullString
+		var host, socket, configPath, sshUser, sshKey, agentURL, agentSecret, hostname, tags sql.NullString
 		var name, serverType sql.NullString
 		var created, updated sql.NullString
 		var port sql.NullInt64
@@ -384,6 +401,7 @@ ORDER BY created_at`)
 			&host,
 			&port,
 			&socket,
+			&configPath,
 			&sshUser,
 			&sshKey,
 			&agentURL,
@@ -404,6 +422,7 @@ ORDER BY created_at`)
 		rec.Host = stringFromNull(host)
 		rec.Port = intFromNull(port)
 		rec.SocketPath = stringFromNull(socket)
+		rec.ConfigPath = stringFromNull(configPath)
 		rec.SSHUser = stringFromNull(sshUser)
 		rec.SSHKeyPath = stringFromNull(sshKey)
 		rec.AgentURL = stringFromNull(agentURL)
@@ -452,9 +471,9 @@ func ReplaceServers(ctx context.Context, servers []ServerRecord) error {
 
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO servers (
-	id, name, type, host, port, socket_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
+	id, name, type, host, port, socket_path, config_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
 ) VALUES (
-	?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )`)
 	if err != nil {
 		return err
@@ -477,6 +496,7 @@ INSERT INTO servers (
 			srv.Host,
 			srv.Port,
 			srv.SocketPath,
+			srv.ConfigPath,
 			srv.SSHUser,
 			srv.SSHKeyPath,
 			srv.AgentURL,
@@ -1053,6 +1073,7 @@ CREATE TABLE IF NOT EXISTS servers (
 	host TEXT,
 	port INTEGER,
 	socket_path TEXT,
+	config_path TEXT,
 	ssh_user TEXT,
 	ssh_key_path TEXT,
 	agent_url TEXT,
@@ -1106,47 +1127,52 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 		return err
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN console_output INTEGER DEFAULT 0`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN smtp_insecure_skip_verify INTEGER DEFAULT 0`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN smtp_auth_method TEXT DEFAULT 'auto'`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN chain TEXT DEFAULT 'INPUT'`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_rndtime TEXT DEFAULT ''`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN alert_provider TEXT DEFAULT 'email'`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN webhook TEXT DEFAULT '{}'`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN elasticsearch TEXT DEFAULT '{}'`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN threat_intel TEXT DEFAULT '{}'`); err != nil {
-		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE servers ADD COLUMN config_path TEXT`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
 	}
