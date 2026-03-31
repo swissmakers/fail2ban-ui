@@ -35,12 +35,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
 // =========================================================================
 //  Types
 // =========================================================================
+
+type Fail2banServer = shared.Fail2banServer
 
 type AppSettings struct {
 	Language             string                `json:"language"`
@@ -85,27 +89,6 @@ type SMTPSettings struct {
 	UseTLS             bool   `json:"useTLS"`
 	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
 	AuthMethod         string `json:"authMethod"`
-}
-
-type Fail2banServer struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Type          string    `json:"type"`
-	Host          string    `json:"host,omitempty"`
-	Port          int       `json:"port,omitempty"`
-	SocketPath    string    `json:"socketPath,omitempty"`
-	SSHUser       string    `json:"sshUser,omitempty"`
-	SSHKeyPath    string    `json:"sshKeyPath,omitempty"`
-	AgentURL      string    `json:"agentUrl,omitempty"`
-	AgentSecret   string    `json:"agentSecret,omitempty"`
-	Hostname      string    `json:"hostname,omitempty"`
-	Tags          []string  `json:"tags,omitempty"`
-	IsDefault     bool      `json:"isDefault"`
-	Enabled       bool      `json:"enabled"`
-	RestartNeeded bool      `json:"restartNeeded"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	enabledSet    bool
 }
 
 type AdvancedActionsConfig struct {
@@ -211,13 +194,15 @@ func normalizeAdvancedActionsConfig(cfg AdvancedActionsConfig) AdvancedActionsCo
 
 const (
 	settingsFile              = "fail2ban-ui-settings.json"
-	jailFile                  = "/etc/fail2ban/jail.local"
-	actionFile                = "/etc/fail2ban/action.d/ui-custom-action.conf"
+	defaultLocalSocketPath    = "/var/run/fail2ban/fail2ban.sock"
 	actionCallbackPlaceholder = "__CALLBACK_URL__"
 	actionServerIDPlaceholder = "__SERVER_ID__"
 	actionSecretPlaceholder   = "__CALLBACK_SECRET__"
 	actionCurlInsecureFlag    = "__CURL_INSECURE_FLAG__"
 )
+
+// The host default jail.local file used by initializeFromJailFile (experimental).
+var jailFile = fail2ban.JailLocal("")
 
 const jailLocalBanner = `################################################################################
 # Fail2Ban-UI Managed Configuration
@@ -280,32 +265,12 @@ var (
 	backgroundCtx       = context.Background()
 )
 
-// Customizes JSON unmarshaling to distinguish between explicit false and unset values.
-func (s *Fail2banServer) UnmarshalJSON(data []byte) error {
-	type Alias Fail2banServer
-	aux := &struct {
-		Enabled *bool `json:"enabled"`
-		*Alias
-	}{
-		Alias: (*Alias)(s),
-	}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if aux.Enabled != nil {
-		s.Enabled = *aux.Enabled
-		s.enabledSet = true
-	} else {
-		s.enabledSet = false
-	}
-	return nil
-}
-
 // =========================================================================
 //  Initialization
 // =========================================================================
 
 func init() {
+	registerFail2banProvider()
 	if err := storage.Init(""); err != nil {
 		panic(fmt.Sprintf("failed to initialise storage: %v", err))
 	}
@@ -496,6 +461,7 @@ func applyServerRecordsLocked(records []storage.ServerRecord) {
 			Host:          rec.Host,
 			Port:          rec.Port,
 			SocketPath:    rec.SocketPath,
+			ConfigPath:    rec.ConfigPath,
 			SSHUser:       rec.SSHUser,
 			SSHKeyPath:    rec.SSHKeyPath,
 			AgentURL:      rec.AgentURL,
@@ -507,7 +473,7 @@ func applyServerRecordsLocked(records []storage.ServerRecord) {
 			RestartNeeded: rec.NeedsRestart,
 			CreatedAt:     rec.CreatedAt,
 			UpdatedAt:     rec.UpdatedAt,
-			enabledSet:    true,
+			EnabledSet:    true,
 		}
 		servers = append(servers, server)
 	}
@@ -615,6 +581,7 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 			Host:         srv.Host,
 			Port:         srv.Port,
 			SocketPath:   srv.SocketPath,
+			ConfigPath:   srv.ConfigPath,
 			SSHUser:      srv.SSHUser,
 			SSHKeyPath:   srv.SSHKeyPath,
 			AgentURL:     srv.AgentURL,
@@ -804,13 +771,14 @@ func normalizeServersLocked() {
 			ID:         "local",
 			Name:       "Fail2ban",
 			Type:       "local",
-			SocketPath: "/var/run/fail2ban/fail2ban.sock",
+			SocketPath: defaultLocalSocketPath,
+			ConfigPath: fail2ban.DefaultConfigRoot,
 			Hostname:   hostname,
 			IsDefault:  false,
 			Enabled:    false,
 			CreatedAt:  now,
 			UpdatedAt:  now,
-			enabledSet: true,
+			EnabledSet: true,
 		}}
 		return
 	}
@@ -826,23 +794,25 @@ func normalizeServersLocked() {
 		if server.Type == "" {
 			server.Type = "local"
 		}
+		server.Name = normalizeServerName(server.Name)
 		if server.CreatedAt.IsZero() {
 			server.CreatedAt = now
 		}
 		if server.UpdatedAt.IsZero() {
 			server.UpdatedAt = now
 		}
-		if server.Type == "local" && server.SocketPath == "" {
-			server.SocketPath = "/var/run/fail2ban/fail2ban.sock"
+		if server.Type == "local" {
+			server.SocketPath = normalizeLocalSocketPath(server.SocketPath)
+			server.ConfigPath = normalizeLocalConfigPath(server.ConfigPath)
 		}
-		if !server.enabledSet {
+		if !server.EnabledSet {
 			if server.Type == "local" {
 				server.Enabled = false
 			} else {
 				server.Enabled = true
 			}
 		}
-		server.enabledSet = true
+		server.EnabledSet = true
 		if !server.Enabled {
 			server.RestartNeeded = false
 		}
@@ -876,21 +846,81 @@ func generateServerID() string {
 	return "srv-" + hex.EncodeToString(b[:])
 }
 
+func normalizeServerName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func normalizeServerNameKey(name string) string {
+	return strings.ToLower(normalizeServerName(name))
+}
+
+func normalizePathValue(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	return filepath.Clean(trimmed)
+}
+
+func normalizeLocalSocketPath(path string) string {
+	normalized := normalizePathValue(path)
+	if normalized == "" {
+		return defaultLocalSocketPath
+	}
+	return normalized
+}
+
+func normalizeLocalConfigPath(path string) string {
+	return fail2ban.NormalizeConfigPath(path)
+}
+
+// Validates name and local connector socket/config path collisions.
+func validateServerUniqueness(input Fail2banServer, existing []Fail2banServer) error {
+	nameKey := normalizeServerNameKey(input.Name)
+	socketKey := ""
+	configKey := ""
+	if input.Type == "local" {
+		socketKey = normalizeLocalSocketPath(input.SocketPath)
+		configKey = normalizeLocalConfigPath(input.ConfigPath)
+	}
+
+	for _, e := range existing {
+		if e.ID == input.ID {
+			continue
+		}
+
+		if nameKey != "" && normalizeServerNameKey(e.Name) == nameKey {
+			return fmt.Errorf("a server with the same name already exists")
+		}
+
+		if input.Type != "local" || e.Type != "local" {
+			continue
+		}
+
+		if normalizeLocalSocketPath(e.SocketPath) == socketKey {
+			return fmt.Errorf("a local connector with the same socket path already exists")
+		}
+		if normalizeLocalConfigPath(e.ConfigPath) == configKey {
+			return fmt.Errorf("a local connector with the same configuration path already exists")
+		}
+	}
+
+	return nil
+}
+
+func validateServerUniquenessLocked(input Fail2banServer) error {
+	return validateServerUniqueness(input, currentSettings.Servers)
+}
+
 // =========================================================================
 //  Fail2ban File Management --> TODO: create a new connector_global.go for functions that are used by all connectors
 // =========================================================================
 
 // Ensures the local action files exist. (local connector only) -> will be moved to the connector_local.go
-func ensureFail2banActionFiles(callbackURL, serverID string) error {
+func ensureFail2banActionFiles(callbackURL, serverID, configPath string) error {
 	DebugLog("----------------------------")
 	DebugLog("ensureFail2banActionFiles called (settings.go)")
-	if _, err := os.Stat(filepath.Dir(jailFile)); os.IsNotExist(err) {
-		return nil
-	}
-	if err := EnsureJailLocalStructure(); err != nil {
-		return err
-	}
-	return writeFail2banAction(callbackURL, serverID)
+	return fail2ban.EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath)
 }
 
 // Builds the content of our fail2ban-UI managed jail.local file. (used by all connectors)
@@ -943,43 +973,9 @@ action = %(action_mwlg)s
 }
 
 // Ensures that the managed jail.local file is valid and exists. (used by all connectors)
-func EnsureJailLocalStructure() error {
+func EnsureJailLocalStructure(configPath string) error {
 	DebugLog("Running EnsureJailLocalStructure()")
-	if _, err := os.Stat(filepath.Dir(jailFile)); os.IsNotExist(err) {
-		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban directory does not exist. Please install fail2ban package first")
-	}
-	var existingContent string
-	fileExists := false
-	if content, err := os.ReadFile(jailFile); err == nil {
-		existingContent = string(content)
-		fileExists = len(strings.TrimSpace(existingContent)) > 0
-	}
-	if fileExists && !strings.Contains(existingContent, "ui-custom-action") {
-		DebugLog("jail.local file exists but is not managed by Fail2ban-UI - skipping overwrite")
-		return nil
-	}
-	if err := os.WriteFile(jailFile, []byte(BuildJailLocalContent()), 0644); err != nil {
-		return fmt.Errorf("failed to write jail.local: %v", err)
-	}
-	DebugLog("Created/updated jail.local with proper content.")
-	return nil
-}
-
-// Writes the custom-action file. (for local connector only) -> will be moved to the connector_local.go
-func writeFail2banAction(callbackURL, serverID string) error {
-	DebugLog("Running initial writeFail2banAction()")
-	DebugLog("----------------------------")
-	if _, err := os.Stat(filepath.Dir(actionFile)); os.IsNotExist(err) {
-		return fmt.Errorf("fail2ban is not installed: /etc/fail2ban/action.d directory does not exist. Please install fail2ban package first")
-	}
-	settings := GetSettings()
-	actionConfig := BuildFail2banActionConfig(callbackURL, serverID, settings.CallbackSecret)
-	err := os.WriteFile(actionFile, []byte(actionConfig), 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write action file: %w", err)
-	}
-	DebugLog("Custom-action file successfully written to %s\n", actionFile)
-	return nil
+	return fail2ban.EnsureManagedJailLocal(configPath, []byte(BuildJailLocalContent()))
 }
 
 func cloneServer(src Fail2banServer) Fail2banServer {
@@ -987,7 +983,7 @@ func cloneServer(src Fail2banServer) Fail2banServer {
 	if src.Tags != nil {
 		dst.Tags = append([]string{}, src.Tags...)
 	}
-	dst.enabledSet = src.enabledSet
+	dst.EnabledSet = src.EnabledSet
 	return dst
 }
 
@@ -1062,7 +1058,7 @@ func EnsureLocalFail2banAction(server Fail2banServer) error {
 	settingsLock.RLock()
 	callbackURL := getCallbackURLLocked()
 	settingsLock.RUnlock()
-	return ensureFail2banActionFiles(callbackURL, server.ID)
+	return ensureFail2banActionFiles(callbackURL, server.ID, server.ConfigPath)
 }
 
 // =========================================================================
@@ -1146,26 +1142,34 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	if input.Type == "" {
 		input.Type = "local"
 	}
-	if !input.enabledSet {
+	input.Name = normalizeServerName(input.Name)
+	if !input.EnabledSet {
 		if input.Type == "local" {
 			input.Enabled = false
 		} else {
 			input.Enabled = true
 		}
-		input.enabledSet = true
+		input.EnabledSet = true
 	}
-	if input.Type == "local" && input.SocketPath == "" {
-		input.SocketPath = "/var/run/fail2ban/fail2ban.sock"
+	if input.Type == "local" {
+		input.SocketPath = normalizeLocalSocketPath(input.SocketPath)
+		input.ConfigPath = normalizeLocalConfigPath(input.ConfigPath)
+	} else {
+		input.SocketPath = normalizePathValue(input.SocketPath)
+		input.ConfigPath = ""
 	}
 	if input.Name == "" {
 		input.Name = "Fail2ban Server " + input.ID
 	}
+	if err := validateServerUniquenessLocked(input); err != nil {
+		return Fail2banServer{}, err
+	}
 	replaced := false
 	for idx, srv := range currentSettings.Servers {
 		if srv.ID == input.ID {
-			if !input.enabledSet {
+			if !input.EnabledSet {
 				input.Enabled = srv.Enabled
-				input.enabledSet = true
+				input.EnabledSet = true
 			}
 			if !input.Enabled {
 				input.IsDefault = false
@@ -1269,7 +1273,7 @@ func SetDefaultServer(id string) (Fail2banServer, error) {
 			srv.IsDefault = true
 			if !srv.Enabled {
 				srv.Enabled = true
-				srv.enabledSet = true
+				srv.EnabledSet = true
 			}
 			srv.UpdatedAt = time.Now().UTC()
 		} else {
