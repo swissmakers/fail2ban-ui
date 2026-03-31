@@ -1,6 +1,6 @@
 {
   "name": "fail2ban-ui",
-  "version": "1.0.0",
+  "version": "1.4.6",
   "description": "🚀 **Fail2Ban-UI** is a Swiss-made **web-based management interface** for [Fail2Ban](https://www.fail2ban.org/). It provides an intuitive dashboard to **monitor, configure, and manage Fail2Ban** instances in real time, supporting both local and remote Fail2ban servers.",
   "main": "index.js",
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "SEE LICENSE IN LICENSE",
   "bugs": {
     "url": "https://github.com/swissmakers/fail2ban-ui/issues"
   },
