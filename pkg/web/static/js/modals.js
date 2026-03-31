@@ -273,7 +273,7 @@ function openServerManager(serverId) {
       if (serverId) {
         editServer(serverId);
       } else {
-        resetServerForm();
+        showServerManagerInfoView();
       }
       renderServerManagerList();
       openModal('serverManagerModal');

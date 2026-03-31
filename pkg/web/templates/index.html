@@ -1312,11 +1312,22 @@
                   No servers configured yet. Add your first Fail2ban server using the form on the right.
                 </div>
               </div>
-              <div>
+              <div class="server-manager-modal-form-col">
                 <div class="flex items-center justify-between mb-3">
                   <h4 class="text-md font-semibold text-gray-800" data-i18n="servers.modal.form_title">Add or Update Server</h4>
                   <button type="button" onclick="resetServerForm()" class="text-sm text-blue-600 hover:text-blue-800 font-medium" data-i18n="servers.form.new_server">New Server</button>
                 </div>
+                <div id="serverManagerInfoView" class="server-manager-info-view text-sm text-gray-600">
+                  <button type="button" onclick="resetServerForm()" class="server-manager-info-add mb-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-blue-200 bg-blue-50 text-blue-600 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                  <p data-i18n="servers.modal.info_body">
+                    Edit an existing server from the list, or create a new connector by clicking the button above.
+                  </p>
+                </div>
+                <div id="serverFormView" class="hidden">
                 <form id="serverForm" class="space-y-4" onsubmit="submitServerForm(event)">
                   <div>
                     <label for="serverName" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.name">Display Name</label>
@@ -1341,6 +1352,11 @@
                   <div data-server-fields="local ssh">
                     <label for="serverSocket" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.socket_path">Fail2ban Socket Path</label>
                     <input type="text" id="serverSocket" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.socket_path_placeholder" placeholder="/var/run/fail2ban/fail2ban.sock">
+                  </div>
+                  <div id="serverConfigPathGroup" data-server-fields="local" class="hidden">
+                    <label for="serverConfigPath" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.config_path">Fail2ban Configuration Mount Path</label>
+                    <input type="text" id="serverConfigPath" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.config_path_placeholder" placeholder="/etc/fail2ban-secondary">
+                    <p class="mt-1 text-xs text-gray-500" data-i18n="servers.form.config_path_help">Required for additional local connectors. Must be unique and match your container mount target.</p>
                   </div>
                   <div data-server-fields="local">
                     <label for="serverHostname" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.hostname">Server Hostname</label>
@@ -1391,6 +1407,7 @@
                     <button type="button" class="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors" onclick="resetServerForm()" data-i18n="servers.form.reset">Reset</button>
                   </div>
                 </form>
+                </div>
               </div>
             </div>
           </div>
