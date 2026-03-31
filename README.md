@@ -5,11 +5,11 @@
 
 **Enterprise-Grade Intrusion Detection System Management Platform**
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/License-PolyForm_Shield_1.0.0-6A5ACD)](https://polyformproject.org/licenses/shield/1.0.0/)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://golang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://www.linux.org/)
 
-*Swissmade open-source solution for centralized Fail2Ban management across distributed infrastructure*
+*Swiss-made solution for centralized Fail2Ban management across distributed infrastructure*
 
 [Quick Start](#quick-start-container) • [Documentation](#documentation) • [Configuration Reference](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/configuration.md) • [Screenshots](#screenshots)
 
@@ -17,7 +17,7 @@
 
 Fail2Ban UI is a management platform for operating Fail2Ban across one or more Linux hosts. It provides a central place to review bans, search and unban IPs, manage jails and filters, and receive notifications.
 
-The project is maintained by Swissmakers GmbH and released under GPL-3.0.
+The project is maintained by Swissmakers GmbH and released under the [PolyForm Shield License 1.0.0](https://polyformproject.org/licenses/shield/1.0.0/).
 
 ## What this project does
 
@@ -195,4 +195,4 @@ See [`CONTRIBUTING.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/CON
 
 ## License
 
-GPL-3.0. See `LICENSE`.
+Fail2ban UI is licensed under the [PolyForm Shield License 1.0.0](https://polyformproject.org/licenses/shield/1.0.0/). See the [`LICENSE`](LICENSE) file for the full terms and required notices.
