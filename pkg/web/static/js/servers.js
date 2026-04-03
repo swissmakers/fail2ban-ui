@@ -447,6 +447,9 @@ function submitServerForm(event) {
       if (data.jailLocalWarning) {
         showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
       }
+      if (data.restartWarning) {
+        showToast(data.restartWarning, 'warning', 12000);
+      }
       var saved = data.server || {};
       currentServerId = saved.id || currentServerId;
       return loadServers().then(function() {

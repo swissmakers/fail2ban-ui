@@ -844,6 +844,7 @@ func UpsertServerHandler(c *gin.Context) {
 
 	// Ensures the jail.local structure is properly initialized for newly enabled/added servers
 	var jailLocalWarning bool
+	var restartWarning string
 	if justEnabled || !wasEnabled {
 		conn, err := fail2ban.GetManager().Connector(server.ID)
 		if err == nil {
@@ -868,11 +869,7 @@ func UpsertServerHandler(c *gin.Context) {
 				if err := conn.Restart(c.Request.Context()); err != nil {
 					msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
 					config.DebugLog("Warning: %s", msg)
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"error":  msg,
-						"server": server,
-					})
-					return
+					restartWarning = msg
 				} else {
 					if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
 						config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
@@ -887,6 +884,9 @@ func UpsertServerHandler(c *gin.Context) {
 	resp := gin.H{"server": server}
 	if jailLocalWarning {
 		resp["jailLocalWarning"] = true
+	}
+	if restartWarning != "" {
+		resp["restartWarning"] = restartWarning
 	}
 	c.JSON(http.StatusOK, resp)
 }
