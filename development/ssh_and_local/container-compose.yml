@@ -1,4 +1,6 @@
 services:
+  # ------------------------------------------------------------------------------------------------
+  # Fail2ban-Local: Primary Local Fail2ban instance for testing fail2ban-ui with local connector
   fail2ban-local:
     image: lscr.io/linuxserver/fail2ban:latest
     container_name: DEV_fail2ban-local
@@ -28,36 +30,29 @@ services:
       - ./fail2ban-ssh-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
     restart: unless-stopped
 
-
-  fail2ban-ui:
-    #image: registry.swissmakers.ch/infra/fail2ban-ui:latest
-    image: localhost/fail2ban-ui:dev
-    container_name: DEV_fail2ban-ui
-    privileged: true
-    network_mode: host
+  # ------------------------------------------------------------------------------------------------
+  # Fail2ban-Local-Secondary: Secondary Local Fail2ban instance for testing fail2ban-ui with two different local connectors
+  fail2ban-local-secondary:
+    image: lscr.io/linuxserver/fail2ban:latest
+    container_name: DEV_fail2ban-local-secondary
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    network_mode: bridge
     environment:
-      - PORT=3080
-      - BIND_ADDRESS=0.0.0.0
-      - CALLBACK_URL=http://10.88.0.1:3080
-      - AUTODARK=true
-      #- CALLBACK_SECRET=**************************************************
+      - TZ=Europe/Zurich
+      - VERBOSITY=-vv
     volumes:
-      # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
-      - ./config:/config:Z
-      # Mount persistent SSH keys directory
-      - ./ssh-keys:/config/.ssh:z
-      # Required for fail2ban-ui: Used for testing, that logpath is working, before enabeling a jail. Without this read only access the fail2ban-ui will not be able to enable jails (logpath-test would fail)
+      - ./fail2ban-config-local-secondary:/config:z
+      - ./f2b-run-local-secondary:/var/run/fail2ban:z
       - /var/log:/var/log:ro
-      - /var/log/httpd:/remotelogs/apache2:ro # this mounts the apache2 logs of a RPM based system (e.g. Rocky Linux) to the default location set by linuxserver-fail2ban. (on debian based systems this is /var/log/apache2 and currently hardcoded in the linuxserver-fail2ban container)
-
-      # Required for compose-local fail2ban instance: We mount the same Fail2Ban config as the linuxserver-fail2ban container (under /config/fail2ban to fail2ban-ui can modify configs)
-      - ./fail2ban-config-local/fail2ban:/etc/fail2ban:z
-      # Required for compose-local fail2ban instance: Mount the same run directory that contains fail2ban.sock for communication between fail2ban-ui and the linuxserver-fail2ban container
-      - ./f2b-run-local:/var/run/fail2ban:z
-
+      - /var/log/httpd:/remotelogs/apache2:ro
+      - ./fail2ban-ssh-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
     restart: unless-stopped
 
-
+  # ------------------------------------------------------------------------------------------------
+  # Fail2ban-SSH: Remote Fail2ban instance via SSH for testing fail2ban-ui with SSH connector
   fail2ban-ssh:
     image: lscr.io/linuxserver/fail2ban:latest
     container_name: DEV_fail2ban-ssh
@@ -85,4 +80,37 @@ services:
       # New: custom init + service hooks (read-only is recommended)
       - ./fail2ban-ssh-custom-cont-init.d:/custom-cont-init.d:ro,z
       - ./fail2ban-ssh-custom-services.d:/custom-services.d:ro,z
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------------------------------------
+  # Fail2ban-UI: Our main application for testing with local and SSH connectors
+  fail2ban-ui:
+    # image: registry.swissmakers.ch/infra/fail2ban-ui:latest
+    image: localhost/fail2ban-ui:dev
+    container_name: DEV_fail2ban-ui
+    privileged: true
+    network_mode: host
+    environment:
+      - PORT=3080
+      - BIND_ADDRESS=0.0.0.0
+      - CALLBACK_URL=http://10.88.0.1:3080
+      - AUTODARK=true
+      #- CALLBACK_SECRET=**************************************************
+    volumes:
+      # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
+      - ./config:/config:Z
+      # Mount persistent SSH keys directory
+      - ./ssh-keys:/config/.ssh:z
+      # Required for fail2ban-ui: Used for testing, that logpath is working, before enabeling a jail. Without this read only access the fail2ban-ui will not be able to enable jails (logpath-test would fail)
+      - /var/log:/var/log:ro
+      - /var/log/httpd:/remotelogs/apache2:ro # this mounts the apache2 logs of a RPM based system (e.g. Rocky Linux) to the default location set by linuxserver-fail2ban. (on debian based systems this is /var/log/apache2 and currently hardcoded in the linuxserver-fail2ban container)
+
+      # Required for compose-local fail2ban instance: We mount the same Fail2Ban config as the linuxserver-fail2ban container (under /config/fail2ban to fail2ban-ui can modify configs)
+      - ./fail2ban-config-local/fail2ban:/etc/fail2ban:z # Primary local connector
+      - ./fail2ban-config-local-secondary/fail2ban:/etc/fail2ban-secondary:z # Secondary local connector
+
+      # Required for compose-local fail2ban instance: Mount the same run directory that contains fail2ban.sock for communication between fail2ban-ui and the linuxserver-fail2ban container
+      - ./f2b-run-local:/var/run/fail2ban:z # Primary local connector
+      - ./f2b-run-local-secondary:/var/run/fail2ban-secondary:z # Secondary local connector
+
     restart: unless-stopped

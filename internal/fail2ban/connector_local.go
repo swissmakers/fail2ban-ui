@@ -1,3 +1,17 @@
+// Fail2ban UI - A Swiss made, management interface for Fail2ban.
+//
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
+//
+// Licensed under the PolyForm Shield License 1.0.0.
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://polyformproject.org/licenses/shield/1.0.0/
+//
+//     or in the LICENSE file in this repository.
+//
+// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
+
 package fail2ban
 
 import (
@@ -8,12 +22,12 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 // Connector for a local Fail2ban instance via fail2ban-client CLI.
 type LocalConnector struct {
-	server config.Fail2banServer
+	server shared.Fail2banServer
 }
 
 // =========================================================================
@@ -21,7 +35,7 @@ type LocalConnector struct {
 // =========================================================================
 
 // Create a new LocalConnector for the given server config.
-func NewLocalConnector(server config.Fail2banServer) *LocalConnector {
+func NewLocalConnector(server shared.Fail2banServer) *LocalConnector {
 	return &LocalConnector{server: server}
 }
 
@@ -29,8 +43,12 @@ func (lc *LocalConnector) ID() string {
 	return lc.server.ID
 }
 
-func (lc *LocalConnector) Server() config.Fail2banServer {
+func (lc *LocalConnector) Server() shared.Fail2banServer {
 	return lc.server
+}
+
+func (lc *LocalConnector) configPath() string {
+	return NormalizeConfigPath(lc.server.ConfigPath)
 }
 
 // Collects jail status for every active local jail.
@@ -91,7 +109,7 @@ func (lc *LocalConnector) Reload(ctx context.Context) error {
 	// Check if fail2ban-client returns "OK"
 	outputTrimmed := strings.TrimSpace(out)
 	if outputTrimmed != "OK" && outputTrimmed != "" {
-		config.DebugLog("fail2ban reload output: %s", out)
+		debugf("fail2ban reload output: %s", out)
 		if strings.Contains(out, "Errors in jail") || strings.Contains(out, "Unable to read the filter") {
 			return fmt.Errorf("fail2ban reload completed but with errors (output: %s)", strings.TrimSpace(out))
 		}
@@ -128,18 +146,26 @@ func (lc *LocalConnector) Restart(ctx context.Context) error {
 }
 
 func (lc *LocalConnector) GetFilterConfig(ctx context.Context, jail string) (string, string, error) {
-	return GetFilterConfigLocal(jail)
+	return readFilterConfigWithFallback(jail, lc.configPath())
 }
 
 func (lc *LocalConnector) SetFilterConfig(ctx context.Context, jail, content string) error {
-	return SetFilterConfigLocal(jail, content)
+	return SetFilterConfigLocal(jail, content, lc.configPath())
 }
 
 // Get all jails.
 func (lc *LocalConnector) getJails(ctx context.Context) ([]string, error) {
 	out, err := lc.runFail2banClient(ctx, "status")
 	if err != nil {
-		return nil, fmt.Errorf("error: unable to retrieve jail information. is your fail2ban service running? details: %w", err)
+		socketPath := lc.server.SocketPath
+		if strings.TrimSpace(socketPath) == "" {
+			socketPath = "default socket"
+		}
+		trimmedOut := strings.TrimSpace(out)
+		if trimmedOut != "" {
+			return nil, fmt.Errorf("error: unable to retrieve jail information via socket %s. is your fail2ban service running? details: %w (output: %s)", socketPath, err, trimmedOut)
+		}
+		return nil, fmt.Errorf("error: unable to retrieve jail information via socket %s. is your fail2ban service running? details: %w", socketPath, err)
 	}
 	var jails []string
 	lines := strings.Split(out, "\n")
@@ -194,27 +220,27 @@ func (lc *LocalConnector) checkFail2banHealthy(ctx context.Context) error {
 // =========================================================================
 
 func (lc *LocalConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
-	return GetAllJails()
+	return GetAllJails(lc.configPath())
 }
 
 func (lc *LocalConnector) UpdateJailEnabledStates(ctx context.Context, updates map[string]bool) error {
-	return UpdateJailEnabledStates(updates)
+	return UpdateJailEnabledStates(updates, lc.configPath())
 }
 
 func (lc *LocalConnector) GetFilters(ctx context.Context) ([]string, error) {
-	return GetFiltersLocal()
+	return DiscoverFiltersFromFiles(lc.configPath())
 }
 
 func (lc *LocalConnector) TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (string, string, error) {
-	return TestFilterLocal(filterName, logLines, filterContent)
+	return TestFilterLocal(filterName, logLines, filterContent, lc.configPath())
 }
 
 func (lc *LocalConnector) GetJailConfig(ctx context.Context, jail string) (string, string, error) {
-	return GetJailConfig(jail)
+	return GetJailConfig(jail, lc.configPath())
 }
 
 func (lc *LocalConnector) SetJailConfig(ctx context.Context, jail, content string) error {
-	return SetJailConfig(jail, content)
+	return SetJailConfig(jail, content, lc.configPath())
 }
 
 func (lc *LocalConnector) TestLogpath(ctx context.Context, logpath string) ([]string, error) {
@@ -222,35 +248,37 @@ func (lc *LocalConnector) TestLogpath(ctx context.Context, logpath string) ([]st
 }
 
 func (lc *LocalConnector) TestLogpathWithResolution(ctx context.Context, logpath string) (originalPath, resolvedPath string, files []string, err error) {
-	return TestLogpathWithResolution(logpath)
+	return TestLogpathWithResolution(logpath, lc.configPath())
 }
 
-func (lc *LocalConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
-	return UpdateDefaultSettingsLocal(settings)
+func (lc *LocalConnector) UpdateDefaultSettings(ctx context.Context) error {
+	return lc.EnsureJailLocalStructure(ctx)
 }
 
 func (lc *LocalConnector) EnsureJailLocalStructure(ctx context.Context) error {
-	return config.EnsureJailLocalStructure()
+	_ = ctx
+	content := []byte(mustProvider().BuildJailLocalContent())
+	return EnsureManagedJailLocal(lc.configPath(), content)
 }
 
 func (lc *LocalConnector) CreateJail(ctx context.Context, jailName, content string) error {
-	return CreateJail(jailName, content)
+	return CreateJail(jailName, content, lc.configPath())
 }
 
 func (lc *LocalConnector) DeleteJail(ctx context.Context, jailName string) error {
-	return DeleteJail(jailName)
+	return DeleteJail(jailName, lc.configPath())
 }
 
 func (lc *LocalConnector) CreateFilter(ctx context.Context, filterName, content string) error {
-	return CreateFilter(filterName, content)
+	return CreateFilter(filterName, content, lc.configPath())
 }
 
 func (lc *LocalConnector) DeleteFilter(ctx context.Context, filterName string) error {
-	return DeleteFilter(filterName)
+	return DeleteFilter(filterName, lc.configPath())
 }
 
 func (lc *LocalConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
-	const jailLocalPath = "/etc/fail2ban/jail.local"
+	jailLocalPath := JailLocal(lc.configPath())
 	content, err := os.ReadFile(jailLocalPath)
 	if err != nil {
 		if os.IsNotExist(err) {

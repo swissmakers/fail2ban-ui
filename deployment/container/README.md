@@ -402,7 +402,7 @@ systemctl status firewalld
 
 ## SELinux Configuration
 
-If SELinux is enabled on your system, you must apply the required SELinux policies to allow the container to communicate with Fail2Ban.
+If SELinux is enabled on your system, you may need the optional modules below so the **container** can talk to the host Fail2Ban socket and read the expected logs. That is separate from **host** Fail2Ban calling back to the UI with `curl`: for denials on `fail2ban_t` connecting to HTTP/HTTPS ports, see [`docs/security.md`](../../docs/security.md#selinux) (typically solved by `setsebool -P nis_enabled 1` on RHEL-family systems).
 
 ### Apply Pre-built Policies
 

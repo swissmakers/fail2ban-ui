@@ -41,11 +41,12 @@ grep -qE '^PubkeyAuthentication\s+' "$SSHD_CFG" || echo 'PubkeyAuthentication ye
 grep -qE '^LogLevel\s+' "$SSHD_CFG" || echo 'LogLevel VERBOSE' >> "$SSHD_CFG"
 grep -qE '^AuthorizedKeysFile\s+' "$SSHD_CFG" || echo 'AuthorizedKeysFile .ssh/authorized_keys' >> "$SSHD_CFG"
 
-# ---- sudoers: use fail2ban-client (systemctl isn't present in LSIO containers) ----
-# (LSIO support guidance is to control fail2ban via fail2ban-client, not systemctl/service) :contentReference[oaicite:5]{index=5}
+# ---- sudoers for fail2ban-ui remote management in dev ----
+# Keep fail2ban-client for normal operations and allow restart commands used by the UI code path.
 install -d -m 0750 /etc/sudoers.d
 cat > /etc/sudoers.d/fail2ban-ui <<'EOF'
 testuser ALL=(ALL) NOPASSWD: /usr/bin/fail2ban-client *
+testuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban
 EOF
 chmod 0440 /etc/sudoers.d/fail2ban-ui
 

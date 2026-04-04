@@ -1,3 +1,17 @@
+// Fail2ban UI - A Swiss made, management interface for Fail2ban.
+//
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
+//
+// Licensed under the PolyForm Shield License 1.0.0.
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://polyformproject.org/licenses/shield/1.0.0/
+//
+//     or in the LICENSE file in this repository.
+//
+// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
+
 package fail2ban
 
 import (
@@ -5,7 +19,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 // =========================================================================
@@ -15,7 +29,7 @@ import (
 // Connector is the communication backend for a Fail2ban server.
 type Connector interface {
 	ID() string
-	Server() config.Fail2banServer
+	Server() shared.Fail2banServer
 
 	GetJailInfos(ctx context.Context) ([]JailInfo, error)
 	GetBannedIPs(ctx context.Context, jail string) ([]string, error)
@@ -41,7 +55,7 @@ type Connector interface {
 	TestLogpathWithResolution(ctx context.Context, logpath string) (originalPath, resolvedPath string, files []string, err error)
 
 	// Default settings operations
-	UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error
+	UpdateDefaultSettings(ctx context.Context) error
 
 	// Jail local structure management
 	EnsureJailLocalStructure(ctx context.Context) error
@@ -61,10 +75,11 @@ type Connector interface {
 //  Manager
 // =========================================================================
 
-// Manager holds connectors for all configured Fail2ban servers.
+// Holds connectors for all configured Fail2ban servers.
 type Manager struct {
-	mu         sync.RWMutex
-	connectors map[string]Connector
+	mu              sync.RWMutex
+	connectors      map[string]Connector
+	defaultServerID string
 }
 
 var (
@@ -81,12 +96,15 @@ func GetManager() *Manager {
 	return managerInst
 }
 
-func (m *Manager) ReloadFromSettings(settings config.AppSettings) error {
+// Rebuilds connectors from the given server list (typically all servers, enabled or not).
+func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	connectors := make(map[string]Connector)
-	for _, srv := range settings.Servers {
+	defaultID := pickDefaultServerID(servers)
+
+	for _, srv := range servers {
 		if !srv.Enabled {
 			continue
 		}
@@ -98,7 +116,24 @@ func (m *Manager) ReloadFromSettings(settings config.AppSettings) error {
 	}
 
 	m.connectors = connectors
+	m.defaultServerID = defaultID
 	return nil
+}
+
+func pickDefaultServerID(servers []shared.Fail2banServer) string {
+	var fallback string
+	for _, srv := range servers {
+		if !srv.Enabled {
+			continue
+		}
+		if fallback == "" {
+			fallback = srv.ID
+		}
+		if srv.IsDefault {
+			return srv.ID
+		}
+	}
+	return fallback
 }
 
 // Returns the connector for the specified server ID.
@@ -116,13 +151,15 @@ func (m *Manager) Connector(serverID string) (Connector, error) {
 	return conn, nil
 }
 
-// Returns the default connector as defined in settings.
+// Returns the connector for the default enabled server.
 func (m *Manager) DefaultConnector() (Connector, error) {
-	server := config.GetDefaultServer()
-	if server.ID == "" {
+	m.mu.RLock()
+	id := m.defaultServerID
+	m.mu.RUnlock()
+	if id == "" {
 		return nil, fmt.Errorf("no active fail2ban server configured")
 	}
-	return m.Connector(server.ID)
+	return m.Connector(id)
 }
 
 // Returns all connectors.
@@ -189,19 +226,14 @@ func updateConnectorAction(ctx context.Context, conn Connector) error {
 //  Connector Factory
 // =========================================================================
 
-func newConnectorForServer(server config.Fail2banServer) (Connector, error) {
+func newConnectorForServer(server shared.Fail2banServer) (Connector, error) {
 	switch server.Type {
 	case "local":
-		// Run migration before ensuring structure, but only when the experimental JAIL_AUTOMIGRATION=true env var is set.
 		if isJailAutoMigrationEnabled() {
-			config.DebugLog("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for local server %s", server.Name)
-			if err := MigrateJailsFromJailLocal(); err != nil {
+			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for local server %s", server.Name)
+			if err := MigrateJailsFromJailLocal(server.ConfigPath); err != nil {
 				return nil, fmt.Errorf("failed to initialise local fail2ban connector for %s: %w", server.Name, err)
 			}
-		}
-
-		if err := config.EnsureLocalFail2banAction(server); err != nil {
-			return nil, fmt.Errorf("failed to ensure local fail2ban action for %s: %w", server.Name, err)
 		}
 		return NewLocalConnector(server), nil
 	case "ssh":

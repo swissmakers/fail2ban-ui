@@ -288,6 +288,9 @@ html[data-theme="dark"] body:not(.lotr-mode) .text-blue-800 { color: var(--f2b-u
 html[data-theme="dark"] body:not(.lotr-mode) .hover\:text-blue-800:hover { color: var(--f2b-ui-link-hover) !important; }
 html[data-theme="dark"] body:not(.lotr-mode) .text-amber-600 { color: var(--f2b-ui-text-amber-600) !important; }
 html[data-theme="dark"] body:not(.lotr-mode) .text-amber-700 { color: var(--f2b-ui-text-amber-700) !important; }
+html[data-theme="dark"] body:not(.lotr-mode) .text-amber-800 { color: #fde68a !important; }
+html[data-theme="dark"] body:not(.lotr-mode) .bg-amber-50 { background-color: #3f2a0f !important; }
+html[data-theme="dark"] body:not(.lotr-mode) .border-amber-300 { border-color: #a16207 !important; }
 
 html[data-theme="dark"] body:not(.lotr-mode) .text-yellow-700 { color: var(--f2b-ui-text-yellow) !important; }
 html[data-theme="dark"] body:not(.lotr-mode) .text-yellow-800 { color: var(--f2b-ui-text-yellow-800) !important; }
@@ -539,7 +542,30 @@ body:has(#loginPage:not(.hidden)) {
 }
 
 #serverManagerList {
-    min-height: 480px;
+    min-height: 230px;
+    max-height: 100%;
+}
+
+#serverManagerInfoView.server-manager-info-view {
+    box-sizing: border-box;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    justify-self: center;
+    min-height: 24rem;
+    height: 90%;
+    max-width: 50%;
+    width: 100%;
+    margin-inline: auto;
+    text-align: center;
+}
+
+#serverManagerInfoView.server-manager-info-view.hidden {
+    display: none;
+}
+
+#serverManagerInfoView .server-manager-info-add {
+    margin-inline: auto;
 }
 
 ::-webkit-scrollbar {

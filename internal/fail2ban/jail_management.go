@@ -1,3 +1,17 @@
+// Fail2ban UI - A Swiss made, management interface for Fail2ban.
+//
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
+//
+// Licensed under the PolyForm Shield License 1.0.0.
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://polyformproject.org/licenses/shield/1.0.0/
+//
+//     or in the LICENSE file in this repository.
+//
+// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
+
 package fail2ban
 
 import (
@@ -9,27 +23,25 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
-func ensureJailLocalFile(jailName string) error {
+func ensureJailLocalFile(jailName, configPath string) error {
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return fmt.Errorf("jail name cannot be empty")
 	}
 
-	jailDPath := "/etc/fail2ban/jail.d"
+	jailDPath := JailDir(configPath)
 	localPath := filepath.Join(jailDPath, jailName+".local")
 	confPath := filepath.Join(jailDPath, jailName+".conf")
 
 	if _, err := os.Stat(localPath); err == nil {
-		config.DebugLog("Jail .local file already exists: %s", localPath)
+		debugf("Jail .local file already exists: %s", localPath)
 		return nil
 	}
 
 	if _, err := os.Stat(confPath); err == nil {
-		config.DebugLog("Copying jail config from .conf to .local: %s -> %s", confPath, localPath)
+		debugf("Copying jail config from .conf to .local: %s -> %s", confPath, localPath)
 		content, err := os.ReadFile(confPath)
 		if err != nil {
 			return fmt.Errorf("failed to read jail .conf file %s: %w", confPath, err)
@@ -37,11 +49,11 @@ func ensureJailLocalFile(jailName string) error {
 		if err := os.WriteFile(localPath, content, 0644); err != nil {
 			return fmt.Errorf("failed to write jail .local file %s: %w", localPath, err)
 		}
-		config.DebugLog("Successfully copied jail config to .local file")
+		debugf("Successfully copied jail config to .local file")
 		return nil
 	}
 
-	config.DebugLog("Creating minimal jail .local file: %s", localPath)
+	debugf("Creating minimal jail .local file: %s", localPath)
 	if err := os.MkdirAll(jailDPath, 0755); err != nil {
 		return fmt.Errorf("failed to create jail.d directory: %w", err)
 	}
@@ -49,7 +61,7 @@ func ensureJailLocalFile(jailName string) error {
 	if err := os.WriteFile(localPath, []byte(minimalContent), 0644); err != nil {
 		return fmt.Errorf("failed to create jail .local file %s: %w", localPath, err)
 	}
-	config.DebugLog("Successfully created minimal jail .local file")
+	debugf("Successfully created minimal jail .local file")
 	return nil
 }
 
@@ -57,27 +69,27 @@ func ensureJailLocalFile(jailName string) error {
 //  Config Read/Write
 // =========================================================================
 
-func readJailConfigWithFallback(jailName string) (string, string, error) {
+func readJailConfigWithFallback(jailName, configPath string) (string, string, error) {
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return "", "", fmt.Errorf("jail name cannot be empty")
 	}
 
-	jailDPath := "/etc/fail2ban/jail.d"
+	jailDPath := JailDir(configPath)
 	localPath := filepath.Join(jailDPath, jailName+".local")
 	confPath := filepath.Join(jailDPath, jailName+".conf")
 
 	if content, err := os.ReadFile(localPath); err == nil {
-		config.DebugLog("Reading jail config from .local: %s", localPath)
+		debugf("Reading jail config from .local: %s", localPath)
 		return string(content), localPath, nil
 	}
 
 	if content, err := os.ReadFile(confPath); err == nil {
-		config.DebugLog("Reading jail config from .conf: %s", confPath)
+		debugf("Reading jail config from .conf: %s", confPath)
 		return string(content), confPath, nil
 	}
 
-	config.DebugLog("Neither .local nor .conf exists for jail %s, returning empty section", jailName)
+	debugf("Neither .local nor .conf exists for jail %s, returning empty section", jailName)
 	return fmt.Sprintf("[%s]\n", jailName), localPath, nil
 }
 
@@ -140,9 +152,9 @@ func ListJailFiles(directory string) ([]string, error) {
 	return files, nil
 }
 
-// Returns all jails from /etc/fail2ban/jail.d directory.
-func DiscoverJailsFromFiles() ([]JailInfo, error) {
-	jailDPath := "/etc/fail2ban/jail.d"
+// Returns all jails from the given config path's jail.d directory.
+func DiscoverJailsFromFiles(configPath string) ([]JailInfo, error) {
+	jailDPath := JailDir(configPath)
 
 	if _, err := os.Stat(jailDPath); os.IsNotExist(err) {
 		return []JailInfo{}, nil
@@ -175,7 +187,7 @@ func DiscoverJailsFromFiles() ([]JailInfo, error) {
 
 		jails, err := parseJailConfigFile(filePath)
 		if err != nil {
-			config.DebugLog("Failed to parse jail file %s: %v", filePath, err)
+			debugf("Failed to parse jail file %s: %v", filePath, err)
 			continue
 		}
 
@@ -203,7 +215,7 @@ func DiscoverJailsFromFiles() ([]JailInfo, error) {
 
 		jails, err := parseJailConfigFile(filePath)
 		if err != nil {
-			config.DebugLog("Failed to parse jail file %s: %v", filePath, err)
+			debugf("Failed to parse jail file %s: %v", filePath, err)
 			continue
 		}
 
@@ -222,12 +234,12 @@ func DiscoverJailsFromFiles() ([]JailInfo, error) {
 //  Jail Creation
 // =========================================================================
 
-func CreateJail(jailName, content string) error {
+func CreateJail(jailName, content, configPath string) error {
 	if err := ValidateJailName(jailName); err != nil {
 		return err
 	}
 
-	jailDPath := "/etc/fail2ban/jail.d"
+	jailDPath := JailDir(configPath)
 	localPath := filepath.Join(jailDPath, jailName+".local")
 
 	if err := os.MkdirAll(jailDPath, 0755); err != nil {
@@ -244,7 +256,7 @@ func CreateJail(jailName, content string) error {
 		return fmt.Errorf("failed to create jail file %s: %w", localPath, err)
 	}
 
-	config.DebugLog("Created jail file: %s", localPath)
+	debugf("Created jail file: %s", localPath)
 	return nil
 }
 
@@ -253,12 +265,12 @@ func CreateJail(jailName, content string) error {
 //	Jail Deletion
 //
 // =========================================================================
-func DeleteJail(jailName string) error {
+func DeleteJail(jailName, configPath string) error {
 	if err := ValidateJailName(jailName); err != nil {
 		return err
 	}
 
-	jailDPath := "/etc/fail2ban/jail.d"
+	jailDPath := JailDir(configPath)
 	localPath := filepath.Join(jailDPath, jailName+".local")
 	confPath := filepath.Join(jailDPath, jailName+".conf")
 
@@ -270,7 +282,7 @@ func DeleteJail(jailName string) error {
 			lastErr = fmt.Errorf("failed to delete jail file %s: %w", localPath, err)
 		} else {
 			deletedFiles = append(deletedFiles, localPath)
-			config.DebugLog("Deleted jail file: %s", localPath)
+			debugf("Deleted jail file: %s", localPath)
 		}
 	}
 
@@ -279,7 +291,7 @@ func DeleteJail(jailName string) error {
 			lastErr = fmt.Errorf("failed to delete jail file %s: %w", confPath, err)
 		} else {
 			deletedFiles = append(deletedFiles, confPath)
-			config.DebugLog("Deleted jail file: %s", confPath)
+			debugf("Deleted jail file: %s", confPath)
 		}
 	}
 
@@ -294,19 +306,19 @@ func DeleteJail(jailName string) error {
 	return nil
 }
 
-// Returns all jails.
-func GetAllJails() ([]JailInfo, error) {
+// Returns all jails from the given config path.
+func GetAllJails(configPath string) ([]JailInfo, error) {
 	// Run migration once if enabled (experimental, off by default)
 	if isJailAutoMigrationEnabled() {
 		migrationOnce.Do(func() {
-			config.DebugLog("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration")
-			if err := MigrateJailsFromJailLocal(); err != nil {
-				config.DebugLog("Migration warning: %v", err)
+			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration")
+			if err := MigrateJailsFromJailLocal(configPath); err != nil {
+				debugf("Migration warning: %v", err)
 			}
 		})
 	}
 
-	jails, err := DiscoverJailsFromFiles()
+	jails, err := DiscoverJailsFromFiles(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover jails from files: %w", err)
 	}
@@ -370,24 +382,24 @@ func parseJailConfigFile(path string) ([]JailInfo, error) {
 //  Jail Enabled from "Manage Jails"
 // =========================================================================
 
-func UpdateJailEnabledStates(updates map[string]bool) error {
-	config.DebugLog("UpdateJailEnabledStates called with %d updates: %+v", len(updates), updates)
-	jailDPath := "/etc/fail2ban/jail.d"
+func UpdateJailEnabledStates(updates map[string]bool, configPath string) error {
+	debugf("UpdateJailEnabledStates called with %d updates: %+v", len(updates), updates)
+	jailDPath := JailDir(configPath)
 
 	for jailName, enabled := range updates {
 		jailName = strings.TrimSpace(jailName)
 		if jailName == "" {
-			config.DebugLog("Skipping empty jail name in updates map")
+			debugf("Skipping empty jail name in updates map")
 			continue
 		}
-		config.DebugLog("Processing jail: %s, enabled: %t", jailName, enabled)
+		debugf("Processing jail: %s, enabled: %t", jailName, enabled)
 
 		// Ensure .local file exists
-		if err := ensureJailLocalFile(jailName); err != nil {
+		if err := ensureJailLocalFile(jailName, configPath); err != nil {
 			return fmt.Errorf("failed to ensure .local file for jail %s: %w", jailName, err)
 		}
 		jailFilePath := filepath.Join(jailDPath, jailName+".local")
-		config.DebugLog("Jail file path: %s", jailFilePath)
+		debugf("Jail file path: %s", jailFilePath)
 		content, err := os.ReadFile(jailFilePath)
 		if err != nil {
 			return fmt.Errorf("failed to read jail .local file %s: %w", jailFilePath, err)
@@ -444,26 +456,26 @@ func UpdateJailEnabledStates(updates map[string]bool) error {
 		if err := os.WriteFile(jailFilePath, []byte(newContent), 0644); err != nil {
 			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
 		}
-		config.DebugLog("Updated jail %s: enabled = %t (file: %s)", jailName, enabled, jailFilePath)
+		debugf("Updated jail %s: enabled = %t (file: %s)", jailName, enabled, jailFilePath)
 	}
 	return nil
 }
 
 // Returns the full jail configuration from /etc/fail2ban/jail.d/{jailName}.local
-func GetJailConfig(jailName string) (string, string, error) {
+func GetJailConfig(jailName, configPath string) (string, string, error) {
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return "", "", fmt.Errorf("jail name cannot be empty")
 	}
 
-	config.DebugLog("GetJailConfig called for jail: %s", jailName)
-	content, filePath, err := readJailConfigWithFallback(jailName)
+	debugf("GetJailConfig called for jail: %s", jailName)
+	content, filePath, err := readJailConfigWithFallback(jailName, configPath)
 	if err != nil {
-		config.DebugLog("Failed to read jail config: %v", err)
+		debugf("Failed to read jail config: %v", err)
 		return "", "", fmt.Errorf("failed to read jail config for %s: %w", jailName, err)
 	}
 
-	config.DebugLog("Jail config read successfully, length: %d, file: %s", len(content), filePath)
+	debugf("Jail config read successfully, length: %d, file: %s", len(content), filePath)
 	return content, filePath, nil
 }
 
@@ -490,21 +502,21 @@ func ExtractFilterFromJailConfig(jailContent string) string {
 }
 
 // Writes the full jail configuration to /etc/fail2ban/jail.d/{jailName}.local
-func SetJailConfig(jailName, content string) error {
+func SetJailConfig(jailName, content, configPath string) error {
 	jailName = strings.TrimSpace(jailName)
 	if jailName == "" {
 		return fmt.Errorf("jail name cannot be empty")
 	}
-	config.DebugLog("SetJailConfig called for jail: %s, content length: %d", jailName, len(content))
+	debugf("SetJailConfig called for jail: %s, content length: %d", jailName, len(content))
 
-	jailDPath := "/etc/fail2ban/jail.d"
-	if err := ensureJailLocalFile(jailName); err != nil {
+	jailDPath := JailDir(configPath)
+	if err := ensureJailLocalFile(jailName, configPath); err != nil {
 		return fmt.Errorf("failed to ensure .local file for jail %s: %w", jailName, err)
 	}
 
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
-		config.DebugLog("Content is empty, creating minimal jail config")
+		debugf("Content is empty, creating minimal jail config")
 		content = fmt.Sprintf("[%s]\n", jailName)
 	} else {
 		expectedSection := fmt.Sprintf("[%s]", jailName)
@@ -522,12 +534,12 @@ func SetJailConfig(jailName, content string) error {
 					if !sectionFound {
 						sectionIndex = i
 						sectionFound = true
-						config.DebugLog("Correct section header found at line %d", i)
+						debugf("Correct section header found at line %d", i)
 					} else {
-						config.DebugLog("Duplicate correct section header found at line %d, will remove", i)
+						debugf("Duplicate correct section header found at line %d, will remove", i)
 					}
 				} else {
-					config.DebugLog("Incorrect section header found at line %d: %s (expected %s)", i, trimmedLine, expectedSection)
+					debugf("Incorrect section header found at line %d: %s (expected %s)", i, trimmedLine, expectedSection)
 					if sectionIndex == -1 {
 						sectionIndex = i
 					}
@@ -535,7 +547,7 @@ func SetJailConfig(jailName, content string) error {
 			}
 		}
 		if len(sectionIndices) > 1 {
-			config.DebugLog("Found %d section headers, removing duplicates", len(sectionIndices))
+			debugf("Found %d section headers, removing duplicates", len(sectionIndices))
 			var newLines []string
 			keptFirst := false
 			for i, line := range lines {
@@ -546,9 +558,9 @@ func SetJailConfig(jailName, content string) error {
 					if !keptFirst && trimmedLine == expectedSection {
 						newLines = append(newLines, expectedSection)
 						keptFirst = true
-						config.DebugLog("Keeping section header at line %d", i)
+						debugf("Keeping section header at line %d", i)
 					} else {
-						config.DebugLog("Removing duplicate/incorrect section header at line %d: %s", i, trimmedLine)
+						debugf("Removing duplicate/incorrect section header at line %d: %s", i, trimmedLine)
 						continue
 					}
 				} else {
@@ -560,10 +572,10 @@ func SetJailConfig(jailName, content string) error {
 
 		if !sectionFound {
 			if sectionIndex >= 0 {
-				config.DebugLog("Replacing incorrect section header at line %d", sectionIndex)
+				debugf("Replacing incorrect section header at line %d", sectionIndex)
 				lines[sectionIndex] = expectedSection
 			} else {
-				config.DebugLog("No section header found, prepending %s", expectedSection)
+				debugf("No section header found, prepending %s", expectedSection)
 				lines = append([]string{expectedSection}, lines...)
 			}
 			content = strings.Join(lines, "\n")
@@ -573,12 +585,12 @@ func SetJailConfig(jailName, content string) error {
 	}
 
 	jailFilePath := filepath.Join(jailDPath, jailName+".local")
-	config.DebugLog("Writing jail config to: %s", jailFilePath)
+	debugf("Writing jail config to: %s", jailFilePath)
 	if err := os.WriteFile(jailFilePath, []byte(content), 0644); err != nil {
-		config.DebugLog("Failed to write jail config: %v", err)
+		debugf("Failed to write jail config: %v", err)
 		return fmt.Errorf("failed to write jail config for %s: %w", jailName, err)
 	}
-	config.DebugLog("Jail config written successfully to .local file")
+	debugf("Jail config written successfully to .local file")
 
 	return nil
 }
@@ -632,12 +644,12 @@ func TestLogpath(logpath string) ([]string, error) {
 }
 
 // Resolves variables in logpath and tests the resolved path.
-func TestLogpathWithResolution(logpath string) (originalPath, resolvedPath string, files []string, err error) {
+func TestLogpathWithResolution(logpath, configPath string) (originalPath, resolvedPath string, files []string, err error) {
 	originalPath = strings.TrimSpace(logpath)
 	if originalPath == "" {
 		return originalPath, "", []string{}, nil
 	}
-	resolvedPath, err = ResolveLogpathVariables(originalPath)
+	resolvedPath, err = ResolveLogpathVariables(originalPath, configPath)
 	if err != nil {
 		return originalPath, "", nil, fmt.Errorf("failed to resolve logpath variables: %w", err)
 	}
@@ -711,12 +723,6 @@ func ExtractLogpathFromJailConfig(jailContent string) string {
 	return strings.Join(logpaths, "\n")
 }
 
-// Updates /etc/fail2ban/jail.local with the current settings.
-func UpdateDefaultSettingsLocal(settings config.AppSettings) error {
-	config.DebugLog("UpdateDefaultSettingsLocal called")
-	return config.EnsureJailLocalStructure()
-}
-
 // =========================================================================
 //  Jail Auto Migration (EXPERIMENTAL, runs only when JAIL_AUTOMIGRATION=true)
 // =========================================================================
@@ -730,9 +736,9 @@ func isJailAutoMigrationEnabled() bool {
 }
 
 // Migrates jail.local to jail.d/*.local.
-func MigrateJailsFromJailLocal() error {
-	localPath := "/etc/fail2ban/jail.local"
-	jailDPath := "/etc/fail2ban/jail.d"
+func MigrateJailsFromJailLocal(configPath string) error {
+	localPath := JailLocal(configPath)
+	jailDPath := JailDir(configPath)
 
 	if _, err := os.Stat(localPath); os.IsNotExist(err) {
 		return nil
@@ -746,14 +752,14 @@ func MigrateJailsFromJailLocal() error {
 		return fmt.Errorf("failed to parse jail.local: %w", err)
 	}
 	if len(sections) == 0 {
-		config.DebugLog("No jails to migrate from jail.local")
+		debugf("No jails to migrate from jail.local")
 		return nil
 	}
 	backupPath := localPath + ".backup." + fmt.Sprintf("%d", time.Now().Unix())
 	if err := os.WriteFile(backupPath, content, 0644); err != nil {
 		return fmt.Errorf("failed to create backup: %w", err)
 	}
-	config.DebugLog("Created backup of jail.local at %s", backupPath)
+	debugf("Created backup of jail.local at %s", backupPath)
 
 	if err := os.MkdirAll(jailDPath, 0755); err != nil {
 		return fmt.Errorf("failed to create jail.d directory: %w", err)
@@ -765,7 +771,7 @@ func MigrateJailsFromJailLocal() error {
 		}
 		jailFilePath := filepath.Join(jailDPath, jailName+".local")
 		if _, err := os.Stat(jailFilePath); err == nil {
-			config.DebugLog("Skipping migration for jail %s: .local file already exists", jailName)
+			debugf("Skipping migration for jail %s: .local file already exists", jailName)
 			continue
 		}
 		enabledSet := strings.Contains(jailContent, "enabled") || strings.Contains(jailContent, "Enabled")
@@ -785,7 +791,7 @@ func MigrateJailsFromJailLocal() error {
 		if err := os.WriteFile(jailFilePath, []byte(jailContent), 0644); err != nil {
 			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
 		}
-		config.DebugLog("Migrated jail %s to %s (enabled = false)", jailName, jailFilePath)
+		debugf("Migrated jail %s to %s (enabled = false)", jailName, jailFilePath)
 		migratedCount++
 	}
 	if migratedCount > 0 {
@@ -835,7 +841,7 @@ func MigrateJailsFromJailLocal() error {
 		if err := os.WriteFile(localPath, []byte(newLocalContent), 0644); err != nil {
 			return fmt.Errorf("failed to rewrite jail.local: %w", err)
 		}
-		config.DebugLog("Migration completed: moved %d jails to jail.d/", migratedCount)
+		debugf("Migration completed: moved %d jails to jail.d/", migratedCount)
 	}
 	return nil
 }

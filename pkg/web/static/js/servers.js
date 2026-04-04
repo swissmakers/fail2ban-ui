@@ -153,12 +153,27 @@ function renderServerManagerList() {
     var tags = (server.tags || []).length
       ? '<div class="mt-2 text-xs text-gray-500">' + escapeHtml(server.tags.join(', ')) + '</div>'
       : '';
+    var localDetails = '';
+    if ((server.type || '').toLowerCase() === 'local') {
+      var socketPath = server.socketPath || '/var/run/fail2ban/fail2ban.sock';
+      var configPath = server.configPath || '/etc/fail2ban';
+      localDetails = ''
+        + '<div class="mt-1 text-xs text-gray-500">'
+        + escapeHtml(t('servers.card.socket_path', 'Socket path')) + ': '
+        + '<code class="px-1 py-0.5 bg-gray-100 rounded">' + escapeHtml(socketPath) + '</code>'
+        + '</div>'
+        + '<div class="mt-1 text-xs text-gray-500">'
+        + escapeHtml(t('servers.card.config_path', 'Configuration path')) + ': '
+        + '<code class="px-1 py-0.5 bg-gray-100 rounded">' + escapeHtml(configPath) + '</code>'
+        + '</div>';
+    }
     return ''
       + '<div class="border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">'
       + '  <div class="flex items-center justify-between">'
       + '    <div>'
       + '      <p class="font-semibold text-gray-800 flex items-center">' + escapeHtml(server.name || server.id) + defaultBadge + statusBadge + restartBadge + '</p>'
       + '      <p class="text-sm text-gray-500">' + escapeHtml(meta || server.id) + '</p>'
+      +        localDetails
       +        tags
       + '    </div>'
       + '    <div class="flex flex-col gap-2">'
@@ -192,6 +207,20 @@ function renderServerManagerList() {
   }
 }
 
+function showServerManagerInfoView() {
+  var info = document.getElementById('serverManagerInfoView');
+  var formView = document.getElementById('serverFormView');
+  if (info) info.classList.remove('hidden');
+  if (formView) formView.classList.add('hidden');
+}
+
+function showServerFormView() {
+  var info = document.getElementById('serverManagerInfoView');
+  var formView = document.getElementById('serverFormView');
+  if (info) info.classList.add('hidden');
+  if (formView) formView.classList.remove('hidden');
+}
+
 function setCurrentServer(serverId) {
   if (!serverId) {
     currentServerId = null;
@@ -212,12 +241,14 @@ function setCurrentServer(serverId) {
 // =========================================================================
 
 function resetServerForm() {
+  showServerFormView();
   document.getElementById('serverId').value = '';
   document.getElementById('serverName').value = '';
   document.getElementById('serverType').value = 'local';
   document.getElementById('serverHost').value = '';
   document.getElementById('serverPort').value = '22';
   document.getElementById('serverSocket').value = '/var/run/fail2ban/fail2ban.sock';
+  document.getElementById('serverConfigPath').value = '';
   document.getElementById('serverHostname').value = '';
   document.getElementById('serverSSHUser').value = '';
   document.getElementById('serverSSHKey').value = '';
@@ -233,12 +264,14 @@ function resetServerForm() {
 function editServer(serverId) {
   var server = serversCache.find(function(s) { return s.id === serverId; });
   if (!server) return;
+  showServerFormView();
   document.getElementById('serverId').value = server.id || '';
   document.getElementById('serverName').value = server.name || '';
   document.getElementById('serverType').value = server.type || 'local';
   document.getElementById('serverHost').value = server.host || '';
   document.getElementById('serverPort').value = server.port || '';
   document.getElementById('serverSocket').value = server.socketPath || '/var/run/fail2ban/fail2ban.sock';
+  document.getElementById('serverConfigPath').value = server.configPath || '/etc/fail2ban';
   document.getElementById('serverHostname').value = server.hostname || '';
   document.getElementById('serverSSHUser').value = server.sshUser || '';
   document.getElementById('serverSSHKey').value = server.sshKeyPath || '';
@@ -267,6 +300,7 @@ function onServerTypeChange(type) {
   var enabledToggle = document.getElementById('serverEnabled');
   if (!enabledToggle) return;
   var isEditing = !!document.getElementById('serverId').value;
+  updateLocalConnectorGuidance(type, isEditing);
   if (isEditing) {
     return;
   }
@@ -286,17 +320,48 @@ function onServerTypeChange(type) {
   }
 }
 
+function normalizePathForCompare(value) {
+  var trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/\/+$/, '') || '/';
+}
+
+function normalizeNameForCompare(value) {
+  return (value || '').trim().toLowerCase();
+}
+
+function getOtherLocalServers(currentId) {
+  return (serversCache || []).filter(function(server) {
+    return (server.type || '').toLowerCase() === 'local' && server.id !== currentId;
+  });
+}
+
+function updateLocalConnectorGuidance(type, isEditing) {
+  var configPathGroup = document.getElementById('serverConfigPathGroup');
+  var configPathInput = document.getElementById('serverConfigPath');
+  var currentId = document.getElementById('serverId').value;
+  var otherLocalCount = getOtherLocalServers(currentId).length;
+  var showConfigPath = type === 'local' && (isEditing || otherLocalCount > 0);
+
+  if (configPathGroup) {
+    configPathGroup.classList.toggle('hidden', !showConfigPath);
+  }
+  if (configPathInput && !showConfigPath && !configPathInput.value.trim()) {
+    configPathInput.value = '/etc/fail2ban';
+  }
+}
+
 function submitServerForm(event) {
   event.preventDefault();
-  showLoading(true);
-
+  var editingId = document.getElementById('serverId').value || '';
   var payload = {
-    id: document.getElementById('serverId').value || undefined,
+    id: editingId || undefined,
     name: document.getElementById('serverName').value.trim(),
     type: document.getElementById('serverType').value,
     host: document.getElementById('serverHost').value.trim(),
     port: document.getElementById('serverPort').value ? parseInt(document.getElementById('serverPort').value, 10) : undefined,
     socketPath: document.getElementById('serverSocket').value.trim(),
+    configPath: document.getElementById('serverConfigPath').value.trim(),
     hostname: document.getElementById('serverHostname').value.trim(),
     sshUser: document.getElementById('serverSSHUser').value.trim(),
     sshKeyPath: document.getElementById('serverSSHKey').value.trim(),
@@ -307,7 +372,42 @@ function submitServerForm(event) {
       : [],
     enabled: document.getElementById('serverEnabled').checked
   };
+  var nameKey = normalizeNameForCompare(payload.name);
+  if (!nameKey) {
+    showToast(t('servers.validation.name_required', 'Server name is required.'), 'error');
+    return;
+  }
+  var duplicateName = (serversCache || []).some(function(server) {
+    return server.id !== editingId && normalizeNameForCompare(server.name || '') === nameKey;
+  });
+  if (duplicateName) {
+    showToast(t('servers.validation.duplicate_name', 'A server with this name already exists.'), 'error');
+    return;
+  }
+
+  if (payload.type === 'local') {
+    var socketKey = normalizePathForCompare(payload.socketPath || '/var/run/fail2ban/fail2ban.sock');
+    var configKey = normalizePathForCompare(payload.configPath || '/etc/fail2ban');
+    var localConflicts = getOtherLocalServers(editingId);
+    var socketConflict = localConflicts.some(function(server) {
+      return normalizePathForCompare(server.socketPath || '/var/run/fail2ban/fail2ban.sock') === socketKey;
+    });
+    if (socketConflict) {
+      showToast(t('servers.validation.duplicate_socket', 'A local connector with this socket path already exists.'), 'error');
+      return;
+    }
+    var configConflict = localConflicts.some(function(server) {
+      return normalizePathForCompare(server.configPath || '/etc/fail2ban') === configKey;
+    });
+    if (configConflict) {
+      showToast(t('servers.validation.duplicate_config_path', 'A local connector with this configuration path already exists.'), 'error');
+      return;
+    }
+  }
+
+  showLoading(true);
   if (!payload.socketPath) delete payload.socketPath;
+  if (!payload.configPath) delete payload.configPath;
   if (!payload.hostname) delete payload.hostname;
   if (!payload.agentUrl) delete payload.agentUrl;
   if (!payload.agentSecret) delete payload.agentSecret;
@@ -319,6 +419,9 @@ function submitServerForm(event) {
 
   if (payload.type !== 'local' && payload.type !== 'ssh') {
     delete payload.socketPath;
+  }
+  if (payload.type !== 'local') {
+    delete payload.configPath;
   }
   if (payload.type !== 'ssh') {
     delete payload.sshUser;
@@ -344,6 +447,9 @@ function submitServerForm(event) {
       if (data.jailLocalWarning) {
         showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
       }
+      if (data.restartWarning) {
+        showToast(data.restartWarning, 'warning', 12000);
+      }
       var saved = data.server || {};
       currentServerId = saved.id || currentServerId;
       return loadServers().then(function() {
@@ -354,6 +460,8 @@ function submitServerForm(event) {
           currentServer = serversCache.find(function(s) { return s.id === currentServerId; }) || currentServer;
         }
         return refreshData({ silent: true });
+      }).then(function() {
+        showServerManagerInfoView();
       });
     })
     .catch(function(err) {

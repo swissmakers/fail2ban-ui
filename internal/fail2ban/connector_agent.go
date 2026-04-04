@@ -1,3 +1,17 @@
+// Fail2ban UI - A Swiss made, management interface for Fail2ban.
+//
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
+//
+// Licensed under the PolyForm Shield License 1.0.0.
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://polyformproject.org/licenses/shield/1.0.0/
+//
+//     or in the LICENSE file in this repository.
+//
+// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
+
 package fail2ban
 
 import (
@@ -12,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 // =========================================================================
@@ -21,7 +35,7 @@ import (
 
 // Connector for a remote Fail2ban-Agent via HTTP API.
 type AgentConnector struct {
-	server config.Fail2banServer
+	server shared.Fail2banServer
 	base   *url.URL
 	client *http.Client
 }
@@ -31,7 +45,7 @@ type AgentConnector struct {
 // =========================================================================
 
 // Create a new AgentConnector for the given server config.
-func NewAgentConnector(server config.Fail2banServer) (Connector, error) {
+func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 	if server.AgentURL == "" {
 		return nil, fmt.Errorf("agentUrl is required for agent connector")
 	}
@@ -67,16 +81,17 @@ func (ac *AgentConnector) ID() string {
 	return ac.server.ID
 }
 
-func (ac *AgentConnector) Server() config.Fail2banServer {
+func (ac *AgentConnector) Server() shared.Fail2banServer {
 	return ac.server
 }
 
 func (ac *AgentConnector) ensureAction(ctx context.Context) error {
-	settings := config.GetSettings()
+	p := mustProvider()
+	cb := p.CallbackURL()
 	payload := map[string]any{
 		"name":        "ui-custom-action",
-		"config":      config.BuildFail2banActionConfig(config.GetCallbackURL(), ac.server.ID, settings.CallbackSecret),
-		"callbackUrl": config.GetCallbackURL(),
+		"config":      p.BuildFail2banActionConfig(cb, ac.server.ID, p.CallbackSecret()),
+		"callbackUrl": cb,
 		"setDefault":  true,
 	}
 	return ac.put(ctx, "/v1/actions/ui-custom", payload, nil)
@@ -218,16 +233,11 @@ func (ac *AgentConnector) newRequest(ctx context.Context, method, endpoint strin
 }
 
 func (ac *AgentConnector) do(req *http.Request, out any) error {
-	settingsSnapshot := config.GetSettings()
-	if settingsSnapshot.Debug {
-		config.DebugLog("Agent request [%s]: %s %s", ac.server.Name, req.Method, req.URL.String())
-	}
+	debugf("Agent request [%s]: %s %s", ac.server.Name, req.Method, req.URL.String())
 
 	resp, err := ac.client.Do(req)
 	if err != nil {
-		if settingsSnapshot.Debug {
-			config.DebugLog("Agent request error [%s]: %v", ac.server.Name, err)
-		}
+		debugf("Agent request error [%s]: %v", ac.server.Name, err)
 		return fmt.Errorf("agent request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -238,9 +248,7 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 	}
 	trimmed := strings.TrimSpace(string(data))
 
-	if settingsSnapshot.Debug {
-		config.DebugLog("Agent response [%s]: %s | %s", ac.server.Name, resp.Status, trimmed)
-	}
+	debugf("Agent response [%s]: %s | %s", ac.server.Name, resp.Status, trimmed)
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("agent request failed: %s (%s)", resp.Status, trimmed)
@@ -383,7 +391,7 @@ func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath
 //  Settings and Structure
 // =========================================================================
 
-func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context, settings config.AppSettings) error {
+func (ac *AgentConnector) UpdateDefaultSettings(ctx context.Context) error {
 	return ac.EnsureJailLocalStructure(ctx)
 }
 
@@ -405,7 +413,7 @@ func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
 	// If jail.local exists but is not managed by Fail2ban-UI, it belongs to the user, we do not overwrite it.
 	if exists, hasUI, err := ac.CheckJailLocalIntegrity(ctx); err == nil && exists && !hasUI {
-		config.DebugLog("jail.local on agent server %s exists but is not managed by Fail2ban-UI -- skipping overwrite", ac.server.Name)
+		debugf("jail.local on agent server %s exists but is not managed by Fail2ban-UI -- skipping overwrite", ac.server.Name)
 		return nil
 	}
 

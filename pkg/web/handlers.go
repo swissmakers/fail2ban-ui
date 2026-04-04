@@ -2,17 +2,15 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the PolyForm Shield License 1.0.0.
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://polyformproject.org/licenses/shield/1.0.0/
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//     or in the LICENSE file in this repository.
+//
+// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
 
 package web
 
@@ -833,7 +831,7 @@ func UpsertServerHandler(c *gin.Context) {
 	// Check if server was just enabled (transition from disabled to enabled)
 	justEnabled := wasDisabled && server.Enabled
 
-	if err := fail2ban.GetManager().ReloadFromSettings(config.GetSettings()); err != nil {
+	if err := config.ReloadFail2banManager(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -846,6 +844,7 @@ func UpsertServerHandler(c *gin.Context) {
 
 	// Ensures the jail.local structure is properly initialized for newly enabled/added servers
 	var jailLocalWarning bool
+	var restartWarning string
 	if justEnabled || !wasEnabled {
 		conn, err := fail2ban.GetManager().Connector(server.ID)
 		if err == nil {
@@ -870,11 +869,7 @@ func UpsertServerHandler(c *gin.Context) {
 				if err := conn.Restart(c.Request.Context()); err != nil {
 					msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
 					config.DebugLog("Warning: %s", msg)
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"error":  msg,
-						"server": server,
-					})
-					return
+					restartWarning = msg
 				} else {
 					if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
 						config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
@@ -890,6 +885,9 @@ func UpsertServerHandler(c *gin.Context) {
 	if jailLocalWarning {
 		resp["jailLocalWarning"] = true
 	}
+	if restartWarning != "" {
+		resp["restartWarning"] = restartWarning
+	}
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -904,7 +902,7 @@ func DeleteServerHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := fail2ban.GetManager().ReloadFromSettings(config.GetSettings()); err != nil {
+	if err := config.ReloadFail2banManager(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -923,7 +921,7 @@ func SetDefaultServerHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := fail2ban.GetManager().ReloadFromSettings(config.GetSettings()); err != nil {
+	if err := config.ReloadFail2banManager(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1994,7 +1992,7 @@ func TestLogpathHandler(c *gin.Context) {
 		return
 	}
 
-	// Gets the server type to determine the test strategy
+	// Gets the server type for response metadata
 	server := conn.Server()
 	isLocalServer := server.Type == "local"
 
@@ -2017,56 +2015,24 @@ func TestLogpathHandler(c *gin.Context) {
 		if logpathLine == "" {
 			continue
 		}
-		if isLocalServer {
-			resolvedPath, err := fail2ban.ResolveLogpathVariables(logpathLine)
-			if err != nil {
-				allResults = append(allResults, map[string]interface{}{
-					"logpath":       logpathLine,
-					"resolved_path": "",
-					"found":         false,
-					"files":         []string{},
-					"error":         err.Error(),
-				})
-				continue
-			}
-			if resolvedPath == "" {
-				resolvedPath = logpathLine
-			}
-
-			files, localErr := fail2ban.TestLogpath(resolvedPath)
-
+		_, resolvedPath, filesOnServer, err := conn.TestLogpathWithResolution(c.Request.Context(), logpathLine)
+		if err != nil {
 			allResults = append(allResults, map[string]interface{}{
 				"logpath":       logpathLine,
 				"resolved_path": resolvedPath,
-				"found":         len(files) > 0,
-				"files":         files,
-				"error": func() string {
-					if localErr != nil {
-						return localErr.Error()
-					}
-					return ""
-				}(),
+				"found":         false,
+				"files":         []string{},
+				"error":         err.Error(),
 			})
-		} else {
-			_, resolvedPath, filesOnRemote, err := conn.TestLogpathWithResolution(c.Request.Context(), logpathLine)
-			if err != nil {
-				allResults = append(allResults, map[string]interface{}{
-					"logpath":       logpathLine,
-					"resolved_path": resolvedPath,
-					"found":         false,
-					"files":         []string{},
-					"error":         err.Error(),
-				})
-				continue
-			}
-			allResults = append(allResults, map[string]interface{}{
-				"logpath":       logpathLine,
-				"resolved_path": resolvedPath,
-				"found":         len(filesOnRemote) > 0,
-				"files":         filesOnRemote,
-				"error":         "",
-			})
+			continue
 		}
+		allResults = append(allResults, map[string]interface{}{
+			"logpath":       logpathLine,
+			"resolved_path": resolvedPath,
+			"found":         len(filesOnServer) > 0,
+			"files":         filesOnServer,
+			"error":         "",
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"original_logpath": originalLogpath,
@@ -2227,6 +2193,19 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
+func splitLogpaths(raw string) []string {
+	var out []string
+	for line := range strings.SplitSeq(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		out = append(out, parts...)
+	}
+	return out
+}
+
 // Extracts problematic jail names from Fail2ban reload output.
 func parseJailErrorsFromReloadOutput(output string) []string {
 	var problematicJails []string
@@ -2284,6 +2263,59 @@ func UpdateJailManagementHandler(c *gin.Context) {
 	for jailName, enabled := range updates {
 		if enabled {
 			enabledJails[jailName] = true
+		}
+	}
+
+	// Pre-validates logpath resolution for jails that are about to be enabled.
+	// This prevents enabling jails with broken/non-existent logpaths.
+	for jailName := range enabledJails {
+		jailCfg, _, cfgErr := conn.GetJailConfig(c.Request.Context(), jailName)
+		if cfgErr != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"error": fmt.Sprintf("Jail '%s' cannot be enabled: failed to read jail config: %v", jailName, cfgErr),
+			})
+			return
+		}
+
+		rawLogpath := strings.TrimSpace(fail2ban.ExtractLogpathFromJailConfig(jailCfg))
+		if rawLogpath == "" {
+			c.JSON(http.StatusOK, gin.H{
+				"error": fmt.Sprintf("Jail '%s' cannot be enabled: no logpath configured. Please configure a valid logpath first.", jailName),
+			})
+			return
+		}
+
+		paths := splitLogpaths(rawLogpath)
+		if len(paths) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"error": fmt.Sprintf("Jail '%s' cannot be enabled: logpath is empty after parsing. Please configure a valid logpath first.", jailName),
+			})
+			return
+		}
+
+		foundAnyFiles := false
+		var checkErrors []string
+		for _, lp := range paths {
+			_, resolvedPath, filesOnServer, testErr := conn.TestLogpathWithResolution(c.Request.Context(), lp)
+			if testErr != nil {
+				checkErrors = append(checkErrors, fmt.Sprintf("%s (%v)", lp, testErr))
+				continue
+			}
+			if len(filesOnServer) > 0 {
+				foundAnyFiles = true
+				break
+			}
+			if strings.TrimSpace(resolvedPath) == "" {
+				resolvedPath = lp
+			}
+			checkErrors = append(checkErrors, fmt.Sprintf("%s (resolved: %s, no files found)", lp, resolvedPath))
+		}
+
+		if !foundAnyFiles {
+			c.JSON(http.StatusOK, gin.H{
+				"error": fmt.Sprintf("Jail '%s' cannot be enabled because no matching log files were found for its logpath(s): %s", jailName, strings.Join(checkErrors, "; ")),
+			})
+			return
 		}
 	}
 
@@ -2566,7 +2598,7 @@ func UpdateSettingsHandler(c *gin.Context) {
 	// Checks if the callback URL changed; if so, updates the action files for all active remote servers
 	callbackURLChanged := oldSettings.CallbackURL != newSettings.CallbackURL
 
-	if err := fail2ban.GetManager().ReloadFromSettings(config.GetSettings()); err != nil {
+	if err := config.ReloadFail2banManager(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload fail2ban connectors: " + err.Error()})
 		return
 	}
@@ -2634,7 +2666,7 @@ func UpdateSettingsHandler(c *gin.Context) {
 		for _, conn := range connectors {
 			server := conn.Server()
 			config.DebugLog("Updating DEFAULT settings on server: %s (type: %s)", server.Name, server.Type)
-			if err := conn.UpdateDefaultSettings(c.Request.Context(), newSettings); err != nil {
+			if err := conn.UpdateDefaultSettings(c.Request.Context()); err != nil {
 				errorMsg := fmt.Sprintf("Failed to update DEFAULT settings on %s: %v", server.Name, err)
 				log.Printf("⚠️ %s", errorMsg)
 				errors = append(errors, errorMsg)

@@ -64,6 +64,7 @@ podman run -d --name fail2ban-ui --network=host \
 Additional resources:
 
 * Full guide: `deployment/systemd/README.md`
+* SELinux and Fail2Ban -> UI HTTP callbacks: [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md#selinux) (often `setsebool -P nis_enabled 1` on RHEL-family hosts)
 
 High-level procedure:
 

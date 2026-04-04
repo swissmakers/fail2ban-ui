@@ -126,6 +126,18 @@ Common issues:
 - Container using bridge networking but callback URL points to `127.0.0.1` (use the host IP or `--network=host`)
 - Firewall on the UI host blocks the port
 
+### SELinux: callbacks blocked (`curl` denied)
+
+If bans work but events never reach the UI, and audit logs show SELinux denying `curl` in domain `fail2ban_t` when connecting to an HTTP or HTTPS port (for example `name_connect` to `http_port_t` on 443), the Fail2Ban action cannot reach the callback URL.
+
+On RHEL, Rocky, AlmaLinux, and similar:
+
+```bash
+sudo setsebool -P nis_enabled 1
+```
+
+Then trigger a test ban and check `audit.log` / `sealert` again. This is the same remedy `setroubleshoot` suggests for that denial pattern. If your policy team cannot use `nis_enabled`, they can craft an explicit allow rule; avoid turning SELinux off globally.
+
 ### Step 4: Verify the callback secret
 
 Every callback must include the header `X-Callback-Secret`. The value must match what the UI expects. You can find the current secret in Settings → General Settings → Callback Secret (or check the container environment).
@@ -266,6 +278,24 @@ Fail2Ban detects intrusion
 ```
 
 If any step fails, the chain stops and the event will not appear in the UI.
+
+
+### Note for "restored bans" after a fail2ban service restart
+By default we set this to the generated ui-action file `/etc/fail2ban/action.d/ui-custom-action.conf`:
+
+```ini
+norestored = 1
+```
+
+With **`norestored = 1`**, Fail2Ban **skips** running `actionban` and **`actionunban`** for ban events that are marked as **restored**.
+
+Why is that set:
+
+- After the **Fail2Ban service restarts**, previously active blocks are loaded back from persistence storage. Those bans are treated as **restored** (not as a fresh ban in the current process -> this is wanted behavior, because we do not want to spam our logmanagement system).
+- But if you **unban** one of those restored IPs, Fail2Ban will **not** execute `actionunban`, so Fail2ban-UI **never** receives `POST /api/unban` so also no unban toast and no new row under **Recent stored events** will appear.
+- **New** bans that were created **after** the last restart of the restartet fail2ban service and are unbanned **without** another Fail2Ban restart in between will go through the normal action pipeline. -> So ban and unban callbacks behave here as expected.
+
+So the symptom "unban works but the UI only records unbans for *new* blocks" matches **`norestored = 1`** plus a restart between the original ban and the unban.
 
 ## Alert provider issues
 

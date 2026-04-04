@@ -2,17 +2,15 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the PolyForm Shield License 1.0.0.
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://polyformproject.org/licenses/shield/1.0.0/
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//     or in the LICENSE file in this repository.
+//
+// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
 
 package main
 
@@ -27,7 +25,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
-	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 	"github.com/swissmakers/fail2ban-ui/pkg/web"
 )
@@ -49,8 +46,8 @@ func main() {
 		}
 	}()
 
-	// Initialize Fail2ban connectors
-	if err := fail2ban.GetManager().ReloadFromSettings(settings); err != nil {
+	// Initialize Fail2ban connectors (local filesystem bootstrap and active connectors)
+	if err := config.ReloadFail2banManager(); err != nil {
 		log.Fatalf("failed to initialise fail2ban connectors: %v", err)
 	}
 
