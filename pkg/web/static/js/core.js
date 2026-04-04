@@ -198,6 +198,7 @@ function displayExternalIP() {
   if (!target) return;
 
   const providers = [
+    { url: 'https://ip.swissmakers.ch/ip', extract: data => data.ip },
     { url: 'https://api.ipify.org?format=json', extract: data => data.ip },
     { url: 'https://ipapi.co/json/', extract: data => data && (data.ip || data.ip_address) },
     { url: 'https://ipv4.jsonip.com/', extract: data => data.ip }
