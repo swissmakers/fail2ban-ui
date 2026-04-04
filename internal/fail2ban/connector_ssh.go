@@ -150,7 +150,7 @@ func (sc *SSHConnector) Restart(ctx context.Context) error {
 
 func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
 	// Try systemd restart on the remote host first.
-	out, err := sc.runRemoteCommand(ctx, []string{"sudo", "systemctl", "restart", "fail2ban"})
+	out, err := sc.runRemoteCommand(ctx, []string{"sudo", "-n", "systemctl", "restart", "fail2ban"})
 	if err == nil {
 		if err := sc.checkFail2banHealthyRemote(ctx); err != nil {
 			return "restart", fmt.Errorf("remote fail2ban health check after systemd restart failed: %w", err)
@@ -328,7 +328,11 @@ func (sc *SSHConnector) isSystemctlUnavailable(output string, err error) bool {
 	return strings.Contains(msg, "command not found") ||
 		strings.Contains(msg, "system has not been booted with systemd") ||
 		strings.Contains(msg, "failed to connect to bus") ||
-		strings.Contains(msg, "interactive authentication required")
+		strings.Contains(msg, "interactive authentication required") ||
+		strings.Contains(msg, "sudo: a terminal is required") ||
+		strings.Contains(msg, "sudo: a password is required") ||
+		strings.Contains(msg, "sudo: a password is needed") ||
+		strings.Contains(msg, "sorry, you must have a tty")
 }
 
 func (sc *SSHConnector) checkFail2banHealthyRemote(ctx context.Context) error {
