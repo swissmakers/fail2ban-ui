@@ -31,7 +31,7 @@ body.lotr-mode {
    ========================================================================= */
 
 body.lotr-mode {
-  background: url(/static/images/bg-overlay);
+  background: url(images/bg-overlay);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -390,7 +390,7 @@ body.lotr-mode textarea:focus {
    ========================================================================= */
 
 body.lotr-mode #loading-overlay {
-  background: url("/static/images/loading-overlay");
+  background: url("images/loading-overlay");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

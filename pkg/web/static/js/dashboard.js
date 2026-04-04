@@ -44,7 +44,7 @@ function refreshData(options) {
 }
 
 function fetchThreatIntelProviderData() {
-  return fetch('/api/settings')
+  return fetch(appPath('/api/settings'))
     .then(function(res) { return res.json(); })
     .then(function(data) {
       var provider = data && data.threatIntel && data.threatIntel.provider
@@ -58,7 +58,7 @@ function fetchThreatIntelProviderData() {
 }
 
 function fetchBanStatisticsData() {
-  return fetch('/api/events/bans/stats')
+  return fetch(appPath('/api/events/bans/stats'))
     .then(function(res) { return res.json(); })
     .then(function(data) {
       latestBanStats = data && data.counts ? data.counts : {};
@@ -93,7 +93,7 @@ function fetchSummaryData() {
 function fetchBanInsightsData() {
   var sevenDaysAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)).toISOString();
   var sinceQuery = '?since=' + encodeURIComponent(sevenDaysAgo);
-  var globalPromise = fetch('/api/events/bans/insights' + sinceQuery)
+  var globalPromise = fetch(appPath('/api/events/bans/insights' + sinceQuery))
     .then(function(res) { return res.json(); })
     .then(function(data) {
       latestBanInsights = normalizeInsights(data);
@@ -702,7 +702,7 @@ function clearStoredBanEvents() {
   var msg = t('logs.overview.clear_events_confirm',
     'This will permanently delete all stored ban events. Statistics, insights, and the event history will be reset to zero.\n\nThis action cannot be undone. Continue?');
   if (!confirm(msg)) return;
-  fetch('/api/events/bans', { method: 'DELETE', headers: serverHeaders() })
+  fetch(appPath('/api/events/bans'), { method: 'DELETE', headers: serverHeaders() })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
@@ -879,7 +879,7 @@ function buildBanEventsQuery(offset, append) {
   if (currentServerId) {
     params.push('serverId=' + encodeURIComponent(currentServerId));
   }
-  return '/api/events/bans?' + params.join('&');
+  return appPath('/api/events/bans?' + params.join('&'));
 }
 
 // Helper function to add a new ban event from the WebSocket to the dashboard.

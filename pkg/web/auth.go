@@ -42,7 +42,7 @@ func AuthMiddleware() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
-			c.Redirect(http.StatusFound, "/auth/login")
+			c.Redirect(http.StatusFound, ExternalPath("/auth/login"))
 			c.Abort()
 			return
 		}

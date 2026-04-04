@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,25 @@ const (
 )
 
 var sessionSecret []byte
+
+// Set default session cookie path.
+var sessionCookiePath = "/"
+
+// Sets custom session cookie path (e.g. "/myf2b"). Empty keeps "/".
+func SetSessionCookiePath(p string) {
+	if strings.TrimSpace(p) == "" {
+		sessionCookiePath = "/"
+		return
+	}
+	sessionCookiePath = p
+}
+
+func sessionPath() string {
+	if sessionCookiePath == "" {
+		return "/"
+	}
+	return sessionCookiePath
+}
 
 // =========================================================================
 //  Session Management
@@ -96,7 +116,7 @@ func CreateSession(w http.ResponseWriter, r *http.Request, userInfo *UserInfo, m
 	cookie := &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    encrypted,
-		Path:     "/",
+		Path:     sessionPath(),
 		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   isSecure,
@@ -138,7 +158,7 @@ func DeleteSession(w http.ResponseWriter, r *http.Request) {
 	cookie := &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     sessionPath(),
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   isSecure,

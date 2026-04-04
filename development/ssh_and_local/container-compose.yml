@@ -93,7 +93,9 @@ services:
     environment:
       - PORT=3080
       - BIND_ADDRESS=0.0.0.0
-      - CALLBACK_URL=http://10.88.0.1:3080
+      - BASE_PATH=/dev
+      - CALLBACK_URL=http://10.88.0.1:3080/dev
+      #- CALLBACK_URL=http://10.88.0.1:3080
       - AUTODARK=true
       #- CALLBACK_SECRET=**************************************************
     volumes:

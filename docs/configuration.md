@@ -18,17 +18,34 @@ Example:
 
 For production reverse proxy patterns, see [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md).
 
+## HTTP base path (for subpath deployment)
+
+- `BASE_PATH`
+  Optional URL path prefix where the application is served (environment-only, not configurable in the UI).
+  Examples: unset or empty = `/`; if set to `/myf2b`, UI, static files, API, WebSocket, and OIDC routes will be reachable under `https://host/myf2b/...`.
+
+Rules:
+
+- Use a single leading slash and no trailing slash (e.g. `/myf2b`, not `myf2b/`).
+- When set, the app is served under that prefix. Visiting `/` redirects to `{BASE_PATH}/`, and non-prefixed paths are not served.
+- The reverse proxy must forward requests **with this path prefix** to Fail2Ban UI (see [`docs/reverse-proxy.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/reverse-proxy.md)).
+
+When `BASE_PATH` is set, you must align related URLs:
+
+- **`CALLBACK_URL`**: public base including the path, e.g. `https://fail2ban.example.com/myf2b` (no trailing slash).
+- **`OIDC_REDIRECT_URL`**: must include the path, e.g. `https://fail2ban.example.com/myf2b/auth/callback`.
+
 ## Callback URL and secret (Fail2Ban -> UI)
 
 Fail2Ban UI receives ban/unban callbacks at:
 
-- `POST /api/ban`
-- `POST /api/unban`
+- `POST {BASE_PATH}/api/ban` (or `POST /api/ban` as default)
+- `POST {BASE_PATH}/api/unban` (or `POST /api/unban` as default)
 
 Required environment variables:
 
 - `CALLBACK_URL`  
-  URL reachable from managed Fail2Ban hosts.
+  URL reachable from managed Fail2Ban hosts (scheme + host + optional port + **`BASE_PATH`** if used). No trailing slash.
 - `CALLBACK_SECRET`  
   Shared secret validated via `X-Callback-Secret` header.  
   If not set, Fail2Ban UI generates a secret on first start.
@@ -37,6 +54,14 @@ Example:
 
 ```bash
 -e CALLBACK_URL=http://10.88.0.1:3080 \
+-e CALLBACK_SECRET='replace-with-a-random-secret'
+```
+
+With a subpath:
+
+```bash
+-e BASE_PATH=/myf2b \
+-e CALLBACK_URL=https://fail2ban.example.com/myf2b \
 -e CALLBACK_SECRET='replace-with-a-random-secret'
 ```
 
@@ -57,7 +82,7 @@ Example:
 
 - `JAIL_AUTOMIGRATION=true`  
   EXPERIMENTAL migration from monolithic `jail.local` to `jail.d/*.local`.  
-  Recommended: migrage manually on production systems.
+  Recommended: migrate manually on production systems.
 
 ## Alert settings (UI-managed)
 
@@ -98,7 +123,8 @@ Required when enabled:
 - `OIDC_ISSUER_URL=...`
 - `OIDC_CLIENT_ID=...`
 - `OIDC_CLIENT_SECRET=...`
-- `OIDC_REDIRECT_URL=https://<ui-host>/auth/callback`
+- `OIDC_REDIRECT_URL=https://<ui-host>{BASE_PATH}/auth/callback`
+  Example with `BASE_PATH=/myf2b`: `https://<ui-host>/myf2b/auth/callback`
 
 Common optional variables:
 
@@ -111,8 +137,8 @@ Common optional variables:
 
 Provider notes:
 
-- Keycloak: allow redirect URI `/auth/callback` and post-logout redirect `/auth/login`
-- Authentik/Pocket-ID: redirect URI must match exactly
+- Keycloak: allow redirect URI `{BASE_PATH}/auth/callback` (or `/auth/callback` at root) and post-logout redirect `{BASE_PATH}/auth/login`
+- Authentik/Pocket-ID: redirect URI must match exactly (including any `BASE_PATH` prefix)
 
 Related:
 

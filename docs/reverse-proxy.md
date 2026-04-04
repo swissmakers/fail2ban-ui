@@ -1,6 +1,6 @@
 # Reverse Proxy Deployment Guide
 
-This guide provides production-redy guidance for running Fail2Ban UI behind a reverse proxy.
+This guide provides some guidance for running Fail2Ban UI behind a reverse proxy.
 
 ## Why this matters
 
@@ -31,8 +31,48 @@ Recommended runtime settings for the above example:
 For correct UI behavior (including WebSocket live updates), the proxy must:
 
 1. Preserve `Host` and `Origin` consistency.
-2. Allow WebSocket upgrades on `GET /api/ws`.
+2. Allow WebSocket upgrades on the real-time endpoint (`GET /api/ws` at site root, or `GET {BASE_PATH}/api/ws` when using a subpath).
 3. Forward client IP context (`X-Forwarded-For`, `X-Forwarded-Proto`).
+
+If the proxy **strips** a path prefix before forwarding (e.g. external `/myf2b/` -> upstream `/`), leave `BASE_PATH` unset on Fail2Ban UI and configure the app as if it lived at root; only the public URLs change. If the app receives the **full** path including `/myf2b`, set `BASE_PATH=/myf2b` on Fail2Ban UI and forward that prefix unchanged.
+
+## Subpath (`BASE_PATH`)
+
+When Fail2Ban UI runs with `BASE_PATH=/myf2b` (see [`docs/configuration.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/configuration.md)):
+
+- Proxy `location` should match the prefix and pass the **same** path to the backend (no strip), e.g. `https://host/myf2b/api/version` -> upstream `http://127.0.0.1:8080/myf2b/api/version`.
+- WebSocket URL in the browser becomes `wss://host/myf2b/api/ws`.
+- Set `CALLBACK_URL` and `OIDC_REDIRECT_URL` to include `/myf2b` as in the configuration reference.
+
+Nginx example (HTTPS server; adjust TLS paths):
+
+```nginx
+location /myf2b/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+}
+
+location /myf2b/api/ws {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+Use `proxy_pass http://127.0.0.1:8080;` (no URI suffix) so the request URI `/myf2b/...` is forwarded as-is. If you use a **trailing** URI on `proxy_pass`, Nginx rewrites the path and you must match that behavior to `BASE_PATH` (usually avoid stripping unless `BASE_PATH` is unset on the app).
 
 ## Nginx reference configuration
 
@@ -114,9 +154,9 @@ Caddy automatically handles TLS and WebSocket upgrades for this basic setup.
 
 ## Validation checklist / some tests
 
-1. Validate UI: `curl -Ik https://fail2ban.example.com/`
-2. Validate API reachability: `curl -s https://fail2ban.example.com/api/version`
+1. Validate UI: `curl -Ik https://fail2ban.example.com/` (or `https://fail2ban.example.com/myf2b/` with `BASE_PATH`)
+2. Validate API reachability: `curl -s https://fail2ban.example.com/api/version` (or `.../myf2b/api/version`)
 3. Validate WebSocket in browser dev tools:
-   - status `101 Switching Protocols` for `/api/ws`
+   - status `101 Switching Protocols` for `/api/ws` or `/myf2b/api/ws`
    - live ban/unban events update without refresh
 4. Validate callback path from managed Fail2Ban hosts to configured `CALLBACK_URL`

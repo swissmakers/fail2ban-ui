@@ -1,7 +1,7 @@
 "use strict";
 
 function fetchThreatIntelData(ip) {
-  return fetch('/api/threat-intel/' + encodeURIComponent(ip), { method: 'GET' })
+  return fetch(appPath('/api/threat-intel/' + encodeURIComponent(ip)), { method: 'GET' })
     .then(function(res) {
       if (!res.ok) {
         return res.json()

@@ -62,7 +62,7 @@ function initializeApp() {
     }, 5000);
   }
 
-  fetch('/api/settings')
+  fetch(appPath('/api/settings'))
     .then(res => res.json())
     .then(data => {
       const alertCountries = data.alertCountries || [];
@@ -81,7 +81,7 @@ function initializeApp() {
   // Check for updates and display version badge in the footer
   var versionContainer = document.getElementById('version-badge-container');
   if (versionContainer && versionContainer.getAttribute('data-update-check') === 'true') {
-    fetch('/api/version')
+    fetch(appPath('/api/version'))
       .then(function(res) { return res.json(); })
       .then(function(data) {
         if (!data.update_check_enabled || versionContainer.innerHTML) return;

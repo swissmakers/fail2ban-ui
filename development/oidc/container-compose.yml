@@ -186,6 +186,7 @@ services:
       # PUBLIC_FRONTEND_URL: Set this to your server's public URL (IP or hostname)
       # If not set, defaults to http://localhost:3080
       - PUBLIC_FRONTEND_URL=${PUBLIC_FRONTEND_URL:-http://localhost:3080}
+      #- PUBLIC_FRONTEND_URL=http://172.16.10.18:3080/dev
       - SECRET_FILE=/config/keycloak-client-secret
     volumes:
       - ./init-keycloak.sh:/init-keycloak.sh:ro
@@ -210,7 +211,7 @@ services:
     environment:
       - PORT=3080
       - BIND_ADDRESS=0.0.0.0
-      
+
       # OIDC Configuration for Keycloak (default)
       # PUBLIC_FRONTEND_URL: Server's public URL for redirects (if not set, defaults to http://localhost:3080)
       # KEYCLOAK_URL: Server's public URL for Keycloak (if not set, defaults to http://localhost:3000)
@@ -229,6 +230,11 @@ services:
       - OIDC_SESSION_MAX_AGE=7200
       - OIDC_USERNAME_CLAIM=preferred_username
       - OIDC_SKIP_VERIFY=true
+
+      #- BASE_PATH=/dev
+      #- PUBLIC_FRONTEND_URL=http://172.16.10.18:3080/dev
+      #- OIDC_REDIRECT_URL=http://172.16.10.18:3080/dev/auth/callback
+
       # Optional: Skip login page and redirect directly to OIDC provider (default: false)
       # When set to true, users are immediately redirected to the OIDC provider without showing the login page
       #- OIDC_SKIP_LOGINPAGE=true

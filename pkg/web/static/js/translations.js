@@ -6,7 +6,7 @@
 // =========================================================================
 
 function loadTranslations(lang) {
-  $.getJSON('/locales/' + lang + '.json')
+  $.getJSON(appPath('/locales/' + lang + '.json'))
     .done(function(data) {
       translations = data;
       updateTranslations();
@@ -32,7 +32,7 @@ function updateTranslations() {
 }
 
 function getTranslationsSettingsOnPageload() {
-  return fetch('/api/settings')
+  return fetch(appPath('/api/settings'))
     .then(function(res) { return res.json(); })
     .then(function(data) {
       var lang = data.language || 'en';

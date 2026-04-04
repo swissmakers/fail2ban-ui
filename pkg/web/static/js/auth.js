@@ -38,7 +38,7 @@ async function checkAuthStatus() {
   }
 
   try {
-    const response = await fetch('/auth/status', {
+    const response = await fetch(appPath('/auth/status'), {
       headers: serverHeaders()
     });
 
@@ -59,7 +59,7 @@ async function checkAuthStatus() {
       } else {
         // Not authenticated
         if (skipLoginPageFlag) {
-          window.location.href = '/auth/login';
+          window.location.href = appPath('/auth/login');
           return { enabled: authEnabled, authenticated: false, user: null };
         } else {
           // Show login page, hide main content
@@ -79,7 +79,7 @@ async function checkAuthStatus() {
 
     if (oidcEnabled) {
       if (skipLoginPage) {
-        window.location.href = '/auth/login';
+        window.location.href = appPath('/auth/login');
       } else {
         showLoginPage();
       }
@@ -110,14 +110,14 @@ function handleLogin() {
     loginError.classList.add('hidden');
     if (loginErrorText) loginErrorText.textContent = '';
   }
-  window.location.href = '/auth/login?action=redirect';
+  window.location.href = appPath('/auth/login?action=redirect');
 }
 
 function handleLogout() {
   // Clear authentication status and redirect to logout endpoint
   isAuthenticated = false;
   currentUser = null;
-  window.location.href = '/auth/logout';
+  window.location.href = appPath('/auth/logout');
 }
 
 // =========================================================================
