@@ -3,14 +3,19 @@ This guide provides two methods to **run Fail2Ban-UI as a systemd service**.
 1. Systemd service that starts the local compiled binary.
 2. Systemd service that starts the fail2ban-ui container.
 
-## For SELinux enabled systems (needed in both cases)
-If SELinux is enabled, you must apply the required SELinux policies to allow Fail2Ban to communicate with the Fail2Ban-UI API via port 8080.
+## For SELinux enabled systems (host Fail2Ban → UI callbacks)
 
-Apply the prebuilt SELinux Module with:
+Fail2Ban runs ban/unban actions as `fail2ban_t`. The UI callback uses `curl` to POST to your configured URL (plain HTTP, HTTPS, or HTTPS behind a reverse proxy). On RHEL, Rocky, AlmaLinux, and similar distributions with the targeted policy, SELinux often denies that outbound TCP connection until you allow the network access the policy associates with this pattern.
+
+**Recommended fix** (needs to be applied on every SELinux enabled fail2ban-host):
 
 ```bash
-semodule -i fail2ban-curl-allow.pp
+sudo setsebool -P nis_enabled 1
 ```
+
+This uses a already integrated distribution boolean; it is always preferable to maintaining a one-off `audit2allow` module. If your security team forbids that boolean, work with them on an approved exception (custom policy), never disable SELinux entirely!
+
+For **containerized** Fail2Ban UI (Podman/Docker) talking to the host Fail2Ban socket and logs, separate optional modules may still be required; see [`deployment/container/README.md`](../container/README.md#selinux-configuration).
 
 ## Build and running Fail2Ban-UI from Local Source Code
 In this case we will run **Fail2Ban-UI from `/opt/fail2ban-ui/`** using systemd.

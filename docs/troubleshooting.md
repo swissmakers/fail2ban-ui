@@ -126,6 +126,18 @@ Common issues:
 - Container using bridge networking but callback URL points to `127.0.0.1` (use the host IP or `--network=host`)
 - Firewall on the UI host blocks the port
 
+### SELinux: callbacks blocked (`curl` denied)
+
+If bans work but events never reach the UI, and audit logs show SELinux denying `curl` in domain `fail2ban_t` when connecting to an HTTP or HTTPS port (for example `name_connect` to `http_port_t` on 443), the Fail2Ban action cannot reach the callback URL.
+
+On RHEL, Rocky, AlmaLinux, and similar:
+
+```bash
+sudo setsebool -P nis_enabled 1
+```
+
+Then trigger a test ban and check `audit.log` / `sealert` again. This is the same remedy `setroubleshoot` suggests for that denial pattern. If your policy team cannot use `nis_enabled`, they can craft an explicit allow rule; avoid turning SELinux off globally.
+
 ### Step 4: Verify the callback secret
 
 Every callback must include the header `X-Callback-Secret`. The value must match what the UI expects. You can find the current secret in Settings → General Settings → Callback Secret (or check the container environment).

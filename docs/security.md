@@ -65,14 +65,27 @@ Local connector deployments typically require access to:
 - `/etc/fail2ban/`
 - selected log paths (read-only, mounted to same place inside the container, where they are on the host.)
 
-Avoid running with more privileges than necessary. If you run in a container, use the repository deployment guide and SELinux policies.
+Avoid running with more privileges than necessary. If you run in a container, use the repository deployment guide and, where needed, the optional container SELinux modules.
 
 ## SELinux
 
-If SELinux is enabled, use the policies provided in:
-- `deployment/container/SELinux/`
+Do not disable SELinux as a shortcut. Fix labeling, booleans, and policy issues instead.
 
-Do not disable SELinux as a shortcut. Fix always labeling and policy issues instead. -> Everytime you read "to disable SELinux" you can close that guide :)
+### Fail2Ban ban/unban callbacks (`curl` from `fail2ban_t`)
+
+The UI installs an action that runs `curl` from the Fail2Ban service context to reach `/api/ban` and `/api/unban`. With SELinux enforcing, you may see denials such as `curl` / `fail2ban_t` / `name_connect` / `tcp_socket` / `http_port_t` (for example when the callback URL uses HTTPS on port 443).
+
+On RHEL-family systems, `setroubleshoot` typically recommends enabling the **`nis_enabled`** boolean, which allows this class of outbound connection:
+
+```bash
+sudo setsebool -P nis_enabled 1
+```
+
+Prefer that over ad-hoc `audit2allow` modules unless your organization requires a different control.
+
+### Container ↔ host Fail2Ban (optional modules)
+
+If the UI runs in Podman/Docker with a **local** connector, extra rules can be needed so `container_t` can use the Fail2Ban socket and read the right logs (not the same problem as the callback boolean above). Sources and build steps are in `deployment/container/SELinux/`.
 
 ## Alert provider security
 

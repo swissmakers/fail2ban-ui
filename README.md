@@ -85,7 +85,7 @@ Existing deployment guides in this repository:
 
 * Container: [`deployment/container/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/container/README.md)
 * systemd: [`deployment/systemd/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/systemd/README.md)
-* SELinux policies: [`deployment/container/SELinux/`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/container/SELinux/)
+* Optional container SELinux modules (socket/log access): [`deployment/container/SELinux/`](https://github.com/swissmakers/fail2ban-ui/blob/main/deployment/container/SELinux/) — host Fail2Ban `curl` callbacks often need the `nis_enabled` boolean instead; see [`docs/security.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/docs/security.md#selinux)
 
 Development / testing stacks:
 * OIDC dev stack: [`development/oidc/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/development/oidc/README.md)
