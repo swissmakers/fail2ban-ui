@@ -279,6 +279,24 @@ Fail2Ban detects intrusion
 
 If any step fails, the chain stops and the event will not appear in the UI.
 
+
+### Note for "restored bans" after a fail2ban service restart
+By default we set this to the generated ui-action file `/etc/fail2ban/action.d/ui-custom-action.conf`:
+
+```ini
+norestored = 1
+```
+
+With **`norestored = 1`**, Fail2Ban **skips** running `actionban` and **`actionunban`** for ban events that are marked as **restored**.
+
+Why is that set:
+
+- After the **Fail2Ban service restarts**, previously active blocks are loaded back from persistence storage. Those bans are treated as **restored** (not as a fresh ban in the current process -> this is wanted behavior, because we do not want to spam our logmanagement system).
+- But if you **unban** one of those restored IPs, Fail2Ban will **not** execute `actionunban`, so Fail2ban-UI **never** receives `POST /api/unban` so also no unban toast and no new row under **Recent stored events** will appear.
+- **New** bans that were created **after** the last restart of the restartet fail2ban service and are unbanned **without** another Fail2Ban restart in between will go through the normal action pipeline. -> So ban and unban callbacks behave here as expected.
+
+So the symptom "unban works but the UI only records unbans for *new* blocks" matches **`norestored = 1`** plus a restart between the original ban and the unban.
+
 ## Alert provider issues
 
 ### Alerts not being sent (any provider)
