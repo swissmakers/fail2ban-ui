@@ -14,12 +14,20 @@
 -->
 
 <!DOCTYPE html>
-<html lang="en" data-auto-dark="{{if .autoDark}}true{{else}}false{{end}}">
+<html lang="en" data-auto-dark="{{if .autoDark}}true{{else}}false{{end}}" data-url-prefix="{{if .URLPrefix}}{{.URLPrefix}}{{end}}">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title data-i18n="page.title">Fail2ban UI Dashboard</title>
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var base = root ? (root.getAttribute('data-url-prefix') || '') : '';
+      window.__BASE_PATH__ = base;
+      window.__PRISM_LANGUAGES_PATH__ = (base || '') + '/static/vendor/prism/components/';
+    })();
+  </script>
   <script>
     (function() {
       var theme = 'light';
@@ -32,8 +40,8 @@
       document.documentElement.setAttribute('data-theme', theme);
     })();
   </script>
-  <link id="appFavicon" rel="icon" type="image/png" href="/static/images/favicon-dark.png?v={{.version}}" data-light-href="/static/images/favicon-dark.png?v={{.version}}" data-dark-href="/static/images/favicon-light.png?v={{.version}}" />
-  <link id="appAppleTouchIcon" rel="apple-touch-icon" href="/static/images/favicon-dark.png?v={{.version}}" data-light-href="/static/images/favicon-dark.png?v={{.version}}" data-dark-href="/static/images/favicon-light.png?v={{.version}}" />
+  <link id="appFavicon" rel="icon" type="image/png" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/favicon-dark.png?v={{.version}}" data-light-href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/favicon-dark.png?v={{.version}}" data-dark-href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/favicon-light.png?v={{.version}}" />
+  <link id="appAppleTouchIcon" rel="apple-touch-icon" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/favicon-dark.png?v={{.version}}" data-light-href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/favicon-dark.png?v={{.version}}" data-dark-href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/favicon-light.png?v={{.version}}" />
   <script>
     (function() {
       var theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
@@ -50,15 +58,21 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/vendor/prism/prism-tomorrow.min.css?v={{.version}}" />
-  <script src="/static/vendor/prism/prism-core.min.js?v={{.version}}"></script>
-  <script src="/static/vendor/prism/prism-autoloader.min.js?v={{.version}}"></script>
-  <link rel="stylesheet" href="/static/tailwind.css?v={{.version}}">
-  <link rel="stylesheet" href="/static/vendor/fontawesome/all.min.css?v={{.version}}">
-  <link rel="stylesheet" href="/static/vendor/select2/select2.min.css?v={{.version}}" />
-  <link rel="stylesheet" href="/static/fail2ban-ui.css?v={{.version}}">
-  <link rel="stylesheet" href="/static/lotr.css?v={{.version}}" id="lotr-css" disabled>
-  <link rel="stylesheet" href="/static/vendor/fonts/google-fonts.css?v={{.version}}">
+  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/prism/prism-tomorrow.min.css?v={{.version}}" />
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/prism/prism-core.min.js?v={{.version}}"></script>
+  <script>
+    window.Prism = window.Prism || {};
+    Prism.plugins = Prism.plugins || {};
+    Prism.plugins.autoloader = Prism.plugins.autoloader || {};
+    Prism.plugins.autoloader.languages_path = window.__PRISM_LANGUAGES_PATH__ || '';
+  </script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/prism/prism-autoloader.min.js?v={{.version}}"></script>
+  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/tailwind.css?v={{.version}}">
+  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/fontawesome/all.min.css?v={{.version}}">
+  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/select2/select2.min.css?v={{.version}}" />
+  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/fail2ban-ui.css?v={{.version}}">
+  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/lotr.css?v={{.version}}" id="lotr-css" disabled>
+  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/fonts/google-fonts.css?v={{.version}}">
 </head>
 
 <body class="bg-gray-50 overflow-y-scroll" data-skip-login-page="{{if .skipLoginPage}}true{{else}}false{{end}}" data-oidc-enabled="{{if .oidcEnabled}}true{{else}}false{{end}}">
@@ -86,8 +100,8 @@
       <div class="flex items-center justify-between h-16">
         <div class="flex items-center">
           <div class="flex-shrink-0">
-            <a href="/" class="inline-flex items-center transition-colors cursor-pointer" aria-label="Fail2ban UI home">
-              <img src="/static/images/logo-light.png?v={{.version}}" alt="Fail2ban UI" class="h-8 w-auto" />
+            <a href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/" class="inline-flex items-center transition-colors cursor-pointer" aria-label="Fail2ban UI home">
+              <img src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/logo-light.png?v={{.version}}" alt="Fail2ban UI" class="h-8 w-auto" />
             </a>
           </div>
           <div id="backendStatus" class="ml-4 flex items-center gap-2">
@@ -1830,30 +1844,30 @@
   <!-- ******************************************************************* -->
   <!--                         Script Includes                             -->
   <!-- ******************************************************************* -->
-  <script src="/static/vendor/jquery/jquery-3.6.0.min.js?v={{.version}}"></script>
-  <script src="/static/vendor/select2/select2.min.js?v={{.version}}"></script>
-  <script src="/static/vendor/globe/globe.gl.min.js?v={{.version}}"></script>
-  <script src="/static/js/globals.js?v={{.version}}"></script>
-  <script src="/static/js/theme.js?v={{.version}}"></script>
-  <script src="/static/js/core.js?v={{.version}}"></script>
-  <script src="/static/js/api.js?v={{.version}}"></script>
-  <script src="/static/js/utils.js?v={{.version}}"></script>
-  <script src="/static/js/validation.js?v={{.version}}"></script>
-  <script src="/static/js/threat-intel.js?v={{.version}}"></script>
-  <script src="/static/js/modals.js?v={{.version}}"></script>
-  <script src="/static/js/translations.js?v={{.version}}"></script>
-  <script src="/static/js/ignoreips.js?v={{.version}}"></script>
-  <script src="/static/js/dashboard.js?v={{.version}}"></script>
-  <script src="/static/js/globe.js?v={{.version}}"></script>
-  <script src="/static/js/servers.js?v={{.version}}"></script>
-  <script src="/static/js/jails.js?v={{.version}}"></script>
-  <script src="/static/js/console.js?v={{.version}}"></script>
-  <script src="/static/js/settings.js?v={{.version}}"></script>
-  <script src="/static/js/filters.js?v={{.version}}"></script>
-  <script src="/static/js/websocket.js?v={{.version}}"></script>
-  <script src="/static/js/header.js?v={{.version}}"></script>
-  <script src="/static/js/lotr.js?v={{.version}}"></script>
-  <script src="/static/js/auth.js?v={{.version}}"></script>
-  <script src="/static/js/init.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/jquery/jquery-3.6.0.min.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/select2/select2.min.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/globe/globe.gl.min.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/globals.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/theme.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/core.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/api.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/utils.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/validation.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/threat-intel.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/modals.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/translations.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/ignoreips.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/dashboard.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/globe.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/servers.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/jails.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/console.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/settings.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/filters.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/websocket.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/header.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/lotr.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/auth.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/init.js?v={{.version}}"></script>
 </body>
 </html>

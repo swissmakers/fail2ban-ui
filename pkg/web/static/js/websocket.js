@@ -25,7 +25,8 @@ class WebSocketManager {
     this.initialConnection = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    this.wsUrl = `${protocol}//${host}/api/ws`;
+    const base = typeof window.__BASE_PATH__ === 'string' ? window.__BASE_PATH__ : '';
+    this.wsUrl = `${protocol}//${host}${base}/api/ws`;
     
     this.connect();
   }

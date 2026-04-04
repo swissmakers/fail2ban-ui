@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -35,6 +36,10 @@ import (
 
 func main() {
 	settings := config.GetSettings()
+
+	// Initialize base path
+	web.SetBasePathFromEnv()
+	auth.SetSessionCookiePath(web.CookiePath())
 
 	// Initialize storage
 	if err := storage.Init(""); err != nil {
@@ -110,9 +115,16 @@ func main() {
 	} else {
 		log.Println("--- Fail2Ban-UI started in", gin.Mode(), "mode ---")
 	}
+	if bp := web.BasePath(); bp != "" {
+		log.Printf("HTTP base path: %s (from BASE_PATH)\n", bp)
+	}
 	log.Printf("Server listening on %s:%s.\n", bindAddress, serverPort)
 
-	if err := router.Run(serverAddr); err != nil {
+	server := &http.Server{
+		Addr:    serverAddr,
+		Handler: web.StripBasePathHandler(router),
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Could not start server: %v\n", err)
 	}
 }

@@ -38,7 +38,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 	// Initialize authentication middleware; all routes below here require authentication
 	r.Use(AuthMiddleware())
 
-	// Default currently "/" renders the dashboard -> TODO: To run f2b-UI on a different (sub)-path, we need to prefix that.
+	// Dashboard at "/" internally; use BASE_PATH env && strip middleware for public subpaths
 	r.GET("/", renderIndexPage)
 
 	// API routes group

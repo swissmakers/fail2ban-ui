@@ -1597,6 +1597,8 @@ func renderIndexPage(c *gin.Context) {
 	// Checks is a user wants to disable the github versioning check
 	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
 
+	urlPrefix := BasePath()
+
 	c.HTML(http.StatusOK, "index.html", gin.H{
 		"timestamp":          time.Now().Format(time.RFC1123),
 		"version":            time.Now().Unix(),
@@ -1607,6 +1609,7 @@ func renderIndexPage(c *gin.Context) {
 		"languageOptions":    languageOptions,
 		"oidcEnabled":        oidcEnabled,
 		"skipLoginPage":      skipLoginPage,
+		"URLPrefix":          urlPrefix,
 	})
 }
 
@@ -3792,7 +3795,7 @@ func LoginHandler(c *gin.Context) {
 		stateCookie := &http.Cookie{
 			Name:     "oidc_state",
 			Value:    state,
-			Path:     "/",
+			Path:     CookiePath(),
 			MaxAge:   600,
 			HttpOnly: true,
 			Secure:   isSecure,
@@ -3823,7 +3826,7 @@ func LoginHandler(c *gin.Context) {
 		stateCookie := &http.Cookie{
 			Name:     "oidc_state",
 			Value:    state,
-			Path:     "/",
+			Path:     CookiePath(),
 			MaxAge:   600,
 			HttpOnly: true,
 			Secure:   isSecure,
@@ -3859,7 +3862,7 @@ func CallbackHandler(c *gin.Context) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "oidc_state",
 		Value:    "",
-		Path:     "/",
+		Path:     CookiePath(),
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   isSecure,
@@ -3900,7 +3903,7 @@ func CallbackHandler(c *gin.Context) {
 	}
 	config.DebugLog("User authenticated: %s (%s)", userInfo.Username, userInfo.Email)
 	// Redirect to main page
-	c.Redirect(http.StatusFound, "/")
+	c.Redirect(http.StatusFound, ExternalPath("/"))
 }
 
 // Clears the session and redirects to the OIDC provider logout.
@@ -3945,7 +3948,7 @@ func LogoutHandler(c *gin.Context) {
 			return
 		}
 	}
-	c.Redirect(http.StatusFound, "/auth/login")
+	c.Redirect(http.StatusFound, ExternalPath("/auth/login"))
 }
 
 // Returns the current authentication status as JSON.

@@ -6,7 +6,7 @@
 // =========================================================================
 
 function loadServers() {
-  return fetch('/api/servers')
+  return fetch(appPath('/api/servers'))
     .then(function(res) { return res.json(); })
     .then(function(data) {
       serversCache = data.servers || [];
@@ -432,7 +432,7 @@ function submitServerForm(event) {
     delete payload.agentSecret;
   }
 
-  fetch('/api/servers', {
+  fetch(appPath('/api/servers'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -540,7 +540,7 @@ function loadSSHKeys() {
     populateSSHKeySelect(sshKeysCache, document.getElementById('serverSSHKey').value);
     return Promise.resolve(sshKeysCache);
   }
-  return fetch('/api/ssh/keys')
+  return fetch(appPath('/api/ssh/keys'))
     .then(function(res) { return res.json(); })
     .then(function(data) {
       sshKeysCache = data.keys || [];
@@ -566,7 +566,7 @@ function setServerEnabled(serverId, enabled) {
   }
   var payload = Object.assign({}, server, { enabled: enabled });
   showLoading(true);
-  fetch('/api/servers', {
+  fetch(appPath('/api/servers'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -599,7 +599,7 @@ function setServerEnabled(serverId, enabled) {
 function testServerConnection(serverId) {
   if (!serverId) return;
   showLoading(true);
-  fetch('/api/servers/' + encodeURIComponent(serverId) + '/test', {
+  fetch(appPath('/api/servers/' + encodeURIComponent(serverId) + '/test'), {
     method: 'POST'
   })
     .then(function(res) { return res.json(); })
@@ -624,7 +624,7 @@ function testServerConnection(serverId) {
 function deleteServer(serverId) {
   if (!confirm(t('servers.actions.delete_confirm', 'Delete this server entry?'))) return;
   showLoading(true);
-  fetch('/api/servers/' + encodeURIComponent(serverId), { method: 'DELETE' })
+  fetch(appPath('/api/servers/' + encodeURIComponent(serverId)), { method: 'DELETE' })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
@@ -654,7 +654,7 @@ function deleteServer(serverId) {
 
 function makeDefaultServer(serverId) {
   showLoading(true);
-  fetch('/api/servers/' + encodeURIComponent(serverId) + '/default', { method: 'POST' })
+  fetch(appPath('/api/servers/' + encodeURIComponent(serverId) + '/default'), { method: 'POST' })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
@@ -691,7 +691,7 @@ function restartFail2banServer(serverId) {
     : "Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban on this server now? This will take some time.";
   if (!confirm(confirmMsg)) return;
   showLoading(true);
-  fetch('/api/fail2ban/restart?serverId=' + encodeURIComponent(serverId), {
+  fetch(appPath('/api/fail2ban/restart?serverId=' + encodeURIComponent(serverId)), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })

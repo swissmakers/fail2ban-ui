@@ -7,7 +7,7 @@
 
 function loadSettings() {
   showLoading(true);
-  fetch('/api/settings')
+  fetch(appPath('/api/settings'))
     .then(res => res.json())
     .then(data => {
       document.getElementById('languageSelect').value = data.language || 'en';
@@ -226,7 +226,7 @@ function saveSettings(event) {
     advancedActions: collectAdvancedActionsSettings()
   };
 
-  fetch('/api/settings', {
+  fetch(appPath('/api/settings'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(settingsData),
@@ -305,7 +305,7 @@ function updateEmailFieldsState() {
 
 function sendTestEmail() {
   showLoading(true);
-  fetch('/api/settings/test-email', {
+  fetch(appPath('/api/settings/test-email'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
@@ -359,7 +359,7 @@ function collectWebhookSettings() {
 
 function sendTestWebhook() {
   showLoading(true);
-  fetch('/api/settings/test-webhook', {
+  fetch(appPath('/api/settings/test-webhook'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
@@ -402,7 +402,7 @@ function collectElasticsearchSettings() {
 
 function sendTestElasticsearch() {
   showLoading(true);
-  fetch('/api/settings/test-elasticsearch', {
+  fetch(appPath('/api/settings/test-elasticsearch'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
@@ -565,7 +565,7 @@ function updateAdvancedIntegrationFields() {
 // =========================================================================
 
 function loadPermanentBlockLog() {
-  fetch('/api/advanced-actions/blocks')
+  fetch(appPath('/api/advanced-actions/blocks'))
     .then(res => res.json())
     .then(data => {
       if (data.error) {
@@ -661,7 +661,7 @@ function clearPermanentBlockLog() {
   var msg = t('settings.advanced.clear_log_confirm',
     'This will permanently delete the entire block log. Fail2ban UI will assume that no IPs are currently blocked on the external firewall.\n\nThis action cannot be undone. Continue?');
   if (!confirm(msg)) return;
-  fetch('/api/advanced-actions/blocks', { method: 'DELETE', headers: serverHeaders() })
+  fetch(appPath('/api/advanced-actions/blocks'), { method: 'DELETE', headers: serverHeaders() })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
@@ -690,7 +690,7 @@ function submitAdvancedTest(action) {
     return;
   }
   showLoading(true);
-  fetch('/api/advanced-actions/test', {
+  fetch(appPath('/api/advanced-actions/test'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: action, ip: ipValue })
@@ -717,7 +717,7 @@ function advancedUnblockIP(ip, event) {
     event.stopPropagation();
   }
   if (!ip) return;
-  fetch('/api/advanced-actions/test', {
+  fetch(appPath('/api/advanced-actions/test'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'unblock', ip: ip })
