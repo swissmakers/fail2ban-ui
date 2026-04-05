@@ -19,9 +19,11 @@ package fail2ban
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -54,15 +56,17 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 	if server.AgentSecret == "" {
 		return nil, fmt.Errorf("agentSecret is required for agent connector")
 	}
-	parsed, err := url.Parse(server.AgentURL)
+	parsed, err := normalizeAgentURL(server.AgentURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid agentUrl: %w", err)
 	}
-	if parsed.Scheme == "" {
-		parsed.Scheme = "https"
-	}
 	client := &http.Client{
 		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		},
 	}
 	conn := &AgentConnector{
 		server: server,
@@ -73,6 +77,34 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 		fmt.Printf("warning: failed to ensure agent action for %s: %v\n", server.Name, err)
 	}
 	return conn, nil
+}
+
+func normalizeAgentURL(raw string) (*url.URL, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("empty URL")
+	}
+	// Accept host:port without scheme; default to HTTP for agent defaults.
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme == "" {
+		u.Scheme = "http"
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("unsupported scheme %q", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("missing host")
+	}
+	if u.Port() == "" {
+		u.Host = net.JoinHostPort(u.Hostname(), "9443")
+	}
+	return u, nil
 }
 
 // =========================================================================
@@ -435,7 +467,7 @@ func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content stri
 }
 
 func (ac *AgentConnector) DeleteJail(ctx context.Context, jailName string) error {
-	return ac.delete(ctx, fmt.Sprintf("/v1/jails/%s", jailName), nil)
+	return ac.delete(ctx, fmt.Sprintf("/v1/jails/%s", url.PathEscape(jailName)), nil)
 }
 
 func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content string) error {
@@ -447,5 +479,5 @@ func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content 
 }
 
 func (ac *AgentConnector) DeleteFilter(ctx context.Context, filterName string) error {
-	return ac.delete(ctx, fmt.Sprintf("/v1/filters/%s", filterName), nil)
+	return ac.delete(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(filterName)), nil)
 }
