@@ -782,6 +782,33 @@ func parseRetryAfter(value string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
+func normalizeAgentURLForServer(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("empty URL")
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" {
+		u.Scheme = "http"
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme %q", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return "", fmt.Errorf("missing host")
+	}
+	if u.Port() == "" {
+		u.Host = net.JoinHostPort(u.Hostname(), "9443")
+	}
+	return u.String(), nil
+}
+
 // =========================================================================
 //  Fail2ban Servers Management
 // =========================================================================
@@ -813,6 +840,12 @@ func UpsertServerHandler(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "agent servers require agentUrl and agentSecret"})
 			return
 		}
+		normalizedURL, err := normalizeAgentURLForServer(req.AgentURL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid agentUrl: " + err.Error()})
+			return
+		}
+		req.AgentURL = normalizedURL
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported server type"})
 		return
