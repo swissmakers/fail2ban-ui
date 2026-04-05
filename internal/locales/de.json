@@ -504,6 +504,7 @@
   "servers.validation.duplicate_name": "Ein Server mit diesem Namen existiert bereits.",
   "servers.validation.duplicate_socket": "Ein lokaler Connector mit diesem Socket-Pfad existiert bereits.",
   "servers.validation.duplicate_config_path": "Ein lokaler Connector mit diesem Konfigurationspfad existiert bereits.",
+  "servers.validation.agent_required": "Für API-Agent-Server sind Agent-URL und Agent-Secret erforderlich.",
   "servers.card.socket_path": "Socket-Pfad",
   "servers.card.config_path": "Konfigurationspfad",
   "filter_debug.not_available": "Filter-Debug ist nur verfügbar, wenn mindestens ein registrierter Fail2ban-Server aktiviert ist.",
