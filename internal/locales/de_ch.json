@@ -504,6 +504,7 @@
   "servers.validation.duplicate_name": "Es git scho en Server mit däm Name.",
   "servers.validation.duplicate_socket": "Es git scho en lokale Connector mit däm Socket-Pfad.",
   "servers.validation.duplicate_config_path": "Es git scho en lokale Connector mit däm Konfigurationspfad.",
+  "servers.validation.agent_required": "Füre API-Agent-Server si d Agent-URL und z Agent-Secret erforderlich.",
   "servers.card.socket_path": "Socket-Pfad",
   "servers.card.config_path": "Konfigurationspfad",
   "filter_debug.not_available": "Filter-Debug funktioniert nur, we mindestens ei registrierte Fail2ban-Server aktiviert isch.",

@@ -246,7 +246,7 @@ function resetServerForm() {
   document.getElementById('serverName').value = '';
   document.getElementById('serverType').value = 'local';
   document.getElementById('serverHost').value = '';
-  document.getElementById('serverPort').value = '22';
+  document.getElementById('serverPort').value = '';
   document.getElementById('serverSocket').value = '/var/run/fail2ban/fail2ban.sock';
   document.getElementById('serverConfigPath').value = '';
   document.getElementById('serverHostname').value = '';
@@ -310,13 +310,39 @@ function onServerTypeChange(type) {
     enabledToggle.checked = true;
   }
   if (type === 'ssh') {
+    var portInput = document.getElementById('serverPort');
+    if (portInput && !portInput.value.trim()) {
+      portInput.value = '22';
+    }
     loadSSHKeys().then(function(keys) {
       if (!isEditing) {
         populateSSHKeySelect(keys, '');
       }
     });
+  } else if (type === 'agent') {
+    var sshPortInput = document.getElementById('serverPort');
+    if (sshPortInput) {
+      sshPortInput.value = '';
+    }
   } else {
     populateSSHKeySelect([], '');
+  }
+}
+
+function normalizeAgentUrlInput(raw) {
+  var val = (raw || '').trim();
+  if (!val) return '';
+  if (val.indexOf('://') === -1) {
+    val = 'http://' + val;
+  }
+  try {
+    var parsed = new URL(val);
+    if (!parsed.port) {
+      parsed.port = '9443';
+    }
+    return parsed.toString();
+  } catch (e) {
+    return val;
   }
 }
 
@@ -430,6 +456,15 @@ function submitServerForm(event) {
   if (payload.type !== 'agent') {
     delete payload.agentUrl;
     delete payload.agentSecret;
+  } else {
+    payload.agentUrl = normalizeAgentUrlInput(payload.agentUrl);
+    if (!payload.agentUrl || !payload.agentSecret) {
+      showToast(t('servers.validation.agent_required', 'Agent URL and Agent Secret are required for API Agent servers.'), 'error');
+      showLoading(false);
+      return;
+    }
+    delete payload.host;
+    delete payload.port;
   }
 
   fetch(appPath('/api/servers'), {

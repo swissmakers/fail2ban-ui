@@ -504,6 +504,7 @@
   "servers.validation.duplicate_name": "A server with this name already exists.",
   "servers.validation.duplicate_socket": "A local connector with this socket path already exists.",
   "servers.validation.duplicate_config_path": "A local connector with this configuration path already exists.",
+  "servers.validation.agent_required": "Agent URL and Agent Secret are required for API Agent servers.",
   "servers.card.socket_path": "Socket path",
   "servers.card.config_path": "Configuration path",
   "filter_debug.not_available": "Filter debug is only available when at least one registered Fail2ban server is enabled.",

@@ -504,6 +504,7 @@
   "servers.validation.duplicate_name": "Ja existeix un servidor amb aquest nom.",
   "servers.validation.duplicate_socket": "Ja existeix un connector local amb aquesta ruta de socket.",
   "servers.validation.duplicate_config_path": "Ja existeix un connector local amb aquesta ruta de configuració.",
+  "servers.validation.agent_required": "Per als servidors API Agent, l'URL de l'agent i el secret de l'agent són obligatoris.",
   "servers.card.socket_path": "Ruta del socket",
   "servers.card.config_path": "Ruta de configuració",
   "filter_debug.not_available": "La depuració de filtres només està disponible quan almenys un servidor Fail2ban registrat està habilitat.",
