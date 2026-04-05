@@ -1355,11 +1355,11 @@
                       <option value="agent" data-i18n="servers.type.agent">API Agent</option>
                     </select>
                   </div>
-                  <div data-server-fields="ssh agent">
+                  <div data-server-fields="ssh">
                     <label for="serverHost" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.host">Hostname / IP</label>
                     <input type="text" id="serverHost" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.host_placeholder" placeholder="fail2ban.example.com">
                   </div>
-                  <div data-server-fields="ssh agent">
+                  <div data-server-fields="ssh">
                     <label for="serverPort" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.port">Port</label>
                     <input type="number" id="serverPort" min="1" max="65535" value="22" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.port_placeholder" placeholder="22">
                   </div>
@@ -1397,7 +1397,7 @@
                   </div>
                   <div data-server-fields="agent">
                     <label for="serverAgentUrl" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.agent_url">Agent URL</label>
-                    <input type="url" id="serverAgentUrl" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.agent_url_placeholder" placeholder="https://host:9443">
+                    <input type="text" id="serverAgentUrl" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.agent_url_placeholder" placeholder="host:9443 or https://host:9443">
                   </div>
                   <div data-server-fields="agent">
                     <label for="serverAgentSecret" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.agent_secret">Agent Secret</label>
