@@ -17,17 +17,15 @@ services:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
     volumes:
-      # To make sure linuxserver-fail2ban configs are persistent across container restarts (also needed by fail2ban-ui to modify configs)
+      # Configuration directory (to make sure linuxserver-fail2ban configs are persistent across container restarts)
       - ./fail2ban-config-local:/config:z
-      # Directory that contains fail2ban.sock for communication between fail2ban-ui and fail2ban container
+      # Socket directory (contains fail2ban.sock for communication between fail2ban-ui and fail2ban container)
       - ./f2b-run-local:/var/run/fail2ban:z
-
       # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
-
-      # New: custom init + service hooks (read-only is recommended)
-      - ./fail2ban-ssh-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      # Custom init + service hooks (read-only is recommended)
+      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
@@ -44,11 +42,14 @@ services:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
     volumes:
+      # Configuration / socket directory
       - ./fail2ban-config-local-secondary:/config:z
       - ./f2b-run-local-secondary:/var/run/fail2ban:z
+      # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
-      - ./fail2ban-ssh-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      # Custom init + service hooks
+      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
@@ -71,15 +72,41 @@ services:
       - DOCKER_MODS=linuxserver/mods:universal-package-install
       - INSTALL_PACKAGES=openssh-server|sudo|acl|bash
     volumes:
+      # Configuration
       - ./fail2ban-config-ssh:/config:z
+      # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
-      # Mount persistent SSH keys - shared between containers
+      # Mount persistent SSH keys (shared between containers)
       - ./ssh-keys:/mnt/ssh-keys:z
 
-      # New: custom init + service hooks (read-only is recommended)
-      - ./fail2ban-ssh-custom-cont-init.d:/custom-cont-init.d:ro,z
-      - ./fail2ban-ssh-custom-services.d:/custom-services.d:ro,z
+      # Custom init + service hooks
+      - ./fail2ban-custom-cont-init.d:/custom-cont-init.d:ro,z
+      - ./fail2ban-custom-services.d:/custom-services.d:ro,z
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------------------------------------
+  # Fail2ban-Agent: Remote Fail2ban instance via SSH for testing fail2ban-ui with SSH connector
+  fail2ban-agent:
+    image: lscr.io/linuxserver/fail2ban:latest
+    container_name: DEV_fail2ban-agent
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    network_mode: bridge
+    ports:
+      - "9700:9700"
+    environment:
+      - TZ=Europe/Zurich
+      - VERBOSITY=-vv
+      - PUID=0
+      - PGID=0
+    volumes:
+      # Configuration
+      - ./fail2ban-config-agent:/config:z
+      # Log sources for fail2ban container
+      - /var/log:/var/log:ro
+      - /var/log/httpd:/remotelogs/apache2:ro
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
