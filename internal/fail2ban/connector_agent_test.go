@@ -12,19 +12,19 @@ import (
 )
 
 func TestNormalizeAgentURL(t *testing.T) {
-	u, err := normalizeAgentURL("127.0.0.1")
+	u, err := NormalizeAgentURL("127.0.0.1")
 	if err != nil {
 		t.Fatalf("normalize error: %v", err)
 	}
-	if got := u.String(); got != "http://127.0.0.1:9443" {
+	if got := u.String(); got != "http://127.0.0.1:9700" {
 		t.Fatalf("got %q", got)
 	}
 
-	u, err = normalizeAgentURL("https://agent.example.local")
+	u, err = NormalizeAgentURL("https://agent.example.local")
 	if err != nil {
 		t.Fatalf("normalize https error: %v", err)
 	}
-	if got := u.String(); got != "https://agent.example.local:9443" {
+	if got := u.String(); got != "https://agent.example.local:9700" {
 		t.Fatalf("got %q", got)
 	}
 }

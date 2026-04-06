@@ -56,7 +56,7 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 	if server.AgentSecret == "" {
 		return nil, fmt.Errorf("agentSecret is required for agent connector")
 	}
-	parsed, err := normalizeAgentURL(server.AgentURL)
+	parsed, err := NormalizeAgentURL(server.AgentURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid agentUrl: %w", err)
 	}
@@ -79,7 +79,8 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 	return conn, nil
 }
 
-func normalizeAgentURL(raw string) (*url.URL, error) {
+// NormalizeAgentURL trims input, defaults missing scheme to http, and default port 9700 when omitted.
+func NormalizeAgentURL(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, fmt.Errorf("empty URL")
@@ -102,7 +103,7 @@ func normalizeAgentURL(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("missing host")
 	}
 	if u.Port() == "" {
-		u.Host = net.JoinHostPort(u.Hostname(), "9443")
+		u.Host = net.JoinHostPort(u.Hostname(), "9700")
 	}
 	return u, nil
 }
