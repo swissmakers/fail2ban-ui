@@ -1,0 +1,3 @@
+#!/usr/bin/with-contenv bash
+# Long-running Fail2ban-UI agent (HTTP API for fail2ban-client on this container).
+exec /usr/local/bin/fail2ban-ui-agent

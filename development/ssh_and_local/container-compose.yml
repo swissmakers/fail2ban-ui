@@ -81,12 +81,13 @@ services:
       - ./ssh-keys:/mnt/ssh-keys:z
 
       # Custom init + service hooks
-      - ./fail2ban-custom-cont-init.d:/custom-cont-init.d:ro,z
-      - ./fail2ban-custom-services.d:/custom-services.d:ro,z
+      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      - ./fail2ban-custom-cont-init.d/99-ssh-acl:/custom-cont-init.d/99-ssh-acl:ro,z
+      - ./fail2ban-custom-services.d/sshd:/custom-services.d/sshd:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
-  # Fail2ban-Agent: Remote Fail2ban instance via SSH for testing fail2ban-ui with SSH connector
+  # Fail2ban-Agent: Fail2ban + fail2ban-ui-agent (HTTP) for testing the agent connector
   fail2ban-agent:
     image: lscr.io/linuxserver/fail2ban:latest
     container_name: DEV_fail2ban-agent
@@ -101,12 +102,26 @@ services:
       - VERBOSITY=-vv
       - PUID=0
       - PGID=0
+      # This agent listens on 9700 (published above); -> must match Fail2ban-UI server agentUrl.
+      - AGENT_SECRET=dev-agent-secret-change-me
+      - AGENT_BIND_ADDRESS=0.0.0.0
+      # - AGENT_PORT=9700
+      - AGENT_CALLBACK_URL=http://10.88.0.1:3080/dev
+      - AGENT_CALLBACK_SECRET=same-as-ui-callback-secret
+      # - AGENT_CALLBACK_POLL_INTERVAL=4s
     volumes:
       # Configuration
       - ./fail2ban-config-agent:/config:z
       # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
+      # Jail.d typo fix (same as local)
+      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      # Copy latest dev-built agent binary into the container (build: CGO_ENABLED=0 go build -o fail2ban-ui-agent ./cmd/agent)
+      - ../../_dev/fail2ban-ui-agent:/mnt/fail2ban-ui-agent:ro,z
+      - ./fail2ban-custom-cont-init.d/50-install-fail2ban-ui-agent:/custom-cont-init.d/50-install-fail2ban-ui-agent:ro,z
+      # s6 oneshot/service: run fail2ban-ui-agent in foreground
+      - ./fail2ban-custom-services.d/fail2ban-ui-agent:/custom-services.d/fail2ban-ui-agent:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
@@ -123,8 +138,8 @@ services:
       - BASE_PATH=/dev
       - CALLBACK_URL=http://10.88.0.1:3080/dev
       #- CALLBACK_URL=http://10.88.0.1:3080
+      - CALLBACK_SECRET=same-as-ui-callback-secret
       - AUTODARK=true
-      #- CALLBACK_SECRET=**************************************************
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
       - ./config:/config:Z
