@@ -466,7 +466,7 @@
   "servers.form.ssh_key_placeholder": "/config/.ssh/id_rsa",
   "servers.form.ssh_key_help": "Platzieren Sie Ihren SSH-Private-Key im Verzeichnis /config/.ssh/ (gemountetes Config-Volume). Die Schlüsseldatei muss die Berechtigungen 600 haben (chmod 600). Beispiel: /config/.ssh/id_rsa",
   "servers.form.agent_url": "Agent-URL",
-  "servers.form.agent_url_placeholder": "https://host:9443",
+  "servers.form.agent_url_placeholder": "https://host:9700",
   "servers.form.agent_secret": "Agent-Secret",
   "servers.form.agent_secret_placeholder": "teilts Geheimnis",
   "servers.form.tags": "Tags",

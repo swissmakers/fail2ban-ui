@@ -338,7 +338,7 @@ function normalizeAgentUrlInput(raw) {
   try {
     var parsed = new URL(val);
     if (!parsed.port) {
-      parsed.port = '9443';
+      parsed.port = '9700';
     }
     return parsed.toString();
   } catch (e) {

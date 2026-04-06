@@ -466,7 +466,7 @@
   "servers.form.ssh_key_placeholder": "/config/.ssh/id_rsa",
   "servers.form.ssh_key_help": "Col·loqueu la vostra clau privada SSH al directori /config/.ssh/ (volum de configuració muntat). El fitxer de la clau ha de tenir permisos 600 (chmod 600). Exemple: /config/.ssh/id_rsa",
   "servers.form.agent_url": "URL de l'Agent",
-  "servers.form.agent_url_placeholder": "https://amfitrió:9443",
+  "servers.form.agent_url_placeholder": "https://amfitrió:9700",
   "servers.form.agent_secret": "Secret de l'Agent",
   "servers.form.agent_secret_placeholder": "token secret compartit",
   "servers.form.tags": "Etiquetes",
