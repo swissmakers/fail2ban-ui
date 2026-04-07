@@ -25,10 +25,10 @@ This setup provides a complete testing environment for Fail2ban UI with:
 
 ### 3. Fail2ban-Agent
 - **Container:** `DEV_fail2ban-agent`
-- **Purpose:** Same Fail2ban image as SSH dev, but runs **fail2ban-ui-agent** on port **9700** (no SSH)
+- **Purpose:** Fail2ban plus **fail2ban-ui-agent** (HTTP API) on port **9700** (no SSH), for testing the agent connector
+- **Image:** Prebuilt [`swissmakers/fail2ban-ui-agent`](https://hub.docker.com/r/swissmakers/fail2ban-ui-agent) (LinuxServer Fail2ban base with the agent baked in). Sources live in a separate repository: [`github.com/swissmakers/fail2ban-ui-agent`](https://github.com/swissmakers/fail2ban-ui-agent).
 - **Network:** Bridge; publish `9700:9700`
 - **Config:** `./fail2ban-config-agent/` (created on first start)
-- **Agent binary:** Host directory `../../_dev/fail2ban-ui-agent` is mounted read-only; an init script copies `fail2ban-ui-agent` into the container on each start so you always run the latest build.
 
 ### 4. Fail2ban-UI
 - **Container:** `DEV_fail2ban-ui`
@@ -47,16 +47,17 @@ podman build -t localhost/fail2ban-ui:dev .
 docker build -t localhost/fail2ban-ui:dev .
 ```
 
-### 1b. Build fail2ban-ui-agent (for `fail2ban-agent` compose service)
+### 1b. fail2ban-ui-agent image (optional)
 
-The LSIO Fail2ban image is **Alpine (musl)**. Build a **static** Linux binary on the host:
+Compose pulls **`swissmakers/fail2ban-ui-agent:latest`** by default. To refresh manually:
 
 ```bash
-cd _dev/fail2ban-ui-agent
-CGO_ENABLED=0 go build -o fail2ban-ui-agent ./cmd/agent
+podman pull swissmakers/fail2ban-ui-agent:latest
+# or
+docker pull swissmakers/fail2ban-ui-agent:latest
 ```
 
-Rebuild and restart `DEV_fail2ban-agent` after code changes.
+**Developing the agent itself:** clone [`fail2ban-ui-agent`](https://github.com/swissmakers/fail2ban-ui-agent), build the image or a static binary per that repo’s README, then either run that image or use the **optional** bind-mount + custom-init lines in `container-compose.yml` (commented) to replace the binary inside the dev container.
 
 ### 2. Start the Services
 
@@ -179,7 +180,7 @@ To modify SSH configuration, edit the `command` section in `container-compose.ym
 
 ### 2. Agent connector test
 
-1. Ensure the agent binary is built (see **1b** above) and start `fail2ban-agent` (`podman compose up -d fail2ban-agent`).
+1. Start `fail2ban-agent` (`podman compose up -d fail2ban-agent`); the stack uses the prebuilt agent image (see **1b** if you need a newer tag or local build).
 2. Check logs: `podman logs DEV_fail2ban-agent` — Fail2ban should start and the agent should listen on `9700`.
 3. Quick check from the host: `curl -sS -H 'X-F2B-Token: dev-agent-secret-change-me' http://127.0.0.1:9700/healthz`
 4. In Fail2ban-UI → Manage Servers, add a server with type **Agent**, **agent URL** `http://127.0.0.1:9700` (or the container IP from the bridge), and **agent secret** `dev-agent-secret-change-me` (must match `AGENT_SECRET` in `container-compose.yml`).

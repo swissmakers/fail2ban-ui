@@ -1,7 +1,6 @@
 #!/usr/bin/with-contenv bash
-# Installs the dev-built agent binary from the host-mounted module directory.
-# The LSIO fail2ban image is Alpine (musl): build on the host with:
-#   cd _dev/fail2ban-ui-agent && CGO_ENABLED=0 go build -o fail2ban-ui-agent ./cmd/agent
+# Optional dev path: installs a locally built agent binary from a host-mounted directory.
+# Clone https://github.com/swissmakers/fail2ban-ui-agent and build a static binary (see that README; LSIO base is musl).
 set -euo pipefail
 
 echo "[custom-init] fail2ban-ui-agent: install from /mnt/fail2ban-ui-agent"
@@ -10,8 +9,7 @@ DST=/usr/local/bin/fail2ban-ui-agent
 
 if [ ! -f "$SRC" ]; then
   echo "[custom-init] ERROR: $SRC not found."
-  echo "[custom-init] Build a static binary for Alpine, from repo root:"
-  echo "  cd _dev/fail2ban-ui-agent && CGO_ENABLED=0 go build -o fail2ban-ui-agent ./cmd/agent"
+  echo "[custom-init] Build a static binary from https://github.com/swissmakers/fail2ban-ui-agent (see README), mount the directory at /mnt/fail2ban-ui-agent"
   exit 1
 fi
 

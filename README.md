@@ -41,7 +41,7 @@ Fail2Ban UI does not replace Fail2Ban. It connects to existing Fail2Ban instance
 |---|---|---|
 | Local | Fail2Ban runs on the same host as the UI | Uses the Fail2Ban socket and local files |
 | SSH | Manage remote Fail2Ban hosts without installing an agent | Uses key-based SSH and remote `fail2ban-client` |
-| Agent (technical preview) | Environments where SSH is not desired | Limited functionality; work in progress |
+| Agent | Environments where SSH is not desired | HTTP agent runs on the Fail2ban host; see [`fail2ban-ui-agent`](https://github.com/swissmakers/fail2ban-ui-agent) and the prebuilt image [`swissmakers/fail2ban-ui-agent`](https://hub.docker.com/r/swissmakers/fail2ban-ui-agent) |
 
 ## Quick start (container)
 
@@ -90,6 +90,10 @@ Existing deployment guides in this repository:
 Development / testing stacks:
 * OIDC dev stack: [`development/oidc/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/development/oidc/README.md)
 * SSH and local connector dev stack: [`development/ssh_and_local/README.md`](https://github.com/swissmakers/fail2ban-ui/blob/main/development/ssh_and_local/README.md)
+
+Remote Fail2ban **agent** (separate component):
+* Source: [`github.com/swissmakers/fail2ban-ui-agent`](https://github.com/swissmakers/fail2ban-ui-agent)
+* Container image: [`hub.docker.com/r/swissmakers/fail2ban-ui-agent`](https://hub.docker.com/r/swissmakers/fail2ban-ui-agent)
 
 ## Screenshots
 
