@@ -87,9 +87,11 @@ services:
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
-  # Fail2ban-Agent: Fail2ban + fail2ban-ui-agent (HTTP) for testing the agent connector
+  # Fail2ban-Agent: prebuilt image (Fail2ban + fail2ban-ui-agent HTTP API).
+  # Sources: https://github.com/swissmakers/fail2ban-ui-agent
+  # Registry: https://hub.docker.com/r/swissmakers/fail2ban-ui-agent
   fail2ban-agent:
-    image: lscr.io/linuxserver/fail2ban:latest
+    image: swissmakers/fail2ban-ui-agent:latest
     container_name: DEV_fail2ban-agent
     cap_add:
       - NET_ADMIN
@@ -100,8 +102,8 @@ services:
     environment:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
-      - PUID=0
-      - PGID=0
+      #- PUID=0
+      #- PGID=0
       # This agent listens on 9700 (published above); -> must match Fail2ban-UI server agentUrl.
       - AGENT_SECRET=dev-agent-secret-change-me
       - AGENT_BIND_ADDRESS=0.0.0.0
@@ -119,12 +121,12 @@ services:
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
       # Jail.d typo fix (same as local)
-      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
-      # Copy latest dev-built agent binary into the container (build: CGO_ENABLED=0 go build -o fail2ban-ui-agent ./cmd/agent)
-      - ../../_dev/fail2ban-ui-agent:/mnt/fail2ban-ui-agent:ro,z
-      - ./fail2ban-custom-cont-init.d/50-install-fail2ban-ui-agent:/custom-cont-init.d/50-install-fail2ban-ui-agent:ro,z
+      #- ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      # Optional: mount a locally built static binary from a clone of github.com/swissmakers/fail2ban-ui-agent (see that repo's README)
+      #- /path/to/fail2ban-ui-agent:/mnt/fail2ban-ui-agent:ro,z
+      #- ./fail2ban-custom-cont-init.d/50-install-fail2ban-ui-agent:/custom-cont-init.d/50-install-fail2ban-ui-agent:ro,z
       # s6 oneshot/service: run fail2ban-ui-agent in foreground
-      - ./fail2ban-custom-services.d/fail2ban-ui-agent:/custom-services.d/fail2ban-ui-agent:ro,z
+      #- ./fail2ban-custom-services.d/fail2ban-ui-agent:/custom-services.d/fail2ban-ui-agent:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
