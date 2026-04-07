@@ -507,6 +507,7 @@
   "servers.validation.agent_required": "Per als servidors API Agent, l'URL de l'agent i el secret de l'agent són obligatoris.",
   "servers.card.socket_path": "Ruta del socket",
   "servers.card.config_path": "Ruta de configuració",
+  "servers.card.server_id": "ID del servidor",
   "filter_debug.not_available": "La depuració de filtres només està disponible quan almenys un servidor Fail2ban registrat està habilitat.",
   "filter_debug.local_missing": "No s'ha trobat el directori local de filtres de Fail2ban en aquest amfitrió.",
   "filter_debug.save_success": "La configuració del filtre i el jail s'ha desat i recarregat",

@@ -507,6 +507,7 @@
   "servers.validation.agent_required": "La URL del agente y el secreto del agente son obligatorios para servidores API Agent.",
   "servers.card.socket_path": "Ruta del socket",
   "servers.card.config_path": "Ruta de configuración",
+  "servers.card.server_id": "ID del servidor",
   "filter_debug.not_available": "La depuración de filtros solo está disponible cuando al menos un servidor Fail2ban registrado está activado.",
   "filter_debug.local_missing": "No se encontró el directorio de filtros local de Fail2ban en este host.",
   "filter_debug.save_success": "Configuración de filtro y jail guardada y Fail2ban recargado",
