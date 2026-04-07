@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -259,25 +258,7 @@ func UnbanIPHandler(c *gin.Context) {
 
 // Processes incoming ban callbacks from Fail2Ban action scripts.
 func BanNotificationHandler(c *gin.Context) {
-	settings := config.GetSettings()
-	providedSecret := c.GetHeader("X-Callback-Secret")
-	expectedSecret := settings.CallbackSecret
-
-	if expectedSecret == "" {
-		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
-		return
-	}
-
-	if providedSecret == "" {
-		log.Printf("⚠️ Missing X-Callback-Secret header in request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing X-Callback-Secret header"})
-		return
-	}
-
-	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
+	if !validateCallbackSecret(c) {
 		return
 	}
 
@@ -349,25 +330,7 @@ func BanNotificationHandler(c *gin.Context) {
 
 // Processes incoming unban callbacks from Fail2Ban action scripts.
 func UnbanNotificationHandler(c *gin.Context) {
-	settings := config.GetSettings()
-	providedSecret := c.GetHeader("X-Callback-Secret")
-	expectedSecret := settings.CallbackSecret
-
-	if expectedSecret == "" {
-		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
-		return
-	}
-
-	if providedSecret == "" {
-		log.Printf("⚠️ Missing X-Callback-Secret header in request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing X-Callback-Secret header"})
-		return
-	}
-
-	if subtle.ConstantTimeCompare([]byte(providedSecret), []byte(expectedSecret)) != 1 {
-		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
+	if !validateCallbackSecret(c) {
 		return
 	}
 
@@ -782,33 +745,6 @@ func parseRetryAfter(value string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
-func normalizeAgentURLForServer(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", fmt.Errorf("empty URL")
-	}
-	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	if u.Scheme == "" {
-		u.Scheme = "http"
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("unsupported scheme %q", u.Scheme)
-	}
-	if u.Hostname() == "" {
-		return "", fmt.Errorf("missing host")
-	}
-	if u.Port() == "" {
-		u.Host = net.JoinHostPort(u.Hostname(), "9443")
-	}
-	return u.String(), nil
-}
-
 // =========================================================================
 //  Fail2ban Servers Management
 // =========================================================================
@@ -840,12 +776,12 @@ func UpsertServerHandler(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "agent servers require agentUrl and agentSecret"})
 			return
 		}
-		normalizedURL, err := normalizeAgentURLForServer(req.AgentURL)
+		u, err := fail2ban.NormalizeAgentURL(req.AgentURL)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid agentUrl: " + err.Error()})
 			return
 		}
-		req.AgentURL = normalizedURL
+		req.AgentURL = u.String()
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported server type"})
 		return

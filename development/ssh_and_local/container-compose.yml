@@ -17,17 +17,15 @@ services:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
     volumes:
-      # To make sure linuxserver-fail2ban configs are persistent across container restarts (also needed by fail2ban-ui to modify configs)
+      # Configuration directory (to make sure linuxserver-fail2ban configs are persistent across container restarts)
       - ./fail2ban-config-local:/config:z
-      # Directory that contains fail2ban.sock for communication between fail2ban-ui and fail2ban container
+      # Socket directory (contains fail2ban.sock for communication between fail2ban-ui and fail2ban container)
       - ./f2b-run-local:/var/run/fail2ban:z
-
       # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
-
-      # New: custom init + service hooks (read-only is recommended)
-      - ./fail2ban-ssh-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      # Custom init + service hooks (read-only is recommended)
+      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
@@ -44,11 +42,14 @@ services:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
     volumes:
+      # Configuration / socket directory
       - ./fail2ban-config-local-secondary:/config:z
       - ./f2b-run-local-secondary:/var/run/fail2ban:z
+      # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
-      - ./fail2ban-ssh-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      # Custom init + service hooks
+      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
@@ -71,15 +72,61 @@ services:
       - DOCKER_MODS=linuxserver/mods:universal-package-install
       - INSTALL_PACKAGES=openssh-server|sudo|acl|bash
     volumes:
+      # Configuration
       - ./fail2ban-config-ssh:/config:z
+      # Log sources for fail2ban container
       - /var/log:/var/log:ro
       - /var/log/httpd:/remotelogs/apache2:ro
-      # Mount persistent SSH keys - shared between containers
+      # Mount persistent SSH keys (shared between containers)
       - ./ssh-keys:/mnt/ssh-keys:z
 
-      # New: custom init + service hooks (read-only is recommended)
-      - ./fail2ban-ssh-custom-cont-init.d:/custom-cont-init.d:ro,z
-      - ./fail2ban-ssh-custom-services.d:/custom-services.d:ro,z
+      # Custom init + service hooks
+      - ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      - ./fail2ban-custom-cont-init.d/99-ssh-acl:/custom-cont-init.d/99-ssh-acl:ro,z
+      - ./fail2ban-custom-services.d/sshd:/custom-services.d/sshd:ro,z
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------------------------------------
+  # Fail2ban-Agent: prebuilt image (Fail2ban + fail2ban-ui-agent HTTP API).
+  # Sources: https://github.com/swissmakers/fail2ban-ui-agent
+  # Registry: https://hub.docker.com/r/swissmakers/fail2ban-ui-agent
+  fail2ban-agent:
+    image: swissmakers/fail2ban-ui-agent:latest
+    container_name: DEV_fail2ban-agent
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    network_mode: bridge
+    ports:
+      - "9700:9700"
+    environment:
+      - TZ=Europe/Zurich
+      - VERBOSITY=-vv
+      #- PUID=0
+      #- PGID=0
+      # This agent listens on 9700 (published above); -> must match Fail2ban-UI server agentUrl.
+      - AGENT_SECRET=dev-agent-secret-change-me
+      - AGENT_BIND_ADDRESS=0.0.0.0
+      # - AGENT_PORT=9700
+      # Development only:
+      # callback settings are normally pushed from Fail2ban-UI to /v1/callback/config
+      # and persisted by the agent in /etc/fail2ban/fail2ban-ui-agent.id.
+      # - AGENT_CALLBACK_URL=http://10.88.0.1:3080/dev
+      # - AGENT_CALLBACK_SECRET=same-as-ui-callback-secret
+      # - AGENT_CALLBACK_SERVER_ID=srv-xxxxxxxx
+    volumes:
+      # Configuration
+      - ./fail2ban-config-agent:/config:z
+      # Log sources for fail2ban container
+      - /var/log:/var/log:ro
+      - /var/log/httpd:/remotelogs/apache2:ro
+      # Jail.d typo fix (same as local)
+      #- ./fail2ban-custom-cont-init.d/20-fix-jail-enabled-key:/custom-cont-init.d/20-fix-jail-enabled-key:ro,z
+      # Optional: mount a locally built static binary from a clone of github.com/swissmakers/fail2ban-ui-agent (see that repo's README)
+      #- /path/to/fail2ban-ui-agent:/mnt/fail2ban-ui-agent:ro,z
+      #- ./fail2ban-custom-cont-init.d/50-install-fail2ban-ui-agent:/custom-cont-init.d/50-install-fail2ban-ui-agent:ro,z
+      # s6 oneshot/service: run fail2ban-ui-agent in foreground
+      #- ./fail2ban-custom-services.d/fail2ban-ui-agent:/custom-services.d/fail2ban-ui-agent:ro,z
     restart: unless-stopped
 
   # ------------------------------------------------------------------------------------------------
@@ -96,8 +143,8 @@ services:
       - BASE_PATH=/dev
       - CALLBACK_URL=http://10.88.0.1:3080/dev
       #- CALLBACK_URL=http://10.88.0.1:3080
+      - CALLBACK_SECRET=same-as-ui-callback-secret
       - AUTODARK=true
-      #- CALLBACK_SECRET=**************************************************
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
       - ./config:/config:Z

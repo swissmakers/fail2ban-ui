@@ -218,7 +218,7 @@ func updateConnectorAction(ctx context.Context, conn Connector) error {
 	case *SSHConnector:
 		return c.ensureAction(ctx)
 	case *AgentConnector:
-		return c.ensureAction(ctx)
+		return c.ensureCallbackConfig(ctx)
 	default:
 		return nil
 	}

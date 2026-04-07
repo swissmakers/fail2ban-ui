@@ -3,6 +3,7 @@ fail2ban-config-local
 fail2ban-config-ssh
 f2b-run-local
 fail2ban-config-local-secondary
+fail2ban-config-agent
 f2b-run-ssh
 f2b-run-local-secondary
 ssh-keys

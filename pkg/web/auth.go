@@ -67,6 +67,7 @@ func isPublicRoute(path string) bool {
 		"/auth/status",
 		"/api/ban",
 		"/api/unban",
+		"/api/healthcheck/callback",
 		"/static/",
 		"/locales/",
 	}

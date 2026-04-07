@@ -173,6 +173,10 @@ function renderServerManagerList() {
       + '    <div>'
       + '      <p class="font-semibold text-gray-800 flex items-center">' + escapeHtml(server.name || server.id) + defaultBadge + statusBadge + restartBadge + '</p>'
       + '      <p class="text-sm text-gray-500">' + escapeHtml(meta || server.id) + '</p>'
+      + '      <p class="mt-1 text-xs text-gray-500">'
+      + '<span data-i18n="servers.card.server_id">Server-ID</span>: '
+      + '<code class="px-1 py-0.5 bg-gray-100 rounded select-all">' + escapeHtml(server.id || '') + '</code>'
+      + '</p>'
       +        localDetails
       +        tags
       + '    </div>'
@@ -338,7 +342,7 @@ function normalizeAgentUrlInput(raw) {
   try {
     var parsed = new URL(val);
     if (!parsed.port) {
-      parsed.port = '9443';
+      parsed.port = '9700';
     }
     return parsed.toString();
   } catch (e) {

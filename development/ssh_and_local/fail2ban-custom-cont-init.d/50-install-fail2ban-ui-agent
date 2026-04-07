@@ -1,0 +1,18 @@
+#!/usr/bin/with-contenv bash
+# Optional dev path: installs a locally built agent binary from a host-mounted directory.
+# Clone https://github.com/swissmakers/fail2ban-ui-agent and build a static binary (see that README; LSIO base is musl).
+set -euo pipefail
+
+echo "[custom-init] fail2ban-ui-agent: install from /mnt/fail2ban-ui-agent"
+SRC=/mnt/fail2ban-ui-agent/fail2ban-ui-agent
+DST=/usr/local/bin/fail2ban-ui-agent
+
+if [ ! -f "$SRC" ]; then
+  echo "[custom-init] ERROR: $SRC not found."
+  echo "[custom-init] Build a static binary from https://github.com/swissmakers/fail2ban-ui-agent (see README), mount the directory at /mnt/fail2ban-ui-agent"
+  exit 1
+fi
+
+cp -f "$SRC" "$DST"
+chmod 755 "$DST"
+echo "[custom-init] installed $DST"

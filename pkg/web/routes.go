@@ -106,7 +106,10 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		// WebSocket endpoint
 		api.GET("/ws", WebSocketHandler(hub))
 
-		// Internal & external API to get the version of the Fail2ban-UI and check for updates
+		// API to healthchecks (mainly used by agent)
+		api.GET("/healthcheck/callback", HealthcheckCallbackSecret)
+
+		// External API to get the version of the Fail2ban-UI and check for updates
 		api.GET("/version", GetVersionHandler)
 	}
 }

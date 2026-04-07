@@ -4,17 +4,18 @@ This directory contains Docker Compose configurations for local development and 
 
 ## Available Development Setups
 
-### 1. OIDC Authentication Testing (`oidc/`)
+### 1. For OIDC Authentication testing (`oidc/`)
 
 Complete OIDC authentication setup with Keycloak and Pocket-ID for testing authentication flows.
 
 **See:** [oidc/README.md](./oidc/README.md)
 
-### 2. SSH and Local Fail2ban Testing (`ssh_and_local/`)
+### 2. For SSH, Local and Agent connector testing (`ssh_and_local/`)
 
-Setup for testing Fail2ban UI with:
+Stack for testing Fail2ban UI with:
 - Local Fail2ban instance (container)
 - Remote Fail2ban instance via SSH (container)
+- **Fail2ban Agent:** prebuilt image [`swissmakers/fail2ban-ui-agent`](https://hub.docker.com/r/swissmakers/fail2ban-ui-agent) (sources: [`github.com/swissmakers/fail2ban-ui-agent`](https://github.com/swissmakers/fail2ban-ui-agent))
 
 **See:** [ssh_and_local/README.md](./ssh_and_local/README.md)
 
