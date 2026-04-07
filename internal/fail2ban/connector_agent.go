@@ -458,42 +458,12 @@ func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
 		debugf("jail.local on agent server %s exists but is not managed by Fail2ban-UI -- skipping overwrite", ac.server.Name)
 		return nil
 	}
-	content := buildAgentManagedJailLocalContent(mustProvider().BuildJailLocalContent())
+	content := mustProvider().BuildJailLocalContent()
 	payload := map[string]any{}
 	if strings.TrimSpace(content) != "" {
 		payload["content"] = content
 	}
 	return ac.post(ctx, "/v1/jails/ensure-structure", payload, nil)
-}
-
-func buildAgentManagedJailLocalContent(content string) string {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	lines := strings.Split(content, "\n")
-	out := make([]string, 0, len(lines))
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		trimmed := strings.TrimSpace(strings.ToLower(line))
-
-		switch {
-		case trimmed == "# custom fail2ban action for ui callbacks",
-			trimmed == "# custom fail2ban action applied by fail2ban-ui",
-			strings.HasPrefix(trimmed, "action_mwlg"),
-			trimmed == "action = %(action_mwlg)s",
-			trimmed == "action = ui-custom-action",
-			trimmed == "banaction = ui-custom-action",
-			strings.Contains(trimmed, "ui-custom-action"):
-			continue
-		}
-
-		out = append(out, line)
-	}
-	result := strings.Join(out, "\n")
-	for strings.Contains(result, "\n\n\n") {
-		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
-	}
-	result = strings.TrimRight(result, "\n") + "\n"
-	return result
 }
 
 // =========================================================================

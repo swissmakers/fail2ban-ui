@@ -182,7 +182,7 @@ func TestAgentConnectorGetAllJailsLargeResponse(t *testing.T) {
 	}
 }
 
-func TestAgentConnectorEnsureStructureStripsUICustomAction(t *testing.T) {
+func TestAgentConnectorEnsureStructurePassesManagedContent(t *testing.T) {
 	SetProvider(testProvider{})
 	defer SetProvider(noopProvider{})
 
@@ -221,7 +221,7 @@ func TestAgentConnectorEnsureStructureStripsUICustomAction(t *testing.T) {
 		t.Fatalf("missing content payload: %#v", ensurePayload)
 	}
 	content, _ := raw.(string)
-	if strings.Contains(content, "ui-custom-action") || strings.Contains(content, "action_mwlg") {
-		t.Fatalf("content still contains UI action block: %s", content)
+	if !strings.Contains(content, "action_mwlg") || !strings.Contains(content, "ui-custom-action") {
+		t.Fatalf("expected full managed content payload, got: %s", content)
 	}
 }
