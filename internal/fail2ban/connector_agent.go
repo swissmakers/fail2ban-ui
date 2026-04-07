@@ -33,6 +33,9 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
+// Upper bound for agent JSON responses (e.g. /v1/jails/all can exceed a few KiB).
+const maxAgentHTTPResponseBody = 8 << 20
+
 // =========================================================================
 //  Types
 // =========================================================================
@@ -73,8 +76,8 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 		base:   parsed,
 		client: client,
 	}
-	if err := conn.ensureAction(context.Background()); err != nil {
-		fmt.Printf("warning: failed to ensure agent action for %s: %v\n", server.Name, err)
+	if err := conn.ensureCallbackConfig(context.Background()); err != nil {
+		fmt.Printf("warning: failed to configure agent callback for %s: %v\n", server.Name, err)
 	}
 	return conn, nil
 }
@@ -120,16 +123,15 @@ func (ac *AgentConnector) Server() shared.Fail2banServer {
 	return ac.server
 }
 
-func (ac *AgentConnector) ensureAction(ctx context.Context) error {
+func (ac *AgentConnector) ensureCallbackConfig(ctx context.Context) error {
 	p := mustProvider()
-	cb := p.CallbackURL()
 	payload := map[string]any{
-		"name":        "ui-custom-action",
-		"config":      p.BuildFail2banActionConfig(cb, ac.server.ID, p.CallbackSecret()),
-		"callbackUrl": cb,
-		"setDefault":  true,
+		"serverId":         ac.server.ID,
+		"callbackUrl":      p.CallbackURL(),
+		"callbackSecret":   p.CallbackSecret(),
+		"callbackHostname": strings.TrimSpace(ac.server.Hostname),
 	}
-	return ac.put(ctx, "/v1/actions/ui-custom", payload, nil)
+	return ac.put(ctx, "/v1/callback/config", payload, nil)
 }
 
 func (ac *AgentConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
@@ -277,13 +279,17 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAgentHTTPResponseBody))
 	if err != nil {
 		return err
 	}
 	trimmed := strings.TrimSpace(string(data))
 
-	debugf("Agent response [%s]: %s | %s", ac.server.Name, resp.Status, trimmed)
+	preview := trimmed
+	if len(preview) > 512 {
+		preview = preview[:512] + "…"
+	}
+	debugf("Agent response [%s]: %s | %s", ac.server.Name, resp.Status, preview)
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("agent request failed: %s (%s)", resp.Status, trimmed)
@@ -434,6 +440,7 @@ func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 	var result struct {
 		Exists      bool `json:"exists"`
 		HasUIAction bool `json:"hasUIAction"`
+		Managed     bool `json:"managed"`
 	}
 	if err := ac.get(ctx, "/v1/jails/check-integrity", &result); err != nil {
 		// If the agent does not implement this endpoint, assume OK
@@ -442,7 +449,7 @@ func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 		}
 		return false, false, fmt.Errorf("failed to check jail.local integrity on %s: %w", ac.server.Name, err)
 	}
-	return result.Exists, result.HasUIAction, nil
+	return result.Exists, result.Managed || result.HasUIAction, nil
 }
 
 func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
@@ -451,8 +458,42 @@ func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
 		debugf("jail.local on agent server %s exists but is not managed by Fail2ban-UI -- skipping overwrite", ac.server.Name)
 		return nil
 	}
+	content := buildAgentManagedJailLocalContent(mustProvider().BuildJailLocalContent())
+	payload := map[string]any{}
+	if strings.TrimSpace(content) != "" {
+		payload["content"] = content
+	}
+	return ac.post(ctx, "/v1/jails/ensure-structure", payload, nil)
+}
 
-	return ac.post(ctx, "/v1/jails/ensure-structure", nil, nil)
+func buildAgentManagedJailLocalContent(content string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(strings.ToLower(line))
+
+		switch {
+		case trimmed == "# custom fail2ban action for ui callbacks",
+			trimmed == "# custom fail2ban action applied by fail2ban-ui",
+			strings.HasPrefix(trimmed, "action_mwlg"),
+			trimmed == "action = %(action_mwlg)s",
+			trimmed == "action = ui-custom-action",
+			trimmed == "banaction = ui-custom-action",
+			strings.Contains(trimmed, "ui-custom-action"):
+			continue
+		}
+
+		out = append(out, line)
+	}
+	result := strings.Join(out, "\n")
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
+	result = strings.TrimRight(result, "\n") + "\n"
+	return result
 }
 
 // =========================================================================

@@ -106,9 +106,12 @@ services:
       - AGENT_SECRET=dev-agent-secret-change-me
       - AGENT_BIND_ADDRESS=0.0.0.0
       # - AGENT_PORT=9700
-      - AGENT_CALLBACK_URL=http://10.88.0.1:3080/dev
-      - AGENT_CALLBACK_SECRET=same-as-ui-callback-secret
-      # - AGENT_CALLBACK_POLL_INTERVAL=4s
+      # Development only:
+      # callback settings are normally pushed from Fail2ban-UI to /v1/callback/config
+      # and persisted by the agent in /etc/fail2ban/fail2ban-ui-agent.id.
+      # - AGENT_CALLBACK_URL=http://10.88.0.1:3080/dev
+      # - AGENT_CALLBACK_SECRET=same-as-ui-callback-secret
+      # - AGENT_CALLBACK_SERVER_ID=srv-xxxxxxxx
     volumes:
       # Configuration
       - ./fail2ban-config-agent:/config:z
