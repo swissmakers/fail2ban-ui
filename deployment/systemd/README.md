@@ -37,8 +37,11 @@ Clone the repository to `/opt/fail2ban-ui`:
   ```bash
   sudo git clone https://github.com/swissmakers/fail2ban-ui.git /opt/fail2ban-ui
   cd /opt/fail2ban-ui
+  ./build-tailwind.sh
   sudo go build -o fail2ban-ui ./cmd/server/main.go
   ```
+
+Web UI templates, translation JSON files, and `pkg/web/static` are embedded into the binary at compile time, so you only need to ship the `fail2ban-ui` executable (plus a writable `WorkingDirectory` for the SQLite database).
 
 ### Create the fail2ban-ui.service
 Save this file as `/etc/systemd/system/fail2ban-ui.service`:

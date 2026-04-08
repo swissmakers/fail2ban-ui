@@ -75,7 +75,7 @@ cd /opt/fail2ban-ui
 # Build static CSS assets
 ./build-tailwind.sh
 
-# Build the Go binary
+# Build the Go binary (embeds pkg/web/templates, pkg/web/locales, and pkg/web/static)
 go build -o fail2ban-ui ./cmd/server/main.go
 ```
 

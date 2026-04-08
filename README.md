@@ -191,7 +191,7 @@ Documentation and deployment guidance in security tooling is never "done", and e
 
 If you see a clearer way to describe installation steps, safer container defaults, better reverse-proxy examples, SELinux improvements, or a more practical demo environment, please contribute. Small improvements (typos, wording, examples) are just as valuable as code changes.
 
-Want to add a new UI language? Copy `internal/locales/en.json`, translate all values, save it as `internal/locales/<lang>.json`, and open a pull request.
+Want to add a new UI language? Copy `pkg/web/locales/en.json`, translate all values, save it as `pkg/web/locales/<lang>.json`, and open a pull request.
 Please use a proper lowercase locale short code for `<lang>` (for example `ch`, `ch_de`, `es`, or `pt_br`).
 
 

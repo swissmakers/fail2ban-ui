@@ -53,11 +53,8 @@ VOLUME ["/config"]
 
 ENV CONTAINER=true
 
-# Copy Fail2Ban-UI binary and templates from the build stage
+# Copy Fail2Ban-UI binary (templates, locales, and static assets are embedded at compile time)
 COPY --from=builder /app/fail2ban-ui /app/fail2ban-ui
-COPY --from=builder /app/pkg/web/templates /app/templates
-COPY --from=builder /app/internal/locales /app/locales
-COPY --from=builder /app/pkg/web/static /app/static
 RUN chown fail2ban:0 /app/fail2ban-ui && chmod +x /app/fail2ban-ui
 
 EXPOSE 8080
