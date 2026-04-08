@@ -19,7 +19,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
@@ -84,16 +83,8 @@ func main() {
 	bindAddress, _ := config.GetBindAddressFromEnv()
 	serverAddr := net.JoinHostPort(bindAddress, serverPort)
 
-	// Load templates and static assets based on running in container or locally (compiled binary)
-	_, container := os.LookupEnv("CONTAINER")
-	if container {
-		router.LoadHTMLGlob("/app/templates/*")
-		router.Static("/locales", "/app/locales")
-		router.Static("/static", "/app/static")
-	} else {
-		router.LoadHTMLGlob("pkg/web/templates/*")
-		router.Static("/locales", "./internal/locales")
-		router.Static("/static", "./pkg/web/static")
+	if err := web.MountEmbeddedAssets(router); err != nil {
+		log.Fatalf("failed to mount embedded web assets: %v", err)
 	}
 
 	// Initialize WebSocket hub and console log capture

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -1583,11 +1584,7 @@ func renderIndexPage(c *gin.Context) {
 }
 
 func listLocaleOptions() []localeOption {
-	localeDir := "./internal/locales"
-	if _, container := os.LookupEnv("CONTAINER"); container {
-		localeDir = "/app/locales"
-	}
-	entries, err := os.ReadDir(localeDir)
+	entries, err := fs.ReadDir(LocalesFS, ".")
 	if err != nil {
 		return []localeOption{{Code: "en", Label: "en"}}
 	}
@@ -1604,7 +1601,11 @@ func listLocaleOptions() []localeOption {
 		if code == "" {
 			continue
 		}
-		label := localeLabelFromFile(filepath.Join(localeDir, name), code)
+		data, readErr := fs.ReadFile(LocalesFS, name)
+		label := code
+		if readErr == nil {
+			label = localeLabelFromJSON(data, code)
+		}
 		options = append(options, localeOption{
 			Code:  code,
 			Label: label,
@@ -1626,9 +1627,8 @@ func listLocaleOptions() []localeOption {
 	return options
 }
 
-func localeLabelFromFile(path, fallback string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
+func localeLabelFromJSON(data []byte, fallback string) string {
+	if len(data) == 0 {
 		return fallback
 	}
 	var translations map[string]string
@@ -2900,16 +2900,7 @@ func loadLocale(lang string) (map[string]string, error) {
 	}
 	localeCacheLock.RUnlock()
 
-	// Determines the locale file path
-	var localePath string
-	_, container := os.LookupEnv("CONTAINER")
-	if container {
-		localePath = fmt.Sprintf("/app/locales/%s.json", lang)
-	} else {
-		localePath = fmt.Sprintf("./internal/locales/%s.json", lang)
-	}
-
-	data, err := os.ReadFile(localePath)
+	data, err := fs.ReadFile(LocalesFS, lang+".json")
 	if err != nil {
 		// Falls back to English if the locale file is not found
 		if lang != "en" {
