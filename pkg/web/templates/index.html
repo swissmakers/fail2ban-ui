@@ -86,7 +86,7 @@
 
   <!-- Restart Banner -->
   <div id="restartBanner" class="bg-yellow-400 text-gray-900 p-3 text-center">
-    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-center gap-4">
+    <div class="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-center gap-4">
       <strong data-i18n="restart_banner.message">Fail2ban configuration changed! To apply the changes, please: </strong>
       <button class="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="restartFail2ban()" data-i18n="restart_banner.button">Restart Service</button>
     </div>
@@ -98,7 +98,7 @@
   <!--                          Navigation START                           -->
   <!-- ******************************************************************* -->
   <nav class="hidden bg-blue-600 text-white shadow-lg">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
         <div class="flex items-center">
           <div class="flex-shrink-0">
@@ -219,7 +219,7 @@
   <!-- ********************** Login Page END ******************************* -->
 
 
-  <main id="mainContent" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+  <main id="mainContent" class="hidden max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
     <!-- ******************************************************************* -->
     <!--                        Dashboard Section START                      -->
@@ -1055,7 +1055,7 @@
   <!--                             Footer                                  -->
   <!-- ******************************************************************* -->
   <footer id="footer" class="hidden bg-gray-100 py-4" style="display:none;">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-gray-600 text-sm">
+    <div class="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-gray-600 text-sm">
       <p class="mb-0">
         Fail2ban-UI v<span id="footer-app-version">{{.appVersion}}</span>
         <span id="version-badge-container" class="ml-2" data-update-check="{{.updateCheckEnabled}}"></span>
