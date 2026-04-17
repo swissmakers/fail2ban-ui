@@ -21,17 +21,11 @@ For **containerized** Fail2Ban UI (Podman/Docker) talking to the host Fail2Ban s
 In this case we will run **Fail2Ban-UI from `/opt/fail2ban-ui/`** using systemd.
 
 ### Prerequisites
-Install **Go 1.24+** and required dependencies:
+Install **Go 1.25+** and required dependencies:
   ```bash
-  sudo dnf install -y golang git
+  sudo dnf install -y golang git jq
   ```
-> **Note:** Whois lookups are now performed by Fail2Ban UI directly (no Linux `whois` binary required).
-
-> **Note:** GeoIP lookups can use either:
-> - **Built-in (ip-api.com)**: Default option, requires no installation
-> - **MaxMind (Local Database)**: Optional, requires MaxMind GeoIP database at `/usr/share/GeoIP/GeoLite2-Country.mmdb`
-
-> **Note:** The local Fail2ban service is optional. Fail2Ban-UI can manage remote Fail2ban servers via SSH or API agents without requiring a local Fail2ban installation.
+> **Note:** A local Fail2ban installation is optional. Fail2Ban-UI can manage remote Fail2ban servers via SSH or API agents without requiring a local Fail2ban installation.
 
 Clone the repository to `/opt/fail2ban-ui`:
   ```bash
