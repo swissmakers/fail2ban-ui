@@ -27,6 +27,7 @@ firewall-cmd --reload
 
 Check:
 
+* The "jq" package is installed
 * Fail2Ban is running and socket exists
 * Container has the socket mounted
 * Permissions allow access to the socket
@@ -35,6 +36,9 @@ Check:
 Examples:
 
 ```bash
+# check on RHEL / Rocky / Amlalinux
+rpm -qa | grep jq
+
 systemctl status fail2ban
 ls -la /var/run/fail2ban/fail2ban.sock
 fail2ban-client status
