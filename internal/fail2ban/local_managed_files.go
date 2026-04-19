@@ -23,6 +23,27 @@ import (
 	"strings"
 )
 
+func ensureWritableDirectory(path, purpose string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%s does not exist at %s", purpose, path)
+		}
+		return fmt.Errorf("failed to access %s at %s: %w", purpose, path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s path is not a directory: %s", purpose, path)
+	}
+	probe, err := os.CreateTemp(path, ".fail2ban-ui-writecheck-*")
+	if err != nil {
+		return fmt.Errorf("%s is not writable at %s: %w", purpose, path, err)
+	}
+	probeName := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(probeName)
+	return nil
+}
+
 // Writes jail.local when missing or already UI-managed.
 func EnsureManagedJailLocal(configPath string, content []byte) error {
 	debugf("Running EnsureManagedJailLocal()")
@@ -71,12 +92,20 @@ func EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath string) err
 	debugf("ensureFail2banActionFiles called")
 	jailPath := JailLocal(configPath)
 	if _, err := os.Stat(filepath.Dir(jailPath)); os.IsNotExist(err) {
-		return nil
+		rootDir := NormalizeConfigPath(configPath)
+		return fmt.Errorf("fail2ban configuration directory does not exist at %s — install fail2ban or set the correct configuration path for this server", rootDir)
+	}
+	actionDir := ActionDir(configPath)
+	if err := ensureWritableDirectory(actionDir, "fail2ban action.d directory"); err != nil {
+		return err
+	}
+	if err := WriteLocalActionFile(configPath, callbackURL, serverID); err != nil {
+		return err
 	}
 	p := mustProvider()
 	content := []byte(p.BuildJailLocalContent())
 	if err := EnsureManagedJailLocal(configPath, content); err != nil {
 		return err
 	}
-	return WriteLocalActionFile(configPath, callbackURL, serverID)
+	return nil
 }
