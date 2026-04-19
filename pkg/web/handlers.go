@@ -813,8 +813,15 @@ func UpsertServerHandler(c *gin.Context) {
 	}
 
 	// Ensures the jail.local structure is properly initialized for newly enabled/added servers
+	var actionFileWarning string
 	var jailLocalWarning bool
 	var restartWarning string
+	if justEnabled && server.Type == "local" {
+		if err := config.EnsureLocalFail2banAction(server); err != nil {
+			config.DebugLog("Warning: failed to prepare local action artifacts for server %s: %v", server.Name, err)
+			actionFileWarning = err.Error()
+		}
+	}
 	if justEnabled || !wasEnabled {
 		conn, err := fail2ban.GetManager().Connector(server.ID)
 		if err == nil {
@@ -822,10 +829,12 @@ func UpsertServerHandler(c *gin.Context) {
 			//   - file missing --> creates it
 			//   - file is ours --> updates it
 			//   - file is user's own --> leave it alone
-			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
-				config.DebugLog("Warning: failed to ensure jail.local structure for server %s: %v", server.Name, err)
-			} else {
-				config.DebugLog("Successfully ensured jail.local structure for server %s", server.Name)
+			if !(server.Type == "local" && actionFileWarning != "") {
+				if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
+					config.DebugLog("Warning: failed to ensure jail.local structure for server %s: %v", server.Name, err)
+				} else {
+					config.DebugLog("Successfully ensured jail.local structure for server %s", server.Name)
+				}
 			}
 
 			// Checks the integrity AFTER ensuring structure so fresh servers don't trigger a false-positive warning.
@@ -837,9 +846,15 @@ func UpsertServerHandler(c *gin.Context) {
 			// Tries to restart Fail2ban and performs a basic health check after the server was enabled
 			if justEnabled {
 				if err := conn.Restart(c.Request.Context()); err != nil {
-					msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
-					config.DebugLog("Warning: %s", msg)
-					restartWarning = msg
+					// Local connectors can report a transient "Could not find server" during initial startup.
+					// Recheck briefly before surfacing a warning toast.
+					if server.Type == "local" && waitForConnectorReady(c.Request.Context(), conn, 4, 750*time.Millisecond) {
+						config.DebugLog("Local connector %s became healthy after transient restart/reload error: %v", server.Name, err)
+					} else {
+						msg := fmt.Sprintf("failed to restart fail2ban for server %s: %v", server.Name, err)
+						config.DebugLog("Warning: %s", msg)
+						restartWarning = msg
+					}
 				} else {
 					if _, err := conn.GetJailInfos(c.Request.Context()); err != nil {
 						config.DebugLog("Warning: fail2ban appears unhealthy on server %s after restart: %v", server.Name, err)
@@ -854,6 +869,9 @@ func UpsertServerHandler(c *gin.Context) {
 	resp := gin.H{"server": server}
 	if jailLocalWarning {
 		resp["jailLocalWarning"] = true
+	}
+	if actionFileWarning != "" {
+		resp["actionFileWarning"] = actionFileWarning
 	}
 	if restartWarning != "" {
 		resp["restartWarning"] = restartWarning
@@ -1001,6 +1019,26 @@ func TestServerHandler(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func waitForConnectorReady(ctx context.Context, conn fail2ban.Connector, attempts int, delay time.Duration) bool {
+	if attempts < 1 {
+		attempts = 1
+	}
+	for i := 0; i < attempts; i++ {
+		if _, err := conn.GetJailInfos(ctx); err == nil {
+			return true
+		}
+		if i == attempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(delay):
+		}
+	}
+	return false
 }
 
 // =========================================================================
