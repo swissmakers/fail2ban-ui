@@ -53,7 +53,7 @@ func ReloadFail2banManager() error {
 	for _, srv := range s.Servers {
 		if srv.Enabled && srv.Type == "local" {
 			if err := EnsureLocalFail2banAction(srv); err != nil {
-				return err
+				DebugLog("Warning: failed to ensure local fail2ban action for server %s: %v", srv.Name, err)
 			}
 		}
 	}
