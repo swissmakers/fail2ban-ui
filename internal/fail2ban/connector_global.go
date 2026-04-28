@@ -19,9 +19,27 @@ package fail2ban
 
 import (
 	"context"
+	"os"
 	"sort"
+	"strconv"
 	"sync"
 )
+
+// summaryMaxBannedIPs caps the number of banned IPs returned per jail in
+// the /api/summary response. The accurate TotalBanned count is always
+// preserved; only the BannedIPs slice is truncated. Set the
+// FAIL2BAN_UI_SUMMARY_MAX_IPS env var to 0 to disable the cap.
+var summaryMaxBannedIPs = func() int {
+	v := os.Getenv("FAIL2BAN_UI_SUMMARY_MAX_IPS")
+	if v == "" {
+		return 100
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 100
+	}
+	return n
+}()
 
 // =========================================================================
 //  Types
@@ -93,10 +111,14 @@ func collectJailInfos(ctx context.Context, jails []string, getBannedIPs bannedIP
 				results <- jailResult{err: err}
 				return
 			}
+			totalBanned := len(ips)
+			if summaryMaxBannedIPs > 0 && totalBanned > summaryMaxBannedIPs {
+				ips = ips[:summaryMaxBannedIPs]
+			}
 			results <- jailResult{
 				jail: JailInfo{
 					JailName:    j,
-					TotalBanned: len(ips),
+					TotalBanned: totalBanned,
 					BannedIPs:   ips,
 					Enabled:     true,
 				},
