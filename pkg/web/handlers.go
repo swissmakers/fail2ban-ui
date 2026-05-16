@@ -769,7 +769,7 @@ func BanInsightsHandler(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC()
+	now := time.Now()
 
 	totalToday, err := storage.CountBanEvents(ctx, now.Add(-24*time.Hour), serverID)
 	if err != nil {
@@ -1359,7 +1359,7 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		Whois:      whoisData,
 		Logs:       filteredLogs,
 		EventType:  "ban",
-		OccurredAt: time.Now().UTC(),
+		OccurredAt: time.Now(),
 	}
 	if err := storage.RecordBanEvent(ctx, event); err != nil {
 		log.Printf("⚠️ Failed to record ban event: %v", err)
@@ -1435,7 +1435,7 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		Whois:      whoisData,
 		Logs:       "",
 		EventType:  "unban",
-		OccurredAt: time.Now().UTC(),
+		OccurredAt: time.Now(),
 	}
 	if err := storage.RecordBanEvent(ctx, event); err != nil {
 		log.Printf("⚠️ Failed to record unban event: %v", err)
@@ -1512,7 +1512,7 @@ func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, coun
 		"failures":  failures,
 		"whois":     whois,
 		"logs":      logs,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
 	data, err := json.Marshal(payload)
@@ -1567,11 +1567,11 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 	if index == "" {
 		index = "fail2ban-events"
 	}
-	dateSuffix := time.Now().UTC().Format("2006.01.02")
+	dateSuffix := time.Now().Format("2006.01.02")
 	indexName := index + "-" + dateSuffix
 
 	doc := map[string]interface{}{
-		"@timestamp":                  time.Now().UTC().Format(time.RFC3339),
+		"@timestamp":                  time.Now().Format(time.RFC3339),
 		"event.kind":                  "alert",
 		"event.type":                  alertType,
 		"source.ip":                   ip,
@@ -3950,7 +3950,7 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 			{Label: getEmailTranslation(lang, "email.ban.details.hostname"), Value: hostname},
 			{Label: getEmailTranslation(lang, "email.ban.details.failed_attempts"), Value: failures},
 			{Label: countryLabel, Value: ""},
-			{Label: timestampLabel, Value: time.Now().UTC().Format(time.RFC3339)},
+			{Label: timestampLabel, Value: time.Now().Format(time.RFC3339)},
 		}
 	} else {
 		details = []emailDetail{
@@ -3959,7 +3959,7 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 			{Label: getEmailTranslation(lang, "email.ban.details.hostname"), Value: hostname},
 			{Label: getEmailTranslation(lang, "email.ban.details.failed_attempts"), Value: failures},
 			{Label: getEmailTranslation(lang, "email.ban.details.country"), Value: country},
-			{Label: getEmailTranslation(lang, "email.ban.details.timestamp"), Value: time.Now().UTC().Format(time.RFC3339)},
+			{Label: getEmailTranslation(lang, "email.ban.details.timestamp"), Value: time.Now().Format(time.RFC3339)},
 		}
 	}
 
@@ -4022,7 +4022,7 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 			{Label: getEmailTranslation(lang, "email.unban.details.jail"), Value: jail},
 			{Label: getEmailTranslation(lang, "email.unban.details.hostname"), Value: hostname},
 			{Label: getEmailTranslation(lang, "email.unban.details.country"), Value: country},
-			{Label: getEmailTranslation(lang, "email.unban.details.timestamp"), Value: time.Now().UTC().Format(time.RFC3339)},
+			{Label: getEmailTranslation(lang, "email.unban.details.timestamp"), Value: time.Now().Format(time.RFC3339)},
 		}
 	} else {
 		details = []emailDetail{
@@ -4030,7 +4030,7 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 			{Label: getEmailTranslation(lang, "email.unban.details.jail"), Value: jail},
 			{Label: getEmailTranslation(lang, "email.unban.details.hostname"), Value: hostname},
 			{Label: getEmailTranslation(lang, "email.unban.details.country"), Value: country},
-			{Label: getEmailTranslation(lang, "email.unban.details.timestamp"), Value: time.Now().UTC().Format(time.RFC3339)},
+			{Label: getEmailTranslation(lang, "email.unban.details.timestamp"), Value: time.Now().Format(time.RFC3339)},
 		}
 	}
 

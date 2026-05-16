@@ -18,6 +18,11 @@ services:
 
     environment:
       # ============================================
+      # TimeZone Configuration
+      # ============================================
+      # Optional: Set the time zone for the container (default: UTC)
+      - TZ=Europe/Zurich
+      # ============================================
       # Basic Configuration
       # ============================================
       # Optional: Change this to use a different port for the web interface (default: 8080)

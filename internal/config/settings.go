@@ -591,7 +591,7 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 		}
 		createdAt := srv.CreatedAt
 		if createdAt.IsZero() {
-			createdAt = time.Now().UTC()
+			createdAt = time.Now()
 		}
 		updatedAt := srv.UpdatedAt
 		if updatedAt.IsZero() {
@@ -787,7 +787,7 @@ func initializeFromJailFile() error {
 }
 
 func normalizeServersLocked() {
-	now := time.Now().UTC()
+	now := time.Now()
 	if len(currentSettings.Servers) == 0 {
 		hostname, _ := os.Hostname()
 		currentSettings.Servers = []Fail2banServer{{
@@ -1151,7 +1151,7 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
 
-	now := time.Now().UTC()
+	now := time.Now()
 	input.Type = strings.ToLower(strings.TrimSpace(input.Type))
 	if input.ID == "" {
 		input.ID = generateServerID()
@@ -1298,7 +1298,7 @@ func SetDefaultServer(id string) (Fail2banServer, error) {
 				srv.Enabled = true
 				srv.EnabledSet = true
 			}
-			srv.UpdatedAt = time.Now().UTC()
+			srv.UpdatedAt = time.Now()
 		} else {
 			srv.IsDefault = false
 		}

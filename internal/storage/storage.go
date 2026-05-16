@@ -530,7 +530,7 @@ INSERT INTO servers (
 	for _, srv := range servers {
 		createdAt := srv.CreatedAt
 		if createdAt.IsZero() {
-			createdAt = time.Now().UTC()
+			createdAt = time.Now()
 		}
 		updatedAt := srv.UpdatedAt
 		if updatedAt.IsZero() {
@@ -585,7 +585,7 @@ func RecordBanEvent(ctx context.Context, record BanEventRecord) error {
 	if record.ServerID == "" {
 		return errors.New("server id is required")
 	}
-	now := time.Now().UTC()
+	now := time.Now()
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now
 	}
@@ -1349,7 +1349,7 @@ func UpsertPermanentBlock(ctx context.Context, rec PermanentBlockRecord) error {
 	if rec.IP == "" || rec.Integration == "" {
 		return errors.New("ip and integration are required")
 	}
-	now := time.Now().UTC()
+	now := time.Now()
 	if rec.CreatedAt.IsZero() {
 		rec.CreatedAt = now
 	}

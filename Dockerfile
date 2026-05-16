@@ -46,7 +46,11 @@ RUN mkdir -p /app /config /config/.ssh \
     /usr/share/GeoIP \
     && touch /etc/fail2ban/jail.local \
     && chown -R fail2ban:0 /app /config /etc/fail2ban /var/run/fail2ban
-
+	
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    chown fail2ban:0 /usr/local/bin/docker-entrypoint.sh
+	
 # Set working directory and volume
 WORKDIR /config
 VOLUME ["/config"]
@@ -58,4 +62,5 @@ COPY --from=builder /app/fail2ban-ui /app/fail2ban-ui
 RUN chown fail2ban:0 /app/fail2ban-ui && chmod +x /app/fail2ban-ui
 
 EXPOSE 8080
-ENTRYPOINT ["/app/fail2ban-ui"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/app/fail2ban-ui"]

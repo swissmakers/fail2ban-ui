@@ -103,7 +103,7 @@ func (h *Hub) BroadcastConsoleLog(message string) {
 	logMsg := map[string]interface{}{
 		"type":    "console_log",
 		"message": message,
-		"time":    time.Now().UTC().Format(time.RFC3339),
+		"time":    time.Now().Format(time.RFC3339),
 	}
 	data, err := json.Marshal(logMsg)
 	if err != nil {
@@ -193,7 +193,7 @@ func (h *Hub) Run() {
 func (h *Hub) sendHeartbeat() {
 	message := map[string]interface{}{
 		"type":   "heartbeat",
-		"time":   time.Now().UTC().Unix(),
+		"time":   time.Now().Unix(),
 		"status": "healthy",
 	}
 	data, err := json.Marshal(message)
