@@ -29,6 +29,9 @@ function updateTranslations() {
       $(this).attr('placeholder', translations[key]);
     }
   });
+  if (typeof refreshHeaderTranslations === 'function') {
+    refreshHeaderTranslations();
+  }
 }
 
 function getTranslationsSettingsOnPageload() {

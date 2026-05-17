@@ -424,7 +424,9 @@ function testLogpath() {
           output += '<span class="text-red-600 text-sm">Error: ' + escapeHtml(error) + '</span>';
         } else if (found) {
           output += '<span class="text-green-600 font-bold">✓</span>';
-          output += '<span class="text-green-600 text-sm">Found ' + files.length + ' file(s)</span>';
+          output += '<span class="text-green-600 text-sm">'
+            + t('jails.logpath_test.found_files', 'Found {count} file(s)').replace('{count}', files.length)
+            + '</span>';
         } else {
           output += '<span class="text-red-600 font-bold">✗</span>';
           if (isLocalServer) {

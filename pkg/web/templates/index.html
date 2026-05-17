@@ -342,7 +342,7 @@
           <div class="mb-4">
             <div class="flex items-center justify-between mb-2">
               <label for="callbackSecret" class="block text-sm font-medium text-gray-700" data-i18n="settings.callback_secret">Fail2ban Callback URL Secret</label>
-              <a href="#" id="toggleCallbackSecretLink" class="text-sm text-blue-600 hover:text-blue-800" onclick="toggleCallbackSecretVisibility(); return false;">show secret</a>
+              <a href="#" id="toggleCallbackSecretLink" class="text-sm text-blue-600 hover:text-blue-800" onclick="toggleCallbackSecretVisibility(); return false;" data-i18n="settings.callback_secret.show">show secret</a>
             </div>
             <input type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 cursor-not-allowed" id="callbackSecret" readonly
                    data-i18n-placeholder="settings.callback_secret_placeholder" placeholder="Auto-generated 42-character secret" />
@@ -576,7 +576,7 @@
               Choose the countries for which you want to receive alerts when a block is triggered.
             </p>
             <select id="alertCountries" class="w-full border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" multiple>
-              <option value="ALL">ALL (Every Country)</option>
+              <option value="ALL" data-i18n="settings.alert_countries.all">ALL (Every Country)</option>
               <option value="AF">Afghanistan (AF)</option>
               <option value="AL">Albania (AL)</option>
               <option value="DZ">Algeria (DZ)</option>

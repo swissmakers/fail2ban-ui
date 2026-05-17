@@ -318,7 +318,7 @@ function renderTestResults(output, filterPath) {
 
   if (filterPath) {
     html += '<div class="mb-3 p-2 bg-gray-800 rounded text-sm">';
-    html += '<span class="text-gray-400">Used Filter (exact file):</span> ';
+    html += '<span class="text-gray-400">' + t('filter_debug.used_filter', 'Used Filter:') + '</span> ';
     html += '<span class="text-yellow-300 font-mono">' + escapeHtml(filterPath) + '</span>';
     html += '</div>';
   }

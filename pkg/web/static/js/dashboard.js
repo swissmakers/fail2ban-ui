@@ -196,7 +196,9 @@ function banIP(jail, ip) {
 function unbanIP(jail, ip) {
   const confirmMsg = isLOTRModeActive
     ? 'Restore ' + ip + ' to the realm from ' + jail + '?'
-    : 'Unban IP ' + ip + ' from jail ' + jail + '?';
+    : t('dashboard.unban.confirm', 'Unban IP {ip} from jail {jail}?')
+      .replace('{ip}', ip)
+      .replace('{jail}', jail);
   if (!confirm(confirmMsg)) {
     return;
   }
@@ -625,9 +627,9 @@ function renderLogOverviewContent() {
       var eventType = event.eventType || 'ban';
       var eventTypeBadge = '';
       if (eventType === 'unban') {
-        eventTypeBadge = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Unban</span>';
+        eventTypeBadge = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">' + t('logs.badge.unbanned', 'Unbanned') + '</span>';
       } else {
-        eventTypeBadge = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Ban</span>';
+        eventTypeBadge = ' <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">' + t('logs.badge.banned', 'Banned') + '</span>';
       }
       html += ''
         + '      <tr class="hover:bg-gray-50">'
