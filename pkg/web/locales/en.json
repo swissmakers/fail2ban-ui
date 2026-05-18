@@ -255,7 +255,7 @@
   "settings.destination_email_placeholder": "alerts@swissmakers.ch",
   "settings.alert_countries": "Alert Countries",
   "settings.alert_countries.all": "ALL (Every Country)",
-  "settings.alert_countries_description": "Choose the countries for which you want to receive email alerts when a block is triggered.",
+  "settings.alert_countries_description": "Select the countries for which you want to forward ban and/or unban events with your chosen alert provider. Set to ALL to not filter out alerts by country.",
   "settings.alerts": "Alert Preferences",
   "settings.alerts_for_bans": "Enable alerts for bans",
   "settings.alerts_for_unbans": "Enable alerts for unbans",

@@ -255,7 +255,7 @@
   "settings.destination_email_placeholder": "alerts@swissmakers.ch",
   "settings.alert_countries": "Alarm-Länder",
   "settings.alert_countries.all": "AUI (Jedes Land)",
-  "settings.alert_countries_description": "Wähl d'Länder us, für weli du ä Alarm becho wetsch, wenn ä gwüssi Aktion erfolgt.",
+  "settings.alert_countries_description": "Wähl d'Länder us, für diä du Ban- und/oder Unban-Ereigniss alerte möschtisch. Setz es uf AUI, um keine Warnungen nach Land use z fiutere.",
   "settings.alerts": "Alarm-Istellige",
   "settings.alerts_for_bans": "Alarm für Sperrige aktiviere",
   "settings.alerts_for_unbans": "Alarm für Entsperrige aktiviere",

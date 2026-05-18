@@ -255,7 +255,7 @@
   "settings.destination_email_placeholder": "alerts@swissmakers.ch",
   "settings.alert_countries": "Países para alerta",
   "settings.alert_countries.all": "TODOS (Todos los países)",
-  "settings.alert_countries_description": "Elige los países para los que deseas recibir alertas por correo electrónico cuando se produzca un bloqueo.",
+  "settings.alert_countries_description": "Selecciona los países para los que quieres reenviar eventos de bloqueo y/o desbloqueo con tu proveedor de alertas seleccionado. Establece en TODOS para no filtrar las alertas por país.",
   "settings.alerts": "Preferencias de alertas",
   "settings.alerts_for_bans": "Activar alertas para bloqueos",
   "settings.alerts_for_unbans": "Activar alertas para desbloqueos",

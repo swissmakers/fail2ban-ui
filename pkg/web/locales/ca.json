@@ -255,7 +255,7 @@
   "settings.destination_email_placeholder": "alertes@exemple.cat",
   "settings.alert_countries": "Països d'Alerta",
   "settings.alert_countries.all": "TOTS (Tots els països)",
-  "settings.alert_countries_description": "Trieu els països per als quals voleu rebre alertes per correu electrònic quan s'activa un bloqueig.",
+  "settings.alert_countries_description": "Seleccioneu els països per als quals voleu reenviar esdeveniments de bloqueig i/o desbloqueig amb el vostre proveïdor d'alertes seleccionat. Estableix-ho en TOTS per no filtrar les alertes per país.",
   "settings.alerts": "Preferències d'Alerta",
   "settings.alerts_for_bans": "Activa les alertes per als bloquejos",
   "settings.alerts_for_unbans": "Activa les alertes per als desbloquejos",
