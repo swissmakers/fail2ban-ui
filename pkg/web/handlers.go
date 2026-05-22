@@ -81,6 +81,146 @@ type githubReleaseResponse struct {
 	TagName string `json:"tag_name"`
 }
 
+type appSettingsResponse struct {
+	config.AppSettings
+	PortFromEnv        int    `json:"portFromEnv"`
+	PortEnvSet         bool   `json:"portEnvSet"`
+	CallbackUrlEnvSet  bool   `json:"callbackUrlEnvSet"`
+	CallbackUrlFromEnv string `json:"callbackUrlFromEnv"`
+}
+
+type settingsUpdateResponse struct {
+	Message       string   `json:"message,omitempty"`
+	RestartNeeded bool     `json:"restartNeeded"`
+	Warnings      []string `json:"warnings,omitempty"`
+}
+
+type settingsPatchRequest struct {
+	Language             *string                       `json:"language"`
+	Port                 *int                          `json:"port"`
+	Debug                *bool                         `json:"debug"`
+	AlertCountries       *[]string                     `json:"alertCountries"`
+	SMTP                 *config.SMTPSettings          `json:"smtp"`
+	CallbackURL          *string                       `json:"callbackUrl"`
+	CallbackSecret       *string                       `json:"callbackSecret"`
+	AdvancedActions      *config.AdvancedActionsConfig `json:"advancedActions"`
+	Servers              *[]config.Fail2banServer      `json:"servers"`
+	BantimeIncrement     *bool                         `json:"bantimeIncrement"`
+	DefaultJailEnable    *bool                         `json:"defaultJailEnable"`
+	IgnoreIPs            *[]string                     `json:"ignoreips"`
+	Bantime              *string                       `json:"bantime"`
+	Findtime             *string                       `json:"findtime"`
+	Maxretry             *int                          `json:"maxretry"`
+	Destemail            *string                       `json:"destemail"`
+	Banaction            *string                       `json:"banaction"`
+	BanactionAllports    *string                       `json:"banactionAllports"`
+	Chain                *string                       `json:"chain"`
+	BantimeRndtime       *string                       `json:"bantimeRndtime"`
+	GeoIPProvider        *string                       `json:"geoipProvider"`
+	GeoIPDatabasePath    *string                       `json:"geoipDatabasePath"`
+	MaxLogLines          *int                          `json:"maxLogLines"`
+	EmailAlertsForBans   *bool                         `json:"emailAlertsForBans"`
+	EmailAlertsForUnbans *bool                         `json:"emailAlertsForUnbans"`
+	AlertProvider        *string                       `json:"alertProvider"`
+	Webhook              *config.WebhookSettings       `json:"webhook"`
+	Elasticsearch        *config.ElasticsearchSettings `json:"elasticsearch"`
+	ThreatIntel          *config.ThreatIntelSettings   `json:"threatIntel"`
+	ConsoleOutput        *bool                         `json:"consoleOutput"`
+}
+
+func (p settingsPatchRequest) applyTo(base *config.AppSettings) {
+	if p.Language != nil {
+		base.Language = *p.Language
+	}
+	if p.Port != nil {
+		base.Port = *p.Port
+	}
+	if p.Debug != nil {
+		base.Debug = *p.Debug
+	}
+	if p.AlertCountries != nil {
+		base.AlertCountries = *p.AlertCountries
+	}
+	if p.SMTP != nil {
+		base.SMTP = *p.SMTP
+	}
+	if p.CallbackURL != nil {
+		base.CallbackURL = *p.CallbackURL
+	}
+	if p.CallbackSecret != nil {
+		base.CallbackSecret = *p.CallbackSecret
+	}
+	if p.AdvancedActions != nil {
+		base.AdvancedActions = *p.AdvancedActions
+	}
+	if p.Servers != nil {
+		base.Servers = *p.Servers
+	}
+	if p.BantimeIncrement != nil {
+		base.BantimeIncrement = *p.BantimeIncrement
+	}
+	if p.DefaultJailEnable != nil {
+		base.DefaultJailEnable = *p.DefaultJailEnable
+	}
+	if p.IgnoreIPs != nil {
+		base.IgnoreIPs = *p.IgnoreIPs
+	}
+	if p.Bantime != nil {
+		base.Bantime = *p.Bantime
+	}
+	if p.Findtime != nil {
+		base.Findtime = *p.Findtime
+	}
+	if p.Maxretry != nil {
+		base.Maxretry = *p.Maxretry
+	}
+	if p.Destemail != nil {
+		base.Destemail = *p.Destemail
+	}
+	if p.Banaction != nil {
+		base.Banaction = *p.Banaction
+	}
+	if p.BanactionAllports != nil {
+		base.BanactionAllports = *p.BanactionAllports
+	}
+	if p.Chain != nil {
+		base.Chain = *p.Chain
+	}
+	if p.BantimeRndtime != nil {
+		base.BantimeRndtime = *p.BantimeRndtime
+	}
+	if p.GeoIPProvider != nil {
+		base.GeoIPProvider = *p.GeoIPProvider
+	}
+	if p.GeoIPDatabasePath != nil {
+		base.GeoIPDatabasePath = *p.GeoIPDatabasePath
+	}
+	if p.MaxLogLines != nil {
+		base.MaxLogLines = *p.MaxLogLines
+	}
+	if p.EmailAlertsForBans != nil {
+		base.EmailAlertsForBans = *p.EmailAlertsForBans
+	}
+	if p.EmailAlertsForUnbans != nil {
+		base.EmailAlertsForUnbans = *p.EmailAlertsForUnbans
+	}
+	if p.AlertProvider != nil {
+		base.AlertProvider = *p.AlertProvider
+	}
+	if p.Webhook != nil {
+		base.Webhook = *p.Webhook
+	}
+	if p.Elasticsearch != nil {
+		base.Elasticsearch = *p.Elasticsearch
+	}
+	if p.ThreatIntel != nil {
+		base.ThreatIntel = *p.ThreatIntel
+	}
+	if p.ConsoleOutput != nil {
+		base.ConsoleOutput = *p.ConsoleOutput
+	}
+}
+
 type threatIntelCacheEntry struct {
 	Body      []byte
 	CachedAt  time.Time
@@ -175,6 +315,10 @@ func SummaryHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	for i := range jailInfos {
+		// Summary should only expose counters; banned IPs are loaded lazily via /api/jails/:jail/banned.
+		jailInfos[i].BannedIPs = []string{}
+	}
 
 	resp := SummaryResponse{
 		Jails: jailInfos,
@@ -195,6 +339,84 @@ func SummaryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// Returns paginated banned IPs for a specific jail on the selected server.
+func ListJailBannedIPsHandler(c *gin.Context) {
+	jail := c.Param("jail")
+	if err := fail2ban.ValidateJailName(jail); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	const (
+		defaultLimit = 5
+		maxLimit     = 100
+		maxOffset    = 100000
+	)
+
+	limit := defaultLimit
+	if limitStr := c.DefaultQuery("limit", strconv.Itoa(defaultLimit)); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			if parsed <= maxLimit {
+				limit = parsed
+			} else {
+				limit = maxLimit
+			}
+		}
+	}
+
+	offset := 0
+	if offsetStr := c.DefaultQuery("offset", "0"); offsetStr != "" {
+		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
+			if parsed <= maxOffset {
+				offset = parsed
+			} else {
+				offset = maxOffset
+			}
+		}
+	}
+
+	query := strings.TrimSpace(c.Query("q"))
+	allIPs, err := conn.GetBannedIPs(c.Request.Context(), jail)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	filtered := allIPs
+	if query != "" {
+		lowerQuery := strings.ToLower(query)
+		filtered = make([]string, 0, len(allIPs))
+		for _, ip := range allIPs {
+			if strings.Contains(strings.ToLower(ip), lowerQuery) {
+				filtered = append(filtered, ip)
+			}
+		}
+	}
+
+	total := len(filtered)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	paged := filtered[offset:end]
+
+	c.JSON(http.StatusOK, gin.H{
+		"jail":      jail,
+		"bannedIPs": paged,
+		"total":     total,
+		"hasMore":   end < total,
+	})
 }
 
 // =========================================================================
@@ -2532,67 +2754,104 @@ func GetSettingsHandler(c *gin.Context) {
 	s := config.GetSettings()
 
 	envPort, envPortSet := config.GetPortFromEnv()
-	response := make(map[string]interface{})
-	responseBytes, _ := json.Marshal(s)
-	json.Unmarshal(responseBytes, &response)
-	response["portFromEnv"] = envPort
-	response["portEnvSet"] = envPortSet
+	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
 
-	if envPortSet {
-		response["port"] = envPort
+	response := appSettingsResponse{
+		AppSettings:        s,
+		PortFromEnv:        envPort,
+		PortEnvSet:         envPortSet,
+		CallbackUrlEnvSet:  envCallbackURLSet,
+		CallbackUrlFromEnv: envCallbackURL,
 	}
 
-	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
-	response["callbackUrlEnvSet"] = envCallbackURLSet
-	response["callbackUrlFromEnv"] = envCallbackURL
+	if envPortSet {
+		response.Port = envPort
+	}
 	if envCallbackURLSet {
-		response["callbackUrl"] = envCallbackURL
+		response.CallbackURL = envCallbackURL
 	}
 
 	c.JSON(http.StatusOK, response)
 }
 
-// Saves new settings, pushes defaults to servers, and reloads.
-func UpdateSettingsHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("UpdateSettingsHandler called (handlers.go)")
-	var req config.AppSettings
-	if err := c.ShouldBindJSON(&req); err != nil {
-		fmt.Println("JSON binding error:", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "invalid JSON",
-			"details": err.Error(),
-		})
-		return
-	}
-	config.DebugLog("JSON binding successful, updating settings (handlers.go)")
-
-	// Ignores port changes from request if the PORT environment variable is set
+func applyEnvLockedSettings(req *config.AppSettings) {
 	envPort, envPortSet := config.GetPortFromEnv()
 	if envPortSet {
 		req.Port = envPort
 	}
-
-	// Ignores callback URL changes from request if the CALLBACK_URL environment variable is set
 	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
 	if envCallbackURLSet {
 		req.CallbackURL = envCallbackURL
 	}
+}
+
+func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
+	req.AlertProvider = strings.ToLower(strings.TrimSpace(req.AlertProvider))
+	if req.AlertProvider == "" {
+		req.AlertProvider = "email"
+	}
+	switch req.AlertProvider {
+	case "email", "webhook", "elasticsearch":
+	default:
+		return errors.New("alert provider must be email, webhook or elasticsearch")
+	}
+
 	req.ThreatIntel.Provider = strings.ToLower(strings.TrimSpace(req.ThreatIntel.Provider))
 	switch req.ThreatIntel.Provider {
-	case "none":
+	case "", "none":
+		req.ThreatIntel.Provider = "none"
 	case "alienvault":
 		if strings.TrimSpace(req.ThreatIntel.AlienVaultAPIKey) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "AlienVault API key is required"})
-			return
+			return errors.New("AlienVault API key is required")
 		}
 	case "abuseipdb":
 		if strings.TrimSpace(req.ThreatIntel.AbuseIPDBAPIKey) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "AbuseIPDB API key is required"})
-			return
+			return errors.New("AbuseIPDB API key is required")
 		}
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Threat intelligence provider must be none, alienvault or abuseipdb"})
+		return errors.New("threat intelligence provider must be none, alienvault or abuseipdb")
+	}
+
+	req.Webhook.URL = strings.TrimSpace(req.Webhook.URL)
+	req.Elasticsearch.URL = strings.TrimSpace(req.Elasticsearch.URL)
+	req.Elasticsearch.APIKey = strings.TrimSpace(req.Elasticsearch.APIKey)
+	req.Elasticsearch.Username = strings.TrimSpace(req.Elasticsearch.Username)
+	req.Elasticsearch.Password = strings.TrimSpace(req.Elasticsearch.Password)
+	req.Elasticsearch.Index = strings.TrimSpace(req.Elasticsearch.Index)
+
+	if req.Webhook.Method == "" {
+		req.Webhook.Method = "POST"
+	} else {
+		req.Webhook.Method = strings.ToUpper(strings.TrimSpace(req.Webhook.Method))
+	}
+
+	if req.AlertProvider == "webhook" {
+		if req.Webhook.URL == "" {
+			return errors.New("webhook URL is required when alert provider is webhook")
+		}
+		if _, err := url.ParseRequestURI(req.Webhook.URL); err != nil {
+			return fmt.Errorf("webhook URL is invalid: %w", err)
+		}
+	}
+	if req.AlertProvider == "elasticsearch" {
+		if req.Elasticsearch.URL == "" {
+			return errors.New("elasticsearch URL is required when alert provider is elasticsearch")
+		}
+		if _, err := url.ParseRequestURI(req.Elasticsearch.URL); err != nil {
+			return fmt.Errorf("elasticsearch URL is invalid: %w", err)
+		}
+		if req.Elasticsearch.APIKey == "" && (req.Elasticsearch.Username == "" || req.Elasticsearch.Password == "") {
+			return errors.New("elasticsearch authentication requires API key or username/password")
+		}
+	}
+
+	return nil
+}
+
+func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
+	applyEnvLockedSettings(&req)
+	if err := normalizeAndValidateSettingsRequest(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -2605,7 +2864,6 @@ func UpdateSettingsHandler(c *gin.Context) {
 	}
 	config.DebugLog("Settings updated successfully (handlers.go)")
 
-	// Checks if the callback URL changed; if so, updates the action files for all active remote servers
 	callbackURLChanged := oldSettings.CallbackURL != newSettings.CallbackURL
 
 	if err := config.ReloadFail2banManager(); err != nil {
@@ -2616,16 +2874,13 @@ func UpdateSettingsHandler(c *gin.Context) {
 	if callbackURLChanged {
 		config.DebugLog("Callback URL changed, updating action files and reloading fail2ban on all servers")
 
-		// Updates the action files for remote servers (SSH and Agent)
 		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
 			config.DebugLog("Warning: failed to update some remote action files: %v", err)
 		}
 
-		// Reloads all remote servers after updating the action files
 		connectors := fail2ban.GetManager().Connectors()
 		for _, conn := range connectors {
 			server := conn.Server()
-			// Only reloads remote servers (SSH and Agent), local will be handled separately
 			if (server.Type == "ssh" || server.Type == "agent") && server.Enabled {
 				config.DebugLog("Reloading fail2ban on %s after callback URL change", server.Name)
 				if err := conn.Reload(c.Request.Context()); err != nil {
@@ -2636,14 +2891,12 @@ func UpdateSettingsHandler(c *gin.Context) {
 			}
 		}
 
-		// Also updates the local action file if the callback URL changed
 		settings := config.GetSettings()
 		for _, server := range settings.Servers {
 			if server.Type == "local" && server.Enabled {
 				if err := config.EnsureLocalFail2banAction(server); err != nil {
 					config.DebugLog("Warning: failed to update local action file: %v", err)
 				} else {
-					// Reloads local fail2ban after updating the action file
 					if conn, err := fail2ban.GetManager().Connector(server.ID); err == nil {
 						config.DebugLog("Reloading local fail2ban after callback URL change")
 						if reloadErr := conn.Reload(c.Request.Context()); reloadErr != nil {
@@ -2672,45 +2925,72 @@ func UpdateSettingsHandler(c *gin.Context) {
 	if defaultSettingsChanged {
 		config.DebugLog("Fail2Ban DEFAULT settings changed, pushing to all enabled servers")
 		connectors := fail2ban.GetManager().Connectors()
-		var errors []string
+		var updateErrors []string
 		for _, conn := range connectors {
 			server := conn.Server()
 			config.DebugLog("Updating DEFAULT settings on server: %s (type: %s)", server.Name, server.Type)
 			if err := conn.UpdateDefaultSettings(c.Request.Context()); err != nil {
 				errorMsg := fmt.Sprintf("Failed to update DEFAULT settings on %s: %v", server.Name, err)
 				log.Printf("⚠️ %s", errorMsg)
-				errors = append(errors, errorMsg)
+				updateErrors = append(updateErrors, errorMsg)
 			} else {
 				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)
 				if err := conn.Reload(c.Request.Context()); err != nil {
 					config.DebugLog("Warning: failed to reload fail2ban on %s after updating DEFAULT settings: %v", server.Name, err)
-					errors = append(errors, fmt.Sprintf("Settings updated on %s, but reload failed: %v", server.Name, err))
+					updateErrors = append(updateErrors, fmt.Sprintf("Settings updated on %s, but reload failed: %v", server.Name, err))
 				} else {
 					config.DebugLog("Successfully reloaded fail2ban on %s", server.Name)
 				}
 			}
 		}
-		if len(errors) > 0 {
-			config.DebugLog("Some servers failed to update DEFAULT settings: %v", errors)
-			c.JSON(http.StatusOK, gin.H{
-				"message":       "Settings updated",
-				"restartNeeded": false,
-				"warnings":      errors,
-			})
-			return
-		}
-		// Settings were updated and reloaded successfully
-		c.JSON(http.StatusOK, gin.H{
-			"message":       "Settings updated and fail2ban reloaded",
-			"restartNeeded": false,
+		c.JSON(http.StatusOK, settingsUpdateResponse{
+			Message:       "Settings updated",
+			RestartNeeded: false,
+			Warnings:      updateErrors,
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":       "Settings updated",
-		"restartNeeded": newSettings.RestartNeeded,
+	c.JSON(http.StatusOK, settingsUpdateResponse{
+		Message:       "Settings updated",
+		RestartNeeded: newSettings.RestartNeeded,
 	})
+}
+
+// Partially updates settings while preserving omitted fields. (not just yet implemented in the frontend)
+func PatchSettingsHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("PatchSettingsHandler called (handlers.go)")
+
+	current := config.GetSettings()
+	req := current
+	var patch settingsPatchRequest
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid JSON",
+			"details": err.Error(),
+		})
+		return
+	}
+	patch.applyTo(&req)
+	applySettingsUpdate(c, req)
+}
+
+// Saves new settings, pushes defaults to servers, and reloads.
+func UpdateSettingsHandler(c *gin.Context) {
+	config.DebugLog("----------------------------")
+	config.DebugLog("UpdateSettingsHandler called (handlers.go)")
+	var req config.AppSettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Println("JSON binding error:", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid JSON",
+			"details": err.Error(),
+		})
+		return
+	}
+	config.DebugLog("JSON binding successful, updating settings (handlers.go)")
+	applySettingsUpdate(c, req)
 }
 
 // =========================================================================

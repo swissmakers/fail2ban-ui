@@ -234,6 +234,7 @@ function setCurrentServer(serverId) {
     currentServer = next || null;
     currentServerId = currentServer ? currentServer.id : null;
   }
+  jailBannedState = {};
   renderServerSelector();
   renderServerSubtitle();
   updateRestartBanner();

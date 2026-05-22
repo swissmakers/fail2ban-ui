@@ -248,9 +248,17 @@ class WebSocketManager {
     const lastHeartbeat = this.lastHeartbeatAt 
       ? Math.floor((now - this.lastHeartbeatAt) / 1000)
       : null;
-    const heartbeatStr = lastHeartbeat !== null 
-      ? (lastHeartbeat < 60 ? `${lastHeartbeat}s ago` : `${Math.floor(lastHeartbeat / 60)}m ago`)
-      : 'Never';
+    const translate = function(key, fallback) {
+      if (typeof t === 'function') {
+        return t(key, fallback);
+      }
+      return fallback;
+    };
+    const heartbeatStr = lastHeartbeat !== null
+      ? (lastHeartbeat < 60
+        ? translate('header.websocket.heartbeat.seconds_ago', '{seconds}s ago').replace('{seconds}', String(lastHeartbeat))
+        : translate('header.websocket.heartbeat.minutes_ago', '{minutes}m ago').replace('{minutes}', String(Math.floor(lastHeartbeat / 60))))
+      : translate('header.websocket.heartbeat.never', 'Never');
     
     const protocol = this.wsUrl.startsWith('wss:') ? 'WSS (Secure)' : 'WS';
     

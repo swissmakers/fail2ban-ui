@@ -407,12 +407,18 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 		var countries []string
 		if err := json.Unmarshal([]byte(rec.AlertCountriesJSON), &countries); err == nil {
 			currentSettings.AlertCountries = countries
+		} else {
+			DebugLog("warning: invalid alert_countries JSON in app_settings, resetting to defaults: %v", err)
+			currentSettings.AlertCountries = []string{"ALL"}
 		}
 	}
 	if rec.AdvancedActionsJSON != "" {
 		var adv AdvancedActionsConfig
 		if err := json.Unmarshal([]byte(rec.AdvancedActionsJSON), &adv); err == nil {
 			currentSettings.AdvancedActions = adv
+		} else {
+			DebugLog("warning: invalid advanced_actions JSON in app_settings, resetting to defaults: %v", err)
+			currentSettings.AdvancedActions = defaultAdvancedActionsConfig()
 		}
 	}
 	currentSettings.GeoIPProvider = rec.GeoIPProvider
@@ -430,18 +436,27 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 		var wh WebhookSettings
 		if err := json.Unmarshal([]byte(rec.WebhookJSON), &wh); err == nil {
 			currentSettings.Webhook = wh
+		} else {
+			DebugLog("warning: invalid webhook JSON in app_settings, resetting to defaults: %v", err)
+			currentSettings.Webhook = WebhookSettings{}
 		}
 	}
 	if rec.ElasticsearchJSON != "" {
 		var es ElasticsearchSettings
 		if err := json.Unmarshal([]byte(rec.ElasticsearchJSON), &es); err == nil {
 			currentSettings.Elasticsearch = es
+		} else {
+			DebugLog("warning: invalid elasticsearch JSON in app_settings, resetting to defaults: %v", err)
+			currentSettings.Elasticsearch = ElasticsearchSettings{}
 		}
 	}
 	if rec.ThreatIntelJSON != "" {
 		var ti ThreatIntelSettings
 		if err := json.Unmarshal([]byte(rec.ThreatIntelJSON), &ti); err == nil {
 			currentSettings.ThreatIntel = ti
+		} else {
+			DebugLog("warning: invalid threat_intel JSON in app_settings, resetting to defaults: %v", err)
+			currentSettings.ThreatIntel = ThreatIntelSettings{}
 		}
 	}
 	currentSettings.ConsoleOutput = rec.ConsoleOutput
@@ -668,9 +683,6 @@ func setDefaultsLocked() {
 	}
 	if currentSettings.SMTP.From == "" {
 		currentSettings.SMTP.From = "noreply@swissmakers.ch"
-	}
-	if !currentSettings.SMTP.UseTLS {
-		currentSettings.SMTP.UseTLS = true
 	}
 	if currentSettings.SMTP.AuthMethod == "" {
 		currentSettings.SMTP.AuthMethod = "auto"

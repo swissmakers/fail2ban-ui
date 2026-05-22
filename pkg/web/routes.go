@@ -54,6 +54,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		api.POST("/unban", UnbanNotificationHandler)
 
 		// Internal API calls from frontend (e.g. manual actions) to backend to execute Ban / Unban
+		api.GET("/jails/:jail/banned", ListJailBannedIPsHandler)
 		api.POST("/jails/:jail/unban/:ip", UnbanIPHandler)
 		api.POST("/jails/:jail/ban/:ip", BanIPHandler)
 
@@ -76,6 +77,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		// Internal API calls for Fail2ban-UI settings
 		api.GET("/settings", GetSettingsHandler)
 		api.POST("/settings", UpdateSettingsHandler)
+		//api.PATCH("/settings", PatchSettingsHandler)
 		api.POST("/settings/test-email", TestEmailHandler)
 		api.POST("/settings/test-webhook", TestWebhookHandler)
 		api.POST("/settings/test-elasticsearch", TestElasticsearchHandler)

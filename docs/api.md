@@ -27,7 +27,8 @@ All endpoints that accept IP addresses validate them server-side using Go's `net
 - `GET /api/ssh/keys` -> List available SSH keys
 
 ### Jails and configuration
-- `GET /api/summary` -> Dashboard summary (jails, banned IPs per server)
+- `GET /api/summary` -> Dashboard summary (jails and counters; banned IP lists are loaded separately)
+- `GET /api/jails/:jail/banned` -> Paginated banned IP list for one jail (`limit`, `offset`, optional `q` search)
 - `GET /api/jails/manage` -> List jails with enabled/disabled status
 - `POST /api/jails/manage` -> Update jail enabled/disabled state
 - `POST /api/jails` -> Create a new jail

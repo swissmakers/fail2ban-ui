@@ -1,6 +1,8 @@
 // Settings page javascript logics for Fail2ban UI.
 "use strict";
 
+let callbackUrlSyncHandler = null;
+
 // =========================================================================
 //  Load Settings
 // =========================================================================
@@ -70,7 +72,7 @@ function loadSettings() {
           callbackSecretInput.type = 'password';
         }
         if (toggleLink) {
-          toggleLink.textContent = 'show secret';
+          toggleLink.textContent = t('settings.callback_secret.show', 'show secret');
         }
       }
       
@@ -84,8 +86,12 @@ function loadSettings() {
           callbackURLInput.value = 'http://127.0.0.1:' + currentPort;
         }
       }
-      
-      uiPortInput.addEventListener('input', updateCallbackURLIfDefault);
+
+      if (callbackUrlSyncHandler) {
+        uiPortInput.removeEventListener('input', callbackUrlSyncHandler);
+      }
+      callbackUrlSyncHandler = updateCallbackURLIfDefault;
+      uiPortInput.addEventListener('input', callbackUrlSyncHandler);
       document.getElementById('destEmail').value = data.destemail || '';
       document.getElementById('emailAlertsForBans').checked = data.emailAlertsForBans !== undefined ? data.emailAlertsForBans : true;
       document.getElementById('emailAlertsForUnbans').checked = data.emailAlertsForUnbans !== undefined ? data.emailAlertsForUnbans : false;
@@ -242,13 +248,18 @@ function saveSettings(event) {
         const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);
         checkAndApplyLOTRTheme(selectedCountries.length > 0 ? selectedCountries : ["ALL"]);
         
+        if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+          const warningPreview = data.warnings.slice(0, 2).join(' | ');
+          showToast('Settings saved with warnings: ' + warningPreview, 'info');
+          console.warn('Settings warnings:', data.warnings);
+        }
         if (data.restartNeeded) {
-          showToast(t('settings.save_success', 'Settings saved. Fail2ban restart required.'), 'info');
+          showToast(t('settings.save_success_restart_required', 'Settings saved. Fail2ban restart required.'), 'info');
           loadServers().then(function() {
             updateRestartBanner();
           });
         } else {
-          showToast(t('settings.save_success', 'Settings saved and fail2ban reloaded'), 'success');
+          showToast(t('settings.save_success_reloaded', 'Settings saved and fail2ban reloaded'), 'success');
         }
       }
     })
@@ -760,7 +771,9 @@ function toggleCallbackSecretVisibility() {
   
   const isPassword = input.type === 'password';
   input.type = isPassword ? 'text' : 'password';
-  link.textContent = isPassword ? 'hide secret' : 'show secret';
+  link.textContent = isPassword
+    ? t('settings.callback_secret.hide', 'hide secret')
+    : t('settings.callback_secret.show', 'show secret');
 }
 
 function onGeoIPProviderChange(provider) {

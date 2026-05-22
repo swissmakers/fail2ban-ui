@@ -51,6 +51,7 @@ Additional resources:
 │  Communication to backend:         │  HTTP/HTTPS (REST)                           │
 │  • GET  /                          │  • All /api/* (except callbacks) use your    │
 │  • GET  /api/summary               │    session when OIDC is enabled              │
+│  • GET  /api/jails/:jail/banned    │  • X-F2B-Server header for server selection  │
 │  • GET  /api/events/bans           │  • X-F2B-Server header for server selection  │
 │  • GET  /api/version               │                                              │
 │  • POST /api/jails/:jail/unban/:ip │  WebSocket: GET /api/ws (upgrade)            │
@@ -83,7 +84,8 @@ Additional resources:
 │  GIN SERVER                                                                      │
 │  ┌────────────────────────────────────────────────────────────────────────────┐  │
 │  │  REST API (group /api)                                                     │  │
-│  │  • GET  /summary              → Connector(s) → Fail2ban(jails, banned IPs) │  │
+│  │  • GET  /summary              → Connector(s) → Fail2ban(jails, counters)   │  │
+│  │  • GET  /jails/:jail/banned   → Connector   → Fail2ban(banned IP lists)    │  │
 │  │  • GET  /jails/:jail/config   • POST /jails/:jail/config                   │  │
 │  │  • GET  /jails/manage         • POST /jails/manage | POST /jails           │  │
 │  │  • POST /jails/:jail/unban/:ip  • POST /jails/:jail/ban/:ip                │  │
