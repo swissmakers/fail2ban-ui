@@ -257,6 +257,7 @@
   "settings.destination_email": "Email di destinazione (ricevente allarmi)",
   "settings.destination_email_placeholder": "alerts@swissmakers.ch",
   "settings.alert_countries": "Paesi per allarme",
+  "settings.alert_countries.all": "TUTTI (Ogni paese)",
   "settings.alert_countries_description": "Seleziona i paesi per i quali vuoi inoltrare gli eventi di ban e/o unban con il tuo provider di allarmi selezionato. Imposta su TUTTI per non filtrare le alerta per paese.",
   "settings.alerts": "Preferenze allarmi",
   "settings.alerts_for_bans": "Abilita allarmi per i ban",
