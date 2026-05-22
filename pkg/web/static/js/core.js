@@ -260,13 +260,13 @@ function initializeTooltips() {
   });
 }
 
-// Restrict the IP search input to digits and dots only
+// Restrict the IP search input to common IP search characters.
 function initializeSearch() {
   const ipSearch = document.getElementById("ipSearch");
   if (ipSearch) {
     ipSearch.addEventListener("keypress", function(event) {
       const char = String.fromCharCode(event.which);
-      if (!/[0-9.]/.test(char)) {
+      if (!/[0-9a-fA-F:.]/.test(char)) {
         event.preventDefault();
       }
     });
