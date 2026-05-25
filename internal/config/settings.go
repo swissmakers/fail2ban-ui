@@ -229,7 +229,10 @@ actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban
                  --arg jail '<name>' \
                  --arg hostname '<fq-hostname>' \
                  --arg failures '<failures>' \
-                 --arg logs "$(tac <logpath> | grep <grepopts> -wF <ip>)" \
+                 --arg logs "$(if [ '<backend>' = 'systemd' ]; \
+                               then journalctl -r <journalmatch>; \
+                               else tac <logpath>; \
+                               fi | grep <grepopts> -wF <ip>)" \
                  '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
 
 # Executes a cURL request to notify our API when an IP is unbanned.
