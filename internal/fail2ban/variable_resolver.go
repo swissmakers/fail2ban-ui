@@ -112,6 +112,8 @@ func searchVariableInFile(filePath, varName string) (string, error) {
 						} else {
 							return strings.TrimSpace(currentValue.String()), nil
 						}
+					} else if err := scanner.Err(); err != nil {
+						return "", err
 					} else {
 						return strings.TrimSpace(currentValue.String()), nil
 					}
@@ -146,10 +148,16 @@ func searchVariableInFile(filePath, varName string) (string, error) {
 				pendingLine = nextLineTrimmed
 				pendingLineOriginal = nextLineOriginal
 				continue
+			} else if err := scanner.Err(); err != nil {
+				return "", err
 			} else {
 				return strings.TrimSpace(currentValue.String()), nil
 			}
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
 	}
 
 	if inMultiLine && currentVar != "" {

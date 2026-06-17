@@ -3346,11 +3346,8 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	}
 	log.Printf("📧 sendEmail: Using SMTP auth method: %q, host: %s, port: %d, useTLS: %v, insecureSkipVerify: %v", authMethod, smtpHost, smtpPort, settings.SMTP.UseTLS, settings.SMTP.InsecureSkipVerify)
 
-	// Determines the connection type based on the port and UseTLS setting
-	// Port 465 typically uses implicit TLS (SMTPS)
-	// Port 587 typically uses STARTTLS
-	useImplicitTLS := (smtpPort == 465) || (settings.SMTP.UseTLS && smtpPort != 587 && smtpPort != 25)
-	useSTARTTLS := settings.SMTP.UseTLS && (smtpPort == 587 || (smtpPort != 465 && smtpPort != 25))
+	// Port 465 uses implicit TLS (SMTPS); all other ports use plain SMTP with optional STARTTLS.
+	useImplicitTLS, useSTARTTLS := smtpTLSMode(smtpPort, settings.SMTP.UseTLS)
 
 	var client *smtp.Client
 
