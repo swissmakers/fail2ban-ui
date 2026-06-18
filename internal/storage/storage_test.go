@@ -112,6 +112,82 @@ func TestRecordBanEventUsesSortableStorageTime(t *testing.T) {
 	}
 }
 
+func TestListBanEventsFilteredOmitsHeavyFields(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	withDetail := BanEventRecord{
+		ServerID:   "srv-1",
+		ServerName: "server 1",
+		Jail:       "sshd",
+		IP:         "192.0.2.10",
+		EventType:  "ban",
+		Whois:      "whois block for 192.0.2.10",
+		Logs:       "Jan  1 00:00:00 sshd failed login",
+		OccurredAt: now.Add(-1 * time.Minute),
+	}
+	withoutDetail := BanEventRecord{
+		ServerID:   "srv-1",
+		ServerName: "server 1",
+		Jail:       "sshd",
+		IP:         "192.0.2.11",
+		EventType:  "ban",
+		OccurredAt: now.Add(-2 * time.Minute),
+	}
+	for _, event := range []BanEventRecord{withDetail, withoutDetail} {
+		if err := RecordBanEvent(ctx, event); err != nil {
+			t.Fatalf("RecordBanEvent: %v", err)
+		}
+	}
+
+	events, err := ListBanEventsFiltered(ctx, "srv-1", 50, 0, time.Time{}, "", "")
+	if err != nil {
+		t.Fatalf("ListBanEventsFiltered: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("got %d events want 2", len(events))
+	}
+
+	var detailID int64
+	for _, ev := range events {
+		if ev.Whois != "" || ev.Logs != "" {
+			t.Fatalf("list event should omit whois/logs, got whois=%q logs=%q", ev.Whois, ev.Logs)
+		}
+		switch ev.IP {
+		case "192.0.2.10":
+			detailID = ev.ID
+			if !ev.HasWhois || !ev.HasLogs {
+				t.Fatalf("event %s should report hasWhois/hasLogs true", ev.IP)
+			}
+		case "192.0.2.11":
+			if ev.HasWhois || ev.HasLogs {
+				t.Fatalf("event %s should report hasWhois/hasLogs false", ev.IP)
+			}
+		}
+	}
+
+	full, found, err := GetBanEventByID(ctx, detailID)
+	if err != nil {
+		t.Fatalf("GetBanEventByID: %v", err)
+	}
+	if !found {
+		t.Fatalf("GetBanEventByID: event %d not found", detailID)
+	}
+	if full.Whois != withDetail.Whois || full.Logs != withDetail.Logs {
+		t.Fatalf("detail mismatch: whois=%q logs=%q", full.Whois, full.Logs)
+	}
+	if !full.HasWhois || !full.HasLogs {
+		t.Fatalf("detail should report hasWhois/hasLogs true")
+	}
+
+	if _, found, err := GetBanEventByID(ctx, 999999); err != nil {
+		t.Fatalf("GetBanEventByID(missing): %v", err)
+	} else if found {
+		t.Fatalf("GetBanEventByID(missing): expected not found")
+	}
+}
+
 func TestCountRecentBanEventsByJailSupportsLegacyTimestampText(t *testing.T) {
 	initTestStorage(t)
 
