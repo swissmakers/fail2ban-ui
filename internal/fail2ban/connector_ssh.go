@@ -131,11 +131,17 @@ func (sc *SSHConnector) GetBannedIPs(ctx context.Context, jail string) ([]string
 }
 
 func (sc *SSHConnector) UnbanIP(ctx context.Context, jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "unbanip", ip)
 	return err
 }
 
 func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "banip", ip)
 	return err
 }

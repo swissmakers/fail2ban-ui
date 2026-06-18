@@ -27,6 +27,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/smtp"
@@ -454,6 +455,10 @@ func BanIPHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := fail2ban.ValidateJailName(jail); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -479,6 +484,10 @@ func UnbanIPHandler(c *gin.Context) {
 	ip := c.Param("ip")
 
 	if err := integrations.ValidateIP(ip); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := fail2ban.ValidateJailName(jail); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -515,22 +524,11 @@ func BanNotificationHandler(c *gin.Context) {
 		Logs     string `json:"logs"`
 	}
 
-	// Logs the raw JSON body of the request
+	// Reads the request body so it can be parsed and inspected (in debug mode).
 	body, _ := io.ReadAll(c.Request.Body)
-	log.Printf("----------------------------------------------------")
-	log.Printf("Request Content-Length: %d", c.Request.ContentLength)
-	log.Printf("Request Headers: %v", c.Request.Header)
-	log.Printf("Request Headers: %v", c.Request.Body)
-
-	log.Printf("----------------------------------------------------")
-
-	config.DebugLog("Incoming ban notification: %s\n", string(body))
+	config.DebugLog("Incoming ban notification (%d bytes): %s", c.Request.ContentLength, string(body))
 
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-	log.Printf("Request Content-Length: %d", c.Request.ContentLength)
-	log.Printf("Request Headers: %v", c.Request.Header)
-	log.Printf("Request Headers: %v", c.Request.Body)
 
 	if err := c.ShouldBindJSON(&request); err != nil {
 		var verr validator.ValidationErrors
@@ -541,7 +539,7 @@ func BanNotificationHandler(c *gin.Context) {
 		} else {
 			log.Printf("❌ JSON parsing error -> Action will not be recorded! Details: %v", err)
 		}
-		log.Printf("Raw JSON: %s", string(body))
+		config.DebugLog("Raw JSON that failed to parse: %s", string(body))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
 		return
 	}
@@ -1473,8 +1471,8 @@ func dispatchAlert(alertType, ip, jail, hostname, failures, whois, logs, country
 // Sends a JSON payload to the configured webhook URL.
 func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
 	cfg := settings.Webhook
-	if cfg.URL == "" {
-		return fmt.Errorf("webhook URL is not configured")
+	if err := integrations.ValidateOutboundURL(cfg.URL, "webhook URL"); err != nil {
+		return err
 	}
 
 	payload := map[string]interface{}{
@@ -1533,8 +1531,8 @@ func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, coun
 // Sends a document to the configured Elasticsearch index.
 func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
 	cfg := settings.Elasticsearch
-	if cfg.URL == "" {
-		return fmt.Errorf("elasticsearch URL is not configured")
+	if err := integrations.ValidateOutboundURL(cfg.URL, "elasticsearch URL"); err != nil {
+		return err
 	}
 
 	index := cfg.Index
@@ -2013,6 +2011,11 @@ func GetJailFilterConfigHandler(c *gin.Context) {
 	jail := c.Param("jail")
 	config.DebugLog("Jail name: %s", jail)
 
+	if err := fail2ban.ValidateJailName(jail); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	conn, err := resolveConnector(c)
 	if err != nil {
 		config.DebugLog("Failed to resolve connector: %v", err)
@@ -2081,6 +2084,11 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 	config.DebugLog("SetJailFilterConfigHandler called (handlers.go)")
 	jail := c.Param("jail")
 	config.DebugLog("Jail name: %s", jail)
+
+	if err := fail2ban.ValidateJailName(jail); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -2207,6 +2215,10 @@ func TestLogpathHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("TestLogpathHandler called (handlers.go)")
 	jail := c.Param("jail")
+	if err := fail2ban.ValidateJailName(jail); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2514,6 +2526,14 @@ func UpdateJailManagementHandler(c *gin.Context) {
 		config.DebugLog("Warning: No jail updates provided")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No jail updates provided"})
 		return
+	}
+
+	// Validates every jail name before any filesystem operation.
+	for jailName := range updates {
+		if err := fail2ban.ValidateJailName(jailName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	// Tracks which jails were enabled (for error recovery)
@@ -2851,23 +2871,25 @@ func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
 		req.Webhook.Method = strings.ToUpper(strings.TrimSpace(req.Webhook.Method))
 	}
 
-	if req.AlertProvider == "webhook" {
-		if req.Webhook.URL == "" {
-			return errors.New("webhook URL is required when alert provider is webhook")
-		}
-		if _, err := url.ParseRequestURI(req.Webhook.URL); err != nil {
-			return fmt.Errorf("webhook URL is invalid: %w", err)
+	if req.AlertProvider == "webhook" && req.Webhook.URL == "" {
+		return errors.New("webhook URL is required when alert provider is webhook")
+	}
+	if strings.TrimSpace(req.Webhook.URL) != "" {
+		if err := integrations.ValidateOutboundURL(req.Webhook.URL, "webhook URL"); err != nil {
+			return err
 		}
 	}
 	if req.AlertProvider == "elasticsearch" {
 		if req.Elasticsearch.URL == "" {
 			return errors.New("elasticsearch URL is required when alert provider is elasticsearch")
 		}
-		if _, err := url.ParseRequestURI(req.Elasticsearch.URL); err != nil {
-			return fmt.Errorf("elasticsearch URL is invalid: %w", err)
-		}
 		if req.Elasticsearch.APIKey == "" && (req.Elasticsearch.Username == "" || req.Elasticsearch.Password == "") {
 			return errors.New("elasticsearch authentication requires API key or username/password")
+		}
+	}
+	if strings.TrimSpace(req.Elasticsearch.URL) != "" {
+		if err := integrations.ValidateOutboundURL(req.Elasticsearch.URL, "elasticsearch URL"); err != nil {
+			return err
 		}
 	}
 
@@ -3058,6 +3080,10 @@ func GetFilterContentHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("GetFilterContentHandler called (handlers.go)")
 	filterName := c.Param("filter")
+	if err := fail2ban.ValidateFilterName(filterName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -3094,6 +3120,10 @@ func TestFilterHandler(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if err := fail2ban.ValidateFilterName(req.FilterName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -3303,6 +3333,16 @@ func getEmailStyle() string {
 	return "modern"
 }
 
+// Removes characters that could be used to inject additional SMTP/MIME headers.
+func sanitizeEmailHeader(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == 0 {
+			return -1
+		}
+		return r
+	}, value)
+}
+
 // Connects to the SMTP server and delivers a single HTML message.
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	// Skips sending if the destination email is still the default placeholder
@@ -3323,10 +3363,13 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 		return err
 	}
 
-	msgID := fmt.Sprintf("<%d.%s@fail2ban-ui>", time.Now().UnixNano(), settings.SMTP.From)
-	message := "From: " + settings.SMTP.From + "\r\n" +
-		"To: " + to + "\r\n" +
-		"Subject: " + subject + "\r\n" +
+	fromHeader := sanitizeEmailHeader(settings.SMTP.From)
+	toHeader := sanitizeEmailHeader(to)
+	msgID := sanitizeEmailHeader(fmt.Sprintf("<%d.%s@fail2ban-ui>", time.Now().UnixNano(), settings.SMTP.From))
+	subjectHeader := mime.QEncoding.Encode("UTF-8", subject)
+	message := "From: " + fromHeader + "\r\n" +
+		"To: " + toHeader + "\r\n" +
+		"Subject: " + subjectHeader + "\r\n" +
 		"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
 		"Message-ID: " + msgID + "\r\n" +
 		"MIME-Version: 1.0\r\n" +

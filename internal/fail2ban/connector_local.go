@@ -86,6 +86,9 @@ func (lc *LocalConnector) GetBannedIPs(ctx context.Context, jail string) ([]stri
 
 // Unban an IP from a given jail.
 func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
 	args := []string{"set", jail, "unbanip", ip}
 	if _, err := lc.runFail2banClient(ctx, args...); err != nil {
 		return fmt.Errorf("error unbanning IP %s from jail %s: %w", ip, jail, err)
@@ -95,6 +98,9 @@ func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 
 // Ban an IP in a given jail.
 func (lc *LocalConnector) BanIP(ctx context.Context, jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
 	args := []string{"set", jail, "banip", ip}
 	if _, err := lc.runFail2banClient(ctx, args...); err != nil {
 		return fmt.Errorf("error banning IP %s in jail %s: %w", ip, jail, err)
