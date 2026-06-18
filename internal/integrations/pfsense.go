@@ -50,14 +50,14 @@ func (p *pfSenseIntegration) DisplayName() string {
 }
 
 func (p *pfSenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
-	if cfg.PfSense.BaseURL == "" {
-		return fmt.Errorf("pfSense base URL is required")
+	if err := ValidateOutboundURL(cfg.PfSense.BaseURL, "pfSense base URL"); err != nil {
+		return err
 	}
 	if cfg.PfSense.APIToken == "" {
 		return fmt.Errorf("pfSense API key is required")
 	}
-	if cfg.PfSense.Alias == "" {
-		return fmt.Errorf("pfSense alias is required")
+	if err := ValidateIdentifier(cfg.PfSense.Alias, "pfSense alias"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -92,6 +92,9 @@ func (p *pfSenseIntegration) UnblockIP(req Request) error {
 
 func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, add bool) error {
 	cfg := req.Config.PfSense
+	if err := ValidateOutboundURL(cfg.BaseURL, "pfSense base URL"); err != nil {
+		return err
+	}
 	baseURL := strings.TrimSuffix(cfg.BaseURL, "/")
 
 	httpClient := &http.Client{

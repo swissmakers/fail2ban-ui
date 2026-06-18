@@ -33,14 +33,14 @@ func (o *opnsenseIntegration) DisplayName() string {
 }
 
 func (o *opnsenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
-	if cfg.OPNsense.BaseURL == "" {
-		return fmt.Errorf("OPNsense base URL is required")
+	if err := ValidateOutboundURL(cfg.OPNsense.BaseURL, "OPNsense base URL"); err != nil {
+		return err
 	}
 	if cfg.OPNsense.APIKey == "" || cfg.OPNsense.APISecret == "" {
 		return fmt.Errorf("OPNsense API key and secret are required")
 	}
-	if cfg.OPNsense.Alias == "" {
-		return fmt.Errorf("OPNsense alias is required")
+	if err := ValidateIdentifier(cfg.OPNsense.Alias, "OPNsense alias"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -75,6 +75,12 @@ func (o *opnsenseIntegration) UnblockIP(req Request) error {
 
 func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 	cfg := req.Config.OPNsense
+	if err := ValidateOutboundURL(cfg.BaseURL, "OPNsense base URL"); err != nil {
+		return err
+	}
+	if err := ValidateIdentifier(cfg.Alias, "OPNsense alias"); err != nil {
+		return err
+	}
 	apiURL := strings.TrimSuffix(cfg.BaseURL, "/") + fmt.Sprintf("/api/firewall/alias_util/%s/%s", action, cfg.Alias)
 	payload := map[string]string{
 		"address": ip,
