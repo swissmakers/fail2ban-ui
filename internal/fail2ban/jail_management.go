@@ -34,8 +34,14 @@ func ensureJailLocalFile(jailName, configPath string) error {
 	}
 
 	jailDPath := JailDir(configPath)
-	localPath := filepath.Join(jailDPath, jailName+".local")
-	confPath := filepath.Join(jailDPath, jailName+".conf")
+	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
+	if err != nil {
+		return err
+	}
+	confPath, err := resolveWithinDir(jailDPath, jailName, ".conf")
+	if err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(localPath); err == nil {
 		debugf("Jail .local file already exists: %s", localPath)
@@ -78,8 +84,14 @@ func readJailConfigWithFallback(jailName, configPath string) (string, string, er
 	}
 
 	jailDPath := JailDir(configPath)
-	localPath := filepath.Join(jailDPath, jailName+".local")
-	confPath := filepath.Join(jailDPath, jailName+".conf")
+	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
+	if err != nil {
+		return "", "", err
+	}
+	confPath, err := resolveWithinDir(jailDPath, jailName, ".conf")
+	if err != nil {
+		return "", "", err
+	}
 
 	if content, err := os.ReadFile(localPath); err == nil {
 		debugf("Reading jail config from .local: %s", localPath)
@@ -242,7 +254,10 @@ func CreateJail(jailName, content, configPath string) error {
 	}
 
 	jailDPath := JailDir(configPath)
-	localPath := filepath.Join(jailDPath, jailName+".local")
+	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
+	if err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(jailDPath, 0755); err != nil {
 		return fmt.Errorf("failed to create jail.d directory: %w", err)
@@ -273,8 +288,14 @@ func DeleteJail(jailName, configPath string) error {
 	}
 
 	jailDPath := JailDir(configPath)
-	localPath := filepath.Join(jailDPath, jailName+".local")
-	confPath := filepath.Join(jailDPath, jailName+".conf")
+	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
+	if err != nil {
+		return err
+	}
+	confPath, err := resolveWithinDir(jailDPath, jailName, ".conf")
+	if err != nil {
+		return err
+	}
 
 	var deletedFiles []string
 	var lastErr error
@@ -394,13 +415,19 @@ func UpdateJailEnabledStates(updates map[string]bool, configPath string) error {
 			debugf("Skipping empty jail name in updates map")
 			continue
 		}
+		if err := ValidateJailName(jailName); err != nil {
+			return fmt.Errorf("invalid jail name in updates map: %w", err)
+		}
 		debugf("Processing jail: %s, enabled: %t", jailName, enabled)
 
 		// Ensure .local file exists
 		if err := ensureJailLocalFile(jailName, configPath); err != nil {
 			return fmt.Errorf("failed to ensure .local file for jail %s: %w", jailName, err)
 		}
-		jailFilePath := filepath.Join(jailDPath, jailName+".local")
+		jailFilePath, err := resolveWithinDir(jailDPath, jailName, ".local")
+		if err != nil {
+			return err
+		}
 		debugf("Jail file path: %s", jailFilePath)
 		content, err := os.ReadFile(jailFilePath)
 		if err != nil {
@@ -509,6 +536,9 @@ func SetJailConfig(jailName, content, configPath string) error {
 	if jailName == "" {
 		return fmt.Errorf("jail name cannot be empty")
 	}
+	if err := ValidateJailName(jailName); err != nil {
+		return err
+	}
 	debugf("SetJailConfig called for jail: %s, content length: %d", jailName, len(content))
 
 	jailDPath := JailDir(configPath)
@@ -586,7 +616,10 @@ func SetJailConfig(jailName, content, configPath string) error {
 		}
 	}
 
-	jailFilePath := filepath.Join(jailDPath, jailName+".local")
+	jailFilePath, err := resolveWithinDir(jailDPath, jailName, ".local")
+	if err != nil {
+		return err
+	}
 	debugf("Writing jail config to: %s", jailFilePath)
 	if err := os.WriteFile(jailFilePath, []byte(content), 0644); err != nil {
 		debugf("Failed to write jail config: %v", err)
@@ -607,6 +640,9 @@ func TestLogpath(logpath string) ([]string, error) {
 	}
 
 	logpath = strings.TrimSpace(logpath)
+	if strings.ContainsRune(logpath, 0) {
+		return nil, fmt.Errorf("invalid log path")
+	}
 	hasWildcard := strings.ContainsAny(logpath, "*?[")
 
 	var matches []string
@@ -771,7 +807,11 @@ func MigrateJailsFromJailLocal(configPath string) error {
 		if jailName == "" {
 			continue
 		}
-		jailFilePath := filepath.Join(jailDPath, jailName+".local")
+		jailFilePath, err := resolveWithinDir(jailDPath, jailName, ".local")
+		if err != nil {
+			debugf("Skipping migration for jail %q: %v", jailName, err)
+			continue
+		}
 		if _, err := os.Stat(jailFilePath); err == nil {
 			debugf("Skipping migration for jail %s: .local file already exists", jailName)
 			continue

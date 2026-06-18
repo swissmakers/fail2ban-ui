@@ -52,8 +52,14 @@ func ensureFilterLocalFile(filterName, configPath string) error {
 	}
 
 	filterDPath := FilterDir(configPath)
-	localPath := filepath.Join(filterDPath, filterName+".local")
-	confPath := filepath.Join(filterDPath, filterName+".conf")
+	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
+	if err != nil {
+		return err
+	}
+	confPath, err := resolveWithinDir(filterDPath, filterName, ".conf")
+	if err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(localPath); err == nil {
 		debugf("Filter .local file already exists: %s", localPath)
@@ -110,8 +116,14 @@ func readFilterConfigWithFallback(filterName, configPath string) (string, string
 	}
 
 	filterDPath := FilterDir(configPath)
-	localPath := filepath.Join(filterDPath, filterName+".local")
-	confPath := filepath.Join(filterDPath, filterName+".conf")
+	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
+	if err != nil {
+		return "", "", err
+	}
+	confPath, err := resolveWithinDir(filterDPath, filterName, ".conf")
+	if err != nil {
+		return "", "", err
+	}
 
 	if content, err := os.ReadFile(localPath); err == nil {
 		debugf("Reading filter config from .local: %s", localPath)
@@ -129,7 +141,10 @@ func SetFilterConfigLocal(jail, newContent, configPath string) error {
 	if err := ensureFilterLocalFile(jail, configPath); err != nil {
 		return err
 	}
-	localPath := filepath.Join(FilterDir(configPath), jail+".local")
+	localPath, err := resolveWithinDir(FilterDir(configPath), jail, ".local")
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(localPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to write filter .local file for %s: %w", jail, err)
 	}
@@ -244,7 +259,10 @@ func CreateFilter(filterName, content, configPath string) error {
 		return err
 	}
 	filterDPath := FilterDir(configPath)
-	localPath := filepath.Join(filterDPath, filterName+".local")
+	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filterDPath, 0755); err != nil {
 		return fmt.Errorf("failed to create filter.d directory: %w", err)
 	}
@@ -262,8 +280,14 @@ func DeleteFilter(filterName, configPath string) error {
 	}
 
 	filterDPath := FilterDir(configPath)
-	localPath := filepath.Join(filterDPath, filterName+".local")
-	confPath := filepath.Join(filterDPath, filterName+".conf")
+	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
+	if err != nil {
+		return err
+	}
+	confPath, err := resolveWithinDir(filterDPath, filterName, ".conf")
+	if err != nil {
+		return err
+	}
 
 	var deletedFiles []string
 	var lastErr error
@@ -453,11 +477,18 @@ func resolveFilterIncludes(filterContent string, filterDPath string, currentFilt
 			continue
 		}
 
-		localPath := filepath.Join(filterDPath, baseName+".local")
-		confPath := filepath.Join(filterDPath, baseName+".conf")
+		localPath, err := resolveWithinDir(filterDPath, baseName, ".local")
+		if err != nil {
+			debugf("Skipping invalid include filter name %q: %v", baseName, err)
+			continue
+		}
+		confPath, err := resolveWithinDir(filterDPath, baseName, ".conf")
+		if err != nil {
+			debugf("Skipping invalid include filter name %q: %v", baseName, err)
+			continue
+		}
 
 		var content []byte
-		var err error
 		var filePath string
 
 		if content, err = os.ReadFile(localPath); err == nil {
@@ -494,11 +525,18 @@ func resolveFilterIncludes(filterContent string, filterDPath string, currentFilt
 			baseName = strings.TrimSuffix(baseName, ".conf")
 		}
 
-		localPath := filepath.Join(filterDPath, baseName+".local")
-		confPath := filepath.Join(filterDPath, baseName+".conf")
+		localPath, err := resolveWithinDir(filterDPath, baseName, ".local")
+		if err != nil {
+			debugf("Skipping invalid include filter name %q: %v", baseName, err)
+			continue
+		}
+		confPath, err := resolveWithinDir(filterDPath, baseName, ".conf")
+		if err != nil {
+			debugf("Skipping invalid include filter name %q: %v", baseName, err)
+			continue
+		}
 
 		var content []byte
-		var err error
 		var filePath string
 
 		if content, err = os.ReadFile(localPath); err == nil {
@@ -570,8 +608,14 @@ func TestFilterLocal(filterName string, logLines []string, filterContent string,
 		debugf("TestFilterLocal: using custom filter content from temporary file: %s (size: %d bytes, includes resolved: %v)", filterPath, len(contentToWrite), err == nil)
 	} else {
 		filterDPath := FilterDir(configPath)
-		localPath := filepath.Join(filterDPath, filterName+".local")
-		confPath := filepath.Join(filterDPath, filterName+".conf")
+		localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
+		if err != nil {
+			return "", "", err
+		}
+		confPath, err := resolveWithinDir(filterDPath, filterName, ".conf")
+		if err != nil {
+			return "", "", err
+		}
 
 		if _, err := os.Stat(localPath); err == nil {
 			filterPath = localPath

@@ -35,6 +35,9 @@ func TestNormalizeConfigPath(t *testing.T) {
 	if got := NormalizeConfigPath("/etc/fail2ban/../fail2ban/"); got != "/etc/fail2ban" {
 		t.Fatalf("clean: got %q", got)
 	}
+	if got := NormalizeConfigPath("/etc/fail2\x00ban"); got != "/etc/fail2ban" {
+		t.Fatalf("nul byte stripped: got %q", got)
+	}
 }
 
 func TestPathLayout(t *testing.T) {
@@ -55,5 +58,52 @@ func TestPathLayout(t *testing.T) {
 	wantAction := filepath.Join(root, "action.d", "ui-custom-action.conf")
 	if got := CustomActionFile(root); got != wantAction {
 		t.Fatalf("CustomActionFile: got %q want %q", got, wantAction)
+	}
+}
+
+func TestSafeConfigName(t *testing.T) {
+	t.Parallel()
+	valid := []string{"sshd", "nginx-limit-req", "my_jail", "Jail123"}
+	for _, name := range valid {
+		if got, err := safeConfigName(name); err != nil || got != name {
+			t.Fatalf("safeConfigName(%q): got %q err %v, want %q nil", name, got, err, name)
+		}
+	}
+
+	invalid := []string{
+		"", "   ",
+		"../etc/passwd",
+		"foo/bar",
+		"foo..bar",
+		"foo.local",
+		"a b",
+		"foo\x00bar",
+		"jail$(whoami)",
+	}
+	for _, name := range invalid {
+		if _, err := safeConfigName(name); err == nil {
+			t.Fatalf("safeConfigName(%q): expected error, got nil", name)
+		}
+	}
+}
+
+func TestResolveWithinDir(t *testing.T) {
+	t.Parallel()
+	dir := "/etc/fail2ban/jail.d"
+
+	got, err := resolveWithinDir(dir, "sshd", ".local")
+	if err != nil {
+		t.Fatalf("resolveWithinDir valid: unexpected error %v", err)
+	}
+	want := filepath.Join(dir, "sshd.local")
+	if got != want {
+		t.Fatalf("resolveWithinDir: got %q want %q", got, want)
+	}
+
+	// Traversal and injection attempts must be rejected by the name allowlist.
+	for _, name := range []string{"../../etc/passwd", "..", "foo/bar", "a/../../b"} {
+		if _, err := resolveWithinDir(dir, name, ".local"); err == nil {
+			t.Fatalf("resolveWithinDir(%q): expected error, got nil", name)
+		}
 	}
 }
