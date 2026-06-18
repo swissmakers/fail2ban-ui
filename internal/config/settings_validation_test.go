@@ -16,7 +16,10 @@
 
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateServerUniqueness(t *testing.T) {
 	t.Parallel()
@@ -64,4 +67,25 @@ func TestValidateServerUniqueness(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestFail2banActionTemplateQuotesUnresolvedTags(t *testing.T) {
+	t.Parallel()
+
+	if strings.Contains(fail2banActionTemplate, "journalctl -r <journalmatch>") {
+		t.Fatal("journalmatch must not be used directly in shell syntax; unresolved tags are parsed as redirections")
+	}
+	if strings.Contains(fail2banActionTemplate, "tac <logpath>") {
+		t.Fatal("logpath must not be used directly in shell syntax; unresolved tags are parsed as redirections")
+	}
+	for _, want := range []string{
+		"journalmatch='<journalmatch>'",
+		"logpath='<logpath>'",
+		`journalctl -r $journalmatch`,
+		`tac "$logpath"`,
+	} {
+		if !strings.Contains(fail2banActionTemplate, want) {
+			t.Fatalf("action template missing %q", want)
+		}
+	}
 }

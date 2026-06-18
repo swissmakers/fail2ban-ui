@@ -225,14 +225,14 @@ norestored = 1
 actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban \
      -H "Content-Type: application/json" \
      -H "X-Callback-Secret: __CALLBACK_SECRET__" \
-     -d "$(jq -n --arg serverId '__SERVER_ID__' \
+     -d "$(journalmatch='<journalmatch>'; logpath='<logpath>'; jq -n --arg serverId '__SERVER_ID__' \
                  --arg ip '<ip>' \
                  --arg jail '<name>' \
                  --arg hostname '<fq-hostname>' \
                  --arg failures '<failures>' \
-                 --arg logs "$(if [ '<backend>' = 'systemd' ]; \
-                               then journalctl -r <journalmatch>; \
-                               else tac <logpath>; \
+                 --arg logs "$(if [ '<backend>' = 'systemd' ] && [ "$journalmatch" != '<journalmatch>' ] && [ -n "$journalmatch" ]; \
+                               then journalctl -r $journalmatch 2>/dev/null; \
+                               else tac "$logpath" 2>/dev/null; \
                                fi | grep <grepopts> -wF <ip>)" \
                  '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
 
@@ -253,6 +253,10 @@ name = default
 
 # Path to log files containing relevant lines for the abuser IP
 logpath = /dev/null
+
+# Default journal match -> empty for file backends so '<journalmatch>' always
+# resolves to a valid token; systemd-backed jails override this via their filter.
+journalmatch =
 
 # Number of log lines to include in the callback
 grepmax = 200
