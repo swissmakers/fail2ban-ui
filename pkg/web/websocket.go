@@ -118,6 +118,27 @@ func (h *Hub) BroadcastConsoleLog(message string) {
 	}
 }
 
+// Pushes a transient toast notification to all connected clients.
+func (h *Hub) BroadcastToast(level, message string) {
+	toastMsg := map[string]interface{}{
+		"type":    "toast",
+		"level":   level,
+		"message": message,
+		"time":    time.Now().UTC().Format(time.RFC3339),
+	}
+	data, err := json.Marshal(toastMsg)
+	if err != nil {
+		log.Printf("Error marshaling toast: %v", err)
+		return
+	}
+
+	select {
+	case h.broadcast <- data:
+	default:
+		log.Printf("Broadcast channel full, dropping toast")
+	}
+}
+
 // Creates new Hub instance.
 func NewHub() *Hub {
 	return &Hub{

@@ -103,6 +103,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		api.DELETE("/events/bans", ClearBanEventsHandler)
 		api.GET("/events/bans/stats", BanStatisticsHandler)
 		api.GET("/events/bans/insights", BanInsightsHandler)
+		api.GET("/events/bans/:id", GetBanEventHandler)
 		api.GET("/threat-intel/:ip", ThreatIntelHandler)
 
 		// WebSocket endpoint

@@ -41,6 +41,37 @@ function openModal(modalId) {
 //  Whois and Logs Modal
 // =========================================================================
 
+// We fetch whois/logs fields on demand here
+function ensureBanEventDetail(event) {
+  if (!event) {
+    return Promise.reject(new Error('missing event'));
+  }
+  if (event._detailLoaded) {
+    return Promise.resolve(event);
+  }
+  // Events pushed over the websocket already carry whois/logs; no fetch needed.
+  if ((event.whois && event.whois.trim()) || (event.logs && event.logs.trim())) {
+    event._detailLoaded = true;
+    return Promise.resolve(event);
+  }
+  if (event.id === undefined || event.id === null) {
+    event._detailLoaded = true;
+    return Promise.resolve(event);
+  }
+  return fetch(appPath('/api/events/bans/' + encodeURIComponent(event.id)), {
+    headers: serverHeaders()
+  })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && data.event) {
+        event.whois = data.event.whois || '';
+        event.logs = data.event.logs || '';
+      }
+      event._detailLoaded = true;
+      return event;
+    });
+}
+
 // Whois modal
 function openWhoisModal(eventIndex) {
   if (!latestBanEvents || !latestBanEvents[eventIndex]) {
@@ -48,27 +79,27 @@ function openWhoisModal(eventIndex) {
     return;
   }
   var event = latestBanEvents[eventIndex];
-  if (!event.whois || !event.whois.trim()) {
-    showToast("No whois data available for this event", 'info');
-    return;
-  }
   document.getElementById('whoisModalIP').textContent = event.ip || 'N/A';
   var contentEl = document.getElementById('whoisModalContent');
-  contentEl.textContent = event.whois;
+  contentEl.textContent = t('loading', 'Loading...');
   openModal('whoisModal');
+  ensureBanEventDetail(event)
+    .then(function() {
+      if (!event.whois || !event.whois.trim()) {
+        closeModal('whoisModal');
+        showToast("No whois data available for this event", 'info');
+        return;
+      }
+      contentEl.textContent = event.whois;
+    })
+    .catch(function(err) {
+      closeModal('whoisModal');
+      showToast("Error loading whois data: " + err, 'error');
+    });
 }
 
-// Logs modal
-function openLogsModal(eventIndex) {
-  if (!latestBanEvents || !latestBanEvents[eventIndex]) {
-    showToast("Event not found", 'error');
-    return;
-  }
-  var event = latestBanEvents[eventIndex];
-  if (!event.logs || !event.logs.trim()) {
-    showToast("No logs data available for this event", 'info');
-    return;
-  }
+// Renders the (already loaded) logs for an event into the logs modal body.
+function renderLogsModalContent(event) {
   document.getElementById('logsModalIP').textContent = event.ip || 'N/A';
   document.getElementById('logsModalJail').textContent = event.jail || 'N/A';
   var logs = event.logs;
@@ -97,7 +128,33 @@ function openLogsModal(eventIndex) {
   } else {
     contentEl.textContent = logs;
   }
+}
+
+// Logs modal
+function openLogsModal(eventIndex) {
+  if (!latestBanEvents || !latestBanEvents[eventIndex]) {
+    showToast("Event not found", 'error');
+    return;
+  }
+  var event = latestBanEvents[eventIndex];
+  document.getElementById('logsModalIP').textContent = event.ip || 'N/A';
+  document.getElementById('logsModalJail').textContent = event.jail || 'N/A';
+  var contentEl = document.getElementById('logsModalContent');
+  contentEl.textContent = t('loading', 'Loading...');
   openModal('logsModal');
+  ensureBanEventDetail(event)
+    .then(function() {
+      if (!event.logs || !event.logs.trim()) {
+        closeModal('logsModal');
+        showToast("No logs data available for this event", 'info');
+        return;
+      }
+      renderLogsModalContent(event);
+    })
+    .catch(function(err) {
+      closeModal('logsModal');
+      showToast("Error loading logs data: " + err, 'error');
+    });
 }
 
 // =========================================================================

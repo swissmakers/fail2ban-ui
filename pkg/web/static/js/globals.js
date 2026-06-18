@@ -9,6 +9,7 @@ var latestSummary = null;
 var latestSummaryError = null;
 var latestBanStats = {};
 var latestBanEvents = [];
+var banEventsLoading = false;
 var banEventsTotal = null;
 var banEventsHasMore = false;
 var latestBanInsights = {

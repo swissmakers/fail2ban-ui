@@ -180,16 +180,20 @@ type ServerRecord struct {
 }
 
 type BanEventRecord struct {
-	ID         int64     `json:"id"`
-	ServerID   string    `json:"serverId"`
-	ServerName string    `json:"serverName"`
-	Jail       string    `json:"jail"`
-	IP         string    `json:"ip"`
-	Country    string    `json:"country"`
-	Hostname   string    `json:"hostname"`
-	Failures   string    `json:"failures"`
-	Whois      string    `json:"whois"`
-	Logs       string    `json:"logs"`
+	ID         int64  `json:"id"`
+	ServerID   string `json:"serverId"`
+	ServerName string `json:"serverName"`
+	Jail       string `json:"jail"`
+	IP         string `json:"ip"`
+	Country    string `json:"country"`
+	Hostname   string `json:"hostname"`
+	Failures   string `json:"failures"`
+	Whois      string `json:"whois"`
+	Logs       string `json:"logs"`
+	// HasWhois/HasLogs let the list view show the whois/logs buttons without
+	// shipping the heavy text; the content is fetched on demand by id.
+	HasWhois   bool      `json:"hasWhois"`
+	HasLogs    bool      `json:"hasLogs"`
 	EventType  string    `json:"eventType"`
 	OccurredAt time.Time `json:"occurredAt"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -707,7 +711,10 @@ func ListBanEventsFiltered(ctx context.Context, serverID string, limit, offset i
 	}
 
 	baseQuery := `
-SELECT id, server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
+SELECT id, server_id, server_name, jail, ip, country, hostname, failures,
+       (whois IS NOT NULL AND whois <> '') AS has_whois,
+       (logs IS NOT NULL AND logs <> '') AS has_logs,
+       event_type, occurred_at, created_at
 FROM ban_events
 WHERE 1=1`
 	args := []any{}
@@ -747,6 +754,7 @@ WHERE 1=1`
 	for rows.Next() {
 		var rec BanEventRecord
 		var eventType sql.NullString
+		var hasWhois, hasLogs int64
 		if err := rows.Scan(
 			&rec.ID,
 			&rec.ServerID,
@@ -756,14 +764,16 @@ WHERE 1=1`
 			&rec.Country,
 			&rec.Hostname,
 			&rec.Failures,
-			&rec.Whois,
-			&rec.Logs,
+			&hasWhois,
+			&hasLogs,
 			&eventType,
 			&rec.OccurredAt,
 			&rec.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
+		rec.HasWhois = hasWhois != 0
+		rec.HasLogs = hasLogs != 0
 		if eventType.Valid {
 			rec.EventType = eventType.String
 		} else {
@@ -772,6 +782,50 @@ WHERE 1=1`
 		results = append(results, rec)
 	}
 	return results, rows.Err()
+}
+
+// GetBanEventByID returns a single ban event including the whois/logs fields.
+func GetBanEventByID(ctx context.Context, id int64) (BanEventRecord, bool, error) {
+	if db == nil {
+		return BanEventRecord{}, false, errors.New("storage not initialised")
+	}
+
+	const query = `
+SELECT id, server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
+FROM ban_events
+WHERE id = ?`
+
+	var rec BanEventRecord
+	var eventType sql.NullString
+	err := db.QueryRowContext(ctx, query, id).Scan(
+		&rec.ID,
+		&rec.ServerID,
+		&rec.ServerName,
+		&rec.Jail,
+		&rec.IP,
+		&rec.Country,
+		&rec.Hostname,
+		&rec.Failures,
+		&rec.Whois,
+		&rec.Logs,
+		&eventType,
+		&rec.OccurredAt,
+		&rec.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return BanEventRecord{}, false, nil
+	}
+	if err != nil {
+		return BanEventRecord{}, false, err
+	}
+	if eventType.Valid {
+		rec.EventType = eventType.String
+	} else {
+		rec.EventType = "ban"
+	}
+	rec.HasWhois = rec.Whois != ""
+	rec.HasLogs = rec.Logs != ""
+	return rec, true, nil
 }
 
 // Returns the total count of ban events matching the same filters as ListBanEventsFiltered.

@@ -675,6 +675,26 @@ func ListBanEventsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// Returns a single ban event including whois/logs fields.
+func GetBanEventHandler(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event id"})
+		return
+	}
+
+	event, found, err := storage.GetBanEventByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "event not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"event": event})
+}
+
 // Returns aggregated ban event counts per server.
 func BanStatisticsHandler(c *gin.Context) {
 	var since time.Time
@@ -1367,9 +1387,7 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		return nil
 	}
 
-	if err := dispatchAlert("ban", ip, jail, hostname, failures, whoisData, filteredLogs, country, settings); err != nil {
-		log.Printf("❌ Failed to send ban alert: %v", err)
-	}
+	dispatchAlertAsync("ban", ip, jail, hostname, failures, whoisData, filteredLogs, country, settings)
 	return nil
 }
 
@@ -1443,15 +1461,25 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		return nil
 	}
 
-	if err := dispatchAlert("unban", ip, jail, hostname, "", whoisData, "", country, settings); err != nil {
-		log.Printf("❌ Failed to send unban alert: %v", err)
-	}
+	dispatchAlertAsync("unban", ip, jail, hostname, "", whoisData, "", country, settings)
 	return nil
 }
 
 // =========================================================================
 //  Alert Dispatch
 // =========================================================================
+
+// Sends the alert without blocking the caller. Alerts delivery (SMTP/webhook/Elasticsearch) is never hold the fail2ban callback.
+func dispatchAlertAsync(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) {
+	go func() {
+		if err := dispatchAlert(alertType, ip, jail, hostname, failures, whois, logs, country, settings); err != nil {
+			log.Printf("❌ Failed to send %s alert for IP %s: %v", alertType, ip, err)
+			if wsHub != nil {
+				wsHub.BroadcastToast("error", fmt.Sprintf("Failed to send %s alert for %s: %v", alertType, ip, err))
+			}
+		}
+	}()
+}
 
 // Routes an alert to the configured provider (email, webhook, or elasticsearch).
 func dispatchAlert(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {

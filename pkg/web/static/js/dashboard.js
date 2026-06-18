@@ -21,11 +21,24 @@ function refreshData(options) {
   if (!options.silent) {
     showLoading(true);
   }
-  return Promise.all([
-    summaryPromise,
+
+  // Slower sections load independently and don't hold up the page.
+  banEventsLoading = true;
+  Promise.all([
     fetchBanStatisticsData(),
     fetchBanEventsData(),
-    fetchBanInsightsData(),
+    fetchBanInsightsData()
+  ])
+    .catch(function(err) {
+      console.error('Error loading ban events/insights:', err);
+    })
+    .finally(function() {
+      banEventsLoading = false;
+      renderDashboard();
+    });
+
+  return Promise.all([
+    summaryPromise,
     fetchThreatIntelProviderData()
   ])
     .then(function() {
@@ -331,32 +344,39 @@ function banIP(jail, ip) {
   })
     .then(function(res) { return res.json(); })
     .then(function(data) {
+      showLoading(false);
       if (data.error) {
         showToast(formatApiError(data, '', 'Error blocking IP'), 'error');
-      } else {
-        showToast(t('dashboard.manual_block.success', 'IP blocked successfully'), 'success');
-        return Promise.all([
-          fetchSummaryData(),
-          fetchJailBannedIPs(jail, { append: false }),
-          fetchBanEventsData()
-        ]).then(function() {
-          if ((bannedIPsFilterText || '').trim()) {
-            updateSummaryCountersFromLatestSummary();
-            updateJailRowCountersFromSummary(jail);
-            renderJailBannedCell(jail);
-            renderLogOverviewSection();
-          } else {
-            renderDashboard();
-          }
-        });
+        return;
       }
+      showToast(t('dashboard.manual_block.success', 'IP blocked successfully'), 'success');
+      // Refresh the affected sections in the background
+      refreshAfterManualAction(jail);
     })
     .catch(function(err) {
-      showToast("Error: " + err, 'error');
-    })
-    .finally(function() {
       showLoading(false);
+      showToast("Error: " + err, 'error');
     });
+}
+
+// Refreshes the sections affected by a manual ban/unban
+function refreshAfterManualAction(jail) {
+  return Promise.all([
+    fetchSummaryData(),
+    fetchJailBannedIPs(jail, { append: false }),
+    fetchBanEventsData()
+  ]).then(function() {
+    if ((bannedIPsFilterText || '').trim()) {
+      updateSummaryCountersFromLatestSummary();
+      updateJailRowCountersFromSummary(jail);
+      renderJailBannedCell(jail);
+      renderLogOverviewSection();
+    } else {
+      renderDashboard();
+    }
+  }).catch(function(err) {
+    console.error('Error refreshing after manual action:', err);
+  });
 }
 
 // Sends request to unban an IP from a jail.
@@ -377,30 +397,16 @@ function unbanIP(jail, ip) {
   })
     .then(function(res) { return res.json(); })
     .then(function(data) {
+      showLoading(false);
       if (data.error) {
         showToast(formatApiError(data, '', 'Error unbanning IP'), 'error');
         return;
       }
-      return Promise.all([
-        fetchSummaryData(),
-        fetchJailBannedIPs(jail, { append: false }),
-        fetchBanEventsData()
-      ]).then(function() {
-        if ((bannedIPsFilterText || '').trim()) {
-          updateSummaryCountersFromLatestSummary();
-          updateJailRowCountersFromSummary(jail);
-          renderJailBannedCell(jail);
-          renderLogOverviewSection();
-        } else {
-          renderDashboard();
-        }
-      });
+      refreshAfterManualAction(jail);
     })
     .catch(function(err) {
-      showToast("Error: " + err, 'error');
-    })
-    .finally(function() {
       showLoading(false);
+      showToast("Error: " + err, 'error');
     });
 }
 
@@ -792,14 +798,19 @@ function renderLogOverviewContent() {
     + '      </tr>'
     + '    </thead>'
     + '    <tbody class="bg-white divide-y divide-gray-200">';
-  if (!latestBanEvents.length) {
+  if (!latestBanEvents.length && banEventsLoading) {
+    html += '<tr><td colspan="6" class="px-2 py-6 text-center text-gray-500">'
+      + '<span class="inline-block h-5 w-5 align-middle border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span> '
+      + '<span class="align-middle" data-i18n="loading">Loading…</span>'
+      + '</td></tr>';
+  } else if (!latestBanEvents.length) {
     var hasFilter = (banEventsFilterText || '').trim().length > 0 || ((banEventsFilterCountry || 'all').trim() !== 'all');
     var emptyMsgKey = hasFilter ? 'logs.overview.recent_filtered_empty' : 'logs.overview.recent_empty';
     html += '<tr><td colspan="6" class="px-2 py-4 text-center text-gray-500" data-i18n="' + emptyMsgKey + '"></td></tr>';
   } else {
     latestBanEvents.forEach(function(event, index) {
-      var hasWhois = event.whois && event.whois.trim().length > 0;
-      var hasLogs = event.logs && event.logs.trim().length > 0;
+      var hasWhois = !!event.hasWhois || (event.whois && event.whois.trim().length > 0);
+      var hasLogs = !!event.hasLogs || (event.logs && event.logs.trim().length > 0);
       var serverValue = event.serverName || event.serverId || '';
       var jailValue = event.jail || '';
       var ipValue = event.ip || '';
