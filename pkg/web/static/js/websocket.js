@@ -122,8 +122,17 @@ class WebSocketManager {
       case 'console_log':
         this.handleConsoleLog(message);
         break;
+      case 'toast':
+        this.handleToast(message);
+        break;
       default:
         console.log('Unknown message type:', message.type);
+    }
+  }
+
+  handleToast(message) {
+    if (typeof showToast === 'function' && message && message.message) {
+      showToast(message.message, message.level || 'info');
     }
   }
 
