@@ -1,0 +1,479 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="architecture" id="fail2ban-ui-arch">
+    <mxGraphModel dx="1541" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1560" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="n11" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFF33;fillColor=none;strokeColor=#333333;strokeWidth=1;dashed=1;dashPattern=5 5;" value="" vertex="1">
+          <mxGeometry height="780" width="520" x="420" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="n12" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="95" width="320" x="40" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="n13" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=1;dashPattern=4 4;" value="" vertex="1">
+          <mxGeometry height="85" width="320" x="40" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="n14" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="150" width="320" x="40" y="430" as="geometry" />
+        </mxCell>
+        <mxCell id="n15" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="150" width="320" x="40" y="635" as="geometry" />
+        </mxCell>
+        <mxCell id="n16" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=light-dark(#003C8C,#174073);strokeWidth=1.5;dashed=0;" value="" vertex="1">
+          <mxGeometry height="510" width="480" x="440" y="158" as="geometry" />
+        </mxCell>
+        <mxCell id="n17" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;fillColor=#F5F5F5;" value="" vertex="1">
+          <mxGeometry height="148" width="480" x="440" y="738" as="geometry" />
+        </mxCell>
+        <mxCell id="n18" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;fillColor=#F5F5F5;" value="" vertex="1">
+          <mxGeometry height="240" width="460" x="1060" y="158" as="geometry" />
+        </mxCell>
+        <mxCell id="n19" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;fillColor=#F5F5F5;" value="" vertex="1">
+          <mxGeometry height="242" width="460" x="1060" y="448" as="geometry" />
+        </mxCell>
+        <mxCell id="n20" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=6;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#D9DDE3;" value="" vertex="1">
+          <mxGeometry height="159.5" width="400" x="1120" y="745.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n21" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="46" width="440" x="460" y="198" as="geometry" />
+        </mxCell>
+        <mxCell id="n22" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="62" width="210" x="460" y="258" as="geometry" />
+        </mxCell>
+        <mxCell id="n23" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="62" width="210" x="690" y="258" as="geometry" />
+        </mxCell>
+        <mxCell id="n24" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=light-dark(#005DE0,#3D8CFC);strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="62" width="440" x="460" y="334" as="geometry" />
+        </mxCell>
+        <mxCell id="n25" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="62" width="210" x="460" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="n26" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="62" width="210" x="690" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="n27" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="62" width="210" x="460" y="486" as="geometry" />
+        </mxCell>
+        <mxCell id="n28" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;strokeWidth=1;dashed=0;" value="" vertex="1">
+          <mxGeometry height="62" width="210" x="690" y="486" as="geometry" />
+        </mxCell>
+        <mxCell id="n29" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=light-dark(#008A00,#103810);strokeColor=#005700;strokeWidth=1;dashed=0;fontColor=#ffffff;fillStyle=auto;" value="" vertex="1">
+          <mxGeometry height="84" width="440" x="460" y="562" as="geometry" />
+        </mxCell>
+        <mxCell id="n30" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="88" width="220" x="460" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="n31" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="88" width="200" x="700" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="n32" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="58" width="160" x="1080" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="n33" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="58" width="230" x="1270" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="n34" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="50" width="420" x="1080" y="276" as="geometry" />
+        </mxCell>
+        <mxCell id="n35" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="56" width="420" x="1080" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="n36" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="80" width="230" x="1080" y="566" as="geometry" />
+        </mxCell>
+        <mxCell id="n37" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=4;whiteSpace=wrap;html=1;strokeWidth=1;dashed=0;strokeColor=#999999;" value="" vertex="1">
+          <mxGeometry height="80" width="170" x="1330" y="566" as="geometry" />
+        </mxCell>
+        <mxCell id="n38" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=light-dark(#005DE0,#3D8CFC);strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="540" y="668" as="sourcePoint" />
+            <mxPoint x="540" y="738" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n39" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#005700;strokeWidth=2;dashed=1;dashPattern=6 4;fillColor=#008a00;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="795" y="738" as="sourcePoint" />
+            <mxPoint x="795" y="668" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n40" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#475569;strokeWidth=1.5;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1240" y="229" as="sourcePoint" />
+            <mxPoint x="1270" y="229" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n41" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#475569;strokeWidth=1.5;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1399" y="546" as="sourcePoint" />
+            <mxPoint x="1399" y="566" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n42" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#333333;strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="203" as="sourcePoint" />
+            <mxPoint x="440" y="203" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n43" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=classic;endArrow=classic;strokeColor=#808080;strokeWidth=2;dashed=1;dashPattern=4 4;startFill=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="360" y="337" as="sourcePoint" />
+            <mxPoint x="440" y="337" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n44" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#333333;strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="440" y="446" as="sourcePoint" />
+            <mxPoint x="360" y="446" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n45" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#333333;strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="517" />
+              <mxPoint x="400" y="712" />
+            </Array>
+            <mxPoint x="440" y="517" as="sourcePoint" />
+            <mxPoint x="360" y="712" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n46" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=light-dark(#005DE0,#3D8CFC);strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="990" y="352" />
+              <mxPoint x="990" y="229" />
+            </Array>
+            <mxPoint x="900" y="352" as="sourcePoint" />
+            <mxPoint x="1060" y="229" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n47" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=light-dark(#005DE0,#3D8CFC);strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1010" y="378" />
+              <mxPoint x="1010" y="518" />
+            </Array>
+            <mxPoint x="900" y="378" as="sourcePoint" />
+            <mxPoint x="1060" y="518" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n48" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#005700;strokeWidth=2;dashed=1;dashPattern=6 4;entryX=0.998;entryY=0.828;entryDx=0;entryDy=0;entryPerimeter=0;fillColor=#008a00;" target="n16">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1036" y="301" />
+              <mxPoint x="1036" y="580" />
+            </Array>
+            <mxPoint x="1060" y="301" as="sourcePoint" />
+            <mxPoint x="920" y="592" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n49" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#005700;strokeWidth=2;dashed=1;dashPattern=6 4;fillColor=#008a00;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1060" y="628" as="sourcePoint" />
+            <mxPoint x="920" y="628" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n50" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=light-dark(#005DE0,#3D8CFC);strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1147" y="793.75" as="sourcePoint" />
+            <mxPoint x="1207" y="793.75" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n51" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#005700;strokeWidth=2;dashed=1;dashPattern=6 4;fillColor=#008a00;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1147" y="821.75" as="sourcePoint" />
+            <mxPoint x="1207" y="821.75" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n52" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#333333;strokeWidth=2;dashed=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1147" y="851.25" as="sourcePoint" />
+            <mxPoint x="1207" y="851.25" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n53" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=none;endArrow=classic;strokeColor=#808080;strokeWidth=2;dashed=1;dashPattern=4 4;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1147" y="879.25" as="sourcePoint" />
+            <mxPoint x="1207" y="879.25" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n57" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=15;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Web Browser&lt;/font&gt;" vertex="1">
+          <mxGeometry height="21" width="202" x="58" y="171" as="geometry" />
+        </mxCell>
+        <mxCell id="n58" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Dashboard, jail/filter management, settings&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="302" x="58" y="195.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n59" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Live ban/unban events propagated over WebSocket&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="260" x="58" y="216.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n60" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=15;fontColor=#111827;" value="&lt;font&gt;&lt;b style=&quot;color: light-dark(rgb(0, 0, 0), rgb(237, 237, 237));&quot;&gt;Identity provider &lt;/b&gt;&lt;span style=&quot;font-weight: 400; font-size: 12.5px;&quot;&gt;&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;(optional)&lt;/font&gt;&lt;/span&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="21" width="243" x="58" y="306" as="geometry" />
+        </mxCell>
+        <mxCell id="n61" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Keycloak, Authentik or Pocket-ID&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="232" x="58" y="330.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n62" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;OIDC authorization flow&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="204" x="58" y="349.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n63" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=15;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Alert providers&lt;/font&gt;" vertex="1">
+          <mxGeometry height="21" width="134" x="58" y="441" as="geometry" />
+        </mxCell>
+        <mxCell id="n64" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Email (&lt;font face=&quot;Courier New&quot;&gt;SMTP&lt;/font&gt;)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="92" x="58" y="468.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n65" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Webhook (&lt;font face=&quot;Courier New&quot;&gt;HTTP POST&lt;/font&gt;)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="141" x="58" y="488.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n66" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Elasticsearch (event indexing)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="218" x="58" y="508.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n67" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Country filtering, GeoIP/Whois enrichment&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="272" x="58" y="538.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n68" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=15;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Edge firewalls&lt;/font&gt;" vertex="1">
+          <mxGeometry height="21" width="126" x="58" y="646" as="geometry" />
+        </mxCell>
+        <mxCell id="n69" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;MikroTik (&lt;font face=&quot;Courier New&quot;&gt;SSH&lt;/font&gt;)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="106" x="58" y="673.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n70" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;pfSense or OPNsense (&lt;font face=&quot;Courier New&quot;&gt;REST API&lt;/font&gt;)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="18" width="211" x="58" y="693.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n71" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Permanent blocks for recurring offenders,&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="272" x="58" y="723.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n72" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;pushed by the UI when thresholds are reached&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="266" x="58" y="740.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n73" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12;fontColor=#6b7280;fontStyle=2;" value="&lt;font style=&quot;color: rgb(26, 26, 26);&quot;&gt;Fail2Ban UI host - container or systemd service&lt;/font&gt;" vertex="1">
+          <mxGeometry height="17" width="263" x="436" y="135" as="geometry" />
+        </mxCell>
+        <mxCell id="n74" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=16;fontColor=#1e3a8a;" value="&lt;b&gt;&lt;font style=&quot;&quot;&gt;&lt;u style=&quot;&quot;&gt;&lt;font style=&quot;color: light-dark(rgb(0, 93, 224), rgb(62, 139, 252));&quot;&gt;Fail2Ban UI&lt;/font&gt;&lt;/u&gt; &lt;/font&gt;&lt;/b&gt;&lt;span style=&quot;font-weight: 400; font-size: 12.5px;&quot;&gt;&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;(single Go binary, Gin)&lt;/font&gt;&lt;/span&gt;" vertex="1">
+          <mxGeometry height="22" width="322" x="460" y="168" as="geometry" />
+        </mxCell>
+        <mxCell id="n75" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Web frontend&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="99" x="474" y="204.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n76" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;embedded template with static assets, vanilla JS, Tailwind (no CDN)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="375" x="474" y="223.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n77" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;REST API&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="68" x="474" y="264.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n78" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;/api/*&lt;/font&gt; --&amp;gt; session auth (&lt;font face=&quot;Courier New&quot;&gt;OIDC&lt;/font&gt;)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="188" x="474" y="283.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n79" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;strict IP/CIDR input validation&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="208" x="474" y="299.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n80" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;WebSocket hub&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="106" x="704" y="264.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n81" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;same-origin only, &lt;font face=&quot;Courier New&quot;&gt;/api/ws&lt;/font&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="169" x="704" y="283.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n82" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;ban/unban and console events&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="175" x="704" y="299.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n83" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#1e3a8a;fontStyle=1;" value="&lt;font style=&quot;color: light-dark(rgb(0, 93, 224), rgb(61, 140, 252));&quot;&gt;Connector manager&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="137" x="474" y="340.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n84" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;one connector per managed fail2ban-server, selected via &lt;font face=&quot;Courier New&quot;&gt;X-F2B-Server&lt;/font&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="388" x="474" y="359.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n85" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#1d4ed8;fontStyle=1;" value="&lt;font style=&quot;color: light-dark(rgb(0, 93, 224), rgb(61, 140, 252));&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;Local&lt;/font&gt; (&lt;i style=&quot;&quot;&gt;via socket&lt;/i&gt;), &lt;font face=&quot;Courier New&quot;&gt;SSH&lt;/font&gt; (&lt;i style=&quot;&quot;&gt;via remote fail2ban-client&lt;/i&gt;), &lt;font face=&quot;Courier New&quot;&gt;Agent&lt;/font&gt; (&lt;i style=&quot;&quot;&gt;via HTTPS&lt;/i&gt;)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="375" x="474" y="375.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n86" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Alert dispatcher&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="129" x="474" y="416.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n87" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Email, Webhook, Elasticsearch&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="208" x="474" y="435.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n88" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;per-event toggles, country filter&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="221" x="474" y="451.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n89" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;SQLite storage&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="114" x="704" y="416.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n90" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;ban_events&lt;/font&gt;,&amp;nbsp;&lt;font face=&quot;Courier New&quot;&gt;servers&lt;/font&gt;, &lt;font face=&quot;Courier New&quot;&gt;settings&lt;/font&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="208" x="704" y="435.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n91" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot; face=&quot;Courier New&quot;&gt;permanent_blocks&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="111" x="704" y="451.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n92" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;fontFamily=Helvetica;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Firewall integrations&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="167" x="474" y="492.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n93" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;recurring-offender thresholds&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="195" x="474" y="511.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n94" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;u&gt;MikroTik&lt;/u&gt;, &lt;u&gt;pfSense&lt;/u&gt; or &lt;u&gt;OPNsense&lt;/u&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="195" x="474" y="527.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n95" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;GeoIP / Whois&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="106" x="704" y="492.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n96" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;MaxMind or ip-api.com&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="143" x="704" y="511.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n97" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;enriches events and alerts&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="175" x="704" y="527.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n98" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=default;fontStyle=1;" value="&lt;font style=&quot;color: light-dark(rgb(255, 255, 255), rgb(237, 237, 237));&quot;&gt;Event callback receiver&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="182" x="474" y="570.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n99" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12;fontColor=#ffffff;fontFamily=Consolas;" value="&lt;font style=&quot;color: light-dark(rgb(245, 245, 245), rgb(230, 230, 230));&quot;&gt;&lt;font face=&quot;Courier New&quot; style=&quot;&quot;&gt;POST &quot;/api/ban&quot;,&lt;/font&gt; &lt;font face=&quot;Courier New&quot; style=&quot;&quot;&gt;POST &quot;/api/unban&quot;&lt;/font&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="17" width="254" x="474" y="591" as="geometry" />
+        </mxCell>
+        <mxCell id="n100" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=light-dark(#000000,#EDEDED);" value="&lt;font style=&quot;color: light-dark(rgb(245, 245, 245), rgb(230, 230, 230));&quot;&gt;validates &lt;font face=&quot;Courier New&quot; style=&quot;&quot;&gt;X-Callback-Secret &lt;/font&gt;--&amp;gt; enrich --&amp;gt; store --&amp;gt; broadcast --&amp;gt; alert&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="420" x="474" y="609.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n101" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#ffffff;" value="&lt;font style=&quot;color: light-dark(rgb(245, 245, 245), rgb(230, 230, 230));&quot;&gt;--&amp;gt; advanced actions (edge firewall block on repeat offenders)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="394" x="474" y="625.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n102" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=15;fontColor=#111827;fontStyle=0" value="&lt;font&gt;&lt;b style=&quot;color: light-dark(rgb(0, 0, 0), rgb(237, 237, 237));&quot;&gt;&lt;u&gt;Fail2Ban -- local connector&lt;/u&gt; &lt;/b&gt;&lt;span style=&quot;font-weight: 400; font-size: 12px;&quot;&gt;&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;(same host as the UI)&lt;/font&gt;&lt;/span&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="21" width="411" x="460" y="748" as="geometry" />
+        </mxCell>
+        <mxCell id="n103" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;fail2ban daemon&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="121" x="474" y="787.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n104" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;jails, filters, actions&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="169" x="474" y="807.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n105" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#475569;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot; face=&quot;Courier New&quot;&gt;fail2ban.sock&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="97" x="474" y="827" as="geometry" />
+        </mxCell>
+        <mxCell id="n106" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#475569;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;/etc/fail2ban&lt;/font&gt; (must be mounted)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="165" x="474" y="844" as="geometry" />
+        </mxCell>
+        <mxCell id="n107" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot; face=&quot;Courier New&quot;&gt;ui-custom-action.conf&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="167" x="711" y="788.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n108" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;fires on every ban/unban&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="163" x="711" y="807.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n109" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#475569;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;curl&lt;/font&gt; --&amp;gt; callback URL&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="138" x="711" y="827" as="geometry" />
+        </mxCell>
+        <mxCell id="n110" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#475569;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;(loopback)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="76" x="711" y="844" as="geometry" />
+        </mxCell>
+        <mxCell id="n111" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#1d4ed8;" value="&lt;font style=&quot;color: light-dark(rgb(0, 93, 224), rgb(61, 140, 252));&quot;&gt;direct unix socket&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="137" x="552" y="688.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n112" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#1d4ed8;" value="&lt;font style=&quot;color: light-dark(rgb(0, 93, 224), rgb(61, 140, 252));&quot;&gt;file access&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="79" x="552" y="704.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n113" parent="1" style="text;html=1;strokeColor=none;fillColor=#008a00;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#ffffff;" value="&lt;font face=&quot;Courier New&quot;&gt;&lt;b&gt;POST&lt;/b&gt; &lt;/font&gt;events" vertex="1">
+          <mxGeometry height="16" width="79" x="808" y="689.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n114" parent="1" style="text;html=1;strokeColor=none;fillColor=#008a00;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#ffffff;" value="(&lt;font face=&quot;Courier New&quot;&gt;&lt;b&gt;loopback HTTP&lt;/b&gt;&lt;/font&gt;)" vertex="1">
+          <mxGeometry height="16" width="105" x="808" y="704.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n115" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=15;fontColor=#111827;fontStyle=5;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Remote host -- SSH connector&lt;/font&gt;" vertex="1">
+          <mxGeometry height="21" width="235" x="1080" y="169" as="geometry" />
+        </mxCell>
+        <mxCell id="n116" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot; face=&quot;Courier New&quot;&gt;sshd&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="38" x="1094" y="207.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n117" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;dedicated system service&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="126" x="1094" y="227.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n118" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;(account, key auth needed)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="117" x="1094" y="241.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n119" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;fail2ban daemon&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="121" x="1284" y="207.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n120" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#475569;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot; face=&quot;Courier New&quot;&gt;sudo fail2ban-client&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="144" x="1284" y="228" as="geometry" />
+        </mxCell>
+        <mxCell id="n121" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#475569;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;/etc/fail2ban &lt;/font&gt;via SSH&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="151" x="1284" y="242" as="geometry" />
+        </mxCell>
+        <mxCell id="n122" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot; face=&quot;Courier New&quot;&gt;ui-custom-action.conf&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="167" x="1094" y="283.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n123" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;posts ban/unban events to the UI callback URL&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="298" x="1094" y="302.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n124" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#6b7280;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;requires &lt;font face=&quot;Courier New&quot;&gt;sudo&lt;/font&gt; permissions for: &quot;&lt;font face=&quot;Courier New&quot;&gt;fail2ban-client *&lt;/font&gt;&quot;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="233" x="1080" y="341" as="geometry" />
+        </mxCell>
+        <mxCell id="n125" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#6b7280;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;and as well for: &quot;&lt;font face=&quot;Courier New&quot;&gt;systemctl restart fail2ban&lt;/font&gt;&quot; -- Also the &lt;font face=&quot;Courier New&quot;&gt;SSH&lt;/font&gt;-user used to connect,&amp;nbsp;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="430" x="1080" y="357" as="geometry" />
+        </mxCell>
+        <mxCell id="n126" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=15;fontColor=#111827;fontStyle=5;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;Remote host -- agent connector&lt;/font&gt;" vertex="1">
+          <mxGeometry height="21" width="252" x="1080" y="459" as="geometry" />
+        </mxCell>
+        <mxCell id="n127" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;fail2ban-ui-agent&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="137" x="1094" y="497.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n128" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;HTTP&lt;/font&gt; control &lt;font face=&quot;Courier New&quot;&gt;API&lt;/font&gt;, no inbound &lt;font face=&quot;Courier New&quot;&gt;SSH&lt;/font&gt; required (Agent talks to &lt;font face=&quot;Courier New&quot;&gt;fail2ban.sock&lt;/font&gt;)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="278" x="1094" y="517.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n129" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot;&gt;fail2ban daemon&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="121" x="1344" y="574.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n130" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;&lt;font face=&quot;Courier New&quot;&gt;jails&lt;/font&gt;, &lt;font face=&quot;Courier New&quot;&gt;filters&lt;/font&gt;, &lt;font face=&quot;Courier New&quot;&gt;actions&lt;/font&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="169" x="1344" y="593.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n131" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#475569;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot; face=&quot;Courier New&quot;&gt;fail2ban.sock&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="97" x="1344" y="612" as="geometry" />
+        </mxCell>
+        <mxCell id="n132" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13.5;fontColor=#111827;fontStyle=1;" value="&lt;font style=&quot;color: rgb(0, 0, 0);&quot; face=&quot;Courier New&quot;&gt;ui-custom-action.conf&lt;/font&gt;" vertex="1">
+          <mxGeometry height="19" width="156" x="1094" y="574.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n134" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#6b7280;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;posts ban/unban events (callback URL)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="206" x="1094" y="596" as="geometry" />
+        </mxCell>
+        <mxCell id="n135" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#6b7280;fontFamily=Consolas;" value="&lt;font style=&quot;color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255)); font-size: 12px;&quot;&gt;prebuilt image: &lt;font face=&quot;Courier New&quot; style=&quot;&quot;&gt;swissmakers/fail2ban-ui-agent&lt;/font&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="315" x="1080" y="665" as="geometry" />
+        </mxCell>
+        <mxCell id="n136" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#475569;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;HTTPS&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="79" x="352.5" y="185.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n137" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#1d4ed8;fontStyle=1;" value="&lt;font style=&quot;color: light-dark(rgb(0, 93, 224), rgb(61, 140, 252));&quot;&gt;SSH&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="32" x="1007" y="211" as="geometry" />
+        </mxCell>
+        <mxCell id="n138" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#1d4ed8;fontStyle=1;" value="&lt;font style=&quot;color: light-dark(rgb(0, 93, 224), rgb(61, 140, 252));&quot;&gt;HTTPS&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="46" x="953" y="382" as="geometry" />
+        </mxCell>
+        <mxCell id="n139" parent="1" style="text;html=1;strokeColor=none;fillColor=#008a00;align=center;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#ffffff;fontStyle=1;" value="&lt;font face=&quot;Courier New&quot;&gt;HTTPS POST&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="72" x="953" y="589.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n140" parent="1" style="text;html=1;strokeColor=none;fillColor=#008a00;align=center;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#ffffff;fontStyle=1;" value="&lt;font face=&quot;Courier New&quot;&gt;X-Callback-Secret&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="117" x="932" y="603.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n141" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=13;fontColor=#111827;fontStyle=1;" value="Legend" vertex="1">
+          <mxGeometry height="18" width="52" x="1140" y="758.5" as="geometry" />
+        </mxCell>
+        <mxCell id="n142" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;The UI manages Fail2Ban through a connector&lt;/font&gt;" vertex="1">
+          <mxGeometry height="17" width="281" x="1219" y="785.75" as="geometry" />
+        </mxCell>
+        <mxCell id="n143" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Fail2Ban posts ban/unban callbacks to the UI&lt;/font&gt;" vertex="1">
+          <mxGeometry height="17" width="271" x="1219" y="813.75" as="geometry" />
+        </mxCell>
+        <mxCell id="n144" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Operator traffic and outbound integrations&lt;/font&gt;" vertex="1">
+          <mxGeometry height="17" width="290" x="1219" y="843.25" as="geometry" />
+        </mxCell>
+        <mxCell id="n145" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=12;fontColor=#374151;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;Optional component&lt;/font&gt;" vertex="1">
+          <mxGeometry height="17" width="129" x="1219" y="871.25" as="geometry" />
+        </mxCell>
+        <mxCell id="TBRb6NSTXGh-oNRXvzJj-2" edge="1" parent="1" style="edgeStyle=none;rounded=0;html=1;endSize=6;startArrow=classic;endArrow=none;strokeColor=#333333;strokeWidth=2;dashed=0;startFill=1;endFill=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="359.5" y="229.5" as="sourcePoint" />
+            <mxPoint x="439.5" y="229.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="TBRb6NSTXGh-oNRXvzJj-3" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11.5;fontColor=#475569;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;WSS&lt;/font&gt;" vertex="1">
+          <mxGeometry height="16" width="79" x="352.5" y="213.5" as="geometry" />
+        </mxCell>
+        <mxCell id="TBRb6NSTXGh-oNRXvzJj-7" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=visible;fontSize=11;fontColor=#6b7280;fontFamily=Consolas;" value="&lt;font style=&quot;color: rgb(51, 51, 51);&quot;&gt;must be able to write to &quot;&lt;font face=&quot;Courier New&quot;&gt;/etc/fail2ban/*&lt;/font&gt;&quot; to be able to make changes to configuration&lt;/font&gt;" vertex="1">
+          <mxGeometry height="15" width="430" x="1080" y="372" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
