@@ -1,7 +1,7 @@
 {
   "name": "fail2ban-ui",
-  "version": "1.4.6",
-  "description": "🚀 **Fail2Ban-UI** is a Swiss-made **web-based management interface** for [Fail2Ban](https://www.fail2ban.org/). It provides an intuitive dashboard to **monitor, configure, and manage Fail2Ban** instances in real time, supporting both local and remote Fail2ban servers.",
+  "version": "1.5.0",
+  "description": "Fail2Ban-UI is a Swiss-made management platform for Fail2Ban. It provides a central place to monitor, configure, and manage Fail2Ban across one or more hosts, supporting both local and remote Fail2Ban servers.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

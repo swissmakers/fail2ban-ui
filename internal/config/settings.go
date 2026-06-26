@@ -232,7 +232,7 @@ actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban
                  --arg failures '<failures>' \
                  --arg logs "$(if [ '<backend>' = 'systemd' ] && [ "$journalmatch" != '<journalmatch>' ] && [ -n "$journalmatch" ]; \
                                then journalctl -r $journalmatch 2>/dev/null; \
-                               else tac "$logpath" 2>/dev/null; \
+                               else tac $logpath 2>/dev/null; \
                                fi | grep <grepopts> -wF <ip>)" \
                  '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
 
