@@ -78,11 +78,14 @@ func TestFail2banActionTemplateQuotesUnresolvedTags(t *testing.T) {
 	if strings.Contains(fail2banActionTemplate, "tac <logpath>") {
 		t.Fatal("logpath must not be used directly in shell syntax; unresolved tags are parsed as redirections")
 	}
+	if strings.Contains(fail2banActionTemplate, `tac "$logpath"`) {
+		t.Fatal(`tac "$logpath" is quoted; globbed/multi-file logpaths will not expand and logs will be empty`)
+	}
 	for _, want := range []string{
 		"journalmatch='<journalmatch>'",
 		"logpath='<logpath>'",
 		`journalctl -r $journalmatch`,
-		`tac "$logpath"`,
+		`tac $logpath`,
 	} {
 		if !strings.Contains(fail2banActionTemplate, want) {
 			t.Fatalf("action template missing %q", want)
