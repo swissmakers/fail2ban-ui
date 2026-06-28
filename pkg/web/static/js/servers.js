@@ -2,6 +2,38 @@
 "use strict";
 
 // =========================================================================
+//  "Selected server persistence" for the browser server-dropdown
+// =========================================================================
+
+var SELECTED_SERVER_KEY = 'fail2ban-ui.selectedServerId';
+
+function getStoredServerId() {
+  try {
+    return window.localStorage.getItem(SELECTED_SERVER_KEY) || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setStoredServerId(id) {
+  try {
+    if (id) {
+      window.localStorage.setItem(SELECTED_SERVER_KEY, id);
+    } else {
+      window.localStorage.removeItem(SELECTED_SERVER_KEY);
+    }
+  } catch (e) {
+  }
+}
+
+function clearStoredServerId() {
+  try {
+    window.localStorage.removeItem(SELECTED_SERVER_KEY);
+  } catch (e) {
+  }
+}
+
+// =========================================================================
 //  Server data loading
 // =========================================================================
 
@@ -16,6 +48,16 @@ function loadServers() {
         currentServer = null;
       } else {
         var desired = currentServerId;
+        if (!desired) {
+          var stored = getStoredServerId();
+          if (stored) {
+            if (enabledServers.some(function(s) { return s.id === stored; })) {
+              desired = stored;
+            } else {
+              clearStoredServerId();
+            }
+          }
+        }
         var selected = desired ? enabledServers.find(function(s) { return s.id === desired; }) : null;
         if (!selected) {
           var def = enabledServers.find(function(s) { return s.isDefault; });
@@ -233,6 +275,12 @@ function setCurrentServer(serverId) {
     var next = serversCache.find(function(s) { return s.id === serverId && s.enabled; });
     currentServer = next || null;
     currentServerId = currentServer ? currentServer.id : null;
+  }
+  // We remember the manual choice so it can be autoselected after page reload
+  if (currentServerId) {
+    setStoredServerId(currentServerId);
+  } else {
+    clearStoredServerId();
   }
   jailBannedState = {};
   renderServerSelector();
@@ -620,9 +668,14 @@ function setServerEnabled(serverId, enabled) {
         showToast(formatApiError(data, '', 'Error saving server'), 'error');
         return;
       }
-      if (!enabled && currentServerId === serverId) {
-        currentServerId = null;
-        currentServer = null;
+      if (!enabled) {
+        if (getStoredServerId() === serverId) {
+          clearStoredServerId();
+        }
+        if (currentServerId === serverId) {
+          currentServerId = null;
+          currentServer = null;
+        }
       }
       if (data.jailLocalWarning) {
         showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
@@ -682,6 +735,9 @@ function deleteServer(serverId) {
       if (data.error) {
         showToast(formatApiError(data, '', 'Error deleting server'), 'error');
         return;
+      }
+      if (getStoredServerId() === serverId) {
+        clearStoredServerId();
       }
       if (currentServerId === serverId) {
         currentServerId = null;
