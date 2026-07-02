@@ -32,6 +32,12 @@ jobs:
         run: |
           echo "$DH_TOKEN" | podman login docker.io --username "$DH_USER" --password-stdin
 
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build multi-arch manifest locally
         env:
           LOCAL_MANIFEST: localhost/fail2ban-ui:${{ github.sha }}
@@ -52,6 +58,7 @@ jobs:
         run: |
           DEST="docker://$REG/$PROJ/fail2ban-ui"
           podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ github.sha }}"
+          podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ steps.version.outputs.version }}"
           podman manifest push --all "$LOCAL_MANIFEST" "$DEST:latest"
 
       - name: Push to Docker Hub
@@ -63,4 +70,5 @@ jobs:
         run: |
           DEST="docker://docker.io/$DH_NS/$DH_REPO"
           podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ github.sha }}"
+          podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ steps.version.outputs.version }}"
           podman manifest push --all "$LOCAL_MANIFEST" "$DEST:latest"
