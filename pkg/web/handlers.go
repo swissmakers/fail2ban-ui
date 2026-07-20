@@ -3391,10 +3391,37 @@ func sanitizeEmailHeader(value string) string {
 }
 
 // Connects to the SMTP server and delivers a single HTML message.
+// parseRecipients splits a comma-delimited string, trims whitespace, and
+// returns the list of non-empty recipients.
+func parseRecipients(to string) []string {
+	parts := strings.Split(to, ",")
+	recs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			recs = append(recs, t)
+		}
+	}
+	return recs
+}
+
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
-	// Skips sending if the destination email is still the default placeholder
-	if strings.EqualFold(strings.TrimSpace(to), "alerts@example.com") {
-		log.Printf("⚠️ sendEmail skipped: destination email is still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
+	recipients := parseRecipients(to)
+	if len(recipients) == 0 {
+		log.Printf("⚠️ sendEmail skipped: no recipients provided.")
+		return nil
+	}
+
+	// Skips sending if every recipient is still the default placeholder
+	allPlaceholder := true
+	for _, r := range recipients {
+		if !strings.EqualFold(r, "alerts@example.com") {
+			allPlaceholder = false
+			break
+		}
+	}
+	if allPlaceholder {
+		log.Printf("⚠️ sendEmail skipped: all recipients are still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
 		return nil
 	}
 
@@ -3412,7 +3439,8 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	}
 
 	fromHeader := sanitizeEmailHeader(settings.SMTP.From)
-	toHeader := sanitizeEmailHeader(to)
+	// Build the To header with all recipients, comma-space separated
+	toHeader := sanitizeEmailHeader(strings.Join(recipients, ", "))
 	msgID := sanitizeEmailHeader(fmt.Sprintf("<%d.%s@fail2ban-ui>", time.Now().UnixNano(), settings.SMTP.From))
 	subjectHeader := mime.QEncoding.Encode("UTF-8", subject)
 	message := "From: " + fromHeader + "\r\n" +
@@ -3494,23 +3522,25 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 		log.Printf("📧 sendEmail: SMTP authentication successful")
 	}
 
-	err = sendSMTPMessage(client, settings.SMTP.From, to, msg)
+	err = sendSMTPMessage(client, settings.SMTP.From, recipients, msg)
 	if err != nil {
 		log.Printf("❌ sendEmail: Failed to send message: %v", err)
 		return err
 	}
-	log.Printf("📧 sendEmail: Successfully sent email to %s", to)
+	log.Printf("📧 sendEmail: Successfully sent email to %s", strings.Join(recipients, ", "))
 	return nil
 }
 
 // Sends the actual message
 // Performs the MAIL/RCPT/DATA sequence on an open SMTP connection.
-func sendSMTPMessage(client *smtp.Client, from, to string, msg []byte) error {
+func sendSMTPMessage(client *smtp.Client, from string, recipients []string, msg []byte) error {
 	if err := client.Mail(from); err != nil {
 		return fmt.Errorf("failed to set sender: %w", err)
 	}
-	if err := client.Rcpt(to); err != nil {
-		return fmt.Errorf("failed to set recipient: %w", err)
+	for _, r := range recipients {
+		if err := client.Rcpt(r); err != nil {
+			return fmt.Errorf("failed to set recipient %q: %w", r, err)
+		}
 	}
 	wc, err := client.Data()
 	if err != nil {

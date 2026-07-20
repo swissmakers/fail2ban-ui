@@ -793,11 +793,12 @@
         <!-- ========================= Email Configuration ========================= -->
         <div id="alertEmailFields" class="space-y-6">
         <div class="bg-white rounded-lg shadow p-6" id="emailFieldsContainer">
-          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Email (Alerts Receiver)</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Emails (Alerts Receivers)</h3>
           <div class="mb-4">
-            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
-                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch" />
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
+                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch, admin@example.com" />
             <p class="text-xs text-red-600 mt-1 hidden" id="destEmailError"></p>
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.destination_email_hint">Multiple email addresses can be specified using comma-separated values.</p>
           </div>
         </div>
         <div class="bg-white rounded-lg shadow p-6" id="smtpFieldsContainer">
