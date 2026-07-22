@@ -68,6 +68,9 @@ type AppSettings struct {
 	BanactionAllports    string                `json:"banactionAllports"`
 	Chain                string                `json:"chain"`
 	BantimeRndtime       string                `json:"bantimeRndtime"`
+	BantimeMaxtime       string                `json:"bantimeMaxtime"`
+	BantimeFactor        string                `json:"bantimeFactor"`
+	BantimeOveralljails  bool                  `json:"bantimeOveralljails"`
 	GeoIPProvider        string                `json:"geoipProvider"`
 	GeoIPDatabasePath    string                `json:"geoipDatabasePath"`
 	MaxLogLines          int                   `json:"maxLogLines"`
@@ -225,15 +228,16 @@ norestored = 1
 actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban \
      -H "Content-Type: application/json" \
      -H "X-Callback-Secret: __CALLBACK_SECRET__" \
-     -d "$(journalmatch='<journalmatch>'; logpath='<logpath>'; jq -n --arg serverId '__SERVER_ID__' \
+     -d "$(logpath='<logpath>'; \
+           logs="$(tac $logpath 2>/dev/null | grep -a <grepopts> -wF '<ip>')"; \
+           [ -z "$logs" ] && logs="$(journalctl --no-pager -r -o cat --since '-1 day' 2>/dev/null | grep -a <grepopts> -wF '<ip>')"; \
+           logs="$(printf '%s' "$logs" | LC_ALL=C tr -cd '\11\12\15\40-\176')"; \
+           jq -n --arg serverId '__SERVER_ID__' \
                  --arg ip '<ip>' \
                  --arg jail '<name>' \
                  --arg hostname '<fq-hostname>' \
                  --arg failures '<failures>' \
-                 --arg logs "$(if [ '<backend>' = 'systemd' ] && [ "$journalmatch" != '<journalmatch>' ] && [ -n "$journalmatch" ]; \
-                               then journalctl -r $journalmatch 2>/dev/null; \
-                               else tac $logpath 2>/dev/null; \
-                               fi | grep <grepopts> -wF <ip>)" \
+                 --arg logs "$logs" \
                  '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
 
 # Executes a cURL request to notify our API when an IP is unbanned.
@@ -253,10 +257,6 @@ name = default
 
 # Path to log files containing relevant lines for the abuser IP
 logpath = /dev/null
-
-# Default journal match -> empty for file backends so '<journalmatch>' always
-# resolves to a valid token; systemd-backed jails override this via their filter.
-journalmatch =
 
 # Number of log lines to include in the callback
 grepmax = 200
@@ -338,6 +338,7 @@ func migrateLegacySettings() error {
 	}
 	settingsLock.Lock()
 	currentSettings = legacy
+	setDebugFlag(currentSettings.Debug)
 	settingsLock.Unlock()
 	return nil
 }
@@ -380,6 +381,7 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.Language = rec.Language
 	currentSettings.Port = rec.Port
 	currentSettings.Debug = rec.Debug
+	setDebugFlag(rec.Debug)
 	currentSettings.CallbackURL = rec.CallbackURL
 	currentSettings.RestartNeeded = rec.RestartNeeded
 	currentSettings.BantimeIncrement = rec.BantimeIncrement
@@ -401,6 +403,9 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 		currentSettings.Chain = "INPUT"
 	}
 	currentSettings.BantimeRndtime = rec.BantimeRndtime
+	currentSettings.BantimeMaxtime = rec.BantimeMaxtime
+	currentSettings.BantimeFactor = rec.BantimeFactor
+	currentSettings.BantimeOveralljails = rec.BantimeOveralljails
 	currentSettings.SMTP = SMTPSettings{
 		Host:               rec.SMTPHost,
 		Port:               rec.SMTPPort,
@@ -566,6 +571,9 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		BanactionAllports:      currentSettings.BanactionAllports,
 		Chain:                  currentSettings.Chain,
 		BantimeRndtime:         currentSettings.BantimeRndtime,
+		BantimeMaxtime:         currentSettings.BantimeMaxtime,
+		BantimeFactor:          currentSettings.BantimeFactor,
+		BantimeOveralljails:    currentSettings.BantimeOveralljails,
 		AdvancedActionsJSON:    string(advancedBytes),
 		GeoIPProvider:          currentSettings.GeoIPProvider,
 		GeoIPDatabasePath:      currentSettings.GeoIPDatabasePath,
@@ -628,6 +636,7 @@ func setDefaults() {
 }
 
 func setDefaultsLocked() {
+	setDebugFlag(currentSettings.Debug)
 	if currentSettings.Language == "" {
 		currentSettings.Language = "en"
 	}
@@ -782,6 +791,15 @@ func initializeFromJailFile() error {
 	}
 	if val, ok := settings["bantime.rndtime"]; ok && val != "" {
 		currentSettings.BantimeRndtime = val
+	}
+	if val, ok := settings["bantime.maxtime"]; ok && val != "" {
+		currentSettings.BantimeMaxtime = val
+	}
+	if val, ok := settings["bantime.factor"]; ok && val != "" {
+		currentSettings.BantimeFactor = val
+	}
+	if val, ok := settings["bantime.overalljails"]; ok && val != "" {
+		currentSettings.BantimeOveralljails = strings.EqualFold(val, "true")
 	}
 	return nil
 }
@@ -981,6 +999,17 @@ chain = %s
 	if settings.BantimeRndtime != "" {
 		defaultSection += fmt.Sprintf("bantime.rndtime = %s\n", settings.BantimeRndtime)
 	}
+	// bantime.maxtime caps how large escalating bans may grow when
+	// bantime.increment is enabled. Only emitted when the operator sets it.
+	if settings.BantimeMaxtime != "" {
+		defaultSection += fmt.Sprintf("bantime.maxtime = %s\n", settings.BantimeMaxtime)
+	}
+	if settings.BantimeFactor != "" {
+		defaultSection += fmt.Sprintf("bantime.factor = %s\n", settings.BantimeFactor)
+	}
+	if settings.BantimeOveralljails {
+		defaultSection += "bantime.overalljails = true\n"
+	}
 	defaultSection += "\n"
 
 	actionMwlgConfig := `# Custom Fail2Ban action for UI callbacks
@@ -993,12 +1022,6 @@ action = %(action_mwlg)s
 `
 
 	return jailLocalBanner + defaultSection + actionMwlgConfig + actionOverride
-}
-
-// Ensures that the managed jail.local file is valid and exists. (used by all connectors)
-func EnsureJailLocalStructure(configPath string) error {
-	DebugLog("Running EnsureJailLocalStructure()")
-	return fail2ban.EnsureManagedJailLocal(configPath, []byte(BuildJailLocalContent()))
 }
 
 func cloneServer(src Fail2banServer) Fail2banServer {
@@ -1027,7 +1050,7 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 		}
 	}
 	curlInsecureFlag := ""
-	if strings.HasPrefix(strings.ToLower(trimmed), "https://") {
+	if strings.HasPrefix(strings.ToLower(trimmed), "https://") && callbackInsecureTLSEnabled() {
 		curlInsecureFlag = " -k"
 	}
 	config := strings.ReplaceAll(fail2banActionTemplate, actionCallbackPlaceholder, trimmed)
@@ -1233,16 +1256,6 @@ func clearDefaultLocked() {
 	}
 }
 
-/*func setServerRestartFlagLocked(serverID string, value bool) bool {
-	for idx := range currentSettings.Servers {
-		if currentSettings.Servers[idx].ID == serverID {
-			currentSettings.Servers[idx].RestartNeeded = value
-			return true
-		}
-	}
-	return false
-}*/
-
 func anyServerNeedsRestartLocked() bool {
 	for _, srv := range currentSettings.Servers {
 		if srv.RestartNeeded {
@@ -1335,6 +1348,15 @@ func GetCallbackURLFromEnv() (string, bool) {
 		return "", false
 	}
 	return strings.TrimRight(v, "/"), true
+}
+
+func callbackInsecureTLSEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CALLBACK_INSECURE_TLS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func GetBindAddressFromEnv() (string, bool) {
@@ -1443,51 +1465,6 @@ func GetSettings() AppSettings {
 	defer settingsLock.RUnlock()
 	return currentSettings
 }
-
-// =========================================================================
-//  Restart Tracking
-// =========================================================================
-
-// Marks the specified server as requiring a restart. -- currently not used
-/*func MarkRestartNeeded(serverID string) error {
-	settingsLock.Lock()
-	defer settingsLock.Unlock()
-
-	if serverID == "" {
-		return fmt.Errorf("server id must be provided")
-	}
-
-	if !setServerRestartFlagLocked(serverID, true) {
-		return fmt.Errorf("server %s not found", serverID)
-	}
-
-	updateGlobalRestartFlagLocked()
-	if err := persistServersLocked(); err != nil {
-		return err
-	}
-	return persistAppSettingsLocked()
-}
-
-// Marks the specified server as no longer requiring a restart.
-func MarkRestartDone(serverID string) error {
-	settingsLock.Lock()
-	defer settingsLock.Unlock()
-
-	if serverID == "" {
-		return fmt.Errorf("server id must be provided")
-	}
-
-	if !setServerRestartFlagLocked(serverID, false) {
-		return fmt.Errorf("server %s not found", serverID)
-	}
-
-	updateGlobalRestartFlagLocked()
-	if err := persistServersLocked(); err != nil {
-		return err
-	}
-	return persistAppSettingsLocked()
-}
-*/
 
 func UpdateSettings(new AppSettings) (AppSettings, error) {
 	settingsLock.Lock()

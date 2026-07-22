@@ -69,12 +69,11 @@ func TestValidateServerUniqueness(t *testing.T) {
 	})
 }
 
-func TestFail2banActionTemplateQuotesUnresolvedTags(t *testing.T) {
+func TestFail2banActionTemplateRobustness(t *testing.T) {
 	t.Parallel()
 
-	if strings.Contains(fail2banActionTemplate, "journalctl -r <journalmatch>") {
-		t.Fatal("journalmatch must not be used directly in shell syntax; unresolved tags are parsed as redirections")
-	}
+	// Unresolved fail2ban tags must never appear bare in shell position (they get
+	// parsed as redirections/filenames).
 	if strings.Contains(fail2banActionTemplate, "tac <logpath>") {
 		t.Fatal("logpath must not be used directly in shell syntax; unresolved tags are parsed as redirections")
 	}
@@ -82,13 +81,23 @@ func TestFail2banActionTemplateQuotesUnresolvedTags(t *testing.T) {
 		t.Fatal(`tac "$logpath" is quoted; globbed/multi-file logpaths will not expand and logs will be empty`)
 	}
 	for _, want := range []string{
-		"journalmatch='<journalmatch>'",
 		"logpath='<logpath>'",
-		`journalctl -r $journalmatch`,
 		`tac $logpath`,
+		"grep -a",
+		"LC_ALL=C tr -cd '\\11\\12\\15\\40-\\176'",
+		"jq -n",
+		"--arg logs",
+		"journalctl",
 	} {
 		if !strings.Contains(fail2banActionTemplate, want) {
 			t.Fatalf("action template missing %q", want)
+		}
+	}
+
+	// The identity fields must be present so a ban is reported even with no logs.
+	for _, want := range []string{"--arg ip '<ip>'", "--arg jail '<name>'"} {
+		if !strings.Contains(fail2banActionTemplate, want) {
+			t.Fatalf("action template missing identity field %q", want)
 		}
 	}
 }
