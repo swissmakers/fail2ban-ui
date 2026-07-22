@@ -109,3 +109,19 @@ func maskServerSecrets(servers []shared.Fail2banServer) []shared.Fail2banServer 
 	}
 	return out
 }
+
+// stripServerConnectionDetails removes connection information non-admin users
+// have no need to see (support users only ban/unban through the UI).
+func stripServerConnectionDetails(servers []shared.Fail2banServer) []shared.Fail2banServer {
+	for i := range servers {
+		servers[i].Host = ""
+		servers[i].Port = 0
+		servers[i].SocketPath = ""
+		servers[i].ConfigPath = ""
+		servers[i].SSHUser = ""
+		servers[i].SSHKeyPath = ""
+		servers[i].AgentURL = ""
+		servers[i].AgentSecret = ""
+	}
+	return servers
+}

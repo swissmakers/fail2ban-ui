@@ -310,6 +310,7 @@ function resetServerForm() {
   document.getElementById('serverTags').value = '';
   document.getElementById('serverDefault').checked = false;
   document.getElementById('serverEnabled').checked = false;
+  document.getElementById('serverReverseTunnel').checked = false;
   populateSSHKeySelect(sshKeysCache || [], '');
   onServerTypeChange('local');
 }
@@ -333,6 +334,7 @@ function editServer(serverId) {
   document.getElementById('serverTags').value = (server.tags || []).join(',');
   document.getElementById('serverDefault').checked = !!server.isDefault;
   document.getElementById('serverEnabled').checked = !!server.enabled;
+  document.getElementById('serverReverseTunnel').checked = !!server.reverseTunnelEnabled;
   onServerTypeChange(server.type || 'local');
   if ((server.type || 'local') === 'ssh') {
     loadSSHKeys().then(function(keys) {
@@ -449,7 +451,8 @@ function submitServerForm(event) {
     tags: document.getElementById('serverTags').value
       ? document.getElementById('serverTags').value.split(',').map(function(tag) { return tag.trim(); }).filter(Boolean)
       : [],
-    enabled: document.getElementById('serverEnabled').checked
+    enabled: document.getElementById('serverEnabled').checked,
+    reverseTunnelEnabled: document.getElementById('serverReverseTunnel').checked
   };
   var nameKey = normalizeNameForCompare(payload.name);
   if (!nameKey) {
@@ -505,6 +508,7 @@ function submitServerForm(event) {
   if (payload.type !== 'ssh') {
     delete payload.sshUser;
     delete payload.sshKeyPath;
+    delete payload.reverseTunnelEnabled;
   }
   if (payload.type !== 'agent') {
     delete payload.agentUrl;

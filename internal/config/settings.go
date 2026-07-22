@@ -152,19 +152,23 @@ type ThreatIntelSettings struct {
 }
 
 type OIDCConfig struct {
-	Enabled       bool     `json:"enabled"`
-	Provider      string   `json:"provider"`
-	IssuerURL     string   `json:"issuerURL"`
-	ClientID      string   `json:"clientID"`
-	ClientSecret  string   `json:"clientSecret"`
-	RedirectURL   string   `json:"redirectURL"`
-	Scopes        []string `json:"scopes"`
-	SessionSecret string   `json:"sessionSecret"`
-	SessionMaxAge int      `json:"sessionMaxAge"`
-	SkipVerify    bool     `json:"skipVerify"`
-	UsernameClaim string   `json:"usernameClaim"`
-	LogoutURL     string   `json:"logoutURL"`
-	SkipLoginPage bool     `json:"skipLoginPage"`
+	Enabled              bool     `json:"enabled"`
+	Provider             string   `json:"provider"`
+	IssuerURL            string   `json:"issuerURL"`
+	ClientID             string   `json:"clientID"`
+	ClientSecret         string   `json:"clientSecret"`
+	RedirectURL          string   `json:"redirectURL"`
+	Scopes               []string `json:"scopes"`
+	SessionSecret        string   `json:"sessionSecret"`
+	SessionMaxAge        int      `json:"sessionMaxAge"`
+	SkipVerify           bool     `json:"skipVerify"`
+	UsernameClaim        string   `json:"usernameClaim"`
+	RoleClaim            string   `json:"roleClaim"`
+	AdminRoles           []string `json:"adminRoles"`
+	SupportRoles         []string `json:"supportRoles"`
+	AuthorizationEnabled bool     `json:"authorizationEnabled"`
+	LogoutURL            string   `json:"logoutURL"`
+	SkipLoginPage        bool     `json:"skipLoginPage"`
 }
 
 func defaultAdvancedActionsConfig() AdvancedActionsConfig {
@@ -483,25 +487,26 @@ func applyServerRecordsLocked(records []storage.ServerRecord) {
 			_ = json.Unmarshal([]byte(rec.TagsJSON), &tags)
 		}
 		server := Fail2banServer{
-			ID:            rec.ID,
-			Name:          rec.Name,
-			Type:          rec.Type,
-			Host:          rec.Host,
-			Port:          rec.Port,
-			SocketPath:    rec.SocketPath,
-			ConfigPath:    rec.ConfigPath,
-			SSHUser:       rec.SSHUser,
-			SSHKeyPath:    rec.SSHKeyPath,
-			AgentURL:      rec.AgentURL,
-			AgentSecret:   rec.AgentSecret,
-			Hostname:      rec.Hostname,
-			Tags:          tags,
-			IsDefault:     rec.IsDefault,
-			Enabled:       rec.Enabled,
-			RestartNeeded: rec.NeedsRestart,
-			CreatedAt:     rec.CreatedAt,
-			UpdatedAt:     rec.UpdatedAt,
-			EnabledSet:    true,
+			ID:                   rec.ID,
+			Name:                 rec.Name,
+			Type:                 rec.Type,
+			Host:                 rec.Host,
+			Port:                 rec.Port,
+			SocketPath:           rec.SocketPath,
+			ConfigPath:           rec.ConfigPath,
+			SSHUser:              rec.SSHUser,
+			SSHKeyPath:           rec.SSHKeyPath,
+			AgentURL:             rec.AgentURL,
+			AgentSecret:          rec.AgentSecret,
+			Hostname:             rec.Hostname,
+			Tags:                 tags,
+			IsDefault:            rec.IsDefault,
+			Enabled:              rec.Enabled,
+			ReverseTunnelEnabled: rec.ReverseTunnelEnabled,
+			RestartNeeded:        rec.NeedsRestart,
+			CreatedAt:            rec.CreatedAt,
+			UpdatedAt:            rec.UpdatedAt,
+			EnabledSet:           true,
 		}
 		servers = append(servers, server)
 	}
@@ -606,24 +611,25 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 			updatedAt = createdAt
 		}
 		records = append(records, storage.ServerRecord{
-			ID:           srv.ID,
-			Name:         srv.Name,
-			Type:         srv.Type,
-			Host:         srv.Host,
-			Port:         srv.Port,
-			SocketPath:   srv.SocketPath,
-			ConfigPath:   srv.ConfigPath,
-			SSHUser:      srv.SSHUser,
-			SSHKeyPath:   srv.SSHKeyPath,
-			AgentURL:     srv.AgentURL,
-			AgentSecret:  srv.AgentSecret,
-			Hostname:     srv.Hostname,
-			TagsJSON:     string(tagBytes),
-			IsDefault:    srv.IsDefault,
-			Enabled:      srv.Enabled,
-			NeedsRestart: srv.RestartNeeded,
-			CreatedAt:    createdAt,
-			UpdatedAt:    updatedAt,
+			ID:                   srv.ID,
+			Name:                 srv.Name,
+			Type:                 srv.Type,
+			Host:                 srv.Host,
+			Port:                 srv.Port,
+			SocketPath:           srv.SocketPath,
+			ConfigPath:           srv.ConfigPath,
+			SSHUser:              srv.SSHUser,
+			SSHKeyPath:           srv.SSHKeyPath,
+			AgentURL:             srv.AgentURL,
+			AgentSecret:          srv.AgentSecret,
+			Hostname:             srv.Hostname,
+			TagsJSON:             string(tagBytes),
+			IsDefault:            srv.IsDefault,
+			Enabled:              srv.Enabled,
+			ReverseTunnelEnabled: srv.ReverseTunnelEnabled,
+			NeedsRestart:         srv.RestartNeeded,
+			CreatedAt:            createdAt,
+			UpdatedAt:            updatedAt,
 		})
 	}
 	return records, nil
@@ -692,11 +698,16 @@ func setDefaultsLocked() {
 	if currentSettings.SMTP.Port == 0 {
 		currentSettings.SMTP.Port = 587
 	}
-	if currentSettings.SMTP.Username == "" {
-		currentSettings.SMTP.Username = "noreply@swissmakers.ch"
-	}
-	if currentSettings.SMTP.Password == "" {
-		currentSettings.SMTP.Password = "password"
+	if currentSettings.SMTP.AuthMethod == "none" {
+		currentSettings.SMTP.Username = ""
+		currentSettings.SMTP.Password = ""
+	} else {
+		if currentSettings.SMTP.Username == "" {
+			currentSettings.SMTP.Username = "noreply@swissmakers.ch"
+		}
+		if currentSettings.SMTP.Password == "" {
+			currentSettings.SMTP.Password = "password"
+		}
 	}
 	if currentSettings.SMTP.From == "" {
 		currentSettings.SMTP.From = "noreply@swissmakers.ch"
@@ -1455,6 +1466,13 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 	if config.UsernameClaim == "" {
 		config.UsernameClaim = "preferred_username"
 	}
+	config.RoleClaim = os.Getenv("OIDC_ROLE_CLAIM")
+	if config.RoleClaim == "" {
+		config.RoleClaim = "groups"
+	}
+	config.AdminRoles = shared.SplitCommaList(os.Getenv("OIDC_ADMIN_ROLES"))
+	config.SupportRoles = shared.SplitCommaList(os.Getenv("OIDC_SUPPORT_ROLES"))
+	config.AuthorizationEnabled = len(config.AdminRoles) > 0 || len(config.SupportRoles) > 0
 	config.LogoutURL = os.Getenv("OIDC_LOGOUT_URL")
 	return config, nil
 }

@@ -31,11 +31,14 @@ function validateMaxRetry(value) {
 function validateEmail(value) {
   if (!value || !value.trim()) return { valid: true };
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailPattern.test(value.trim())) {
-    return { 
-      valid: false, 
-      message: 'Invalid email format' 
-    };
+  const emails = value.split(',').map(s => s.trim()).filter(s => s);
+  for (const email of emails) {
+    if (!emailPattern.test(email)) {
+      return {
+        valid: false,
+        message: 'Invalid email format: "' + email + '"'
+      };
+    }
   }
   return { valid: true };
 }

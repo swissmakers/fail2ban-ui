@@ -35,11 +35,13 @@ import (
 // =========================================================================
 
 type Session struct {
-	UserID    string    `json:"userID"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Username  string    `json:"username"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	UserID      string    `json:"userID"`
+	Email       string    `json:"email"`
+	Name        string    `json:"name"`
+	Username    string    `json:"username"`
+	Roles       []string  `json:"roles,omitempty"`
+	AccessLevel string    `json:"accessLevel,omitempty"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 const (
@@ -98,11 +100,13 @@ func InitializeSessionSecret(secret string) error {
 // Creates a session cookie with the user info.
 func CreateSession(w http.ResponseWriter, r *http.Request, userInfo *UserInfo, maxAge int) error {
 	session := &Session{
-		UserID:    userInfo.ID,
-		Email:     userInfo.Email,
-		Name:      userInfo.Name,
-		Username:  userInfo.Username,
-		ExpiresAt: time.Now().Add(time.Duration(maxAge) * time.Second),
+		UserID:      userInfo.ID,
+		Email:       userInfo.Email,
+		Name:        userInfo.Name,
+		Username:    userInfo.Username,
+		Roles:       userInfo.Roles,
+		AccessLevel: userInfo.AccessLevel,
+		ExpiresAt:   time.Now().Add(time.Duration(maxAge) * time.Second),
 	}
 
 	sessionData, err := json.Marshal(session)

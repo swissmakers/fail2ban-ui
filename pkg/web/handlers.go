@@ -52,6 +52,7 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/enrichment"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/integrations"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 	"github.com/swissmakers/fail2ban-ui/internal/version"
 )
@@ -988,7 +989,11 @@ func parseRetryAfter(value string, fallback time.Duration) time.Duration {
 // Returns all configured Fail2ban servers.
 func ListServersHandler(c *gin.Context) {
 	servers := config.ListServers()
-	c.JSON(http.StatusOK, gin.H{"servers": maskServerSecrets(servers)})
+	masked := maskServerSecrets(servers)
+	if !userHasAdminAccess(c) {
+		masked = stripServerConnectionDetails(masked)
+	}
+	c.JSON(http.StatusOK, gin.H{"servers": masked})
 }
 
 // Creates or updates a Fail2ban server configuration.
@@ -2807,22 +2812,29 @@ func GetSettingsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("GetSettingsHandler called (handlers.go)")
 	s := config.GetSettings()
+	isAdmin := userHasAdminAccess(c)
+	if !isAdmin {
+		s = config.AppSettings{
+			Language:       s.Language,
+			AlertCountries: s.AlertCountries,
+		}
+	}
 
 	envPort, envPortSet := config.GetPortFromEnv()
 	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
 
-	response := appSettingsResponse{
-		AppSettings:        maskAppSettingsSecrets(s),
-		PortFromEnv:        envPort,
-		PortEnvSet:         envPortSet,
-		CallbackUrlEnvSet:  envCallbackURLSet,
-		CallbackUrlFromEnv: envCallbackURL,
+	response := appSettingsResponse{AppSettings: maskAppSettingsSecrets(s)}
+	if isAdmin {
+		response.PortFromEnv = envPort
+		response.PortEnvSet = envPortSet
+		response.CallbackUrlEnvSet = envCallbackURLSet
+		response.CallbackUrlFromEnv = envCallbackURL
 	}
 
-	if envPortSet {
+	if isAdmin && envPortSet {
 		response.Port = envPort
 	}
-	if envCallbackURLSet {
+	if isAdmin && envCallbackURLSet {
 		response.CallbackURL = envCallbackURL
 	}
 
@@ -3375,13 +3387,27 @@ func sanitizeEmailHeader(value string) string {
 
 // Connects to the SMTP server and delivers a single HTML message.
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
-	// Skips sending if the destination email is still the default placeholder
-	if strings.EqualFold(strings.TrimSpace(to), "alerts@example.com") {
-		log.Printf("⚠️ sendEmail skipped: destination email is still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
+	recipients := shared.SplitCommaList(to)
+	if len(recipients) == 0 {
+		log.Printf("⚠️ sendEmail skipped: no recipients provided.")
 		return nil
 	}
 
-	if settings.SMTP.Host == "" || settings.SMTP.Username == "" || settings.SMTP.Password == "" || settings.SMTP.From == "" {
+	// Skips sending if every recipient is still the default placeholder
+	allPlaceholder := true
+	for _, r := range recipients {
+		if !strings.EqualFold(r, "alerts@example.com") {
+			allPlaceholder = false
+			break
+		}
+	}
+	if allPlaceholder {
+		log.Printf("⚠️ sendEmail skipped: all recipients are still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
+		return nil
+	}
+
+	needsAuth := settings.SMTP.AuthMethod != "none"
+	if settings.SMTP.Host == "" || settings.SMTP.From == "" || (needsAuth && (settings.SMTP.Username == "" || settings.SMTP.Password == "")) {
 		err := errors.New("SMTP settings are incomplete. Please configure all required fields")
 		log.Printf("❌ sendEmail validation failed: %v (Host: %q, Username: %q, From: %q)", err, settings.SMTP.Host, settings.SMTP.Username, settings.SMTP.From)
 		return err
@@ -3394,7 +3420,8 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	}
 
 	fromHeader := sanitizeEmailHeader(settings.SMTP.From)
-	toHeader := sanitizeEmailHeader(to)
+	// Build the To header with all recipients, comma-space separated
+	toHeader := sanitizeEmailHeader(strings.Join(recipients, ", "))
 	msgID := sanitizeEmailHeader(fmt.Sprintf("<%d.%s@fail2ban-ui>", time.Now().UnixNano(), settings.SMTP.From))
 	subjectHeader := mime.QEncoding.Encode("UTF-8", subject)
 	message := "From: " + fromHeader + "\r\n" +
@@ -3476,23 +3503,25 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 		log.Printf("📧 sendEmail: SMTP authentication successful")
 	}
 
-	err = sendSMTPMessage(client, settings.SMTP.From, to, msg)
+	err = sendSMTPMessage(client, settings.SMTP.From, recipients, msg)
 	if err != nil {
 		log.Printf("❌ sendEmail: Failed to send message: %v", err)
 		return err
 	}
-	log.Printf("📧 sendEmail: Successfully sent email to %s", to)
+	log.Printf("📧 sendEmail: Successfully sent email to %s", strings.Join(recipients, ", "))
 	return nil
 }
 
 // Sends the actual message
 // Performs the MAIL/RCPT/DATA sequence on an open SMTP connection.
-func sendSMTPMessage(client *smtp.Client, from, to string, msg []byte) error {
+func sendSMTPMessage(client *smtp.Client, from string, recipients []string, msg []byte) error {
 	if err := client.Mail(from); err != nil {
 		return fmt.Errorf("failed to set sender: %w", err)
 	}
-	if err := client.Rcpt(to); err != nil {
-		return fmt.Errorf("failed to set recipient: %w", err)
+	for _, r := range recipients {
+		if err := client.Rcpt(r); err != nil {
+			return fmt.Errorf("failed to set recipient %q: %w", r, err)
+		}
 	}
 	wc, err := client.Data()
 	if err != nil {
@@ -4107,10 +4136,13 @@ func TestEmailHandler(c *gin.Context) {
 
 // Returns the SMTP auth mechanism based on authMethod ("auto", "login", "plain", "cram-md5").
 func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error) {
+	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
+	if authMethod == "none" {
+		return nil, nil
+	}
 	if username == "" || password == "" {
 		return nil, nil
 	}
-	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
 	if authMethod == "" || authMethod == "auto" {
 		// Auto-detect: prefers LOGIN for Office365/Gmail, falls back to PLAIN (default)
 		authMethod = "login"
@@ -4123,7 +4155,7 @@ func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error)
 	case "cram-md5":
 		return smtp.CRAMMD5Auth(username, password), nil
 	default:
-		return nil, fmt.Errorf("unsupported auth method: %s (supported: login, plain, cram-md5)", authMethod)
+		return nil, fmt.Errorf("unsupported auth method: %s (supported: none, login, plain, cram-md5)", authMethod)
 	}
 }
 
@@ -4137,7 +4169,9 @@ func LoginAuth(username, password string) smtp.Auth {
 }
 
 func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
-	return "LOGIN", []byte(a.username), nil
+	// No initial response; let the server challenge with "Username:" first.
+	// Some SMTP servers reject the non-standard initial-response variant of LOGIN.
+	return "LOGIN", nil, nil
 }
 
 func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
@@ -4332,14 +4366,17 @@ func AuthStatusHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"enabled":       true,
-		"authenticated": true,
-		"skipLoginPage": skipLoginPage,
+		"enabled":              true,
+		"authenticated":        true,
+		"skipLoginPage":        skipLoginPage,
+		"authorizationEnabled": auth.AuthorizationEnabled(),
 		"user": gin.H{
-			"id":       session.UserID,
-			"email":    session.Email,
-			"name":     session.Name,
-			"username": session.Username,
+			"id":          session.UserID,
+			"email":       session.Email,
+			"name":        session.Name,
+			"username":    session.Username,
+			"roles":       session.Roles,
+			"accessLevel": session.AccessLevel,
 		},
 	})
 }
@@ -4358,12 +4395,15 @@ func UserInfoHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"authenticated": true,
+		"authenticated":        true,
+		"authorizationEnabled": auth.AuthorizationEnabled(),
 		"user": gin.H{
-			"id":       session.UserID,
-			"email":    session.Email,
-			"name":     session.Name,
-			"username": session.Username,
+			"id":          session.UserID,
+			"email":       session.Email,
+			"name":        session.Name,
+			"username":    session.Username,
+			"roles":       session.Roles,
+			"accessLevel": session.AccessLevel,
 		},
 	})
 }

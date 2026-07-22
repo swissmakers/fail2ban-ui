@@ -65,6 +65,42 @@ func initTestStorage(t *testing.T) {
 	})
 }
 
+func TestReplaceServersRoundTrip(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	want := ServerRecord{
+		ID:                   "srv-1",
+		Name:                 "Remote via SSH",
+		Type:                 "ssh",
+		Host:                 "203.0.113.10",
+		Port:                 22,
+		SSHUser:              "fail2ban",
+		SSHKeyPath:           "/config/.ssh/id_ed25519",
+		TagsJSON:             `["prod"]`,
+		IsDefault:            true,
+		Enabled:              true,
+		ReverseTunnelEnabled: true,
+		CreatedAt:            time.Date(2026, 5, 27, 14, 30, 0, 0, time.UTC),
+		UpdatedAt:            time.Date(2026, 5, 27, 15, 0, 0, 0, time.UTC),
+	}
+
+	if err := ReplaceServers(ctx, []ServerRecord{want}); err != nil {
+		t.Fatalf("ReplaceServers: %v", err)
+	}
+	records, err := ListServers(ctx)
+	if err != nil {
+		t.Fatalf("ListServers: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("len(records)=%d want 1", len(records))
+	}
+	got := records[0]
+	if got != want {
+		t.Fatalf("round trip mismatch:\n got %+v\nwant %+v", got, want)
+	}
+}
+
 func TestCountRecentBanEventsByJail(t *testing.T) {
 	initTestStorage(t)
 

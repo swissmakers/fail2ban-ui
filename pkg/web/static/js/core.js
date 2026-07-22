@@ -309,6 +309,9 @@ function updateRestartBanner() {
 }
 
 function showSection(sectionId) {
+  if ((sectionId === 'filterSection' || sectionId === 'settingsSection') && typeof hasAccess === 'function' && !hasAccess('admin')) {
+    sectionId = 'dashboardSection';
+  }
   // hide all sections
   document.getElementById('dashboardSection').classList.add('hidden');
   document.getElementById('filterSection').classList.add('hidden');

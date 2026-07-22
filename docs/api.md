@@ -5,6 +5,7 @@ This is a practical endpoint index for operators. The web frontend uses these en
 ## Authentication
 
 * When OIDC is enabled, all `/api/*` endpoints, including the WebSocket, require an authenticated session - except the callback endpoints.
+* Optional OIDC role-based access control can further restrict authenticated users. `admin` users can access everything; `support` users can view operational dashboard/event data and manually ban/unban IPs.
 * The callback endpoints (`/api/ban`, `/api/unban`) are authenticated through the `X-Callback-Secret` header.
 
 ## Input validation

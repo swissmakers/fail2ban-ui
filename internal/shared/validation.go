@@ -19,6 +19,7 @@ package shared
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
 // Ensures a value is a well-formed IPv4/IPv6 address or CIDR before it is handed to fail2ban-client
@@ -33,4 +34,19 @@ func ValidateIP(ip string) error {
 		return nil
 	}
 	return fmt.Errorf("invalid IP address or CIDR: %q", ip)
+}
+
+// Splits a comma-separated string into trimmed, non-empty entries.
+func SplitCommaList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

@@ -182,15 +182,17 @@ function saveSettings(event) {
     return;
   }
 
+  const authMethod = document.getElementById('smtpAuthMethod').value || 'auto';
+  const isNone = authMethod === 'none';
   const smtpSettings = {
     host: document.getElementById('smtpHost').value.trim(),
     port: smtpPort,
-    username: document.getElementById('smtpUsername').value.trim(),
-    password: document.getElementById('smtpPassword').value.trim(),
+    username: isNone ? '' : document.getElementById('smtpUsername').value.trim(),
+    password: isNone ? '' : document.getElementById('smtpPassword').value.trim(),
     from: document.getElementById('smtpFrom').value.trim(),
     useTLS: document.getElementById('smtpUseTLS').checked,
     insecureSkipVerify: document.getElementById('smtpInsecureSkipVerify').checked,
-    authMethod: document.getElementById('smtpAuthMethod').value || 'auto',
+    authMethod: authMethod,
   };
 
   const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);
@@ -287,6 +289,27 @@ function updateAlertProviderFields() {
   if (esDiv) esDiv.classList.toggle('hidden', selected !== 'elasticsearch');
 }
 
+function updateSmtpAuthOnChange() {
+  updateSmtpAuthFields();
+}
+
+// Wire up auth method change handler
+document.addEventListener('DOMContentLoaded', function() {
+  const authSelect = document.getElementById('smtpAuthMethod');
+  if (authSelect) {
+    authSelect.addEventListener('change', updateSmtpAuthOnChange);
+  }
+});
+
+function updateSmtpAuthFields() {
+  const authMethod = document.getElementById('smtpAuthMethod').value;
+  const isNone = authMethod === 'none';
+  const smtpUsername = document.getElementById('smtpUsername');
+  const smtpPassword = document.getElementById('smtpPassword');
+  if (smtpUsername) smtpUsername.disabled = isNone;
+  if (smtpPassword) smtpPassword.disabled = isNone;
+}
+
 function updateAlertFieldsState() {
   const alertsForBans = document.getElementById('emailAlertsForBans').checked;
   const alertsForUnbans = document.getElementById('emailAlertsForUnbans').checked;
@@ -307,6 +330,11 @@ function updateAlertFieldsState() {
   emailFields.forEach(field => {
     if (field) field.disabled = !alertsEnabled;
   });
+
+  // Re-apply auth method field state after enabling
+  if (alertsEnabled) {
+    updateSmtpAuthFields();
+  }
 
   const providerSelect = document.getElementById('alertProvider');
   if (providerSelect) providerSelect.disabled = !alertsEnabled;

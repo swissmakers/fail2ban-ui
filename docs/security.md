@@ -17,6 +17,8 @@ See [reverse-proxy.md](reverse-proxy.md) for hardened proxy examples and the Web
 
 Sessions are stateless encrypted cookies (AES-GCM), logout clears the cookie but cannot revoke an already-captured session token before its expiry (`OIDC_SESSION_MAX_AGE`, default 1 hour). Keep session lifetimes short and always serve the UI over TLS.
 
+When OIDC role-based access control is configured (`OIDC_ADMIN_ROLES` / `OIDC_SUPPORT_ROLES`), the user's roles and access level are captured at login and stored in the session cookie. Role changes at the identity provider only take effect after the user logs in again — another reason to keep session lifetimes short. Users whose roles match neither list can authenticate but are denied on every API endpoint.
+
 The debug console (Settings → Console Output) mirrors the complete server log to every connected UI client over the WebSocket. Log lines can include client IPs, email addresses, and configuration diagnostics — leave it disabled unless actively debugging.
 
 ## Input validation

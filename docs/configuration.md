@@ -66,6 +66,12 @@ With a subpath:
 -e CALLBACK_SECRET='replace-with-a-random-secret'
 ```
 
+### Reverse SSH tunnel for callbacks
+
+SSH-connected servers can enable **reverse tunnel for events** (server form). The UI then opens a reverse tunnel (`ssh -R <port>:localhost:<port>`) alongside the SSH control connection so callbacks reach the UI even when the managed host cannot connect to it directly (NAT, firewall). The port is derived from `CALLBACK_URL` (explicit port, otherwise 443/80 by scheme).
+
+The tunnel is only used if `CALLBACK_URL` points to `localhost`/`127.0.0.1` — the remote Fail2Ban sends its callbacks to that URL, which the tunnel forwards to the UI. With a public callback URL the callbacks bypass the tunnel; the UI logs a warning in that case. Note that a localhost callback URL applies globally, so mixing tunneled and non-tunneled remote servers is not possible.
+
 ## Privacy and telemetry controls
 
 | Variable | Description |
@@ -150,6 +156,14 @@ Common optional variables:
 | `OIDC_USERNAME_CLAIM` | `preferred_username` | Claim used as the display username |
 | `OIDC_SKIP_VERIFY` | `false` | Skips TLS verification toward the provider. Development only. |
 | `OIDC_SKIP_LOGINPAGE` | `false` | Skips the UI login page and redirects to the provider directly |
+
+OIDC role-based access control is optional. When no role variables are set, every authenticated OIDC user keeps the previous full-access behavior.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OIDC_ROLE_CLAIM` | `groups` | Claim containing roles/groups. Dot paths are supported, for example `realm_access.roles` for Keycloak. |
+| `OIDC_ADMIN_ROLES` | empty | Comma-separated OIDC role/group names that grant full admin access. |
+| `OIDC_SUPPORT_ROLES` | empty | Comma-separated OIDC role/group names that grant support access: dashboard/event reads plus manual ban/unban. |
 
 Provider notes:
 

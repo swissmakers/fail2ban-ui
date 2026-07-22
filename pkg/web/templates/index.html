@@ -123,8 +123,8 @@
         <div class="hidden md:block">
           <div class="ml-10 flex items-baseline space-x-4 items-center">
             <a href="#" onclick="showSection('dashboardSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.dashboard">Dashboard</a>
-            <a href="#" onclick="showSection('filterSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
-            <a href="#" onclick="showSection('settingsSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
+            <a href="#" onclick="showSection('filterSection')" data-min-access="admin" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
+            <a href="#" onclick="showSection('settingsSection')" data-min-access="admin" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
             <div id="clockDisplay" class="ml-4 text-sm font-mono">
               <span id="clockTime">--:--:--</span>
             </div>
@@ -160,8 +160,8 @@
     <div id="mobileMenu" class="hidden md:hidden">
       <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
         <a href="#" onclick="showSection('dashboardSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.dashboard">Dashboard</a>
-        <a href="#" onclick="showSection('filterSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
-        <a href="#" onclick="showSection('settingsSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
+        <a href="#" onclick="showSection('filterSection')" data-min-access="admin" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
+        <a href="#" onclick="showSection('settingsSection')" data-min-access="admin" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
         <div id="mobileUserInfoContainer" class="hidden border-t border-blue-500 mt-2 pt-2">
           <div class="px-3 py-2">
             <div class="text-sm font-medium" id="mobileUserDisplayName"></div>
@@ -249,12 +249,12 @@
           {{end}}
           <div class="flex flex-col sm:flex-row gap-3">
             <button class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
-              onclick="openServerManager()">
+              data-min-access="admin" onclick="openServerManager()">
               <i class="fas fa-network-wired"></i>
               <span data-i18n="dashboard.manage_servers">Manage Servers</span>
             </button>
             <button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors flex items-center gap-2"
-              onclick="openManageJailsModal()">
+              data-min-access="admin" onclick="openManageJailsModal()">
               <i class="fas fa-cog"></i>
               <span data-i18n="dashboard.manage_jails">Manage Jails</span>
             </button>
@@ -793,11 +793,12 @@
         <!-- ========================= Email Configuration ========================= -->
         <div id="alertEmailFields" class="space-y-6">
         <div class="bg-white rounded-lg shadow p-6" id="emailFieldsContainer">
-          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Email (Alerts Receiver)</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Emails (Alerts Receivers)</h3>
           <div class="mb-4">
-            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
-                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch" />
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
+                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch, admin@example.com" />
             <p class="text-xs text-red-600 mt-1 hidden" id="destEmailError"></p>
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.destination_email_hint">Multiple email addresses can be specified using comma-separated values.</p>
           </div>
         </div>
         <div class="bg-white rounded-lg shadow p-6" id="smtpFieldsContainer">
@@ -835,6 +836,7 @@
               <option value="login" data-i18n="settings.smtp_auth_method_login">LOGIN</option>
               <option value="plain" data-i18n="settings.smtp_auth_method_plain">PLAIN</option>
               <option value="cram-md5" data-i18n="settings.smtp_auth_method_cram_md5">CRAM-MD5</option>
+              <option value="none" data-i18n="settings.smtp_auth_method_none">None (no authentication)</option>
             </select>
             <p class="mt-1 text-xs text-gray-500" data-i18n="settings.smtp_auth_method_hint">LOGIN is recommended for Office365/Gmail. PLAIN is standard SMTP auth. CRAM-MD5 is challenge-response based.</p>
           </div>
@@ -1447,6 +1449,15 @@
                   <div class="flex items-center">
                     <input type="checkbox" id="serverEnabled" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
                     <label for="serverEnabled" class="ml-2 text-sm text-gray-700" data-i18n="servers.form.enabled">Enable connector</label>
+                  </div>
+                  <div data-server-fields="ssh">
+                    <div class="flex items-center">
+                      <input type="checkbox" id="serverReverseTunnel" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                      <label for="serverReverseTunnel" class="ml-2 text-sm text-gray-700" data-i18n="servers.form.reverse_tunnel">Enable reverse tunnel for events</label>
+                    </div>
+                    <p class="mt-0.5 ml-6 text-xs text-gray-500" data-i18n="servers.form.reverse_tunnel_help">
+                      Automatically creates a reverse SSH tunnel (-R port:localhost:port) so fail2ban callback events on the remote server can reach this UI server. The tunnel port is derived from the Callback URL setting.
+                    </p>
                   </div>
                   <input type="hidden" id="serverId">
                   <div class="flex gap-3">

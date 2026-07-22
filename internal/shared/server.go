@@ -24,25 +24,26 @@ import (
 // Describes a registered Fail2ban instance and how to reach it.
 // It lives in package shared so connector code does not import application config.
 type Fail2banServer struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Type          string    `json:"type"`
-	Host          string    `json:"host,omitempty"`
-	Port          int       `json:"port,omitempty"`
-	SocketPath    string    `json:"socketPath,omitempty"`
-	ConfigPath    string    `json:"configPath,omitempty"`
-	SSHUser       string    `json:"sshUser,omitempty"`
-	SSHKeyPath    string    `json:"sshKeyPath,omitempty"`
-	AgentURL      string    `json:"agentUrl,omitempty"`
-	AgentSecret   string    `json:"agentSecret,omitempty"`
-	Hostname      string    `json:"hostname,omitempty"`
-	Tags          []string  `json:"tags,omitempty"`
-	IsDefault     bool      `json:"isDefault"`
-	Enabled       bool      `json:"enabled"`
-	RestartNeeded bool      `json:"restartNeeded"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	EnabledSet    bool      `json:"-"`
+	ID                   string    `json:"id"`
+	Name                 string    `json:"name"`
+	Type                 string    `json:"type"`
+	Host                 string    `json:"host,omitempty"`
+	Port                 int       `json:"port,omitempty"`
+	SocketPath           string    `json:"socketPath,omitempty"`
+	ConfigPath           string    `json:"configPath,omitempty"`
+	SSHUser              string    `json:"sshUser,omitempty"`
+	SSHKeyPath           string    `json:"sshKeyPath,omitempty"`
+	AgentURL             string    `json:"agentUrl,omitempty"`
+	AgentSecret          string    `json:"agentSecret,omitempty"`
+	Hostname             string    `json:"hostname,omitempty"`
+	Tags                 []string  `json:"tags,omitempty"`
+	IsDefault            bool      `json:"isDefault"`
+	Enabled              bool      `json:"enabled"`
+	ReverseTunnelEnabled bool      `json:"reverseTunnelEnabled,omitempty"`
+	RestartNeeded        bool      `json:"restartNeeded"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+	EnabledSet           bool      `json:"-"`
 }
 
 // Distinguishes explicit false for "enabled" from a missing key.

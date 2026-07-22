@@ -8,6 +8,7 @@
 let authEnabled = false;
 let isAuthenticated = false;
 let currentUser = null;
+let authorizationEnabled = false;
 
 // =========================================================================
 //  Check Authentication Status
@@ -49,6 +50,7 @@ async function checkAuthStatus() {
     const data = await response.json();
     authEnabled = data.enabled || false;
     isAuthenticated = data.authenticated || false;
+    authorizationEnabled = data.authorizationEnabled || false;
     const skipLoginPageFlag = data.skipLoginPage || false;
 
     if (authEnabled) {
@@ -151,6 +153,27 @@ function showLoginPage() {
   }
 }
 
+function hasAccess(requiredLevel) {
+  if (!authorizationEnabled || !authEnabled) return true;
+  if (!requiredLevel) return true;
+  const accessLevel = currentUser && currentUser.accessLevel ? currentUser.accessLevel : '';
+  if (accessLevel === 'admin') return true;
+  return requiredLevel === 'support' && accessLevel === 'support';
+}
+
+function applyAuthorizationUI() {
+  document.querySelectorAll('[data-min-access]').forEach(function(el) {
+    const required = el.getAttribute('data-min-access');
+    if (hasAccess(required)) {
+      el.classList.remove('hidden');
+      el.removeAttribute('aria-hidden');
+    } else {
+      el.classList.add('hidden');
+      el.setAttribute('aria-hidden', 'true');
+    }
+  });
+}
+
 function showMainContent() {
   const loginPage = document.getElementById('loginPage');
   const mainContent = document.getElementById('mainContent');
@@ -176,6 +199,7 @@ function showMainContent() {
     footer.style.display = 'block';
     footer.classList.remove('hidden');
   }
+  applyAuthorizationUI();
 }
 
 function showAuthenticatedUI() {

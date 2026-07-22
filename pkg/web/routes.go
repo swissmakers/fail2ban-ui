@@ -47,74 +47,74 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 	api := r.Group("/api")
 	{
 		// Internal call from frontend to the Fail2ban-UI backend to get the summary of the servers (banned IPs per active jail)
-		api.GET("/summary", SummaryHandler)
+		api.GET("/summary", RequirePermission(PermissionRead), SummaryHandler)
 
 		// External API calls from Fail2ban servers that notify Fail2Ban-UI backend about ban/unban events that where triggered.
 		api.POST("/ban", BanNotificationHandler)
 		api.POST("/unban", UnbanNotificationHandler)
 
 		// Internal API calls from frontend (e.g. manual actions) to backend to execute Ban / Unban
-		api.GET("/jails/:jail/banned", ListJailBannedIPsHandler)
-		api.POST("/jails/:jail/unban/:ip", UnbanIPHandler)
-		api.POST("/jails/:jail/ban/:ip", BanIPHandler)
+		api.GET("/jails/:jail/banned", RequirePermission(PermissionRead), ListJailBannedIPsHandler)
+		api.POST("/jails/:jail/unban/:ip", RequirePermission(PermissionBan), UnbanIPHandler)
+		api.POST("/jails/:jail/ban/:ip", RequirePermission(PermissionBan), BanIPHandler)
 
 		// Search which jails currently ban this IP -> searches on all servers
-		api.GET("/ips/:ip/search", SearchBannedIPHandler)
+		api.GET("/ips/:ip/search", RequirePermission(PermissionRead), SearchBannedIPHandler)
 
-		// Internal API calls for jail-filter management (TODO: rename API-call)
-		api.GET("/jails/:jail/config", GetJailFilterConfigHandler)
-		api.POST("/jails/:jail/config", SetJailFilterConfigHandler)
-		api.POST("/jails/:jail/logpath/test", TestLogpathHandler)
-		api.GET("/jails/manage", ManageJailsHandler)
-		api.POST("/jails/manage", UpdateJailManagementHandler)
-		api.POST("/jails", CreateJailHandler)
-		api.DELETE("/jails/:jail", DeleteJailHandler)
+		// Internal API calls for jail-filter management
+		api.GET("/jails/:jail/config", RequirePermission(PermissionAdmin), GetJailFilterConfigHandler)
+		api.POST("/jails/:jail/config", RequirePermission(PermissionAdmin), SetJailFilterConfigHandler)
+		api.POST("/jails/:jail/logpath/test", RequirePermission(PermissionAdmin), TestLogpathHandler)
+		api.GET("/jails/manage", RequirePermission(PermissionAdmin), ManageJailsHandler)
+		api.POST("/jails/manage", RequirePermission(PermissionAdmin), UpdateJailManagementHandler)
+		api.POST("/jails", RequirePermission(PermissionAdmin), CreateJailHandler)
+		api.DELETE("/jails/:jail", RequirePermission(PermissionAdmin), DeleteJailHandler)
 
 		// Internal API calls for filter management
-		api.GET("/filters", ListFiltersHandler)
-		api.GET("/filters/:filter/content", GetFilterContentHandler)
-		api.POST("/filters/test", TestFilterHandler)
-		api.POST("/filters", CreateFilterHandler)
-		api.DELETE("/filters/:filter", DeleteFilterHandler)
+		api.GET("/filters", RequirePermission(PermissionAdmin), ListFiltersHandler)
+		api.GET("/filters/:filter/content", RequirePermission(PermissionAdmin), GetFilterContentHandler)
+		api.POST("/filters/test", RequirePermission(PermissionAdmin), TestFilterHandler)
+		api.POST("/filters", RequirePermission(PermissionAdmin), CreateFilterHandler)
+		api.DELETE("/filters/:filter", RequirePermission(PermissionAdmin), DeleteFilterHandler)
 
 		// Internal API calls for Fail2ban-UI settings
-		api.GET("/settings", GetSettingsHandler)
-		api.POST("/settings", UpdateSettingsHandler)
-		api.POST("/settings/test-email", TestEmailHandler)
-		api.POST("/settings/test-webhook", TestWebhookHandler)
-		api.POST("/settings/test-elasticsearch", TestElasticsearchHandler)
+		api.GET("/settings", RequirePermission(PermissionRead), GetSettingsHandler)
+		api.POST("/settings", RequirePermission(PermissionAdmin), UpdateSettingsHandler)
+		api.POST("/settings/test-email", RequirePermission(PermissionAdmin), TestEmailHandler)
+		api.POST("/settings/test-webhook", RequirePermission(PermissionAdmin), TestWebhookHandler)
+		api.POST("/settings/test-elasticsearch", RequirePermission(PermissionAdmin), TestElasticsearchHandler)
 
 		// Internal API calls for advanced actions
-		api.GET("/advanced-actions/blocks", ListPermanentBlocksHandler)
-		api.DELETE("/advanced-actions/blocks", ClearPermanentBlocksHandler)
-		api.POST("/advanced-actions/test", AdvancedActionsTestHandler)
+		api.GET("/advanced-actions/blocks", RequirePermission(PermissionAdmin), ListPermanentBlocksHandler)
+		api.DELETE("/advanced-actions/blocks", RequirePermission(PermissionAdmin), ClearPermanentBlocksHandler)
+		api.POST("/advanced-actions/test", RequirePermission(PermissionAdmin), AdvancedActionsTestHandler)
 
 		// Internal API calls for Fail2ban-UI server management
-		api.GET("/servers", ListServersHandler)
-		api.POST("/servers", UpsertServerHandler)
-		api.DELETE("/servers/:id", DeleteServerHandler)
-		api.POST("/servers/:id/default", SetDefaultServerHandler)
-		api.GET("/ssh/keys", ListSSHKeysHandler)
-		api.POST("/servers/:id/test", TestServerHandler)
+		api.GET("/servers", RequirePermission(PermissionRead), ListServersHandler)
+		api.POST("/servers", RequirePermission(PermissionAdmin), UpsertServerHandler)
+		api.DELETE("/servers/:id", RequirePermission(PermissionAdmin), DeleteServerHandler)
+		api.POST("/servers/:id/default", RequirePermission(PermissionAdmin), SetDefaultServerHandler)
+		api.GET("/ssh/keys", RequirePermission(PermissionAdmin), ListSSHKeysHandler)
+		api.POST("/servers/:id/test", RequirePermission(PermissionAdmin), TestServerHandler)
 
 		// Internal API to restart Fail2ban
-		api.POST("/fail2ban/restart", RestartFail2banHandler)
+		api.POST("/fail2ban/restart", RequirePermission(PermissionAdmin), RestartFail2banHandler)
 
 		// Internal API calls to get the stats and insights about bans
-		api.GET("/events/bans", ListBanEventsHandler)
-		api.DELETE("/events/bans", ClearBanEventsHandler)
-		api.GET("/events/bans/stats", BanStatisticsHandler)
-		api.GET("/events/bans/insights", BanInsightsHandler)
-		api.GET("/events/bans/:id", GetBanEventHandler)
-		api.GET("/threat-intel/:ip", ThreatIntelHandler)
+		api.GET("/events/bans", RequirePermission(PermissionRead), ListBanEventsHandler)
+		api.DELETE("/events/bans", RequirePermission(PermissionAdmin), ClearBanEventsHandler)
+		api.GET("/events/bans/stats", RequirePermission(PermissionRead), BanStatisticsHandler)
+		api.GET("/events/bans/insights", RequirePermission(PermissionRead), BanInsightsHandler)
+		api.GET("/events/bans/:id", RequirePermission(PermissionRead), GetBanEventHandler)
+		api.GET("/threat-intel/:ip", RequirePermission(PermissionRead), ThreatIntelHandler)
 
 		// WebSocket endpoint
-		api.GET("/ws", WebSocketHandler(hub))
+		api.GET("/ws", RequirePermission(PermissionRead), WebSocketHandler(hub))
 
 		// API to healthchecks (mainly used by agent)
 		api.GET("/healthcheck/callback", HealthcheckCallbackSecret)
 
 		// External API to get the version of the Fail2ban-UI and check for updates
-		api.GET("/version", GetVersionHandler)
+		api.GET("/version", RequirePermission(PermissionRead), GetVersionHandler)
 	}
 }
