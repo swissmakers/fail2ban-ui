@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -42,7 +42,7 @@ func evaluateAdvancedActions(ctx context.Context, settings config.AppSettings, s
 
 	count, err := storage.CountBanEventsByIP(ctx, ip, server.ID)
 	if err != nil {
-		log.Printf("⚠️ Failed to count ban events for %s: %v", ip, err)
+		log.Printf("WARNING: Failed to count ban events for %s: %v", ip, err)
 		return
 	}
 	if int(count) < cfg.Threshold {
@@ -51,7 +51,7 @@ func evaluateAdvancedActions(ctx context.Context, settings config.AppSettings, s
 
 	active, err := storage.IsPermanentBlockActive(ctx, ip, cfg.Integration)
 	if err != nil {
-		log.Printf("⚠️ Failed to check permanent block for %s: %v", ip, err)
+		log.Printf("WARNING: Failed to check permanent block for %s: %v", ip, err)
 		return
 	}
 	if active {
@@ -64,7 +64,7 @@ func evaluateAdvancedActions(ctx context.Context, settings config.AppSettings, s
 		"count":     count,
 		"threshold": cfg.Threshold,
 	}, false); err != nil {
-		log.Printf("⚠️ Failed to permanently block %s: %v", ip, err)
+		log.Printf("WARNING: Failed to permanently block %s: %v", ip, err)
 	}
 }
 
@@ -132,7 +132,7 @@ func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settin
 			Details:     string(detailsBytes),
 		}
 		if err2 := storage.UpsertPermanentBlock(ctx, rec); err2 != nil {
-			log.Printf("⚠️ Failed to record permanent block entry: %v", err2)
+			log.Printf("WARNING: Failed to record permanent block entry: %v", err2)
 		}
 	}
 

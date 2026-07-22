@@ -106,7 +106,7 @@ podman compose up -d
   rm -rf config/keycloak-client-secret
   podman compose up -d
   ```
-  Alternatively, update the client manually in the Keycloak admin console: **Clients → fail2ban-ui**, then adjust "Valid redirect URIs" and "Valid post logout redirect URIs" and save.
+  Alternatively, update the client manually in the Keycloak admin console: **Clients -> fail2ban-ui**, then adjust "Valid redirect URIs" and "Valid post logout redirect URIs" and save.
 
 ## Setup
 
@@ -186,7 +186,7 @@ If the automatic configuration fails, create the client by hand:
    podman compose restart fail2ban-ui
   ```
 7. **Create a test user** (recommended):
-  - **Users → Create new user**, set a username (for example `testuser`) and optionally an email. Click **Create**.
+  - **Users -> Create new user**, set a username (for example `testuser`) and optionally an email. Click **Create**.
   - On the **Credentials** tab, set a password and toggle **Temporary** off, so no password reset is forced on first login. Save.
 
 Then open `http://localhost:3080`: you are redirected to the Keycloak login, and after authentication back to Fail2Ban UI.
@@ -292,7 +292,7 @@ Provider-specific issuer URLs:
 - Logs: `podman logs DEV_keycloak`
 - Port mapping: `netstat -tlnp | grep 3000`
 - The database must be ready first (its own health check).
-- Keycloak needs 30–60 seconds; wait for "Keycloak started" in the logs.
+- Keycloak needs 30-60 seconds; wait for "Keycloak started" in the logs.
 - Keycloak 26+ serves health endpoints on port 9000:
   ```bash
   # From the host (if port 9000 is exposed):

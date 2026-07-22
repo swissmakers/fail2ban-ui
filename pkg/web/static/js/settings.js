@@ -296,7 +296,6 @@ function updateSmtpAuthOnChange() {
   updateSmtpAuthFields();
 }
 
-// Wire up auth method change handler
 document.addEventListener('DOMContentLoaded', function() {
   const authSelect = document.getElementById('smtpAuthMethod');
   if (authSelect) {

@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -395,7 +395,7 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 
 	preview := trimmed
 	if len(preview) > 512 {
-		preview = preview[:512] + "…"
+		preview = preview[:512] + "..."
 	}
 	debugf("Agent response [%s]: %s | %s", ac.server.Name, resp.Status, preview)
 

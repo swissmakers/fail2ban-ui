@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -128,7 +128,6 @@ func ValidateJailName(name string) error {
 		return fmt.Errorf("jail name '%s' is reserved and cannot be used", name)
 	}
 
-	// Check for invalid characters
 	if invalidNameChars.MatchString(name) {
 		return fmt.Errorf("jail name '%s' contains invalid characters. Only alphanumeric characters, dashes, and underscores are allowed", name)
 	}
@@ -162,7 +161,6 @@ func ListJailFiles(directory string) ([]string, error) {
 			continue
 		}
 
-		// Only include .local and .conf files
 		if strings.HasSuffix(name, ".local") || strings.HasSuffix(name, ".conf") {
 			fullPath := filepath.Join(directory, name)
 			files = append(files, fullPath)
@@ -340,7 +338,7 @@ func GetAllJails(configPath string) ([]JailInfo, error) {
 	// Run migration once if enabled (experimental, off by default)
 	if isJailAutoMigrationEnabled() {
 		migrationOnce.Do(func() {
-			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration")
+			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local -> jail.d/ migration")
 			if err := MigrateJailsFromJailLocal(configPath); err != nil {
 				debugf("Migration warning: %v", err)
 			}
@@ -426,7 +424,6 @@ func UpdateJailEnabledStates(updates map[string]bool, configPath string) error {
 		}
 		debugf("Processing jail: %s, enabled: %t", jailName, enabled)
 
-		// Ensure .local file exists
 		if err := ensureJailLocalFile(jailName, configPath); err != nil {
 			return fmt.Errorf("failed to ensure .local file for jail %s: %w", jailName, err)
 		}

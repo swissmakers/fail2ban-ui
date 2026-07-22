@@ -102,7 +102,7 @@ function showBanEventToast(event) {
     + '      <span class="font-semibold">' + escapeHtml(jail) + '</span>'
     + '    </div>'
     + '    <div class="text-xs text-gray-400 mt-1">'
-    + '      ' + escapeHtml(server) + ' • ' + escapeHtml(country)
+    + '      ' + escapeHtml(server) + ' - ' + escapeHtml(country)
     + '    </div>'
     + '  </div>'
     + '  <button class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="Close">'
@@ -179,7 +179,6 @@ function escapeJs(value) {
   });
 }
 
-// Format numbers in a human-readable way (1,000,000)
 function formatNumber(value) {
   var num = Number(value);
   if (!isFinite(num)) {
@@ -192,7 +191,6 @@ function formatNumber(value) {
   }
 }
 
-// Format date and time in a human-readable way (YYYY.MM.DD, HH:MM:SS)
 function formatDateTime(value) {
   if (!value) return '';
   var date = new Date(value);
@@ -312,27 +310,22 @@ function showSection(sectionId) {
   if ((sectionId === 'filterSection' || sectionId === 'settingsSection') && typeof hasAccess === 'function' && !hasAccess('admin')) {
     sectionId = 'dashboardSection';
   }
-  // hide all sections
   document.getElementById('dashboardSection').classList.add('hidden');
   document.getElementById('filterSection').classList.add('hidden');
   document.getElementById('settingsSection').classList.add('hidden');
 
-  // show the requested section
   document.getElementById(sectionId).classList.remove('hidden');
 
-  // If it's filterSection, load filters
   if (sectionId === 'filterSection') {
     if (typeof showFilterSection === 'function') {
       showFilterSection();
     }
   }
-  // If it's settingsSection, load settings
   if (sectionId === 'settingsSection') {
     if (typeof loadSettings === 'function') {
       loadSettings();
     }
   }
-  // Close navbar on mobile when clicking a menu item
   document.getElementById('mobileMenu').classList.add('hidden');
 }
 

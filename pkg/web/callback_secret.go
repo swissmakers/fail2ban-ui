@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -53,15 +53,15 @@ func validateCallbackSecret(c *gin.Context) bool {
 	settings := config.GetSettings()
 	switch classifyCallbackSecret(c.GetHeader("X-Callback-Secret"), settings.CallbackSecret) {
 	case callbackSecretNotConfigured:
-		log.Printf("⚠️ Callback secret not configured, rejecting request from %s", c.ClientIP())
+		log.Printf("WARNING: Callback secret not configured, rejecting request from %s", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Callback secret not configured"})
 		return false
 	case callbackSecretMissingHeader:
-		log.Printf("⚠️ Missing X-Callback-Secret header in request from %s", c.ClientIP())
+		log.Printf("WARNING: Missing X-Callback-Secret header in request from %s", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing X-Callback-Secret header"})
 		return false
 	case callbackSecretMismatch:
-		log.Printf("⚠️ Invalid callback secret in request from %s", c.ClientIP())
+		log.Printf("WARNING: Invalid callback secret in request from %s", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback secret"})
 		return false
 	default:

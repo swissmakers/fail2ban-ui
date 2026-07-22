@@ -429,7 +429,6 @@ function unbanIP(jail, ip) {
 //  Main Dashboard Rendering Function
 // =========================================================================
 
-// Rendering the upper part of the dashboard.
 function renderDashboard() {
   var container = document.getElementById('dashboard');
   if (!container) return;
@@ -466,7 +465,7 @@ function renderDashboard() {
       + '  </svg>'
       + '  <div>'
       + '    <p class="font-semibold" data-i18n="dashboard.jail_local_warning_title">jail.local not managed by Fail2ban-UI</p>'
-      + '    <p class="text-sm mt-1" data-i18n="dashboard.jail_local_warning_body">The file /etc/fail2ban/jail.local on the selected server exists but is not managed by Fail2ban-UI. The callback action (ui-custom-action) is missing, which means ban/unban events will not be recorded and no email alerts will be sent. To fix this, move each jail section from jail.local into its own file under /etc/fail2ban/jail.d/ (use jailname.conf to keep a default or jailname.local to override an existing .conf). Then delete jail.local so Fail2ban-UI can create its own managed version. Ensure Fail2ban-UI has write permissions to /etc/fail2ban/ — see the documentation for details.</p>'
+      + '    <p class="text-sm mt-1" data-i18n="dashboard.jail_local_warning_body">The file /etc/fail2ban/jail.local on the selected server exists but is not managed by Fail2ban-UI. The callback action (ui-custom-action) is missing, which means ban/unban events will not be recorded and no email alerts will be sent. To fix this, move each jail section from jail.local into its own file under /etc/fail2ban/jail.d/ (use jailname.conf to keep a default or jailname.local to override an existing .conf). Then delete jail.local so Fail2ban-UI can create its own managed version. Ensure Fail2ban-UI has write permissions to /etc/fail2ban/  -  see the documentation for details.</p>'
       + '  </div>'
       + '</div>';
   }
@@ -476,14 +475,12 @@ function renderDashboard() {
       + escapeHtml(latestSummaryError)
       + '</div>';
   }
-  // If there is no summary data, we show a loading message
   if (!summary) {
     html += ''
       + '<div class="bg-white rounded-lg shadow p-6 mb-6">'
-      + '  <p class="text-gray-500" data-i18n="dashboard.loading_summary">Loading summary data…</p>'
+      + '  <p class="text-gray-500" data-i18n="dashboard.loading_summary">Loading summary data...</p>'
       + '</div>';
   } else {
-    // If there is "summary data", we render the complete upper part of the dashboard here.
     var totalBanned = summary.jails ? summary.jails.reduce(function(sum, j) { return sum + (j.totalBanned || 0); }, 0) : 0;
     var newLastHour = summary.jails ? summary.jails.reduce(function(sum, j) { return sum + (j.newInLastHour || 0); }, 0) : 0;
     var recurringWeekCount = recurringIPsLastWeekCount();
@@ -562,7 +559,6 @@ function renderDashboard() {
   if (summary && summary.jails && summary.jails.length > 0) {
     var enabledJails = summary.jails.filter(function(j) { return j.enabled !== false; });
     if (enabledJails.length > 0) {
-      // Rendering the manual ban-block from the dashboard here
       html += ''
         + '<div class="bg-white rounded-lg shadow p-6 mb-6">'
         + '  <div class="cursor-pointer hover:bg-gray-50 -m-6 p-6 rounded-lg transition-colors" onclick="toggleManualBlockSection()">'
@@ -584,11 +580,10 @@ function renderDashboard() {
         + '          <label for="blockJailSelect" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="dashboard.manual_block.jail_label">Select Jail</label>'
         + '          <select id="blockJailSelect" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" required>'
         + '            <option value="" data-i18n="dashboard.manual_block.jail_placeholder">Choose a jail...</option>';
-      
+
       enabledJails.forEach(function(jail) {
         html += '            <option value="' + escapeHtml(jail.jailName) + '">' + escapeHtml(jail.jailName) + '</option>';
       });
-      // Rendering the end of the manual ban-block form after fill in the enabled jails
       html += ''
         + '          </select>'
         + '        </div>'
@@ -773,8 +768,7 @@ function renderLogOverviewContent() {
   var countries = getBanEventCountries();
   var recurringMap = getRecurringIPMap();
   var searchQuery = (banEventsFilterText || '').trim();
-  var totalLabel = banEventsTotal != null ? banEventsTotal : '—';
-  // Rendering the search and filter options for the recent stored events
+  var totalLabel = banEventsTotal != null ? banEventsTotal : ' - ';
   html += ''
     + '<div class="flex flex-col sm:flex-row gap-3 mb-4">'
     + '  <div class="flex-1">'
@@ -785,7 +779,6 @@ function renderLogOverviewContent() {
     + '    <label for="recentEventsCountry" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="logs.search.country_label">Country</label>'
     + '    <select id="recentEventsCountry" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="updateBanEventsCountry(this.value)">'
     + '      <option value="all"' + (banEventsFilterCountry === 'all' ? ' selected' : '') + ' data-i18n="logs.search.country_all">All countries</option>';
-    // Create list of countries for the filter options
     countries.forEach(function(country) {
     var value = (country || '').trim();
     var optionValue = value ? value.toLowerCase() : '__unknown__';
@@ -793,12 +786,13 @@ function renderLogOverviewContent() {
     var selected = banEventsFilterCountry.toLowerCase() === optionValue ? ' selected' : '';
     html += '<option value="' + optionValue + '"' + selected + '>' + escapeHtml(label) + '</option>';
   });
-  // Render the missing part of the select and create table header for the recent stored events
   html += '    </select>'
     + '  </div>'
     + '</div>'
-    + '<p class="text-xs text-gray-500 mb-3">' + t('logs.overview.recent_count_label', 'Events shown') + ': ' + latestBanEvents.length + ' / ' + totalLabel + '</p>'
-    + '<div class="overflow-x-auto">'
+    + '<p class="text-xs text-gray-500 mb-3">' + t('logs.overview.recent_count_label', 'Events shown') + ': ' + latestBanEvents.length + ' / ' + totalLabel
+    + (banEventsLoading ? ' <span class="inline-block h-3 w-3 align-middle border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>' : '')
+    + '</p>'
+    + '<div class="overflow-x-auto' + (banEventsLoading && latestBanEvents.length ? ' opacity-60' : '') + '"' + (banEventsLoading ? ' aria-busy="true"' : '') + '>'
     + '  <table class="min-w-full divide-y divide-gray-200 text-sm">'
     + '    <thead class="bg-gray-50">'
     + '      <tr>'
@@ -814,7 +808,7 @@ function renderLogOverviewContent() {
   if (!latestBanEvents.length && banEventsLoading) {
     html += '<tr><td colspan="6" class="px-2 py-6 text-center text-gray-500">'
       + '<span class="inline-block h-5 w-5 align-middle border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span> '
-      + '<span class="align-middle" data-i18n="loading">Loading…</span>'
+      + '<span class="align-middle" data-i18n="loading">Loading...</span>'
       + '</td></tr>';
   } else if (!latestBanEvents.length) {
     var hasFilter = (banEventsFilterText || '').trim().length > 0 || ((banEventsFilterCountry || 'all').trim() !== 'all');
@@ -847,7 +841,7 @@ function renderLogOverviewContent() {
         + '        <td class="px-2 py-2 whitespace-nowrap">' + serverCell + '</td>'
         + '        <td class="hidden sm:table-cell px-2 py-2 whitespace-nowrap">' + jailCell + '</td>'
         + '        <td class="px-2 py-2 whitespace-nowrap">' + ipCellInteractive + eventTypeBadge + '</td>'
-        + '        <td class="hidden md:table-cell px-2 py-2 whitespace-nowrap">' + escapeHtml(event.country || '—') + '</td>'
+        + '        <td class="hidden md:table-cell px-2 py-2 whitespace-nowrap">' + escapeHtml(event.country || ' - ') + '</td>'
         + '        <td class="px-2 py-2 whitespace-nowrap">'
         + '          <div class="flex gap-2">'
         + (hasWhois ? '            <button onclick="openWhoisModal(' + index + ')" class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700" data-i18n="logs.actions.whois">Whois</button>' : '            <button disabled class="px-2 py-1 text-xs bg-gray-300 text-gray-500 rounded cursor-not-allowed" data-i18n="logs.actions.whois">Whois</button>')
@@ -903,11 +897,18 @@ function updateBanEventsSearch(value) {
   scheduleBanEventsRefetch();
 }
 
-function updateBanEventsCountry(value) {
-  banEventsFilterCountry = value || 'all';
-  fetchBanEventsData().then(function() {
+function refetchBanEvents() {
+  banEventsLoading = true;
+  renderLogOverviewSection();
+  return fetchBanEventsData().finally(function() {
+    banEventsLoading = false;
     renderLogOverviewSection();
   });
+}
+
+function updateBanEventsCountry(value) {
+  banEventsFilterCountry = value || 'all';
+  refetchBanEvents();
 }
 
 function loadMoreBanEvents() {
@@ -997,7 +998,6 @@ function clearStoredBanEvents() {
     .catch(function(err) { showToast(String(err), 'error'); });
 }
 
-// Filtering function for the banned IPs for the dashboard.
 function filterIPs() {
   var input = document.getElementById('ipSearch');
   updateBannedIPsSearch(input ? input.value : '');
@@ -1007,7 +1007,6 @@ function filterIPs() {
 //  Helper Functions
 // =========================================================================
 
-// Helper function to toggle the banned list section for the dashboard.
 function toggleBannedList(hiddenId, buttonId) {
   var hidden = document.getElementById(hiddenId);
   var button = document.getElementById(buttonId);
@@ -1026,7 +1025,6 @@ function toggleBannedList(hiddenId, buttonId) {
   }
 }
 
-// Helper function to toggle the manual block section for the dashboard.
 function toggleManualBlockSection() {
   var container = document.getElementById('manualBlockFormContainer');
   var icon = document.getElementById('manualBlockToggleIcon');
@@ -1045,7 +1043,6 @@ function toggleManualBlockSection() {
   }
 }
 
-// This handles manual block actions and calls the banIP function.
 function handleManualBlock() {
   var jailSelect = document.getElementById('blockJailSelect');
   var ipInput = document.getElementById('blockIPInput');
@@ -1077,7 +1074,6 @@ function handleManualBlock() {
   jailSelect.value = '';
 }
 
-// Helper function to add the "Internal Log Overview" content to the dashboard.
 function renderLogOverviewSection() {
   var target = document.getElementById('logOverview');
   if (!target) return;
@@ -1199,7 +1195,6 @@ function scheduleDashboardRefresh() {
   }, delay);
 }
 
-// Helper function to add a new ban event from the WebSocket to the dashboard.
 function addBanEventFromWebSocket(event) {
   var hasSearch = (banEventsFilterText || '').trim().length > 0;
   if (hasSearch) {
@@ -1235,7 +1230,6 @@ function addBanEventFromWebSocket(event) {
   }
 }
 
-// Helper function to refresh the dashboard data by fetching the summary and ban insights.
 function refreshDashboardData() {
   lastDashboardRefreshAt = Date.now();
   var enabledServers = serversCache.filter(function(s) { return s.enabled; });
@@ -1270,7 +1264,6 @@ function refreshDashboardData() {
   });
 }
 
-// Helper functions to query the total number of banned IPs
 function totalStoredBans() {
   if (latestBanInsights && latestBanInsights.totals && typeof latestBanInsights.totals.overall === 'number') {
     return latestBanInsights.totals.overall;
@@ -1289,7 +1282,6 @@ function totalBansToday() {
   return 0;
 }
 
-// Helper functions to query the total number of banned IPs of last week.
 function totalBansWeek() {
   if (latestBanInsights && latestBanInsights.totals && typeof latestBanInsights.totals.week === 'number') {
     return latestBanInsights.totals.week;
@@ -1297,7 +1289,6 @@ function totalBansWeek() {
   return 0;
 }
 
-// Helper functions to query the total number of recurring IPs of last week.
 function recurringIPsLastWeekCount() {
   var source = latestServerInsights || latestBanInsights;
   if (!source || !Array.isArray(source.recurring)) {
@@ -1306,7 +1297,6 @@ function recurringIPsLastWeekCount() {
   return source.recurring.length;
 }
 
-// Helper functions to query the countries of the banned IPs.
 function getBanEventCountries() {
   var countries = {};
   latestBanEvents.forEach(function(event) {
@@ -1323,20 +1313,16 @@ function getBanEventCountries() {
   });
 }
 
-// Helper functions to schedule the refetch of the banned events.
 function scheduleBanEventsRefetch() {
   if (banEventsFilterDebounce) {
     clearTimeout(banEventsFilterDebounce);
   }
   banEventsFilterDebounce = setTimeout(function() {
     banEventsFilterDebounce = null;
-    fetchBanEventsData().then(function() {
-      renderLogOverviewSection();
-    });
+    refetchBanEvents();
   }, 300);
 }
 
-// Helper functions to query the recurring IPs of the banned IPs.
 function getRecurringIPMap() {
   var map = {};
   if (latestBanInsights && Array.isArray(latestBanInsights.recurring)) {

@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -111,7 +111,7 @@ func ParseWhois(whois string) map[string]interface{} {
 		seenKeys[outField] = true
 	}
 
-	// Normalises the ASN: strips "AS" prefix if present (e.g. "AS200373" → "200373")
+	// Normalises the ASN: strips "AS" prefix if present (e.g. "AS200373" -> "200373")
 	if asn, ok := result["whois.asn"].(string); ok {
 		asn = strings.TrimSpace(asn)
 		if strings.HasPrefix(strings.ToUpper(asn), "AS") {

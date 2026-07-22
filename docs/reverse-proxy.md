@@ -34,13 +34,13 @@ For correct behavior, including WebSocket live updates, the proxy must:
 2. Allow WebSocket upgrades on the real-time endpoint: `GET /api/ws` at the site root, or `GET {BASE_PATH}/api/ws` when using a subpath.
 3. Forward client IP context: `X-Forwarded-For` and `X-Forwarded-Proto`.
 
-**Path-prefix handling:** If the proxy *strips* a path prefix before forwarding (external `/myf2b/` → upstream `/`), leave `BASE_PATH` unset and configure the application as if it lived at the root; only the public URLs change. If the application receives the *full* path including `/myf2b`, set `BASE_PATH=/myf2b` and forward the prefix unchanged.
+**Path-prefix handling:** If the proxy *strips* a path prefix before forwarding (external `/myf2b/` -> upstream `/`), leave `BASE_PATH` unset and configure the application as if it lived at the root; only the public URLs change. If the application receives the *full* path including `/myf2b`, set `BASE_PATH=/myf2b` and forward the prefix unchanged.
 
 ## Subpath deployment (`BASE_PATH`)
 
 When Fail2Ban UI runs with `BASE_PATH=/myf2b` (see [configuration.md](configuration.md)):
 
-* The proxy `location` must match the prefix and pass the *same* path to the backend, with no strip: `https://host/myf2b/api/version` → upstream `http://127.0.0.1:8080/myf2b/api/version`.
+* The proxy `location` must match the prefix and pass the *same* path to the backend, with no strip: `https://host/myf2b/api/version` -> upstream `http://127.0.0.1:8080/myf2b/api/version`.
 * The WebSocket URL in the browser becomes `wss://host/myf2b/api/ws`.
 * `CALLBACK_URL` and `OIDC_REDIRECT_URL` must include `/myf2b`, as described in the configuration reference.
 

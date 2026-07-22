@@ -72,7 +72,6 @@ function ensureBanEventDetail(event) {
     });
 }
 
-// Whois modal
 function openWhoisModal(eventIndex) {
   if (!latestBanEvents || !latestBanEvents[eventIndex]) {
     showToast(t('modal.toast.event_not_found', 'Event not found'), 'error');
@@ -98,7 +97,6 @@ function openWhoisModal(eventIndex) {
     });
 }
 
-// Renders the (already loaded) logs for an event into the logs modal body.
 function renderLogsModalContent(event) {
   document.getElementById('logsModalIP').textContent = event.ip || 'N/A';
   document.getElementById('logsModalJail').textContent = event.jail || 'N/A';
@@ -130,7 +128,6 @@ function renderLogsModalContent(event) {
   }
 }
 
-// Logs modal
 function openLogsModal(eventIndex) {
   if (!latestBanEvents || !latestBanEvents[eventIndex]) {
     showToast(t('modal.toast.event_not_found', 'Event not found'), 'error');
@@ -292,12 +289,12 @@ function openBanInsightsModal() {
   } else {
     var recurringHTML = recurring.map(function(stat) {
       var countryLabel = stat.country || t('logs.overview.country_unknown', 'Unknown');
-      var lastSeenLabel = stat.lastSeen ? formatDateTime(stat.lastSeen) : '—';
+      var lastSeenLabel = stat.lastSeen ? formatDateTime(stat.lastSeen) : ' - ';
       return ''
         + '<div class="rounded-lg bg-white border border-gray-200 shadow-sm p-4">'
         + '  <div class="flex items-center justify-between">'
         + '    <div>'
-        + '      <p class="font-mono text-base text-gray-900">' + escapeHtml(stat.ip || '—') + '</p>'
+        + '      <p class="font-mono text-base text-gray-900">' + escapeHtml(stat.ip || ' - ') + '</p>'
         + '      <p class="text-xs text-gray-500 mt-1">' + escapeHtml(countryLabel) + '</p>'
         + '    </div>'
         + '    <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">' + formatNumber(stat.count || 0) + '×</span>'

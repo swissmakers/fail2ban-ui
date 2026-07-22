@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -293,7 +293,7 @@ func newConnectorForServer(server shared.Fail2banServer) (Connector, error) {
 	switch server.Type {
 	case "local":
 		if isJailAutoMigrationEnabled() {
-			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for local server %s", server.Name)
+			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local -> jail.d/ migration for local server %s", server.Name)
 			if err := MigrateJailsFromJailLocal(server.ConfigPath); err != nil {
 				return nil, fmt.Errorf("failed to initialise local fail2ban connector for %s: %w", server.Name, err)
 			}

@@ -2,15 +2,15 @@
 
 **Enterprise-Grade Intrusion Detection System Management Platform**
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://golang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://www.linux.org/)
 
 Fail2Ban UI is a management platform for operating Fail2Ban across one or more Linux hosts. It provides a central place to review bans, search and unban IP addresses, manage jails and filters, and receive notifications.
 
-The project is maintained by Swissmakers GmbH and released under GPL-3.0.
+The project is maintained by Swissmakers GmbH and released under AGPL-3.0.
 
-[Quick start](#quick-start-container) • [Documentation](#documentation) • [Configuration reference](docs/configuration.md) • [Architecture](docs/architecture.md) • [Screenshots](#screenshots)
+[Quick start](#quick-start-container) - [Documentation](#documentation) - [Configuration reference](docs/configuration.md) - [Architecture](docs/architecture.md) - [Screenshots](#screenshots)
 
 ## What this project does
 
@@ -70,7 +70,7 @@ podman run -d --name fail2ban-ui --network=host \
 ### Verification
 
 1. Open `http://localhost:8080`.
-2. In the UI, go to **Settings → Manage Servers**, enable the local connector, and click **Test connection**.
+2. In the UI, go to **Settings -> Manage Servers**, enable the local connector, and click **Test connection**.
 
 ### Next steps
 
@@ -140,7 +140,7 @@ When clicking on "Edit Filter / Jail" the Jail configuration editor is opened. I
 
 #### Logpath Test
 ![Logpath Test](screenshots/1.3_Dashboard_Manage_Jails_Edit_Logpathtest.png)
-Logpath testing functionality that verifies log file paths and checks if files are accessible. Shows test results with visual indicators (✓/✗) for each log path.
+Logpath testing functionality that verifies log file paths and checks if files are accessible. Shows test results with visual indicators (yes/no) for each log path.
 
 #### Create new Filter
 ![Create Filter](screenshots/1.4_Dashboard_Manage_Jails_Create_Filter.png)
@@ -212,4 +212,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE).
+AGPL-3.0. See [LICENSE](LICENSE).

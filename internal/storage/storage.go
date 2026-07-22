@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -593,14 +593,6 @@ INSERT INTO servers (
 	}
 
 	err = tx.Commit()
-	return err
-}
-
-func DeleteServer(ctx context.Context, id string) error {
-	if db == nil {
-		return errors.New("storage not initialised")
-	}
-	_, err := db.ExecContext(ctx, `DELETE FROM servers WHERE id = ?`, id)
 	return err
 }
 
@@ -1220,6 +1212,7 @@ CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at)
 CREATE INDEX IF NOT EXISTS idx_ban_events_ip ON ban_events(ip);
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_jail_occurred_at ON ban_events(server_id, jail, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at_ip ON ban_events(occurred_at, ip, country, event_type, server_id);
+CREATE INDEX IF NOT EXISTS idx_ban_events_server_occurred_at ON ban_events(server_id, occurred_at);
 
 CREATE TABLE IF NOT EXISTS permanent_blocks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
