@@ -178,14 +178,16 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 	return conn, nil
 }
 
-// NormalizeAgentURL trims input, defaults missing scheme to http, and default port 9700 when omitted.
+// Trims input and validates the agent URL. A bare host without scheme gets http and the agent's native port 9700 as default
+// URLs with an explicit http/https scheme are kept exactly as entered. -> no port means the scheme's implied default (80/443), so agents
+// behind reverse proxies on standard ports work.
 func NormalizeAgentURL(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, fmt.Errorf("empty URL")
 	}
-	// Accept host:port without scheme; default to HTTP for agent defaults.
-	if !strings.Contains(raw, "://") {
+	hadScheme := strings.Contains(raw, "://")
+	if !hadScheme {
 		raw = "http://" + raw
 	}
 	u, err := url.Parse(raw)
@@ -201,7 +203,7 @@ func NormalizeAgentURL(raw string) (*url.URL, error) {
 	if u.Hostname() == "" {
 		return nil, fmt.Errorf("missing host")
 	}
-	if u.Port() == "" {
+	if !hadScheme && u.Port() == "" {
 		u.Host = net.JoinHostPort(u.Hostname(), "9700")
 	}
 	return u, nil

@@ -42,20 +42,32 @@ func (testProvider) BuildJailLocalContent() string {
 }
 
 func TestNormalizeAgentURL(t *testing.T) {
-	u, err := NormalizeAgentURL("127.0.0.1")
-	if err != nil {
-		t.Fatalf("normalize error: %v", err)
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"127.0.0.1", "http://127.0.0.1:9700"},
+		{"agent.example.local:1234", "http://agent.example.local:1234"},
+		{"https://agent.example.local", "https://agent.example.local"},
+		{"https://agent.example.local/", "https://agent.example.local/"},
+		{"https://agent.example.local:443/", "https://agent.example.local:443/"},
+		{"http://agent.example.local", "http://agent.example.local"},
+		{"https://agent.example.local:9700", "https://agent.example.local:9700"},
 	}
-	if got := u.String(); got != "http://127.0.0.1:9700" {
-		t.Fatalf("got %q", got)
+	for _, tc := range cases {
+		u, err := NormalizeAgentURL(tc.in)
+		if err != nil {
+			t.Fatalf("NormalizeAgentURL(%q): %v", tc.in, err)
+		}
+		if got := u.String(); got != tc.want {
+			t.Fatalf("NormalizeAgentURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 
-	u, err = NormalizeAgentURL("https://agent.example.local")
-	if err != nil {
-		t.Fatalf("normalize https error: %v", err)
-	}
-	if got := u.String(); got != "https://agent.example.local:9700" {
-		t.Fatalf("got %q", got)
+	for _, invalid := range []string{"", "ftp://agent.example.local", "http://"} {
+		if _, err := NormalizeAgentURL(invalid); err == nil {
+			t.Fatalf("NormalizeAgentURL(%q) expected error", invalid)
+		}
 	}
 }
 

@@ -390,11 +390,11 @@ function onServerTypeChange(type) {
 function normalizeAgentUrlInput(raw) {
   var val = (raw || '').trim();
   if (!val) return '';
-  if (val.indexOf('://') === -1) {
-    val = 'http://' + val;
+  if (val.indexOf('://') !== -1) {
+    return val;
   }
   try {
-    var parsed = new URL(val);
+    var parsed = new URL('http://' + val);
     if (!parsed.port) {
       parsed.port = '9700';
     }
