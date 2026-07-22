@@ -634,18 +634,36 @@ func ListBanEventsHandler(c *gin.Context) {
 	country := strings.TrimSpace(c.Query("country"))
 
 	ctx := c.Request.Context()
-	events, err := storage.ListBanEventsFiltered(ctx, serverID, limit, offset, since, search, country)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+	var (
+		events   []storage.BanEventRecord
+		listErr  error
+		total    int64
+		countErr error
+		wg       sync.WaitGroup
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		events, listErr = storage.ListBanEventsFiltered(ctx, serverID, limit, offset, since, search, country)
+	}()
+	if offset == 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			total, countErr = storage.CountBanEventsFiltered(ctx, serverID, since, search, country)
+		}()
+	}
+	wg.Wait()
+
+	if listErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": listErr.Error()})
 		return
 	}
 
 	resp := gin.H{"events": events, "hasMore": len(events) == limit}
-	if offset == 0 {
-		total, errCount := storage.CountBanEventsFiltered(ctx, serverID, since, search, country)
-		if errCount == nil {
-			resp["total"] = total
-		}
+	if offset == 0 && countErr == nil {
+		resp["total"] = total
 	}
 	c.JSON(http.StatusOK, resp)
 }

@@ -769,6 +769,9 @@ function renderLogOverviewContent() {
   var recurringMap = getRecurringIPMap();
   var searchQuery = (banEventsFilterText || '').trim();
   var totalLabel = banEventsTotal != null ? banEventsTotal : ' - ';
+  if (searchQuery && banEventsTotal != null && banEventsTotal > BAN_EVENTS_SEARCH_COUNT_CAP) {
+    totalLabel = BAN_EVENTS_SEARCH_COUNT_CAP + '+';
+  }
   html += ''
     + '<div class="flex flex-col sm:flex-row gap-3 mb-4">'
     + '  <div class="flex-1">'

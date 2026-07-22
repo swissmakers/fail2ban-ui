@@ -23,6 +23,7 @@ var banEventsFilterText = '';
 var banEventsFilterCountry = 'all';
 var banEventsFilterDebounce = null;
 var BAN_EVENTS_PAGE_SIZE = 50;
+var BAN_EVENTS_SEARCH_COUNT_CAP = 5000;
 var BAN_EVENTS_MAX_LOADED = 1000;
 var isBanEventsLoadingMore = false;
 var bannedIPsFilterText = '';

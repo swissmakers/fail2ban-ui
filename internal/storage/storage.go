@@ -789,23 +789,26 @@ WHERE id = ?`
 	return rec, true, nil
 }
 
+// Upper bound for counting search matches: LIKE '%term%' cannot use an index, so the count stops once this many matches are found instead of scanning on.
+const MaxSearchCount = 5000
+
 // Returns the total count of ban events matching the same filters as ListBanEventsFiltered.
 func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Time, search, country string) (int64, error) {
 	if db == nil {
 		return 0, errors.New("storage not initialised")
 	}
 
-	query := `SELECT COUNT(*) FROM ban_events WHERE 1=1`
+	conditions := ""
 	args := []any{}
 
 	if serverID != "" {
-		query += " AND server_id = ?"
+		conditions += " AND server_id = ?"
 		args = append(args, serverID)
 	}
-	addOccurredAtSinceFilter(&query, &args, since)
+	addOccurredAtSinceFilter(&conditions, &args, since)
 	search = strings.TrimSpace(search)
 	if search != "" {
-		query += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
+		conditions += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
 		pattern := "%" + search + "%"
 		for i := 0; i < 5; i++ {
 			args = append(args, pattern)
@@ -813,11 +816,16 @@ func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Tim
 	}
 	if country != "" && country != "all" {
 		if country == "__unknown__" {
-			query += " AND (country IS NULL OR country = '')"
+			conditions += " AND (country IS NULL OR country = '')"
 		} else {
-			query += " AND LOWER(COALESCE(country,'')) = ?"
+			conditions += " AND LOWER(COALESCE(country,'')) = ?"
 			args = append(args, strings.ToLower(country))
 		}
+	}
+
+	query := `SELECT COUNT(*) FROM ban_events WHERE 1=1` + conditions
+	if search != "" {
+		query = fmt.Sprintf(`SELECT COUNT(*) FROM (SELECT 1 FROM ban_events WHERE 1=1%s LIMIT %d)`, conditions, MaxSearchCount+1)
 	}
 
 	var total int64
