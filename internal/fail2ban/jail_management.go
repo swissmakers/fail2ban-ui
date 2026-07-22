@@ -111,6 +111,9 @@ func readJailConfigWithFallback(jailName, configPath string) (string, string, er
 //  Validation
 // =========================================================================
 
+var invalidNameChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+var enabledTruePattern = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`)
+
 func ValidateJailName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -125,10 +128,13 @@ func ValidateJailName(name string) error {
 		return fmt.Errorf("jail name '%s' is reserved and cannot be used", name)
 	}
 
-	// Check for invalid characters (only alphanumeric, dash, underscore allowed)
-	invalidChars := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-	if invalidChars.MatchString(name) {
+	// Check for invalid characters
+	if invalidNameChars.MatchString(name) {
 		return fmt.Errorf("jail name '%s' contains invalid characters. Only alphanumeric characters, dashes, and underscores are allowed", name)
+	}
+
+	if name[0] == '-' {
+		return fmt.Errorf("jail name '%s' must not start with a dash", name)
 	}
 
 	return nil
@@ -828,7 +834,7 @@ func MigrateJailsFromJailLocal(configPath string) error {
 			}
 			jailContent = modifiedContent
 		} else {
-			jailContent = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`).ReplaceAllString(jailContent, "enabled = false")
+			jailContent = enabledTruePattern.ReplaceAllString(jailContent, "enabled = false")
 		}
 		if err := os.WriteFile(jailFilePath, []byte(jailContent), 0644); err != nil {
 			return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
