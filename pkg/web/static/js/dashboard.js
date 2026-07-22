@@ -27,7 +27,8 @@ function refreshData(options) {
   Promise.all([
     fetchBanStatisticsData(),
     fetchBanEventsData(),
-    fetchBanInsightsData()
+    fetchBanInsightsData(),
+    fetchBanEventCountries()
   ])
     .catch(function(err) {
       console.error('Error loading ban events/insights:', err);
@@ -779,6 +780,16 @@ function renderLogOverviewContent() {
     + '    <input type="text" id="recentEventsSearch" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="' + t('logs.search.placeholder', 'Search IP, jail or server') + '" value="' + escapeHtml(banEventsFilterText) + '" oninput="updateBanEventsSearch(this.value)">'
     + '  </div>'
     + '  <div class="w-full sm:w-48">'
+    + '    <label for="recentEventsServer" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="logs.search.server_label">Server</label>'
+    + '    <select id="recentEventsServer" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="updateBanEventsServer(this.value)">'
+    + '      <option value="all"' + (banEventsFilterServer === 'all' ? ' selected' : '') + ' data-i18n="logs.search.server_all">All servers</option>';
+  serversCache.filter(function(server) { return server.enabled; }).forEach(function(server) {
+    var selected = banEventsFilterServer === server.id ? ' selected' : '';
+    html += '<option value="' + escapeHtml(server.id) + '"' + selected + '>' + escapeHtml(server.name || server.id) + '</option>';
+  });
+  html += '    </select>'
+    + '  </div>'
+    + '  <div class="w-full sm:w-48">'
     + '    <label for="recentEventsCountry" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="logs.search.country_label">Country</label>'
     + '    <select id="recentEventsCountry" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="updateBanEventsCountry(this.value)">'
     + '      <option value="all"' + (banEventsFilterCountry === 'all' ? ' selected' : '') + ' data-i18n="logs.search.country_all">All countries</option>';
@@ -911,6 +922,11 @@ function refetchBanEvents() {
 
 function updateBanEventsCountry(value) {
   banEventsFilterCountry = value || 'all';
+  refetchBanEvents();
+}
+
+function updateBanEventsServer(value) {
+  banEventsFilterServer = value || 'all';
   refetchBanEvents();
 }
 
@@ -1176,8 +1192,8 @@ function buildBanEventsQuery(offset, append) {
   if (country && country !== 'all') {
     params.push('country=' + encodeURIComponent(country));
   }
-  if (currentServerId) {
-    params.push('serverId=' + encodeURIComponent(currentServerId));
+  if (banEventsFilterServer && banEventsFilterServer !== 'all') {
+    params.push('serverId=' + encodeURIComponent(banEventsFilterServer));
   }
   return appPath('/api/events/bans?' + params.join('&'));
 }
@@ -1198,7 +1214,36 @@ function scheduleDashboardRefresh() {
   }, delay);
 }
 
+// Completes a live-added row once the async whois/GeoIP enrichment finished:
+// fills in country and enables the whois button without a page reload.
+function updateBanEventFromWebSocket(event) {
+  if (!event || !event.id) {
+    return;
+  }
+  var updated = false;
+  latestBanEvents.forEach(function(existing) {
+    if (existing.id !== event.id) {
+      return;
+    }
+    existing.country = event.country || existing.country;
+    existing.hasWhois = !!event.hasWhois || !!existing.hasWhois;
+    existing.hasLogs = !!event.hasLogs || !!existing.hasLogs;
+    updated = true;
+  });
+  if (updated) {
+    renderLogOverviewSection();
+  }
+}
+
 function addBanEventFromWebSocket(event) {
+  // Server-filtered view must not receive live rows from other servers.
+  if (banEventsFilterServer !== 'all' && event && event.serverId !== banEventsFilterServer) {
+    if (typeof showBanEventToast === 'function') {
+      showBanEventToast(event);
+    }
+    scheduleDashboardRefresh();
+    return;
+  }
   var hasSearch = (banEventsFilterText || '').trim().length > 0;
   if (hasSearch) {
     if (typeof showBanEventToast === 'function') {
@@ -1245,7 +1290,8 @@ function refreshDashboardData() {
   Promise.all([
     summaryPromise,
     fetchBanStatisticsData(),
-    fetchBanInsightsData()
+    fetchBanInsightsData(),
+    fetchBanEventCountries()
   ]).then(function() {
     if ((bannedIPsFilterText || '').trim()) {
       updateSummaryCountersFromLatestSummary();
@@ -1300,7 +1346,26 @@ function recurringIPsLastWeekCount() {
   return source.recurring.length;
 }
 
+// Loads the full country list from the backend so the dropdown offers every
+// known country regardless of the currently applied filters.
+function fetchBanEventCountries() {
+  return fetch(appPath('/api/events/bans/countries'))
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && Array.isArray(data.countries)) {
+        banEventsCountryOptions = data.countries;
+      }
+    })
+    .catch(function(err) {
+      console.error('Error fetching event countries:', err);
+    });
+}
+
 function getBanEventCountries() {
+  if (Array.isArray(banEventsCountryOptions)) {
+    return banEventsCountryOptions;
+  }
+  // Fallback until the backend list has loaded
   var countries = {};
   latestBanEvents.forEach(function(event) {
     var country = (event.country || '').trim();

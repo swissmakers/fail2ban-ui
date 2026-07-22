@@ -45,6 +45,11 @@ function initializeApp() {
           addBanEventFromWebSocket(event);
         }
       });
+      wsManager.onBanEventUpdate(function(event) {
+        if (typeof updateBanEventFromWebSocket === 'function') {
+          updateBanEventFromWebSocket(event);
+        }
+      });
       return true;
     }
     return false;
