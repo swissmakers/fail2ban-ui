@@ -237,6 +237,24 @@ func (h *Hub) BroadcastBanEvent(event storage.BanEventRecord) {
 	}
 }
 
+func (h *Hub) BroadcastBanEventUpdate(event storage.BanEventRecord) {
+	message := map[string]interface{}{
+		"type": "ban_event_update",
+		"data": event,
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Error marshaling ban event update: %v", err)
+		return
+	}
+
+	select {
+	case h.broadcast <- data:
+	default:
+		log.Printf("Broadcast channel full, dropping ban event update")
+	}
+}
+
 // =========================================================================
 //  Broadcast Unban Event
 // =========================================================================

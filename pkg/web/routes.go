@@ -102,6 +102,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// Internal API calls to get the stats and insights about bans
 		api.GET("/events/bans", RequirePermission(PermissionRead), ListBanEventsHandler)
+		api.GET("/events/bans/countries", RequirePermission(PermissionRead), ListBanEventCountriesHandler)
 		api.DELETE("/events/bans", RequirePermission(PermissionAdmin), ClearBanEventsHandler)
 		api.GET("/events/bans/stats", RequirePermission(PermissionRead), BanStatisticsHandler)
 		api.GET("/events/bans/insights", RequirePermission(PermissionRead), BanInsightsHandler)

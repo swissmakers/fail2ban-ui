@@ -668,6 +668,16 @@ func ListBanEventsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// Returns the distinct countries seen across all stored events
+func ListBanEventCountriesHandler(c *gin.Context) {
+	countries, err := storage.ListBanEventCountries(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"countries": countries})
+}
+
 // Returns a single ban event including whois/logs fields.
 func GetBanEventHandler(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -1334,40 +1344,25 @@ func waitForConnectorReady(ctx context.Context, conn fail2ban.Connector, attempt
 //  Notification Processing (Internal)
 // =========================================================================
 
-func resolveWhoisAndCountry(ip, providedWhois, providedCountry string, settings config.AppSettings) (whoisData, country string) {
-	if providedWhois == "" {
-		log.Printf("Performing whois lookup for IP %s", ip)
-		var err error
-		whoisData, err = lookupWhois(ip)
-		if err != nil {
-			log.Printf("WARNING: Whois lookup failed for IP %s: %v", ip, err)
-			whoisData = ""
-		}
-	} else {
-		log.Printf("Using provided whois data for IP %s", ip)
-		whoisData = providedWhois
+// Resolves the country via the configured GeoIP provider
+func resolveCountry(ip, providedCountry string, settings config.AppSettings) string {
+	if providedCountry != "" {
+		return providedCountry
 	}
-
-	country = providedCountry
-	if country == "" {
-		var err error
-		country, err = lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
-		if err != nil {
-			log.Printf("WARNING: GeoIP lookup failed for IP %s: %v", ip, err)
-			if whoisData != "" {
-				country = extractCountryFromWhois(whoisData)
-				if country != "" {
-					log.Printf("Extracted country %s from whois data for IP %s", country, ip)
-				}
-			}
-		}
+	if settings.GeoIPProvider == "builtin" {
+		return ""
 	}
-	return whoisData, country
+	country, err := lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
+	if err != nil {
+		log.Printf("WARNING: GeoIP lookup failed for IP %s: %v", ip, err)
+		return ""
+	}
+	return country
 }
 
 func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
 	settings := config.GetSettings()
-	whoisData, country := resolveWhoisAndCountry(ip, whois, "", settings)
+	country := resolveCountry(ip, "", settings)
 	filteredLogs := filterRelevantLogs(logs, ip, settings.MaxLogLines)
 	event := storage.BanEventRecord{
 		ServerID:   server.ID,
@@ -1377,14 +1372,16 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		Country:    country,
 		Hostname:   hostname,
 		Failures:   failures,
-		Whois:      whoisData,
+		Whois:      whois,
 		Logs:       filteredLogs,
 		EventType:  "ban",
 		OccurredAt: time.Now().UTC(),
 	}
-	if err := storage.RecordBanEvent(ctx, event); err != nil {
+	eventID, err := storage.RecordBanEvent(ctx, event)
+	if err != nil {
 		log.Printf("WARNING: Failed to record ban event: %v", err)
 	}
+	event.ID = eventID
 
 	// Broadcasts the ban event to WebSocket clients
 	if wsHub != nil {
@@ -1393,29 +1390,14 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 
 	evaluateAdvancedActions(ctx, settings, server, ip)
 
-	displayCountry := country
-	if displayCountry == "" {
-		displayCountry = "UNKNOWN"
-	}
-
-	if !shouldAlertForCountry(country, settings.AlertCountries) {
-		log.Printf("ERROR: IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
-		return nil
-	}
-
-	if !settings.EmailAlertsForBans {
-		log.Printf("ERROR: Alerts for bans are disabled. No alert sent for IP %s", ip)
-		return nil
-	}
-
-	dispatchAlertAsync("ban", ip, jail, hostname, failures, whoisData, filteredLogs, country, settings)
+	enrichAndAlertAsync(eventID, "ban", ip, jail, hostname, failures, filteredLogs, whois, country, settings)
 	return nil
 }
 
 // Records an unban event, broadcasts it via WebSocket, and sends an email alert if enabled.
 func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string) error {
 	settings := config.GetSettings()
-	whoisData, country := resolveWhoisAndCountry(ip, whois, country, settings)
+	country = resolveCountry(ip, country, settings)
 	event := storage.BanEventRecord{
 		ServerID:   server.ID,
 		ServerName: server.Name,
@@ -1424,36 +1406,23 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		Country:    country,
 		Hostname:   hostname,
 		Failures:   "",
-		Whois:      whoisData,
+		Whois:      whois,
 		Logs:       "",
 		EventType:  "unban",
 		OccurredAt: time.Now().UTC(),
 	}
-	if err := storage.RecordBanEvent(ctx, event); err != nil {
+	eventID, err := storage.RecordBanEvent(ctx, event)
+	if err != nil {
 		log.Printf("WARNING: Failed to record unban event: %v", err)
 	}
+	event.ID = eventID
 
 	// Broadcasts the unban event to WebSocket clients
 	if wsHub != nil {
 		wsHub.BroadcastUnbanEvent(event)
 	}
 
-	if !settings.EmailAlertsForUnbans {
-		log.Printf("Alerts for unbans are disabled. No alert sent for IP %s", ip)
-		return nil
-	}
-
-	displayCountry := country
-	if displayCountry == "" {
-		displayCountry = "UNKNOWN"
-	}
-
-	if !shouldAlertForCountry(country, settings.AlertCountries) {
-		log.Printf("IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
-		return nil
-	}
-
-	dispatchAlertAsync("unban", ip, jail, hostname, "", whoisData, "", country, settings)
+	enrichAndAlertAsync(eventID, "unban", ip, jail, hostname, "", "", whois, country, settings)
 	return nil
 }
 
@@ -1461,10 +1430,72 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 //  Alert Dispatch
 // =========================================================================
 
-// Sends the alert without blocking the caller. Alerts delivery (SMTP/webhook/Elasticsearch) is never hold the fail2ban callback.
-func dispatchAlertAsync(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) {
+// Completes whois enrichment and dispatches alerts in the background
+// Whois lookups can take up to 10 seconds and should never block the fail2ban callback response
+func enrichAndAlertAsync(eventID int64, alertType, ip, jail, hostname, failures, logs, providedWhois, country string, settings config.AppSettings) {
 	go func() {
-		if err := dispatchAlert(alertType, ip, jail, hostname, failures, whois, logs, country, settings); err != nil {
+		whoisData := providedWhois
+		if whoisData == "" {
+			log.Printf("Performing whois lookup for IP %s", ip)
+			data, err := lookupWhois(ip)
+			if err != nil {
+				log.Printf("WARNING: Whois lookup failed for IP %s: %v", ip, err)
+			} else {
+				whoisData = data
+			}
+		}
+		if country == "" {
+			if resolved, err := lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath); err == nil {
+				country = resolved
+			} else {
+				log.Printf("WARNING: GeoIP lookup failed for IP %s: %v", ip, err)
+			}
+		}
+		if country == "" && whoisData != "" {
+			if extracted := extractCountryFromWhois(whoisData); extracted != "" {
+				country = extracted
+				log.Printf("Extracted country %s from whois data for IP %s", country, ip)
+			}
+		}
+		if eventID > 0 && (whoisData != "" || country != "") {
+			updateCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := storage.UpdateBanEventEnrichment(updateCtx, eventID, whoisData, country); err != nil {
+				log.Printf("WARNING: Failed to store whois enrichment for event %d: %v", eventID, err)
+			} else if wsHub != nil {
+				if enriched, found, err := storage.GetBanEventByID(updateCtx, eventID); err == nil && found {
+					enriched.Whois = ""
+					enriched.Logs = ""
+					wsHub.BroadcastBanEventUpdate(enriched)
+				}
+			}
+			cancel()
+		}
+
+		displayCountry := country
+		if displayCountry == "" {
+			displayCountry = "UNKNOWN"
+		}
+		if alertType == "unban" {
+			if !settings.EmailAlertsForUnbans {
+				log.Printf("Alerts for unbans are disabled. No alert sent for IP %s", ip)
+				return
+			}
+			if !shouldAlertForCountry(country, settings.AlertCountries) {
+				log.Printf("IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
+				return
+			}
+		} else {
+			if !shouldAlertForCountry(country, settings.AlertCountries) {
+				log.Printf("ERROR: IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
+				return
+			}
+			if !settings.EmailAlertsForBans {
+				log.Printf("ERROR: Alerts for bans are disabled. No alert sent for IP %s", ip)
+				return
+			}
+		}
+
+		if err := dispatchAlert(alertType, ip, jail, hostname, failures, whoisData, logs, country, settings); err != nil {
 			log.Printf("ERROR: Failed to send %s alert for IP %s: %v", alertType, ip, err)
 			if wsHub != nil {
 				wsHub.BroadcastToast("error", fmt.Sprintf("Failed to send %s alert for %s: %v", alertType, ip, err))
