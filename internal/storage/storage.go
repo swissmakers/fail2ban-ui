@@ -90,6 +90,32 @@ func addOccurredAtSinceFilter(query *string, args *[]any, since time.Time) {
 	*args = append(*args, formatStorageTime(since))
 }
 
+// Turns user input into an FTS5 MATCH expression. -> each whitespace token becomes a quoted prefix phrase ("203.0.113"* matches 203.0.113.45), joined with implicit AND
+func buildFTSMatch(search string) string {
+	var parts []string
+	for _, token := range strings.Fields(search) {
+		token = strings.ReplaceAll(token, `"`, `""`)
+		parts = append(parts, `"`+token+`"*`)
+	}
+	return strings.Join(parts, " ")
+}
+
+func addSearchFilter(query *string, args *[]any, search string) {
+	if search == "" {
+		return
+	}
+	if ftsAvailable {
+		*query += " AND id IN (SELECT rowid FROM ban_events_fts WHERE ban_events_fts MATCH ?)"
+		*args = append(*args, buildFTSMatch(search))
+		return
+	}
+	*query += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
+	pattern := "%" + search + "%"
+	for i := 0; i < 5; i++ {
+		*args = append(*args, pattern)
+	}
+}
+
 // =========================================================================
 //  Types
 // =========================================================================
@@ -229,9 +255,67 @@ func Init(dbPath string) error {
 		if initErr = ensureSchema(context.Background()); initErr != nil {
 			return
 		}
-		initErr = migrateLegacyTimestamps(context.Background())
+		if initErr = migrateLegacyTimestamps(context.Background()); initErr != nil {
+			return
+		}
+		ensureBanEventsFTS(context.Background())
+
+		// Refreshes planner statistics so index choices stay sane as the
+		// data distribution changes (recommended by the SQLite docs).
+		if _, err := db.ExecContext(context.Background(), `PRAGMA optimize`); err != nil {
+			log.Printf("Warning: PRAGMA optimize failed: %v", err)
+		}
 	})
 	return initErr
+}
+
+// Is set when the ban_events_fts full-text index exists. -> search queries fall back to LIKE when it could not be created
+var ftsAvailable bool
+
+// Creates the FTS5 full-text index over the searchable ban_events
+func ensureBanEventsFTS(ctx context.Context) {
+	const ddl = `
+CREATE VIRTUAL TABLE IF NOT EXISTS ban_events_fts USING fts5(
+	ip, jail, server_name, hostname, country,
+	content='ban_events', content_rowid='id'
+);
+CREATE TRIGGER IF NOT EXISTS ban_events_fts_ai AFTER INSERT ON ban_events BEGIN
+	INSERT INTO ban_events_fts(rowid, ip, jail, server_name, hostname, country)
+	VALUES (new.id, new.ip, new.jail, new.server_name, new.hostname, new.country);
+END;
+CREATE TRIGGER IF NOT EXISTS ban_events_fts_ad AFTER DELETE ON ban_events BEGIN
+	INSERT INTO ban_events_fts(ban_events_fts, rowid, ip, jail, server_name, hostname, country)
+	VALUES ('delete', old.id, old.ip, old.jail, old.server_name, old.hostname, old.country);
+END;
+CREATE TRIGGER IF NOT EXISTS ban_events_fts_au AFTER UPDATE OF ip, jail, server_name, hostname, country ON ban_events BEGIN
+	INSERT INTO ban_events_fts(ban_events_fts, rowid, ip, jail, server_name, hostname, country)
+	VALUES ('delete', old.id, old.ip, old.jail, old.server_name, old.hostname, old.country);
+	INSERT INTO ban_events_fts(rowid, ip, jail, server_name, hostname, country)
+	VALUES (new.id, new.ip, new.jail, new.server_name, new.hostname, new.country);
+END;`
+	if _, err := db.ExecContext(ctx, ddl); err != nil {
+		log.Printf("WARNING: full-text search index unavailable, falling back to slow LIKE search: %v", err)
+		return
+	}
+
+	var indexedRows, eventRows int64
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ban_events_fts_docsize`).Scan(&indexedRows); err != nil {
+		log.Printf("WARNING: full-text search index unreadable, falling back to slow LIKE search: %v", err)
+		return
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ban_events`).Scan(&eventRows); err != nil {
+		log.Printf("WARNING: failed to count ban events for FTS backfill: %v", err)
+		return
+	}
+	if indexedRows != eventRows {
+		start := time.Now()
+		if _, err := db.ExecContext(ctx, `INSERT INTO ban_events_fts(ban_events_fts) VALUES('rebuild')`); err != nil {
+			log.Printf("WARNING: FTS rebuild failed, falling back to slow LIKE search: %v", err)
+			return
+		}
+		log.Printf("Built full-text search index for %d ban events in %s (had %d indexed)", eventRows, time.Since(start).Round(time.Millisecond), indexedRows)
+	}
+	ftsAvailable = true
 }
 
 // Rewrites legacy Go-default timestamps ("2006-01-02 15:04:05.999999999 +0000 UTC")
@@ -601,13 +685,13 @@ INSERT INTO servers (
 // =========================================================================
 
 // Stores a ban/unban event into the database.
-func RecordBanEvent(ctx context.Context, record BanEventRecord) error {
+func RecordBanEvent(ctx context.Context, record BanEventRecord) (int64, error) {
 	if db == nil {
-		return errors.New("storage not initialised")
+		return 0, errors.New("storage not initialised")
 	}
 
 	if record.ServerID == "" {
-		return errors.New("server id is required")
+		return 0, errors.New("server id is required")
 	}
 	now := time.Now().UTC()
 	if record.CreatedAt.IsZero() {
@@ -627,7 +711,7 @@ INSERT INTO ban_events (
 	server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := db.ExecContext(
+	res, err := db.ExecContext(
 		ctx,
 		query,
 		record.ServerID,
@@ -644,10 +728,46 @@ INSERT INTO ban_events (
 		formatStorageTime(record.CreatedAt),
 	)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	return nil
+	return res.LastInsertId()
+}
+
+// Fills in whois on an already stored event; used by the asynchronous enrichment after the callback has been answered.
+func UpdateBanEventEnrichment(ctx context.Context, id int64, whois, country string) error {
+	if db == nil {
+		return errors.New("storage not initialised")
+	}
+	if id <= 0 {
+		return errors.New("event id is required")
+	}
+	_, err := db.ExecContext(ctx,
+		`UPDATE ban_events SET whois = ?, country = CASE WHEN ? = '' THEN country ELSE ? END WHERE id = ?`,
+		whois, country, country, id)
+	return err
+}
+
+// Returns the distinct set of countries seen across all stored events
+func ListBanEventCountries(ctx context.Context) ([]string, error) {
+	if db == nil {
+		return nil, errors.New("storage not initialised")
+	}
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT COALESCE(country, '') FROM ban_events ORDER BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var countries []string
+	for rows.Next() {
+		var country string
+		if err := rows.Scan(&country); err != nil {
+			return nil, err
+		}
+		countries = append(countries, country)
+	}
+	return countries, rows.Err()
 }
 
 const (
@@ -671,12 +791,21 @@ func ListBanEventsFiltered(ctx context.Context, serverID string, limit, offset i
 		offset = 0
 	}
 
+	from := "FROM ban_events"
+	search = strings.TrimSpace(search)
+	if search != "" && ftsAvailable {
+		var matches int64
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ban_events_fts WHERE ban_events_fts MATCH ?`, buildFTSMatch(search)).Scan(&matches); err == nil && matches > broadSearchThreshold {
+			from = "FROM ban_events INDEXED BY idx_ban_events_occurred_at"
+		}
+	}
+
 	baseQuery := `
 SELECT id, server_id, server_name, jail, ip, country, hostname, failures,
        (whois IS NOT NULL AND whois <> '') AS has_whois,
        (logs IS NOT NULL AND logs <> '') AS has_logs,
        event_type, occurred_at, created_at
-FROM ban_events
+` + from + `
 WHERE 1=1`
 	args := []any{}
 
@@ -685,14 +814,7 @@ WHERE 1=1`
 		args = append(args, serverID)
 	}
 	addOccurredAtSinceFilter(&baseQuery, &args, since)
-	search = strings.TrimSpace(search)
-	if search != "" {
-		baseQuery += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
-		pattern := "%" + search + "%"
-		for i := 0; i < 5; i++ {
-			args = append(args, pattern)
-		}
-	}
+	addSearchFilter(&baseQuery, &args, search)
 	if country != "" && country != "all" {
 		if country == "__unknown__" {
 			baseQuery += " AND (country IS NULL OR country = '')"
@@ -789,13 +911,30 @@ WHERE id = ?`
 	return rec, true, nil
 }
 
-// Upper bound for counting search matches: LIKE '%term%' cannot use an index, so the count stops once this many matches are found instead of scanning on.
+// Upper bound for counting search matches
 const MaxSearchCount = 5000
+
+// Above this many FTS matches a search term counts as "broad": the list query
+// then walks the occurred_at index and probes the match set instead of sorting the whole match set.
+const broadSearchThreshold = 10000
 
 // Returns the total count of ban events matching the same filters as ListBanEventsFiltered.
 func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Time, search, country string) (int64, error) {
 	if db == nil {
 		return 0, errors.New("storage not initialised")
+	}
+
+	// A search without further filters is answered index-only by FTS.
+	search = strings.TrimSpace(search)
+	if search != "" && ftsAvailable && serverID == "" && since.IsZero() && (country == "" || country == "all") {
+		var total int64
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ban_events_fts WHERE ban_events_fts MATCH ?`, buildFTSMatch(search)).Scan(&total); err != nil {
+			return 0, err
+		}
+		if total > MaxSearchCount {
+			total = MaxSearchCount + 1
+		}
+		return total, nil
 	}
 
 	conditions := ""
@@ -807,13 +946,7 @@ func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Tim
 	}
 	addOccurredAtSinceFilter(&conditions, &args, since)
 	search = strings.TrimSpace(search)
-	if search != "" {
-		conditions += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
-		pattern := "%" + search + "%"
-		for i := 0; i < 5; i++ {
-			args = append(args, pattern)
-		}
-	}
+	addSearchFilter(&conditions, &args, search)
 	if country != "" && country != "all" {
 		if country == "__unknown__" {
 			conditions += " AND (country IS NULL OR country = '')"
@@ -943,7 +1076,7 @@ func CountBanEventsByIP(ctx context.Context, ip, serverID string) (int64, error)
 
 	query := `
 SELECT COUNT(*)
-FROM ban_events
+FROM ban_events INDEXED BY idx_ban_events_ip
 WHERE ip = ? AND (event_type = 'ban' OR event_type IS NULL)`
 	args := []any{ip}
 
@@ -1221,6 +1354,7 @@ CREATE INDEX IF NOT EXISTS idx_ban_events_ip ON ban_events(ip);
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_jail_occurred_at ON ban_events(server_id, jail, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at_ip ON ban_events(occurred_at, ip, country, event_type, server_id);
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_occurred_at ON ban_events(server_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_ban_events_country ON ban_events(country);
 
 CREATE TABLE IF NOT EXISTS permanent_blocks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1236,6 +1370,7 @@ CREATE TABLE IF NOT EXISTS permanent_blocks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
+CREATE INDEX IF NOT EXISTS idx_perm_blocks_updated_at ON permanent_blocks(updated_at);
 `
 
 	if _, err := db.ExecContext(ctx, createTable); err != nil {

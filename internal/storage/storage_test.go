@@ -101,6 +101,139 @@ func TestReplaceServersRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBanEventsFTSSearchAndEnrichment(t *testing.T) {
+	initTestStorage(t)
+	if !ftsAvailable {
+		t.Fatal("FTS index not available in fresh database")
+	}
+
+	ctx := context.Background()
+	id1, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srv-1", ServerName: "web frontend", Jail: "swissmakers-nextcloud",
+		IP: "203.0.113.45", Country: "UA", EventType: "ban",
+	})
+	if err != nil || id1 <= 0 {
+		t.Fatalf("RecordBanEvent: id=%d err=%v", id1, err)
+	}
+	id2, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srv-2", ServerName: "mail relay", Jail: "postfix-sasl",
+		IP: "198.51.100.7", EventType: "ban",
+	})
+	if err != nil || id2 <= 0 {
+		t.Fatalf("RecordBanEvent: id=%d err=%v", id2, err)
+	}
+
+	searchTotal := func(term string) int64 {
+		t.Helper()
+		total, err := CountBanEventsFiltered(ctx, "", time.Time{}, term, "")
+		if err != nil {
+			t.Fatalf("CountBanEventsFiltered(%q): %v", term, err)
+		}
+		return total
+	}
+
+	// Full word, word prefix, and IP fragment must all match via FTS
+	for term, want := range map[string]int64{
+		"nextcloud":   1,
+		"next":        1,
+		"203.0.113":   1,
+		"mail":        1,
+		"nosuchthing": 0,
+	} {
+		if got := searchTotal(term); got != want {
+			t.Fatalf("search %q total=%d want %d", term, got, want)
+		}
+	}
+
+	events, err := ListBanEventsFiltered(ctx, "", 10, 0, time.Time{}, "nextcloud", "")
+	if err != nil || len(events) != 1 || events[0].IP != "203.0.113.45" {
+		t.Fatalf("ListBanEventsFiltered(nextcloud) = %+v, err=%v", events, err)
+	}
+
+	// Enrichment fills whois and country; the country change must reach FTS.
+	if err := UpdateBanEventEnrichment(ctx, id2, "netname: EXAMPLE-NET", "BR"); err != nil {
+		t.Fatalf("UpdateBanEventEnrichment: %v", err)
+	}
+	rec, found, err := GetBanEventByID(ctx, id2)
+	if err != nil || !found || rec.Whois != "netname: EXAMPLE-NET" || rec.Country != "BR" {
+		t.Fatalf("enriched record = %+v found=%v err=%v", rec, found, err)
+	}
+	if got := searchTotal("BR"); got != 1 {
+		t.Fatalf("search after country update total=%d want 1", got)
+	}
+	// Empty country must not overwrite an existing one.
+	if err := UpdateBanEventEnrichment(ctx, id1, "whois text", ""); err != nil {
+		t.Fatalf("UpdateBanEventEnrichment: %v", err)
+	}
+	if rec, _, _ := GetBanEventByID(ctx, id1); rec.Country != "UA" {
+		t.Fatalf("country overwritten by empty enrichment: %q", rec.Country)
+	}
+
+	// Deletes (retention prune) must drop rows from the FTS index too.
+	if _, err := PruneBanEventsBefore(ctx, time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatalf("PruneBanEventsBefore: %v", err)
+	}
+	if got := searchTotal("nextcloud"); got != 0 {
+		t.Fatalf("search after prune total=%d want 0", got)
+	}
+
+	countries, err := ListBanEventCountries(ctx)
+	if err != nil {
+		t.Fatalf("ListBanEventCountries: %v", err)
+	}
+	if len(countries) != 0 {
+		t.Fatalf("countries after prune = %v, want empty", countries)
+	}
+}
+
+// Reproduces the production scenario: ban_events already holds rows when the
+// FTS index is first created. The index must be backfilled (counting the fts
+// table itself reads the content table and always matches the docsize
+// shadow table is the real indicator), and deletes must not corrupt it.
+func TestBanEventsFTSBackfillsExistingRows(t *testing.T) {
+	initTestStorage(t)
+	ctx := context.Background()
+
+	// Simulate a pre-FTS database, drop the index and triggers, then insert.
+	for _, stmt := range []string{
+		`DROP TRIGGER ban_events_fts_ai`,
+		`DROP TRIGGER ban_events_fts_ad`,
+		`DROP TRIGGER ban_events_fts_au`,
+		`DROP TABLE ban_events_fts`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	ftsAvailable = false
+	if _, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srv-1", ServerName: "legacy box", Jail: "sshd",
+		IP: "192.0.2.99", Country: "DE", EventType: "ban",
+		OccurredAt: time.Now().UTC().Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("RecordBanEvent: %v", err)
+	}
+
+	ensureBanEventsFTS(ctx)
+	if !ftsAvailable {
+		t.Fatal("FTS not available after ensureBanEventsFTS")
+	}
+
+	total, err := CountBanEventsFiltered(ctx, "", time.Time{}, "legacy", "")
+	if err != nil || total != 1 {
+		t.Fatalf("search for pre-existing row: total=%d err=%v (backfill missing)", total, err)
+	}
+	// Deleting the backfilled row must work (this failed with CORRUPT_VTAB
+	// when the index was empty while the delete trigger fired).
+	deleted, err := PruneBanEventsBefore(ctx, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("PruneBanEventsBefore on backfilled index: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("pruned %d rows, want 1", deleted)
+	}
+}
+
 func TestCountRecentBanEventsByJail(t *testing.T) {
 	initTestStorage(t)
 
@@ -116,7 +249,7 @@ func TestCountRecentBanEventsByJail(t *testing.T) {
 		{ServerID: "srv-2", ServerName: "server 2", Jail: "sshd", IP: "192.0.2.14", EventType: "ban", OccurredAt: now.Add(-5 * time.Minute)},
 	}
 	for _, event := range events {
-		if err := RecordBanEvent(ctx, event); err != nil {
+		if _, err := RecordBanEvent(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent: %v", err)
 		}
 	}
@@ -143,7 +276,7 @@ func TestRecordBanEventUsesSortableStorageTime(t *testing.T) {
 		EventType:  "ban",
 		OccurredAt: occurredAt,
 	}
-	if err := RecordBanEvent(ctx, event); err != nil {
+	if _, err := RecordBanEvent(ctx, event); err != nil {
 		t.Fatalf("RecordBanEvent: %v", err)
 	}
 
@@ -188,7 +321,7 @@ func TestListBanEventsFilteredOmitsHeavyFields(t *testing.T) {
 		OccurredAt: now.Add(-2 * time.Minute),
 	}
 	for _, event := range []BanEventRecord{withDetail, withoutDetail} {
-		if err := RecordBanEvent(ctx, event); err != nil {
+		if _, err := RecordBanEvent(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent: %v", err)
 		}
 	}
