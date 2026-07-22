@@ -23,7 +23,7 @@ Fail2Ban UI can query external threat-intelligence sources for suspicious IPs. T
 
 ## Configuration
 
-Under **Settings → Alert Settings**:
+Under **Settings -> Alert Settings**:
 
 1. If you do not have an API key yet, create one with the selected provider.
 2. Set **Threat Intel Provider** to `AlienVault OTX` or `AbuseIPDB`.

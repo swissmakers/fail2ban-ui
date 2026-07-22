@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on "AS IS" BASIS,
@@ -191,7 +191,6 @@ func (h *Hub) Run() {
 	}
 }
 
-// Sends heartbeat message to all connected clients.
 func (h *Hub) sendHeartbeat() {
 	message := map[string]interface{}{
 		"type":   "heartbeat",
@@ -238,6 +237,24 @@ func (h *Hub) BroadcastBanEvent(event storage.BanEventRecord) {
 	}
 }
 
+func (h *Hub) BroadcastBanEventUpdate(event storage.BanEventRecord) {
+	message := map[string]interface{}{
+		"type": "ban_event_update",
+		"data": event,
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Error marshaling ban event update: %v", err)
+		return
+	}
+
+	select {
+	case h.broadcast <- data:
+	default:
+		log.Printf("Broadcast channel full, dropping ban event update")
+	}
+}
+
 // =========================================================================
 //  Broadcast Unban Event
 // =========================================================================
@@ -264,7 +281,6 @@ func (h *Hub) BroadcastUnbanEvent(event storage.BanEventRecord) {
 //  WebSocket Helper Functions
 // =========================================================================
 
-// Reads messages from the WebSocket connection.
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
@@ -288,7 +304,6 @@ func (c *Client) readPump() {
 	}
 }
 
-// Writes messages to the WebSocket connection.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {

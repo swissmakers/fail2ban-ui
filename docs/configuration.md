@@ -70,7 +70,7 @@ With a subpath:
 
 SSH-connected servers can enable **reverse tunnel for events** (server form). The UI then opens a reverse tunnel (`ssh -R <port>:localhost:<port>`) alongside the SSH control connection so callbacks reach the UI even when the managed host cannot connect to it directly (NAT, firewall). The port is derived from `CALLBACK_URL` (explicit port, otherwise 443/80 by scheme).
 
-The tunnel is only used if `CALLBACK_URL` points to `localhost`/`127.0.0.1` — the remote Fail2Ban sends its callbacks to that URL, which the tunnel forwards to the UI. With a public callback URL the callbacks bypass the tunnel; the UI logs a warning in that case. Note that a localhost callback URL applies globally, so mixing tunneled and non-tunneled remote servers is not possible.
+The tunnel is only used if `CALLBACK_URL` points to `localhost`/`127.0.0.1`  -  the remote Fail2Ban sends its callbacks to that URL, which the tunnel forwards to the UI. With a public callback URL the callbacks bypass the tunnel; the UI logs a warning in that case. Note that a localhost callback URL applies globally, so mixing tunneled and non-tunneled remote servers is not possible.
 
 ## Privacy and telemetry controls
 
@@ -93,33 +93,33 @@ The tunnel is only used if `CALLBACK_URL` points to `localhost`/`127.0.0.1` — 
 
 ## Global Fail2Ban defaults (UI-managed)
 
-Configure under **Settings → Global Settings**. These values are written to the `[DEFAULT]` section of the managed `jail.local` and pushed to every managed host:
+Configure under **Settings -> Global Settings**. These values are written to the `[DEFAULT]` section of the managed `jail.local` and pushed to every managed host:
 
 * `bantime`, `findtime`, `maxretry`, `ignoreip`, `banaction` / `banaction_allports`, firewall `chain`
 * Bantime increment escalation (optional, only emitted when set):
-  * `bantime.rndtime` — random jitter added to escalating bans
-  * `bantime.maxtime` — cap for escalating bans (e.g. `5w`)
-  * `bantime.factor` — escalation multiplier (Fail2Ban default: `1`)
-  * `bantime.overalljails` — count repeat offenses across all jails instead of per jail
+  * `bantime.rndtime`  -  random jitter added to escalating bans
+  * `bantime.maxtime`  -  cap for escalating bans (e.g. `5w`)
+  * `bantime.factor`  -  escalation multiplier (Fail2Ban default: `1`)
+  * `bantime.overalljails`  -  count repeat offenses across all jails instead of per jail
 
 Duration fields accept plain seconds or Fail2Ban time suffixes (`3600`, `48h`, `5w`, `1d 12h`). `bantime` additionally accepts `-1` for permanent bans.
 
 ## Alert settings (UI-managed)
 
-Configure under **Settings → Alert Settings**:
+Configure under **Settings -> Alert Settings**:
 
 * Provider: `email`, `webhook`, or `elasticsearch`
 * Enable alerts for bans and/or unbans
 * Alert country filters
 * GeoIP provider and log-line limits
 
-> **Privacy note on the `builtin` GeoIP provider:** it resolves countries via the free ip-api.com service, which means every enriched (banned) IP address is sent to a third party — and the free tier only supports plain HTTP, so the queries travel unencrypted. For privacy-sensitive deployments use the MaxMind provider with a local GeoLite2 database instead.
+> **Privacy note on the `builtin` GeoIP provider:** it resolves countries via the free ip-api.com service, which means every enriched (banned) IP address is sent to a third party  -  and the free tier only supports plain HTTP, so the queries travel unencrypted. For privacy-sensitive deployments use the MaxMind provider with a local GeoLite2 database instead.
 
 For provider behavior and payloads, see [alert-providers.md](alert-providers.md) and [webhooks.md](webhooks.md).
 
 ## Threat intelligence settings (UI-managed)
 
-Configure under **Settings → Alert Settings**:
+Configure under **Settings -> Alert Settings**:
 
 * `threatIntel.provider`: `none`, `alienvault`, or `abuseipdb`
 * `threatIntel.alienVaultApiKey` (for `alienvault`)

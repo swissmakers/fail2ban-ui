@@ -38,12 +38,16 @@ function initializeApp() {
     initHeader();
   }
 
-  // Initialize WebSocket connection and register ban event handler
   function registerBanEventHandler() {
     if (typeof wsManager !== 'undefined' && wsManager) {
       wsManager.onBanEvent(function(event) {
         if (typeof addBanEventFromWebSocket === 'function') {
           addBanEventFromWebSocket(event);
+        }
+      });
+      wsManager.onBanEventUpdate(function(event) {
+        if (typeof updateBanEventFromWebSocket === 'function') {
+          updateBanEventFromWebSocket(event);
         }
       });
       return true;
@@ -78,7 +82,6 @@ function initializeApp() {
       console.warn('Could not check LOTR on load:', err);
     });
 
-  // Check for updates and display version badge in the footer
   var versionContainer = document.getElementById('version-badge-container');
   if (versionContainer && versionContainer.getAttribute('data-update-check') === 'true') {
     fetch(appPath('/api/version'))
@@ -100,7 +103,6 @@ function initializeApp() {
       .catch(function() { });
   }
 
-  // Load servers and translations, then render the dashboard and initialize tooltips and search
   Promise.all([
     loadServers(),
     getTranslationsSettingsOnPageload()

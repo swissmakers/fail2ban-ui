@@ -304,15 +304,15 @@ PUT _index_template/fail2ban
 
 #### 2. Create an API key
 
-In Kibana: **Stack Management → API Keys → Create API key**. The key needs write access to the `fail2ban-events-`* indices.
+In Kibana: **Stack Management -> API Keys -> Create API key**. The key needs write access to the `fail2ban-events-`* indices.
 
 #### 3. Configure Fail2Ban UI
 
-Enter the Elasticsearch URL, index name, and API key under **Settings → Alert Settings**. Save and click **Test Connection** to verify; the test creates the first document.
+Enter the Elasticsearch URL, index name, and API key under **Settings -> Alert Settings**. Save and click **Test Connection** to verify; the test creates the first document.
 
 #### 4. Create a Kibana data view
 
-In Kibana: **Stack Management → Data Views → Create data view**. Use `fail2ban-events-`* as the name and index pattern, and select `@timestamp` as the time field.
+In Kibana: **Stack Management -> Data Views -> Create data view**. Use `fail2ban-events-`* as the name and index pattern, and select `@timestamp` as the time field.
 
 #### 5. Explore in Discover
 
@@ -342,14 +342,14 @@ When a ban or unban event arrives through the Fail2Ban callback and payload vali
 
 ```
 Ban/unban event
-  → store in DB + WebSocket broadcast
-  → alerts enabled for this event type?
-  → country filter matches?
-  → dispatch to provider:
-      ├── email         → sendBanAlert() → sendEmail() via SMTP
-      ├── webhook       → sendWebhookAlert() → HTTP POST/PUT
-      └── elasticsearch → enrich logs (grok) + enrich whois (regex)
-                          → sendElasticsearchAlert() → POST /<index>/_doc
+  -> store in DB + WebSocket broadcast
+  -> alerts enabled for this event type?
+  -> country filter matches?
+  -> dispatch to provider:
+      +-- email         -> sendBanAlert() -> sendEmail() via SMTP
+      +-- webhook       -> sendWebhookAlert() -> HTTP POST/PUT
+      \-- elasticsearch -> enrich logs (grok) + enrich whois (regex)
+                          -> sendElasticsearchAlert() -> POST /<index>/_doc
 ```
 
 Switching providers does not affect event storage or WebSocket broadcasting; only the notification delivery channel changes.

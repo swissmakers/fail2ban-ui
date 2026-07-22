@@ -269,7 +269,7 @@ function renderAbuseIpDbReportItem(report, selectedIP, idx) {
   var countryCode = tiValue(report && report.reporterCountryCode);
   var reporterId = tiValue(report && report.reporterId);
   var reporterLabel = t('threat.field.reporter', 'Reporter');
-  var reporterValue = countryName !== '—'
+  var reporterValue = countryName !== ' - '
     ? countryName + ' (' + countryCode + ')'
     : countryCode;
   var metaLine = reporterLabel + ': ' + reporterValue + ' | ' + t('threat.field.reporter_id', 'Reporter ID') + ': ' + reporterId;
@@ -370,7 +370,7 @@ function renderThreatIntelLinkSection(title, links, selectedIP, suffix) {
 
 function tiRichTextBlock(text, baseId, idx, maxChars) {
   if (!text) {
-    return '<p class="mt-1 text-xs text-gray-500">—</p>';
+    return '<p class="mt-1 text-xs text-gray-500"> - </p>';
   }
   var value = String(text);
   var threshold = Number.isFinite(maxChars) ? maxChars : 240;
@@ -440,14 +440,14 @@ function tiAbuseCategoryLabel(id) {
 
 function tiAbuseCountry(entry) {
   if (!entry) {
-    return '—';
+    return ' - ';
   }
   var code = tiValue(entry.countryCode);
   var name = tiValue(entry.countryName);
-  if (name === '—') {
+  if (name === ' - ') {
     return code;
   }
-  if (code === '—') {
+  if (code === ' - ') {
     return name;
   }
   return name + ' (' + code + ')';
@@ -455,12 +455,12 @@ function tiAbuseCountry(entry) {
 
 function tiJoinList(items) {
   var safe = Array.isArray(items) ? items.filter(Boolean) : [];
-  return safe.length ? safe.join(', ') : '—';
+  return safe.length ? safe.join(', ') : ' - ';
 }
 
 function tiDate(value) {
   if (!value) {
-    return '—';
+    return ' - ';
   }
   if (typeof formatDateTime === 'function') {
     return formatDateTime(value);
@@ -470,14 +470,14 @@ function tiDate(value) {
 
 function tiValue(value) {
   if (value === null || value === undefined || value === '') {
-    return '—';
+    return ' - ';
   }
   return String(value);
 }
 
 function tiBool(value) {
   if (value === null || value === undefined) {
-    return '—';
+    return ' - ';
   }
   return value ? t('threat.boolean.yes', 'Yes') : t('threat.boolean.no', 'No');
 }

@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -109,14 +109,12 @@ func main() {
 		log.Println("WARNING: OIDC authentication is DISABLED -> Run this way only in a trusted network or behind an authenticating reverse proxy (see docs/security.md).")
 	}
 
-	// Set Gin mode
 	if settings.Debug {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Initialize router
 	router := gin.Default()
 	serverPort := strconv.Itoa(int(settings.Port))
 	bindAddress, _ := config.GetBindAddressFromEnv()
@@ -135,7 +133,6 @@ func main() {
 		web.SetConsoleLogEnabled(enabled)
 	})
 
-	// Register routes
 	web.RegisterRoutes(router, wsHub)
 	isLOTRMode := config.IsLOTRModeActive(settings.AlertCountries)
 	printWelcomeBanner(bindAddress, serverPort, isLOTRMode)
@@ -159,7 +156,6 @@ func main() {
 	}
 }
 
-// Print welcome banner.
 func printWelcomeBanner(bindAddress, appPort string, isLOTRMode bool) {
 	greeting := getGreeting()
 

@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -316,12 +316,10 @@ func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 
 	debugf("SSH ensureAction command [%s]: ssh %s (with here-doc via stdin)", sc.server.Name, strings.Join(args, " "))
 
-	// Capture stdout and stderr
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Start the command
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start ssh command: %w", err)
 	}
@@ -405,7 +403,7 @@ func (sc *SSHConnector) runFail2banCommand(ctx context.Context, args ...string) 
 	return sc.runRemoteCommand(ctx, cmdArgs)
 }
 
-// Detects "no systemd” situations on the remote host or if an interactive authentication is required.
+// Detects "no systemd" situations on the remote host or if an interactive authentication is required.
 func (sc *SSHConnector) isSystemctlUnavailable(output string, err error) bool {
 	msg := strings.ToLower(output + " " + err.Error())
 	return strings.Contains(msg, "command not found") ||
@@ -446,7 +444,6 @@ func (sc *SSHConnector) runRemoteCommand(ctx context.Context, command []string) 
 		Pgid:    0,
 	}
 	debugf("SSH command [%s]: ssh %s", sc.server.Name, strings.Join(args, " "))
-	// Capture stdout and stderr
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -991,7 +988,6 @@ func (sc *SSHConnector) resolveFilterIncludesRemote(ctx context.Context, filterC
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		// Check for [INCLUDES] section
 		if strings.HasPrefix(trimmed, "[INCLUDES]") {
 			inIncludesSection = true
 			continue
@@ -1103,7 +1099,6 @@ func (sc *SSHConnector) resolveFilterIncludesRemote(ctx context.Context, filterC
 
 		// Note: Self-inclusion in "after" directive is intentional in fail2ban
 		// (e.g., after = apache-common.local is standard pattern for .local files)
-		// Self-inclusion in "after" is intentional (e.g. after = apache-common.local).
 
 		contentStr, err := readRemoteFilterFile(baseName)
 		if err != nil {
@@ -1145,7 +1140,6 @@ func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLi
 
 	var script string
 	if filterContent != "" {
-		// Resolve filter includes locally.
 		filterDPath := filepath.Join(fail2banPath, "filter.d")
 		resolvedContent, err := sc.resolveFilterIncludesRemote(ctx, filterContent, filterDPath, filterName)
 		if err != nil {
@@ -1438,7 +1432,6 @@ except Exception as e:
 PYEOF
 `, originalPath)
 
-	// Run resolution script
 	resolveOut, err := sc.runRemoteCommand(ctx, []string{resolveScript})
 	if err != nil {
 		return originalPath, "", nil, fmt.Errorf("failed to resolve variables: %w", err)
@@ -1492,7 +1485,7 @@ func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
 
 	// Run experimental migration if enabled
 	if isJailAutoMigrationEnabled() {
-		debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local → jail.d/ migration for SSH server %s", sc.server.Name)
+		debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local -> jail.d/ migration for SSH server %s", sc.server.Name)
 		if err := sc.MigrateJailsFromJailLocalRemote(ctx); err != nil {
 			return fmt.Errorf("failed to migrate legacy jails from jail.local on remote server %s: %w", sc.server.Name, err)
 		}

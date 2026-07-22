@@ -289,7 +289,6 @@ function extractLogpathFromConfig(configText) {
     if (line.startsWith('#')) {
       continue;
     }
-    // Check if the line starts with logpath =
     var logpathMatch = line.match(/^logpath\s*=\s*(.+)$/i);
     if (logpathMatch && logpathMatch[1]) {
       // Trim whitespace and remove quotes if present
@@ -420,15 +419,15 @@ function testLogpath() {
           output += '<span class="font-medium text-sm">' + t('jails.logpath_test.on_remote', 'On Remote Server:') + '</span>';
         }
         if (error) {
-          output += '<span class="text-red-600 font-bold">✗</span>';
+          output += '<span class="text-red-600 font-bold">&#10007;</span>';
           output += '<span class="text-red-600 text-sm">' + t('common.error', 'Error') + ': ' + escapeHtml(error) + '</span>';
         } else if (found) {
-          output += '<span class="text-green-600 font-bold">✓</span>';
+          output += '<span class="text-green-600 font-bold">&#10003;</span>';
           output += '<span class="text-green-600 text-sm">'
             + t('jails.logpath_test.found_files', 'Found {count} file(s)').replace('{count}', files.length)
             + '</span>';
         } else {
-          output += '<span class="text-red-600 font-bold">✗</span>';
+          output += '<span class="text-red-600 font-bold">&#10007;</span>';
           if (isLocalServer) {
             output += '<span class="text-red-600 text-sm">' + t('jails.logpath_test.not_found_container', 'Not found (logs may not be mounted to container)') + '</span>';
           } else {
@@ -439,7 +438,7 @@ function testLogpath() {
         if (files.length > 0) {
           output += '<div class="ml-6 mt-1 text-xs text-gray-600">';
           files.forEach(function(file) {
-            output += '<div class="font-mono">  • ' + escapeHtml(file) + '</div>';
+            output += '<div class="font-mono">  - ' + escapeHtml(file) + '</div>';
           });
           output += '</div>';
         }

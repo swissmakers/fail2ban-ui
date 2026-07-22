@@ -92,7 +92,7 @@ cat /etc/fail2ban/action.d/ui-custom-action.conf
 # to your callback URL, for example http://10.88.0.1:8080/api/ban
 ```
 
-If the file does not exist or looks wrong, go to **Settings → Manage Servers** in the UI, select the server, and click **Test connection**. The UI re-deploys the action file automatically for local connectors.
+If the file does not exist or looks wrong, go to **Settings -> Manage Servers** in the UI, select the server, and click **Test connection**. The UI re-deploys the action file automatically for local connectors.
 
 ### Step 2: Verify jail.local references the action
 
@@ -139,7 +139,7 @@ Then trigger a test ban and check `audit.log` or `sealert` again. This is the sa
 
 ### Step 4: Verify the callback secret
 
-Every callback must include the `X-Callback-Secret` header, and the value must match what the UI expects. The current secret is visible under **Settings → General Settings → Callback Secret** (with a show/hide toggle), or in the container environment.
+Every callback must include the `X-Callback-Secret` header, and the value must match what the UI expects. The current secret is visible under **Settings -> General Settings -> Callback Secret** (with a show/hide toggle), or in the container environment.
 
 ```bash
 # Secret used by the action file:
@@ -253,7 +253,7 @@ With debug mode enabled in the UI settings, the raw JSON body of every incoming 
 
 The callback payload includes a `serverId`, which the UI uses to match the event to a configured server. If it matches no known server, the callback is rejected.
 
-Check that the `serverId` in the action file matches the server ID shown under **Settings → Manage Servers**:
+Check that the `serverId` in the action file matches the server ID shown under **Settings -> Manage Servers**:
 
 ```bash
 curl -s http://$FAIL2BAN_UI_HOST:8080/api/servers \
@@ -264,15 +264,15 @@ curl -s http://$FAIL2BAN_UI_HOST:8080/api/servers \
 
 ```
 Fail2Ban detects an intrusion
-  → triggers actionban in ui-custom-action.conf
-    → curl POST /api/ban with JSON payload + X-Callback-Secret header
-      → Fail2Ban UI validates the secret
-        → validates the IP format
-          → resolves the server (by serverId)
-            → stores the event in SQLite (ban_events)
-              → broadcasts over WebSocket to all connected browsers
-                → optional: dispatches an alert (Email / Webhook / Elasticsearch)
-                  → optional: evaluates advanced actions (recurring offenders)
+  -> triggers actionban in ui-custom-action.conf
+    -> curl POST /api/ban with JSON payload + X-Callback-Secret header
+      -> Fail2Ban UI validates the secret
+        -> validates the IP format
+          -> resolves the server (by serverId)
+            -> stores the event in SQLite (ban_events)
+              -> broadcasts over WebSocket to all connected browsers
+                -> optional: dispatches an alert (Email / Webhook / Elasticsearch)
+                  -> optional: evaluates advanced actions (recurring offenders)
 ```
 
 If any step fails, the chain stops and the event does not appear in the UI.
@@ -297,7 +297,7 @@ The symptom "unban works, but the UI only records unbans for *new* blocks" there
 
 ### Alerts not sent (any provider)
 
-1. Verify that alerts are enabled for the event type (ban and/or unban) under **Settings → Alert Settings**.
+1. Verify that alerts are enabled for the event type (ban and/or unban) under **Settings -> Alert Settings**.
 2. Check which alert provider is selected, and re-check all settings of the active provider.
 3. Check the country filter: if specific countries are selected, only IPs geolocated to those countries trigger alerts. Set it to `ALL` to alert on every event.
 4. Confirm the dispatch in the Fail2Ban UI logs (enable debug logging for more detail):
@@ -343,7 +343,7 @@ curl -v -X POST https://your-webhook-url \
 Common causes:
 
 * **Connection refused / timeout.** Verify that the Elasticsearch URL is reachable from the Fail2Ban UI host.
-* **401 Unauthorized.** API key or credentials are incorrect. Verify the key in Kibana under **Stack Management → API Keys**.
+* **401 Unauthorized.** API key or credentials are incorrect. Verify the key in Kibana under **Stack Management -> API Keys**.
 * **403 Forbidden.** The API key lacks write permissions on the target index. Create a key with `write` and `create_index` privileges for `fail2ban-events-*`.
 * **Index template missing.** Without a template, Elasticsearch uses dynamic mapping, which may produce suboptimal field types. Create the template as described in [alert-providers.md](alert-providers.md#elasticsearch-setup).
 
@@ -391,7 +391,7 @@ podman logs fail2ban-ui
 
 If real-time dashboard updates - ban and unban events appearing without a page refresh - do not work, check:
 
-* The browser console for WebSocket errors (F12 → Console).
+* The browser console for WebSocket errors (F12 -> Console).
 * The WebSocket status indicator in the UI footer.
 * The reverse proxy, if one is used, supports WebSocket upgrades.
 

@@ -73,6 +73,8 @@ podman build -t fail2ban-ui:v1.0.0 .
 podman build --no-cache -t fail2ban-ui:dev .
 ```
 
+The image is the usable under the name: "`localhost/fail2ban-ui:dev`"
+
 ## Running the container
 
 ### Basic run command (local Fail2Ban instance)
@@ -177,7 +179,7 @@ For the full list, including `CALLBACK_URL`, `CALLBACK_SECRET`, `BASE_PATH`, and
 ### First launch
 
 1. **Open the web interface** at `http://localhost:8080` (or your configured port).
-2. **Add your first server** under **Settings → Manage Servers**:
+2. **Add your first server** under **Settings -> Manage Servers**:
   - Local server: enable the local connector if Fail2Ban runs on the same host.
   - Remote server: add a server over SSH or through an API agent.
 3. **Configure the settings**
@@ -269,10 +271,10 @@ Characteristics:
 Volume structure:
 
 ```
-./fail2ban-config/fail2ban  → /config/fail2ban (fail2ban container)
-./fail2ban-config/fail2ban  → /etc/fail2ban (fail2ban-ui container)
-./f2b-run                   → /var/run/fail2ban (both containers)
-./config                    → /config (fail2ban-ui container)
+./fail2ban-config/fail2ban  -> /config/fail2ban (fail2ban container)
+./fail2ban-config/fail2ban  -> /etc/fail2ban (fail2ban-ui container)
+./f2b-run                   -> /var/run/fail2ban (both containers)
+./config                    -> /config (fail2ban-ui container)
 ```
 
 **Important:**
@@ -295,7 +297,7 @@ Modern distributions - Rocky Linux 9+, RHEL 9+, Fedora 36+, Debian 12+ - use **n
 Solution - switch Fail2Ban to nftables-based actions:
 
 1. Open the Fail2Ban UI web interface.
-2. Go to **Settings → Fail2Ban Settings**.
+2. Go to **Settings -> Fail2Ban Settings**.
 3. Change **Banaction** from `iptables-multiport` to `nftables-multiport`.
 4. Change **Banaction Allports** from `iptables-allports` to `nftables-allports`.
 5. Save; Fail2Ban reloads automatically.
@@ -396,7 +398,7 @@ If Fail2Ban fails to ban IPs with errors related to iptables or multiport extens
 
 Symptoms: empty dashboard, no servers visible.
 
-1. Go to **Settings → Manage Servers** in the web UI.
+1. Go to **Settings -> Manage Servers** in the web UI.
 2. Enable the **Local Connector** if Fail2Ban runs locally.
 3. Add a remote server over SSH or an API agent.
 4. Verify the server connection status.

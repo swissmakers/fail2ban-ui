@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -56,11 +56,11 @@ func compileAll(defs []PatternDef) []compiledPattern {
 	for _, d := range defs {
 		g := grok.New()
 		if err := g.AddPatterns(SubPatterns); err != nil {
-			log.Printf("⚠️ enrichment failed to add sub-patterns for %s: %v", d.Name, err)
+			log.Printf("WARNING: enrichment failed to add sub-patterns for %s: %v", d.Name, err)
 			continue
 		}
 		if err := g.Compile(d.Pattern, true); err != nil {
-			log.Printf("⚠️ enrichment failed to compile pattern %s: %v", d.Name, err)
+			log.Printf("WARNING: enrichment failed to compile pattern %s: %v", d.Name, err)
 			continue
 		}
 		out = append(out, compiledPattern{def: d, grok: g})
@@ -136,7 +136,6 @@ func ParseLogLines(logs, jail string) map[string]interface{} {
 // Helper functions
 // =========================================================================
 
-// Splits the raw log text
 func splitAndClean(logs string) []string {
 	raw := strings.Split(logs, "\n")
 	var out []string

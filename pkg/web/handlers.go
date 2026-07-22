@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -250,7 +250,7 @@ func SummaryHandler(c *gin.Context) {
 		if exists && !hasUI {
 			resp.JailLocalWarning = true
 		} else if !exists {
-			// File was removed (user finished migration) – initialize a fresh managed file
+			// File was removed (user finished migration) - initialize a fresh managed file
 			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
 				config.DebugLog("Warning: failed to initialize jail.local on summary request: %v", err)
 			} else {
@@ -510,22 +510,21 @@ func BanNotificationHandler(c *gin.Context) {
 		var verr validator.ValidationErrors
 		if errors.As(err, &verr) {
 			for _, fe := range verr {
-				log.Printf("❌ Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
+				log.Printf("ERROR: Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
 			}
 		} else {
-			log.Printf("❌ JSON parsing error -> Action will not be recorded! Details: %v", err)
+			log.Printf("ERROR: JSON parsing error -> Action will not be recorded! Details: %v", err)
 		}
 		config.DebugLog("Raw JSON that failed to parse: %s", string(body))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
 		return
 	}
 
-	// Logs the parsed request
 	log.Printf("Parsed ban request successfully - IP: %s, Jail: %s, Hostname: %s, Failures: %s",
 		request.IP, request.Jail, request.Hostname, request.Failures)
 
 	if err := integrations.ValidateIP(request.IP); err != nil {
-		log.Printf("⚠️ Invalid IP in ban notification: %s", request.IP)
+		log.Printf("WARNING: Invalid IP in ban notification: %s", request.IP)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid IP: " + err.Error()})
 		return
 	}
@@ -537,7 +536,7 @@ func BanNotificationHandler(c *gin.Context) {
 	}
 
 	if err := HandleBanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, request.Failures, request.Whois, request.Logs); err != nil {
-		log.Printf("❌ Failed to process ban notification: %v\n", err)
+		log.Printf("ERROR: Failed to process ban notification: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process ban notification: " + err.Error()})
 		return
 	}
@@ -567,10 +566,10 @@ func UnbanNotificationHandler(c *gin.Context) {
 		var verr validator.ValidationErrors
 		if errors.As(err, &verr) {
 			for _, fe := range verr {
-				log.Printf("❌ Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
+				log.Printf("ERROR: Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
 			}
 		} else {
-			log.Printf("❌ JSON parsing error -> Action will not be recorded! Details: %v", err)
+			log.Printf("ERROR: JSON parsing error -> Action will not be recorded! Details: %v", err)
 		}
 		log.Printf("Raw JSON: %s", string(body))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
@@ -581,7 +580,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 		request.IP, request.Jail, request.Hostname)
 
 	if err := integrations.ValidateIP(request.IP); err != nil {
-		log.Printf("⚠️ Invalid IP in unban notification: %s", request.IP)
+		log.Printf("WARNING: Invalid IP in unban notification: %s", request.IP)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid IP: " + err.Error()})
 		return
 	}
@@ -593,7 +592,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 	}
 
 	if err := HandleUnbanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, "", ""); err != nil {
-		log.Printf("❌ Failed to process unban notification: %v\n", err)
+		log.Printf("ERROR: Failed to process unban notification: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process unban notification: " + err.Error()})
 		return
 	}
@@ -635,20 +634,48 @@ func ListBanEventsHandler(c *gin.Context) {
 	country := strings.TrimSpace(c.Query("country"))
 
 	ctx := c.Request.Context()
-	events, err := storage.ListBanEventsFiltered(ctx, serverID, limit, offset, since, search, country)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+	var (
+		events   []storage.BanEventRecord
+		listErr  error
+		total    int64
+		countErr error
+		wg       sync.WaitGroup
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		events, listErr = storage.ListBanEventsFiltered(ctx, serverID, limit, offset, since, search, country)
+	}()
+	if offset == 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			total, countErr = storage.CountBanEventsFiltered(ctx, serverID, since, search, country)
+		}()
+	}
+	wg.Wait()
+
+	if listErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": listErr.Error()})
 		return
 	}
 
 	resp := gin.H{"events": events, "hasMore": len(events) == limit}
-	if offset == 0 {
-		total, errCount := storage.CountBanEventsFiltered(ctx, serverID, since, search, country)
-		if errCount == nil {
-			resp["total"] = total
-		}
+	if offset == 0 && countErr == nil {
+		resp["total"] = total
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// Returns the distinct countries seen across all stored events
+func ListBanEventCountriesHandler(c *gin.Context) {
+	countries, err := storage.ListBanEventCountries(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"countries": countries})
 }
 
 // Returns a single ban event including whois/logs fields.
@@ -1112,7 +1139,7 @@ func UpsertServerHandler(c *gin.Context) {
 			// Checks the integrity AFTER ensuring structure so fresh servers don't trigger a false-positive warning.
 			if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil && exists && !hasUI {
 				jailLocalWarning = true
-				log.Printf("⚠️ Server %s: jail.local is not managed by Fail2ban-UI. Please migrate your jail.local manually (see documentation).", server.Name)
+				log.Printf("WARNING: Server %s: jail.local is not managed by Fail2ban-UI. Please migrate your jail.local manually (see documentation).", server.Name)
 			}
 
 			// Tries to restart Fail2ban and performs a basic health check after the server was enabled
@@ -1317,40 +1344,25 @@ func waitForConnectorReady(ctx context.Context, conn fail2ban.Connector, attempt
 //  Notification Processing (Internal)
 // =========================================================================
 
-func resolveWhoisAndCountry(ip, providedWhois, providedCountry string, settings config.AppSettings) (whoisData, country string) {
-	if providedWhois == "" {
-		log.Printf("Performing whois lookup for IP %s", ip)
-		var err error
-		whoisData, err = lookupWhois(ip)
-		if err != nil {
-			log.Printf("⚠️ Whois lookup failed for IP %s: %v", ip, err)
-			whoisData = ""
-		}
-	} else {
-		log.Printf("Using provided whois data for IP %s", ip)
-		whoisData = providedWhois
+// Resolves the country via the configured GeoIP provider
+func resolveCountry(ip, providedCountry string, settings config.AppSettings) string {
+	if providedCountry != "" {
+		return providedCountry
 	}
-
-	country = providedCountry
-	if country == "" {
-		var err error
-		country, err = lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
-		if err != nil {
-			log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
-			if whoisData != "" {
-				country = extractCountryFromWhois(whoisData)
-				if country != "" {
-					log.Printf("Extracted country %s from whois data for IP %s", country, ip)
-				}
-			}
-		}
+	if settings.GeoIPProvider == "builtin" {
+		return ""
 	}
-	return whoisData, country
+	country, err := lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
+	if err != nil {
+		log.Printf("WARNING: GeoIP lookup failed for IP %s: %v", ip, err)
+		return ""
+	}
+	return country
 }
 
 func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
 	settings := config.GetSettings()
-	whoisData, country := resolveWhoisAndCountry(ip, whois, "", settings)
+	country := resolveCountry(ip, "", settings)
 	filteredLogs := filterRelevantLogs(logs, ip, settings.MaxLogLines)
 	event := storage.BanEventRecord{
 		ServerID:   server.ID,
@@ -1360,14 +1372,16 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		Country:    country,
 		Hostname:   hostname,
 		Failures:   failures,
-		Whois:      whoisData,
+		Whois:      whois,
 		Logs:       filteredLogs,
 		EventType:  "ban",
 		OccurredAt: time.Now().UTC(),
 	}
-	if err := storage.RecordBanEvent(ctx, event); err != nil {
-		log.Printf("⚠️ Failed to record ban event: %v", err)
+	eventID, err := storage.RecordBanEvent(ctx, event)
+	if err != nil {
+		log.Printf("WARNING: Failed to record ban event: %v", err)
 	}
+	event.ID = eventID
 
 	// Broadcasts the ban event to WebSocket clients
 	if wsHub != nil {
@@ -1376,30 +1390,14 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 
 	evaluateAdvancedActions(ctx, settings, server, ip)
 
-	displayCountry := country
-	if displayCountry == "" {
-		displayCountry = "UNKNOWN"
-	}
-
-	if !shouldAlertForCountry(country, settings.AlertCountries) {
-		log.Printf("❌ IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
-		return nil
-	}
-
-	if !settings.EmailAlertsForBans {
-		log.Printf("❌ Alerts for bans are disabled. No alert sent for IP %s", ip)
-		return nil
-	}
-
-	dispatchAlertAsync("ban", ip, jail, hostname, failures, whoisData, filteredLogs, country, settings)
+	enrichAndAlertAsync(eventID, "ban", ip, jail, hostname, failures, filteredLogs, whois, country, settings)
 	return nil
 }
 
 // Records an unban event, broadcasts it via WebSocket, and sends an email alert if enabled.
 func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string) error {
-	// Loads the settings to get alert countries and GeoIP provider from the database
 	settings := config.GetSettings()
-	whoisData, country := resolveWhoisAndCountry(ip, whois, country, settings)
+	country = resolveCountry(ip, country, settings)
 	event := storage.BanEventRecord{
 		ServerID:   server.ID,
 		ServerName: server.Name,
@@ -1408,36 +1406,23 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		Country:    country,
 		Hostname:   hostname,
 		Failures:   "",
-		Whois:      whoisData,
+		Whois:      whois,
 		Logs:       "",
 		EventType:  "unban",
 		OccurredAt: time.Now().UTC(),
 	}
-	if err := storage.RecordBanEvent(ctx, event); err != nil {
-		log.Printf("⚠️ Failed to record unban event: %v", err)
+	eventID, err := storage.RecordBanEvent(ctx, event)
+	if err != nil {
+		log.Printf("WARNING: Failed to record unban event: %v", err)
 	}
+	event.ID = eventID
 
 	// Broadcasts the unban event to WebSocket clients
 	if wsHub != nil {
 		wsHub.BroadcastUnbanEvent(event)
 	}
 
-	if !settings.EmailAlertsForUnbans {
-		log.Printf("Alerts for unbans are disabled. No alert sent for IP %s", ip)
-		return nil
-	}
-
-	displayCountry := country
-	if displayCountry == "" {
-		displayCountry = "UNKNOWN"
-	}
-
-	if !shouldAlertForCountry(country, settings.AlertCountries) {
-		log.Printf("IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
-		return nil
-	}
-
-	dispatchAlertAsync("unban", ip, jail, hostname, "", whoisData, "", country, settings)
+	enrichAndAlertAsync(eventID, "unban", ip, jail, hostname, "", "", whois, country, settings)
 	return nil
 }
 
@@ -1445,11 +1430,73 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 //  Alert Dispatch
 // =========================================================================
 
-// Sends the alert without blocking the caller. Alerts delivery (SMTP/webhook/Elasticsearch) is never hold the fail2ban callback.
-func dispatchAlertAsync(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) {
+// Completes whois enrichment and dispatches alerts in the background
+// Whois lookups can take up to 10 seconds and should never block the fail2ban callback response
+func enrichAndAlertAsync(eventID int64, alertType, ip, jail, hostname, failures, logs, providedWhois, country string, settings config.AppSettings) {
 	go func() {
-		if err := dispatchAlert(alertType, ip, jail, hostname, failures, whois, logs, country, settings); err != nil {
-			log.Printf("❌ Failed to send %s alert for IP %s: %v", alertType, ip, err)
+		whoisData := providedWhois
+		if whoisData == "" {
+			log.Printf("Performing whois lookup for IP %s", ip)
+			data, err := lookupWhois(ip)
+			if err != nil {
+				log.Printf("WARNING: Whois lookup failed for IP %s: %v", ip, err)
+			} else {
+				whoisData = data
+			}
+		}
+		if country == "" {
+			if resolved, err := lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath); err == nil {
+				country = resolved
+			} else {
+				log.Printf("WARNING: GeoIP lookup failed for IP %s: %v", ip, err)
+			}
+		}
+		if country == "" && whoisData != "" {
+			if extracted := extractCountryFromWhois(whoisData); extracted != "" {
+				country = extracted
+				log.Printf("Extracted country %s from whois data for IP %s", country, ip)
+			}
+		}
+		if eventID > 0 && (whoisData != "" || country != "") {
+			updateCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := storage.UpdateBanEventEnrichment(updateCtx, eventID, whoisData, country); err != nil {
+				log.Printf("WARNING: Failed to store whois enrichment for event %d: %v", eventID, err)
+			} else if wsHub != nil {
+				if enriched, found, err := storage.GetBanEventByID(updateCtx, eventID); err == nil && found {
+					enriched.Whois = ""
+					enriched.Logs = ""
+					wsHub.BroadcastBanEventUpdate(enriched)
+				}
+			}
+			cancel()
+		}
+
+		displayCountry := country
+		if displayCountry == "" {
+			displayCountry = "UNKNOWN"
+		}
+		if alertType == "unban" {
+			if !settings.EmailAlertsForUnbans {
+				log.Printf("Alerts for unbans are disabled. No alert sent for IP %s", ip)
+				return
+			}
+			if !shouldAlertForCountry(country, settings.AlertCountries) {
+				log.Printf("IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
+				return
+			}
+		} else {
+			if !shouldAlertForCountry(country, settings.AlertCountries) {
+				log.Printf("ERROR: IP %s belongs to %s, which is NOT in alert countries (%v). No alert sent.", ip, displayCountry, settings.AlertCountries)
+				return
+			}
+			if !settings.EmailAlertsForBans {
+				log.Printf("ERROR: Alerts for bans are disabled. No alert sent for IP %s", ip)
+				return
+			}
+		}
+
+		if err := dispatchAlert(alertType, ip, jail, hostname, failures, whoisData, logs, country, settings); err != nil {
+			log.Printf("ERROR: Failed to send %s alert for IP %s: %v", alertType, ip, err)
 			if wsHub != nil {
 				wsHub.BroadcastToast("error", fmt.Sprintf("Failed to send %s alert for %s: %v", alertType, ip, err))
 			}
@@ -1857,7 +1904,6 @@ func renderIndexPage(c *gin.Context) {
 	autoDark := os.Getenv("AUTODARK") == "true" || os.Getenv("AUTODARK") == "1"
 	languageOptions := listLocaleOptions()
 
-	// Checks if OIDC is enabled and skip login page setting
 	oidcEnabled := auth.IsEnabled()
 	skipLoginPage := false
 	if oidcEnabled {
@@ -1867,7 +1913,6 @@ func renderIndexPage(c *gin.Context) {
 		}
 	}
 
-	// Checks is a user wants to disable the github versioning check
 	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
 
 	urlPrefix := BasePath()
@@ -2151,7 +2196,6 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 			config.DebugLog("Found original filter directive in jail config: %s", originalFilterName)
 		}
 
-		// Extracts the new filter name from the updated jail config
 		newFilterName := fail2ban.ExtractFilterFromJailConfig(req.Jail)
 		if newFilterName == "" {
 			newFilterName = jail
@@ -2188,14 +2232,13 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 		config.DebugLog("No jail config provided, skipping")
 	}
 
-	// Reloads Fail2ban
 	config.DebugLog("Reloading fail2ban")
 	if err := conn.Reload(c.Request.Context()); err != nil {
-		log.Printf("⚠️ Config saved but fail2ban reload failed: %v", err)
+		log.Printf("WARNING: Config saved but fail2ban reload failed: %v", err)
 		// If reload fails, we automatically disable the jail so Fail2ban won't crash on next restart (invalid filter/jail config)
 		disableUpdate := map[string]bool{jail: false}
 		if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
-			log.Printf("⚠️ Failed to auto-disable jail %s after reload failure: %v", jail, disableErr)
+			log.Printf("WARNING: Failed to auto-disable jail %s after reload failure: %v", jail, disableErr)
 			c.JSON(http.StatusOK, gin.H{
 				"message": "Config saved successfully, but fail2ban reload failed",
 				"warning": err.Error(),
@@ -2203,7 +2246,7 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 			return
 		}
 		if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
-			log.Printf("⚠️ Failed to reload fail2ban after auto-disabling jail %s: %v", jail, reloadErr2)
+			log.Printf("WARNING: Failed to reload fail2ban after auto-disabling jail %s: %v", jail, reloadErr2)
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"message":          "Config saved successfully, but fail2ban reload failed",
@@ -2246,12 +2289,10 @@ func TestLogpathHandler(c *gin.Context) {
 
 	var originalLogpath string
 
-	// Checks if a logpath is provided in the request body
 	var reqBody struct {
 		Logpath string `json:"logpath"`
 	}
 	if err := c.ShouldBindJSON(&reqBody); err == nil && reqBody.Logpath != "" {
-		// Uses the logpath from the request body (from textarea)
 		originalLogpath = strings.TrimSpace(reqBody.Logpath)
 		config.DebugLog("Using logpath from request body: %s", originalLogpath)
 	} else {
@@ -2262,7 +2303,6 @@ func TestLogpathHandler(c *gin.Context) {
 			return
 		}
 
-		// Extracts the logpath from the jail config
 		originalLogpath = fail2ban.ExtractLogpathFromJailConfig(jailCfg)
 		if originalLogpath == "" {
 			c.JSON(http.StatusOK, gin.H{
@@ -2281,7 +2321,6 @@ func TestLogpathHandler(c *gin.Context) {
 		return
 	}
 
-	// Gets the server type for response metadata
 	server := conn.Server()
 	isLocalServer := server.Type == "local"
 
@@ -2463,7 +2502,6 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Action %s completed for %s", action, req.IP)})
 }
 
-// Returns a sorted slice of jail names from the map.
 func getJailNames(jails map[string]bool) []string {
 	names := make([]string, 0, len(jails))
 	for name := range jails {
@@ -2497,7 +2535,6 @@ func splitLogpaths(raw string) []string {
 
 var jailErrorPattern = regexp.MustCompile(`Errors in jail '([^']+)'`)
 
-// Extracts problematic jail names from Fail2ban reload output.
 func parseJailErrorsFromReloadOutput(output string) []string {
 	var problematicJails []string
 	lines := strings.Split(output, "\n")
@@ -2625,14 +2662,12 @@ func UpdateJailManagementHandler(c *gin.Context) {
 	// Reloads fail2ban to apply the changes
 	reloadErr := conn.Reload(c.Request.Context())
 
-	// Checks for errors in reload output
 	var problematicJails []string
 	var detailedErrorOutput string
 	if reloadErr != nil {
 		errMsg := reloadErr.Error()
 		config.DebugLog("Error: failed to reload fail2ban after updating jail settings: %v", reloadErr)
 
-		// Extracts the output from the error message
 		if strings.Contains(errMsg, "(output:") {
 			outputStart := strings.Index(errMsg, "(output:") + 8
 			outputEnd := strings.LastIndex(errMsg, ")")
@@ -3063,7 +3098,7 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 			config.DebugLog("Updating DEFAULT settings on server: %s (type: %s)", server.Name, server.Type)
 			if err := conn.UpdateDefaultSettings(c.Request.Context()); err != nil {
 				errorMsg := fmt.Sprintf("Failed to update DEFAULT settings on %s: %v", server.Name, err)
-				log.Printf("⚠️ %s", errorMsg)
+				log.Printf("WARNING: %s", errorMsg)
 				updateErrors = append(updateErrors, errorMsg)
 			} else {
 				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)
@@ -3233,7 +3268,6 @@ func CreateFilterHandler(c *gin.Context) {
 		req.Content = fmt.Sprintf("# Filter: %s\n", req.FilterName)
 	}
 
-	// Create the filter
 	if err := conn.CreateFilter(c.Request.Context(), req.FilterName, req.Content); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create filter: " + err.Error()})
 		return
@@ -3411,7 +3445,7 @@ func sanitizeEmailHeader(value string) string {
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	recipients := shared.SplitCommaList(to)
 	if len(recipients) == 0 {
-		log.Printf("⚠️ sendEmail skipped: no recipients provided.")
+		log.Printf("WARNING: sendEmail skipped: no recipients provided.")
 		return nil
 	}
 
@@ -3424,20 +3458,20 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 		}
 	}
 	if allPlaceholder {
-		log.Printf("⚠️ sendEmail skipped: all recipients are still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings → Alert Settings.")
+		log.Printf("WARNING: sendEmail skipped: all recipients are still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings -> Alert Settings.")
 		return nil
 	}
 
 	needsAuth := settings.SMTP.AuthMethod != "none"
 	if settings.SMTP.Host == "" || settings.SMTP.From == "" || (needsAuth && (settings.SMTP.Username == "" || settings.SMTP.Password == "")) {
 		err := errors.New("SMTP settings are incomplete. Please configure all required fields")
-		log.Printf("❌ sendEmail validation failed: %v (Host: %q, Username: %q, From: %q)", err, settings.SMTP.Host, settings.SMTP.Username, settings.SMTP.From)
+		log.Printf("ERROR: sendEmail validation failed: %v (Host: %q, Username: %q, From: %q)", err, settings.SMTP.Host, settings.SMTP.Username, settings.SMTP.From)
 		return err
 	}
 
 	if settings.SMTP.Port <= 0 || settings.SMTP.Port > 65535 {
 		err := errors.New("SMTP port must be between 1 and 65535")
-		log.Printf("❌ sendEmail validation failed: %v (Port: %d)", err, settings.SMTP.Port)
+		log.Printf("ERROR: sendEmail validation failed: %v (Port: %d)", err, settings.SMTP.Port)
 		return err
 	}
 
@@ -3471,10 +3505,10 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	}
 	auth, err := getSMTPAuth(settings.SMTP.Username, settings.SMTP.Password, authMethod, smtpHost)
 	if err != nil {
-		log.Printf("❌ sendEmail: failed to create SMTP auth (method: %q): %v", authMethod, err)
+		log.Printf("ERROR: sendEmail: failed to create SMTP auth (method: %q): %v", authMethod, err)
 		return fmt.Errorf("failed to create SMTP auth: %w", err)
 	}
-	log.Printf("📧 sendEmail: Using SMTP auth method: %q, host: %s, port: %d, useTLS: %v, insecureSkipVerify: %v", authMethod, smtpHost, smtpPort, settings.SMTP.UseTLS, settings.SMTP.InsecureSkipVerify)
+	log.Printf("sendEmail: Using SMTP auth method: %q, host: %s, port: %d, useTLS: %v, insecureSkipVerify: %v", authMethod, smtpHost, smtpPort, settings.SMTP.UseTLS, settings.SMTP.InsecureSkipVerify)
 
 	// Port 465 uses implicit TLS (SMTPS); all other ports use plain SMTP with optional STARTTLS.
 	useImplicitTLS, useSTARTTLS := smtpTLSMode(smtpPort, settings.SMTP.UseTLS)
@@ -3519,18 +3553,18 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 
 	if auth != nil {
 		if err := client.Auth(auth); err != nil {
-			log.Printf("❌ sendEmail: SMTP authentication failed: %v", err)
+			log.Printf("ERROR: sendEmail: SMTP authentication failed: %v", err)
 			return fmt.Errorf("SMTP authentication failed: %w", err)
 		}
-		log.Printf("📧 sendEmail: SMTP authentication successful")
+		log.Printf("sendEmail: SMTP authentication successful")
 	}
 
 	err = sendSMTPMessage(client, settings.SMTP.From, recipients, msg)
 	if err != nil {
-		log.Printf("❌ sendEmail: Failed to send message: %v", err)
+		log.Printf("ERROR: sendEmail: Failed to send message: %v", err)
 		return err
 	}
-	log.Printf("📧 sendEmail: Successfully sent email to %s", strings.Join(recipients, ", "))
+	log.Printf("sendEmail: Successfully sent email to %s", strings.Join(recipients, ", "))
 	return nil
 }
 
@@ -3620,16 +3654,16 @@ func buildClassicEmailBody(title, intro string, details []emailDetail, whoisHTML
     <div class="container">
         <div class="header">
             <img src="https://swissmakers.ch/wp-content/uploads/2023/09/cyber.png" alt="Swissmakers GmbH" width="150" />
-            <h2>🚨 %s</h2>
+            <h2>ALERT: %s</h2>
         </div>
         <div class="content">
             <p>%s</p>
             <div class="details">
                 %s
             </div>
-            <h3>🔍 %s</h3>
+            <h3>%s</h3>
             %s
-            <h3>📄 %s</h3>
+            <h3>%s</h3>
             %s
         </div>
         <div class="footer">
@@ -4148,11 +4182,11 @@ func TestEmailHandler(c *gin.Context) {
 		settings,
 	)
 	if err != nil {
-		log.Printf("❌ Test email failed: %v", err)
+		log.Printf("ERROR: Test email failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send test email: " + err.Error()})
 		return
 	}
-	log.Println("✅ Test email sent successfully!")
+	log.Println("Test email sent successfully!")
 	c.JSON(http.StatusOK, gin.H{"message": "Test email sent successfully!"})
 }
 
@@ -4306,7 +4340,6 @@ func CallbackHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify authentication token"})
 		return
 	}
-	// Create the session
 	if err := auth.CreateSession(c.Writer, c.Request, userInfo, oidcClient.Config.SessionMaxAge); err != nil {
 		config.DebugLog("Failed to create session: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})

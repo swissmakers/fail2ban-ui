@@ -151,7 +151,7 @@ function renderServerSubtitle() {
   } else if (currentServer.hostname) {
     parts.push(currentServer.hostname);
   }
-  subtitle.textContent = parts.join(' • ');
+  subtitle.textContent = parts.join(' - ');
 }
 
 function renderServerManagerList() {
@@ -191,7 +191,7 @@ function renderServerManagerList() {
     } else if (server.hostname) {
       descriptor.push(server.hostname);
     }
-    var meta = descriptor.join(' • ');
+    var meta = descriptor.join(' - ');
     var tags = (server.tags || []).length
       ? '<div class="mt-2 text-xs text-gray-500">' + escapeHtml(server.tags.join(', ')) + '</div>'
       : '';

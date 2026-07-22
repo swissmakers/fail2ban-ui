@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
+// Licensed under the GNU Affero General Public License, Version 3 (AGPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://www.gnu.org/licenses/gpl-3.0.en.html
+//     https://www.gnu.org/licenses/agpl-3.0.en.html
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -50,7 +50,7 @@ func EnsureManagedJailLocal(configPath string, content []byte) error {
 	jailPath := JailLocal(configPath)
 	rootDir := NormalizeConfigPath(configPath)
 	if _, err := os.Stat(filepath.Dir(jailPath)); os.IsNotExist(err) {
-		return fmt.Errorf("fail2ban configuration directory does not exist at %s — install fail2ban or set the correct configuration path for this server", rootDir)
+		return fmt.Errorf("fail2ban configuration directory does not exist at %s  -  install fail2ban or set the correct configuration path for this server", rootDir)
 	}
 	var existingContent string
 	fileExists := false
@@ -76,7 +76,7 @@ func WriteLocalActionFile(configPath, callbackURL, serverID string) error {
 	actionPath := CustomActionFile(configPath)
 	actionDir := ActionDir(configPath)
 	if _, err := os.Stat(actionDir); os.IsNotExist(err) {
-		return fmt.Errorf("fail2ban action.d directory does not exist at %s — install fail2ban or set the correct configuration path for this server", actionDir)
+		return fmt.Errorf("fail2ban action.d directory does not exist at %s  -  install fail2ban or set the correct configuration path for this server", actionDir)
 	}
 	secret := p.CallbackSecret()
 	cfg := p.BuildFail2banActionConfig(callbackURL, serverID, secret)
@@ -96,7 +96,7 @@ func EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath string) err
 	jailPath := JailLocal(configPath)
 	if _, err := os.Stat(filepath.Dir(jailPath)); os.IsNotExist(err) {
 		rootDir := NormalizeConfigPath(configPath)
-		return fmt.Errorf("fail2ban configuration directory does not exist at %s — install fail2ban or set the correct configuration path for this server", rootDir)
+		return fmt.Errorf("fail2ban configuration directory does not exist at %s  -  install fail2ban or set the correct configuration path for this server", rootDir)
 	}
 	actionDir := ActionDir(configPath)
 	if err := ensureWritableDirectory(actionDir, "fail2ban action.d directory"); err != nil {

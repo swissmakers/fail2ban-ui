@@ -116,6 +116,9 @@ class WebSocketManager {
       case 'unban_event':
         this.handleBanEvent(message.data);
         break;
+      case 'ban_event_update':
+        this.handleBanEventUpdate(message.data);
+        break;
       case 'heartbeat':
         this.handleHeartbeat(message);
         break;
@@ -192,6 +195,26 @@ class WebSocketManager {
 
   onBanEvent(callback) {
     this.banEventCallbacks.push(callback);
+  }
+
+  handleBanEventUpdate(eventData) {
+    if (!this.banEventUpdateCallbacks) {
+      return;
+    }
+    this.banEventUpdateCallbacks.forEach(callback => {
+      try {
+        callback(eventData);
+      } catch (err) {
+        console.error('Error in ban event update callback:', err);
+      }
+    });
+  }
+
+  onBanEventUpdate(callback) {
+    if (!this.banEventUpdateCallbacks) {
+      this.banEventUpdateCallbacks = [];
+    }
+    this.banEventUpdateCallbacks.push(callback);
   }
 
   onConsoleLog(callback) {

@@ -97,12 +97,12 @@ The browser communicates with the backend over HTTPS (REST) and a WebSocket conn
 
 | Path                      | Protocol / port                                                  | Direction        | Authentication                     |
 | ------------------------- | ---------------------------------------------------------------- | ---------------- | ---------------------------------- |
-| Browser → Fail2ban-UI             | HTTPS / WSS, port 8080 by default (place behind a reverse proxy) | inbound to Fail2ban-UI    | OIDC session (optional)            |
-| Fail2ban-UI → SSH-connected host   | SSH, port 22                                                     | outbound from Fail2ban-UI | SSH key, dedicated service account |
-| Fail2ban-UI → agent-connected host | HTTP(S), agent port                                              | outbound from Fail2ban-UI | Agent token                        |
-| Fail2Ban host → Fail2ban-UI        | HTTP(S) `POST /api/ban`, `/api/unban`                            | inbound to Fail2ban-UI    | `X-Callback-Secret` header         |
-| Fail2ban-UI → alert providers      | SMTP / HTTPS / Elasticsearch API                                 | outbound from Fail2ban-UI | Provider-specific                  |
-| Fail2ban-UI → edge firewall        | SSH (MikroTik) or HTTPS (pfSense, OPNsense)                      | outbound from Fail2ban-UI | Device credentials / API token     |
+| Browser -> Fail2ban-UI             | HTTPS / WSS, port 8080 by default (place behind a reverse proxy) | inbound to Fail2ban-UI    | OIDC session (optional)            |
+| Fail2ban-UI -> SSH-connected host   | SSH, port 22                                                     | outbound from Fail2ban-UI | SSH key, dedicated service account |
+| Fail2ban-UI -> agent-connected host | HTTP(S), agent port                                              | outbound from Fail2ban-UI | Agent token                        |
+| Fail2Ban host -> Fail2ban-UI        | HTTP(S) `POST /api/ban`, `/api/unban`                            | inbound to Fail2ban-UI    | `X-Callback-Secret` header         |
+| Fail2ban-UI -> alert providers      | SMTP / HTTPS / Elasticsearch API                                 | outbound from Fail2ban-UI | Provider-specific                  |
+| Fail2ban-UI -> edge firewall        | SSH (MikroTik) or HTTPS (pfSense, OPNsense)                      | outbound from Fail2ban-UI | Device credentials / API token     |
 
 
 **Important:** Do not expose the Fail2ban-UI directly to the public Internet. Place it behind a reverse proxy, VPN, or firewall rules, and enable OIDC where possible. The callback endpoint is the only path that managed hosts must be able to reach.
