@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -82,7 +83,8 @@ func InitializeSessionSecret(secret string) error {
 		if len(secret) < sessionKeyLength {
 			return fmt.Errorf("session secret must be at least %d bytes", sessionKeyLength)
 		}
-		sessionSecret = []byte(secret[:sessionKeyLength])
+		sum := sha256.Sum256([]byte(secret))
+		sessionSecret = sum[:]
 	} else {
 		if len(decoded) < sessionKeyLength {
 			return fmt.Errorf("decoded session secret must be at least %d bytes", sessionKeyLength)
