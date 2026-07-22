@@ -141,7 +141,7 @@ function renderInsightsGlobe() {
       label: '<div style="padding:6px 10px;background:' + labelBg + ';color:' + labelColor + ';border:' + labelBorder + ';' +
              'border-radius:6px;font-size:13px;line-height:1.4;pointer-events:none;">' +
              '<b>' + escapeHtml(s.country || '??') + '</b><br>' +
-             formatNumber(s.count) + ' ban' + (s.count !== 1 ? 's' : '') + '</div>',
+             formatNumber(s.count) + ' ' + (s.count !== 1 ? t('globe.bans_plural', 'bans') : t('globe.bans_singular', 'ban')) + '</div>',
       country: s.country,
       count: s.count
     });

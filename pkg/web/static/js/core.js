@@ -120,7 +120,7 @@ function showBanEventToast(event) {
 
   // Click on toast body scrolls to ban events table
   toast.addEventListener('click', function() {
-    var logSection = document.getElementById('logOverviewSection');
+    var logSection = document.getElementById('logOverview');
     if (logSection) {
       logSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }

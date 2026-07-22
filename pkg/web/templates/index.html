@@ -466,7 +466,7 @@
                 </div>
                 <div class="md:col-span-2">
                   <label class="block text-sm font-medium text-gray-700" for="pfSenseToken" data-i18n="settings.advanced.pfsense.token">API Key</label>
-                  <input id="pfSenseToken" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key from System > REST API > Keys">
+                  <input id="pfSenseToken" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key from System > REST API > Keys">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.pfsense.token_hint">Generate in System > REST API > Keys in pfSense webConfigurator</p>
                 </div>
                 <div>
@@ -491,12 +491,12 @@
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700" for="opnsenseKey" data-i18n="settings.advanced.opnsense.key">API Key</label>
-                  <input id="opnsenseKey" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key">
+                  <input id="opnsenseKey" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.key_hint">Generate in System > Access > Users > API Keys</p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700" for="opnsenseSecret" data-i18n="settings.advanced.opnsense.secret">API Secret</label>
-                  <input id="opnsenseSecret" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API secret">
+                  <input id="opnsenseSecret" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API secret">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.secret_hint">Generate together with API key</p>
                 </div>
                 <div>
@@ -951,6 +951,25 @@
             <p class="text-xs text-gray-500 mb-2" data-i18n="settings.bantime_rndtime.description">Optional. Max random seconds added in bantime increment formula (e.g. 2048). Leave empty to use Fail2ban default.</p>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="bantimeRndtime"
                    data-i18n-placeholder="settings.bantime_rndtime_placeholder" placeholder="e.g., 2048" />
+          </div>
+          <div class="mb-4">
+            <label for="bantimeMaxtime" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.bantime_maxtime">Bantime Maxtime</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.bantime_maxtime.description">Optional. Caps how long escalating bans may grow when Bantime Increment is enabled (e.g. 5w). Leave empty to use the Fail2ban default (no cap).</p>
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="bantimeMaxtime"
+                   data-i18n-placeholder="settings.bantime_maxtime_placeholder" placeholder="e.g., 5w" />
+          </div>
+          <div class="mb-4">
+            <label for="bantimeFactor" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.bantime_factor">Bantime Factor</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.bantime_factor.description">Optional. Multiplier used by the bantime increment formula; higher values escalate repeat-offender bans faster (Fail2ban default: 1). Leave empty to use the default.</p>
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="bantimeFactor"
+                   data-i18n-placeholder="settings.bantime_factor_placeholder" placeholder="e.g., 2" />
+          </div>
+          <div class="mb-4">
+            <div class="flex items-center mb-2">
+              <input type="checkbox" id="bantimeOveralljails" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out" />
+              <label for="bantimeOveralljails" class="ml-2 block text-sm font-medium text-gray-700" data-i18n="settings.bantime_overalljails">Count Repeat Offenses Across All Jails</label>
+            </div>
+            <p class="text-xs text-gray-500 ml-9" data-i18n="settings.bantime_overalljails.description">When Bantime Increment is enabled, previous bans from every jail (not just the current one) are considered when escalating an IP's ban time.</p>
           </div>
           <div class="mb-4">
             <label for="banaction" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.banaction">Banaction</label>
@@ -1415,7 +1434,7 @@
                   </div>
                   <div data-server-fields="agent">
                     <label for="serverAgentSecret" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.agent_secret">Agent Secret</label>
-                    <input type="text" id="serverAgentSecret" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.agent_secret_placeholder" placeholder="shared secret token">
+                    <input type="password" id="serverAgentSecret" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.agent_secret_placeholder" placeholder="shared secret token">
                   </div>
                   <div>
                     <label for="serverTags" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.tags">Tags</label>

@@ -332,7 +332,7 @@ function fetchBanEventsData(options) {
 function banIP(jail, ip) {
   const confirmMsg = isLOTRModeActive
     ? 'Banish ' + ip + ' from the realm in ' + jail + '?'
-    : 'Block IP ' + ip + ' in jail ' + jail + '?';
+    : t('dashboard.ban.confirm', 'Block IP {ip} in jail {jail}?').replace('{ip}', ip).replace('{jail}', jail);
   if (!confirm(confirmMsg)) {
     return;
   }
@@ -346,16 +346,15 @@ function banIP(jail, ip) {
     .then(function(data) {
       showLoading(false);
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error blocking IP'), 'error');
+        showToast(formatApiError(data, 'dashboard.toast.block_error', 'Error blocking IP'), 'error');
         return;
       }
       showToast(t('dashboard.manual_block.success', 'IP blocked successfully'), 'success');
-      // Refresh the affected sections in the background
       refreshAfterManualAction(jail);
     })
     .catch(function(err) {
       showLoading(false);
-      showToast("Error: " + err, 'error');
+      showToast(t('common.error', 'Error') + ': ' + err, 'error');
     });
 }
 
@@ -399,14 +398,14 @@ function unbanIP(jail, ip) {
     .then(function(data) {
       showLoading(false);
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error unbanning IP'), 'error');
+        showToast(formatApiError(data, 'dashboard.toast.unban_error', 'Error unbanning IP'), 'error');
         return;
       }
       refreshAfterManualAction(jail);
     })
     .catch(function(err) {
       showLoading(false);
-      showToast("Error: " + err, 'error');
+      showToast(t('common.error', 'Error') + ': ' + err, 'error');
     });
 }
 
@@ -704,9 +703,7 @@ function renderLogOverviewContent() {
   var totalStored = totalStoredBans();
   var todayCount = totalBansToday();
   var weekCount = totalBansWeek();
-  if (statsKeys.length === 0 && totalStored === 0) {
-    //html += '<p class="text-gray-500" data-i18n="logs.overview.empty">No ban events recorded yet.</p>';
-  } else {
+  if (statsKeys.length > 0 || totalStored > 0) {
     html += ''
       + '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">'
       + '  <div class="border border-gray-200 rounded-lg p-4 flex flex-col gap-4 bg-gray-50">'

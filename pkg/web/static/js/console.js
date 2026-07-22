@@ -156,18 +156,8 @@ function appendConsoleLog(message, timestamp) {
     } catch (e) {}
   }
 
-  // Escape message to prevent XSS
-  let escapedMessage = message;
-  if (typeof escapeHtml === 'function') {
-    escapedMessage = escapeHtml(escapedMessage);
-  } else {
-    escapedMessage = escapedMessage
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
+  // Escape message to prevent XSS (core.js always loads before this file)
+  let escapedMessage = escapeHtml(message);
   
   // Set different colors for different log levels using patterns below.
   // Default is green.

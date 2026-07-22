@@ -205,43 +205,6 @@ function renderThreatIntelHero(opts) {
   return html;
 }
 
-function buildThreatIntelCollapsibleList(items, selectedIP, suffix) {
-  var safeItems = Array.isArray(items) ? items : [];
-  if (!safeItems.length) {
-    return '<p class="text-sm text-gray-500">' + escapeHtml(t('threat.empty.list', 'No data available.')) + '</p>';
-  }
-
-  var visible = safeItems.slice(0, 5);
-  var hidden = safeItems.slice(5);
-  var hiddenId = 'threat-intel-list-hidden-' + suffix + '-' + tiSlug(selectedIP || 'ip');
-  var toggleId = 'threat-intel-list-toggle-' + suffix + '-' + tiSlug(selectedIP || 'ip');
-  var html = '<div class="threat-intel-list">';
-
-  visible.forEach(function(item) {
-    html += threatIntelListRow(item.left, item.right, item.meta);
-  });
-  html += '</div>';
-
-  if (hidden.length) {
-    html += '<div class="threat-intel-list hidden mt-2" style="display:none;" id="' + hiddenId + '" data-initially-hidden="true">';
-    hidden.forEach(function(item) {
-      html += threatIntelListRow(item.left, item.right, item.meta);
-    });
-    html += '</div>';
-    var moreLabel = t('dashboard.banned.show_more', 'Show more') + ' +' + hidden.length;
-    var lessLabel = t('dashboard.banned.show_less', 'Hide extra');
-    html += '<button type="button" class="mt-2 text-xs font-semibold text-blue-600 hover:text-blue-800"'
-      + ' id="' + toggleId + '"'
-      + ' data-more-label="' + escapeHtml(moreLabel) + '"'
-      + ' data-less-label="' + escapeHtml(lessLabel) + '"'
-      + ' data-expanded="false"'
-      + ' onclick="toggleThreatActivityList(\'' + hiddenId + '\', \'' + toggleId + '\')">'
-      + escapeHtml(moreLabel)
-      + '</button>';
-  }
-  return html;
-}
-
 function buildThreatIntelCollapsibleEntries(entries, selectedIP, suffix, visibleCount) {
   var safeEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
   if (!safeEntries.length) {
@@ -281,14 +244,6 @@ function buildThreatIntelCollapsibleEntries(entries, selectedIP, suffix, visible
   return html;
 }
 
-function threatIntelListRow(left, right, meta) {
-  var html = '<div class="threat-intel-list-row"><span>' + escapeHtml(tiValue(left)) + '</span><strong>' + escapeHtml(tiValue(right)) + '</strong></div>';
-  if (meta) {
-    html += '<p class="mt-1 text-xs text-gray-500 whitespace-pre-wrap break-words">' + escapeHtml(meta) + '</p>';
-  }
-  return html;
-}
-
 function threatIntelMetricCard(label, value, extraClass) {
   return ''
     + '<div class="threat-intel-card ' + (extraClass || '') + '">'
@@ -322,14 +277,10 @@ function renderAbuseIpDbReportItem(report, selectedIP, idx) {
   var html = '<div class="rounded-md border border-gray-200 bg-white p-2">';
   html += '<div class="threat-intel-list-row">';
   html += '  <span>' + escapeHtml(tiDate(report && report.reportedAt)) + '</span>';
-  //html += '  <strong>' + escapeHtml(t('threat.field.categories', 'Categories')) + ': ' + escapeHtml(String(categoryLabels.length)) + '</strong>';
   if (categoryLabels.length) {
     html += '<strong>' + escapeHtml(categoryLabels.join(', ')) + '</strong>';
   }
   html += '</div>';
-  //if (categoryLabels.length) {
-  //  html += '<p class="mt-1 text-xs text-gray-600 whitespace-pre-wrap break-words">' + escapeHtml(categoryLabels.join(', ')) + '</p>';
-  //}
   html += '<p class="mt-1 text-xs text-gray-500">' + escapeHtml(metaLine) + '</p>';
   html += commentHtml;
   html += '</div>';

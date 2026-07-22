@@ -227,7 +227,7 @@ function renderServerManagerList() {
       + (server.isDefault ? '' : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="makeDefaultServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.set_default">Set default</button>')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="setServerEnabled(\'' + escapeHtml(server.id) + '\',' + (server.enabled ? 'false' : 'true') + ')" data-i18n="' + (server.enabled ? 'servers.actions.disable' : 'servers.actions.enable') + '">' + (server.enabled ? 'Disable' : 'Enable') + '</button>'
       + (server.enabled ? (server.type === 'local'
-        ? '<button class="text-sm text-blue-600 hover:text-blue-800 relative group" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" title="" data-i18n-title="servers.actions.reload_tooltip">Reload Fail2ban</button>'
+        ? '<button class="text-sm text-blue-600 hover:text-blue-800 relative group" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" title="">Reload Fail2ban</button>'
         : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.restart">Restart Fail2ban</button>') : '')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="testServerConnection(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.test">Test connection</button>'
       + '      <button class="text-sm text-red-600 hover:text-red-800" onclick="deleteServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.delete">Delete</button>'
@@ -528,7 +528,7 @@ function submitServerForm(event) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error saving server'), 'error');
+        showToast(formatApiError(data, 'servers.toast.save_error', 'Error saving server'), 'error');
         return;
       }
       showToast(t('servers.form.success', 'Server saved successfully.'), 'success');
@@ -556,7 +556,7 @@ function submitServerForm(event) {
       });
     })
     .catch(function(err) {
-      showToast('Error saving server: ' + err, 'error');
+      showToast(t('servers.toast.save_error', 'Error saving server') + ': ' + err, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -665,7 +665,7 @@ function setServerEnabled(serverId, enabled) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error saving server'), 'error');
+        showToast(formatApiError(data, 'servers.toast.save_error', 'Error saving server'), 'error');
         return;
       }
       if (!enabled) {
@@ -694,7 +694,7 @@ function setServerEnabled(serverId, enabled) {
       });
     })
     .catch(function(err) {
-      showToast('Error saving server: ' + err, 'error');
+      showToast(t('servers.toast.save_error', 'Error saving server') + ': ' + err, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -733,7 +733,7 @@ function deleteServer(serverId) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error deleting server'), 'error');
+        showToast(formatApiError(data, 'servers.toast.delete_error', 'Error deleting server'), 'error');
         return;
       }
       if (getStoredServerId() === serverId) {
@@ -753,7 +753,7 @@ function deleteServer(serverId) {
       });
     })
     .catch(function(err) {
-      showToast('Error deleting server: ' + err, 'error');
+      showToast(t('servers.toast.delete_error', 'Error deleting server') + ': ' + err, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -766,7 +766,7 @@ function makeDefaultServer(serverId) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error setting default server'), 'error');
+        showToast(formatApiError(data, 'servers.toast.set_default_error', 'Error setting default server'), 'error');
         return;
       }
       currentServerId = data.server ? data.server.id : serverId;
@@ -780,7 +780,7 @@ function makeDefaultServer(serverId) {
       });
     })
     .catch(function(err) {
-      showToast('Error setting default server: ' + err, 'error');
+      showToast(t('servers.toast.set_default_error', 'Error setting default server') + ': ' + err, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -789,14 +789,14 @@ function makeDefaultServer(serverId) {
 
 function restartFail2banServer(serverId) {
   if (!serverId) {
-    showToast("No server selected", 'error');
+    showToast(t('servers.toast.none_selected', 'No server selected'), 'error');
     return;
   }
   var server = serversCache.find(function(s) { return s.id === serverId; });
   var isLocal = server && server.type === 'local';
   var confirmMsg = isLocal
-    ? "Reload Fail2ban configuration on this server now? This will reload the configuration without restarting the service."
-    : "Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban on this server now? This will take some time.";
+    ? t('servers.confirm.reload_local', 'Reload Fail2ban configuration on this server now? This will reload the configuration without restarting the service.')
+    : t('servers.confirm.restart_remote', 'Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban on this server now? This will take some time.');
   if (!confirm(confirmMsg)) return;
   showLoading(true);
   fetch(appPath('/api/fail2ban/restart?serverId=' + encodeURIComponent(serverId)), {
@@ -806,7 +806,7 @@ function restartFail2banServer(serverId) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
-        showToast(formatApiError(data, '', 'Failed to restart Fail2ban'), 'error');
+        showToast(formatApiError(data, 'servers.toast.restart_failed', 'Failed to restart Fail2ban'), 'error');
         return;
       }
       var mode = data.mode || 'restart';
@@ -825,7 +825,7 @@ function restartFail2banServer(serverId) {
       });
     })
     .catch(function(err) {
-      showToast("Failed to restart Fail2ban: " + err, 'error');
+      showToast(t('servers.toast.restart_failed', 'Failed to restart Fail2ban') + ': ' + err, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -833,6 +833,6 @@ function restartFail2banServer(serverId) {
 }
 
 function restartFail2ban() {
-  if (!confirm("Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban now? This will take some time.")) return;
+  if (!confirm(t('servers.confirm.restart', 'Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban now? This will take some time.'))) return;
   restartFail2banServer(currentServerId);
 }
