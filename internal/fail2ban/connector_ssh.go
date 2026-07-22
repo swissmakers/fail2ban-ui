@@ -460,15 +460,12 @@ func (sc *SSHConnector) ensureTunnelAlive(ctx context.Context) {
 
 	// Quick check: does the control socket exist?
 	if _, err := os.Stat(controlPath); err == nil {
-		// Socket exists — run a lightweight command to verify it's live.
-		probeCtx, cancel := context.WithTimeout(ctx, tunnelProbeTimeout)
-		_, cmdErr := sc.runRemoteCommand(probeCtx, []string{"true"})
-		cancel()
-		if cmdErr == nil {
+		// Socket exists — use ssh -O check to verify the control master
+		// is still alive without executing any remote command.
+		if sc.probeControlMaster(ctx, controlPath) {
 			return // tunnel is alive
 		}
-		debugf("Tunnel health check failed for server %s (control socket exists but probe failed): %v — re-establishing",
-			sc.server.Name, cmdErr)
+		debugf("Tunnel health check failed for server %s — re-establishing", sc.server.Name)
 		// Socket might be stale from a dead master — remove it.
 		_ = os.Remove(controlPath)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -479,6 +476,38 @@ func (sc *SSHConnector) ensureTunnelAlive(ctx context.Context) {
 	if err := sc.establishTunnel(ctx); err != nil {
 		debugf("Failed to re-establish reverse tunnel for server %s: %v", sc.server.Name, err)
 	}
+}
+
+// Probes the SSH control master using ssh -O check (no remote command
+// executed). Returns true if the master is alive.
+func (sc *SSHConnector) probeControlMaster(ctx context.Context, controlPath string) bool {
+	probeCtx, cancel := context.WithTimeout(ctx, tunnelProbeTimeout)
+	defer cancel()
+
+	target := sc.server.Host
+	if sc.server.SSHUser != "" {
+		target = fmt.Sprintf("%s@%s", sc.server.SSHUser, target)
+	}
+
+	args := []string{
+		"-o", "ControlPath=" + controlPath,
+		"-o", fmt.Sprintf("ConnectTimeout=%d", int(tunnelProbeTimeout.Seconds())),
+	}
+	if sc.server.Port > 0 {
+		args = append(args, "-p", strconv.Itoa(sc.server.Port))
+	}
+	args = append(args, "-O", "check", target)
+
+	cmd := exec.CommandContext(probeCtx, "ssh", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: 0}
+
+	// ssh -O check writes "Master running" to stdout on success.
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		debugf("Tunnel probe failed for %s: %v (output: %s)", sc.server.Name, err, strings.TrimSpace(string(out)))
+		return false
+	}
+	return strings.Contains(string(out), "Master running")
 }
 
 // Spawns a persistent SSH process with -N (no remote command) and -R to
@@ -678,7 +707,9 @@ func (sc *SSHConnector) runRemoteCommand(ctx context.Context, command []string) 
 			debugf("SSH command error [%s]: %v | output: %s", sc.server.Name, err, output)
 			return output, fmt.Errorf("ssh command failed: %w (output: %s)", err, output)
 		}
-		debugf("SSH command output [%s]: %s", sc.server.Name, output)
+		if output != "" {
+			debugf("SSH command output [%s]: %s", sc.server.Name, output)
+		}
 		return output, nil
 	case <-ctx.Done():
 		if cmd.Process != nil && cmd.Process.Pid > 0 {
