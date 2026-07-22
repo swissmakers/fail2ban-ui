@@ -10,7 +10,7 @@ function createJail() {
   const content = document.getElementById('newJailContent').value.trim();
 
   if (!jailName) {
-    showToast('Jail name is required', 'error');
+    showToast(t('jails.toast.name_required', 'Jail name is required'), 'error');
     return;
   }
   showLoading(true);
@@ -32,16 +32,16 @@ function createJail() {
     })
     .then(function(data) {
       if (data.error) {
-        showToast('Error creating jail: ' + data.error, 'error');
+        showToast(t('jails.toast.create_error', 'Error creating jail') + ': ' + data.error, 'error');
         return;
       }
       closeModal('createJailModal');
-      showToast(data.message || 'Jail created successfully', 'success');
+      showToast(data.message || t('jails.toast.create_success', 'Jail created successfully'), 'success');
       openManageJailsModal();
     })
     .catch(function(err) {
       console.error('Error creating jail:', err);
-      showToast('Error creating jail: ' + (err.message || err), 'error');
+      showToast(t('jails.toast.create_error', 'Error creating jail') + ': ' + (err.message || err), 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -74,7 +74,7 @@ function saveJailConfig() {
     })
     .then(function(data) {
       if (data.error) {
-        showToast("Error saving config: " + data.error, 'error');
+        showToast(t('jails.toast.save_config_error', 'Error saving config') + ': ' + data.error, 'error');
         return;
       }
       closeModal('jailConfigModal');
@@ -94,7 +94,7 @@ function saveJailConfig() {
     })
     .catch(function(err) {
       console.error("Error saving config:", err);
-      showToast("Error saving config: " + err.message, 'error');
+      showToast(t('jails.toast.save_config_error', 'Error saving config') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -209,7 +209,7 @@ function saveManageJailsSingle(checkbox) {
       }
 
       console.log('Jail state saved successfully:', data);
-      showToast(data.message || ('Jail ' + jailName + ' ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully'), 'success');
+      showToast(data.message || t(isEnabled ? 'jails.toast.enabled_success' : 'jails.toast.disabled_success', 'Jail {jail} ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully').replace('{jail}', jailName), 'success');
       return fetch(withServerParam('/api/jails/manage'), {
         headers: serverHeaders()
       }).then(function(res) { return res.json(); })
@@ -228,7 +228,7 @@ function saveManageJailsSingle(checkbox) {
     })
     .catch(function(err) {
       console.error('Error saving jail settings:', err);
-      showToast("Error saving jail settings: " + (err.message || err), 'error');
+      showToast(t('jails.toast.save_settings_error', 'Error saving jail settings') + ': ' + (err.message || err), 'error');
       checkbox.checked = !isEnabled;
     });
 }
@@ -238,7 +238,7 @@ function saveManageJailsSingle(checkbox) {
 // =========================================================================
 
 function deleteJail(jailName) {
-  if (!confirm('Are you sure you want to delete the jail "' + escapeHtml(jailName) + '"? This action cannot be undone.')) {
+  if (!confirm(t('jails.confirm.delete', 'Are you sure you want to delete the jail "{name}"? This action cannot be undone.').replace('{name}', jailName))) {
     return;
   }
   showLoading(true);
@@ -256,16 +256,16 @@ function deleteJail(jailName) {
     })
     .then(function(data) {
       if (data.error) {
-        showToast('Error deleting jail: ' + data.error, 'error');
+        showToast(t('jails.toast.delete_error', 'Error deleting jail') + ': ' + data.error, 'error');
         return;
       }
-      showToast(data.message || 'Jail deleted successfully', 'success');
+      showToast(data.message || t('jails.toast.delete_success', 'Jail deleted successfully'), 'success');
       openManageJailsModal();
       refreshData({ silent: true });
     })
     .catch(function(err) {
       console.error('Error deleting jail:', err);
-      showToast('Error deleting jail: ' + (err.message || err), 'error');
+      showToast(t('jails.toast.delete_error', 'Error deleting jail') + ': ' + (err.message || err), 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -356,11 +356,11 @@ function testLogpath() {
   var logpath = extractLogpathFromConfig(jailConfig);
 
   if (!logpath) {
-    showToast('No logpath found in jail configuration. Please add a logpath line (e.g., logpath = /var/log/example.log)', 'warning');
+    showToast(t('jails.logpath_test.no_logpath', 'No logpath found in jail configuration. Please add a logpath line (e.g., logpath = /var/log/example.log)'), 'warning');
     return;
   }
   var resultsDiv = document.getElementById('logpathResults');
-  resultsDiv.textContent = 'Testing logpath...';
+  resultsDiv.textContent = t('jails.logpath_test.testing', 'Testing logpath...');
   resultsDiv.classList.remove('hidden');
   resultsDiv.classList.remove('text-red-600', 'text-yellow-600');
   showLoading(true);
@@ -374,7 +374,7 @@ function testLogpath() {
     .then(function(data) {
       showLoading(false);
       if (data.error) {
-        resultsDiv.textContent = 'Error: ' + data.error;
+        resultsDiv.textContent = t('common.error', 'Error') + ': ' + data.error;
         resultsDiv.classList.add('text-red-600');
         setTimeout(function() {
           resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -387,7 +387,7 @@ function testLogpath() {
       var output = '';
 
       if (results.length === 0) {
-        output = '<div class="text-yellow-600">No logpath entries found.</div>';
+        output = '<div class="text-yellow-600">' + t('jails.logpath_test.no_entries', 'No logpath entries found.') + '</div>';
         resultsDiv.innerHTML = output;
         resultsDiv.classList.add('text-yellow-600');
         return;
@@ -405,23 +405,23 @@ function testLogpath() {
         }
 
         output += '<div class="mb-3">';
-        output += '<div class="font-semibold text-gray-800 mb-1">Logpath ' + (idx + 1) + ':</div>';
+        output += '<div class="font-semibold text-gray-800 mb-1">' + t('jails.logpath_test.entry', 'Logpath {num}:').replace('{num}', idx + 1) + '</div>';
         output += '<div class="ml-4 text-sm text-gray-600 font-mono">' + escapeHtml(logpath) + '</div>';
 
         if (resolvedPath && resolvedPath !== logpath) {
-          output += '<div class="ml-4 text-xs text-gray-500 mt-1">Resolved: <span class="font-mono">' + escapeHtml(resolvedPath) + '</span></div>';
+          output += '<div class="ml-4 text-xs text-gray-500 mt-1">' + t('jails.logpath_test.resolved', 'Resolved:') + ' <span class="font-mono">' + escapeHtml(resolvedPath) + '</span></div>';
         }
         output += '</div>';
         output += '<div class="ml-4 mb-2">';
         output += '<div class="flex items-center gap-2">';
         if (isLocalServer) {
-          output += '<span class="font-medium text-sm">In fail2ban-ui Container:</span>';
+          output += '<span class="font-medium text-sm">' + t('jails.logpath_test.in_container', 'In fail2ban-ui Container:') + '</span>';
         } else {
-          output += '<span class="font-medium text-sm">On Remote Server:</span>';
+          output += '<span class="font-medium text-sm">' + t('jails.logpath_test.on_remote', 'On Remote Server:') + '</span>';
         }
         if (error) {
           output += '<span class="text-red-600 font-bold">✗</span>';
-          output += '<span class="text-red-600 text-sm">Error: ' + escapeHtml(error) + '</span>';
+          output += '<span class="text-red-600 text-sm">' + t('common.error', 'Error') + ': ' + escapeHtml(error) + '</span>';
         } else if (found) {
           output += '<span class="text-green-600 font-bold">✓</span>';
           output += '<span class="text-green-600 text-sm">'
@@ -430,9 +430,9 @@ function testLogpath() {
         } else {
           output += '<span class="text-red-600 font-bold">✗</span>';
           if (isLocalServer) {
-            output += '<span class="text-red-600 text-sm">Not found (logs may not be mounted to container)</span>';
+            output += '<span class="text-red-600 text-sm">' + t('jails.logpath_test.not_found_container', 'Not found (logs may not be mounted to container)') + '</span>';
           } else {
-            output += '<span class="text-red-600 text-sm">Not found</span>';
+            output += '<span class="text-red-600 text-sm">' + t('jails.logpath_test.not_found', 'Not found') + '</span>';
           }
         }
         output += '</div>';

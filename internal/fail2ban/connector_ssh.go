@@ -23,6 +23,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,18 +48,26 @@ type SSHConnector struct {
 	fail2banPath string
 	pathCached   bool
 	pathMutex    sync.RWMutex
+	tunnelPort   int
 }
 
 const sshEnsureActionScript = `python3 - <<'PY'
 import base64
+import os
 import pathlib
+import shutil
 import sys
 
 try:
     action_dir = pathlib.Path("/etc/fail2ban/action.d")
     action_dir.mkdir(parents=True, exist_ok=True)
     action_cfg = base64.b64decode("__PAYLOAD__").decode("utf-8")
-    (action_dir / "ui-custom-action.conf").write_text(action_cfg)
+    action_file = action_dir / "ui-custom-action.conf"
+    action_file.write_text(action_cfg)
+    os.chmod(action_file, 0o600)
+    missing = [t for t in ("jq", "curl") if shutil.which(t) is None]
+    if missing:
+        sys.stdout.write("F2BUI_MISSING_TOOLS:" + ",".join(missing) + "\n")
 except Exception as e:
     sys.stderr.write(f"Error: {e}\n")
     sys.exit(1)
@@ -77,6 +87,23 @@ func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
 	}
 	conn := &SSHConnector{server: server}
 
+	// Parse tunnel port from callback URL when reverse tunnel is enabled
+	if server.ReverseTunnelEnabled {
+		callbackURL := mustProvider().CallbackURL()
+		parsedURL, err := url.Parse(callbackURL)
+		if err == nil {
+			conn.tunnelPort = callbackTunnelPort(parsedURL)
+		}
+		if conn.tunnelPort == 0 {
+			log.Printf("warning: reverse tunnel enabled for server %s but no usable port could be derived from callback URL %q - tunnel disabled", server.Name, callbackURL)
+		} else {
+			if host := parsedURL.Hostname(); host != "localhost" && host != "127.0.0.1" && host != "::1" {
+				log.Printf("warning: reverse tunnel for server %s forwards localhost:%d, but the callback URL points to host %q - the remote fail2ban will bypass the tunnel unless the callback URL host is localhost", server.Name, conn.tunnelPort, host)
+			}
+			debugf("Reverse tunnel enabled for server %s, will use -R %d:localhost:%d", server.Name, conn.tunnelPort, conn.tunnelPort)
+		}
+	}
+
 	// Use a timeout context to prevent hanging if SSH server isn't ready yet
 	// The action file can be ensured later when actually needed
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -86,6 +113,21 @@ func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
 		debugf("warning: failed to ensure remote fail2ban action for %s during startup (server may not be ready): %v", server.Name, err)
 	}
 	return conn, nil
+}
+
+// callbackTunnelPort derives the port the reverse tunnel has to forward from
+// the callback URL: the explicit port if present, otherwise the scheme default.
+func callbackTunnelPort(u *url.URL) int {
+	if p, err := strconv.Atoi(u.Port()); err == nil && p > 0 && p <= 65535 {
+		return p
+	}
+	switch u.Scheme {
+	case "https":
+		return 443
+	case "http":
+		return 80
+	}
+	return 0
 }
 
 // =========================================================================
@@ -145,6 +187,9 @@ func (sc *SSHConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 	if err := ValidateJailName(jail); err != nil {
 		return err
 	}
+	if err := ValidateIP(ip); err != nil {
+		return err
+	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "unbanip", ip)
 	return err
 }
@@ -153,13 +198,19 @@ func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
 	if err := ValidateJailName(jail); err != nil {
 		return err
 	}
+	if err := ValidateIP(ip); err != nil {
+		return err
+	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "banip", ip)
 	return err
 }
 
 func (sc *SSHConnector) Reload(ctx context.Context) error {
-	_, err := sc.runFail2banCommand(ctx, "reload")
-	return err
+	out, err := sc.runFail2banCommand(ctx, "reload")
+	if err != nil {
+		return err
+	}
+	return checkReloadOutput(out)
 }
 
 func (sc *SSHConnector) Restart(ctx context.Context) error {
@@ -195,8 +246,8 @@ func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
 
 func (sc *SSHConnector) GetFilterConfig(ctx context.Context, filterName string) (string, string, error) {
 	filterName = strings.TrimSpace(filterName)
-	if filterName == "" {
-		return "", "", fmt.Errorf("filter name cannot be empty")
+	if err := ValidateFilterName(filterName); err != nil {
+		return "", "", err
 	}
 
 	fail2banPath := sc.getFail2banPath(ctx)
@@ -218,8 +269,8 @@ func (sc *SSHConnector) GetFilterConfig(ctx context.Context, filterName string) 
 
 func (sc *SSHConnector) SetFilterConfig(ctx context.Context, filterName, content string) error {
 	filterName = strings.TrimSpace(filterName)
-	if filterName == "" {
-		return fmt.Errorf("filter name cannot be empty")
+	if err := ValidateFilterName(filterName); err != nil {
+		return err
 	}
 
 	fail2banPath := sc.getFail2banPath(ctx)
@@ -284,7 +335,6 @@ func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 	var err error
 	select {
 	case err = <-done:
-		// Command completed normally
 	case <-ctx.Done():
 		if cmd.Process != nil && cmd.Process.Pid > 0 {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
@@ -301,12 +351,26 @@ func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 		debugf("Failed to ensure action file for server %s: %v (output: %s)", sc.server.Name, err, output)
 		return fmt.Errorf("failed to ensure action file on remote server %s: %w (remote output: %s)", sc.server.Name, err, output)
 	}
+	if marker := extractMissingToolsWarning(output); marker != "" {
+		log.Printf("warning: managed host %s (%s) is missing required tool(s): %s - ban callbacks will arrive empty until installed",
+			sc.server.Name, sc.server.ID, marker)
+	}
 	if output != "" {
 		debugf("Successfully ensured action file for server %s (output: %s)", sc.server.Name, output)
 	} else {
 		debugf("Successfully ensured action file for server %s (no output)", sc.server.Name)
 	}
 	return nil
+}
+
+func extractMissingToolsWarning(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "F2BUI_MISSING_TOOLS:"); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
 }
 
 // =========================================================================
@@ -387,7 +451,6 @@ func (sc *SSHConnector) runRemoteCommand(ctx context.Context, command []string) 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Start the command
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("failed to start ssh command: %w", err)
 	}
@@ -431,11 +494,22 @@ func (sc *SSHConnector) buildSSHArgs(command []string) []string {
 		)
 	}
 	controlPath := fmt.Sprintf("/tmp/ssh_control_%s_%s", sc.server.ID, strings.ReplaceAll(sc.server.Host, ".", "_"))
+	// ControlPersist=0 keeps the master SSH process (and with it the reverse
+	// tunnel) alive indefinitely; without a tunnel it expires after 300s.
+	controlPersist := "ControlPersist=300"
+	if sc.tunnelPort > 0 {
+		controlPersist = "ControlPersist=0"
+	}
 	args = append(args,
 		"-o", "ControlMaster=auto",
 		"-o", fmt.Sprintf("ControlPath=%s", controlPath),
-		"-o", "ControlPersist=300",
+		"-o", controlPersist,
 	)
+	if sc.tunnelPort > 0 {
+		tunnelArg := fmt.Sprintf("%d:localhost:%d", sc.tunnelPort, sc.tunnelPort)
+		args = append(args, "-R", tunnelArg)
+		debugf("SSH reverse tunnel enabled: -R %s with %s (indefinite)", tunnelArg, controlPersist)
+	}
 	if sc.server.SSHKeyPath != "" {
 		args = append(args, "-i", sc.server.SSHKeyPath)
 	}
@@ -496,7 +570,7 @@ func (sc *SSHConnector) readRemoteFile(ctx context.Context, filePath string) (st
 func (sc *SSHConnector) writeRemoteFile(ctx context.Context, filePath, content string) error {
 	escaped := strings.ReplaceAll(content, "'", "'\"'\"'")
 
-	script := fmt.Sprintf(`cat > %s <<'REMOTEEOF'
+	script := fmt.Sprintf(`cat > '%s' <<'REMOTEEOF'
 %s
 REMOTEEOF
 `, filePath, escaped)
@@ -511,6 +585,10 @@ REMOTEEOF
 func (sc *SSHConnector) ensureRemoteLocalFile(ctx context.Context, basePath, name string) error {
 	localPath := fmt.Sprintf("%s/%s.local", basePath, name)
 	confPath := fmt.Sprintf("%s/%s.conf", basePath, name)
+
+	if err := ValidateFilterName(name); err != nil {
+		return fmt.Errorf("invalid config name %q: %w", name, err)
+	}
 
 	script := fmt.Sprintf(`
 		if [ ! -f "%s" ]; then
@@ -571,7 +649,6 @@ func (sc *SSHConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
 	jailDPath := filepath.Join(fail2banPath, "jail.d")
 
 	var allJails []JailInfo
-	processedFiles := make(map[string]bool)
 	processedJails := make(map[string]bool)
 
 	readAllScript := fmt.Sprintf(`python3 << 'PYEOF'
@@ -631,13 +708,11 @@ PYEOF`, jailDPath)
 
 	output, err := sc.runRemoteCommand(ctx, []string{readAllScript})
 	if err != nil {
-		// Fallback to individual file reads if the script fails
 		debugf("Failed to read all jail files at once on server %s, falling back to individual reads: %v", sc.server.Name, err)
 		return sc.getAllJailsFallback(ctx, jailDPath)
 	}
 	var currentFile string
 	var currentContent strings.Builder
-	var currentType string
 	inFile := false
 
 	lines := strings.Split(output, "\n")
@@ -656,19 +731,8 @@ PYEOF`, jailDPath)
 			parts := strings.SplitN(line, ":", 3)
 			if len(parts) == 3 {
 				currentFile = parts[1]
-				currentType = parts[2]
 				currentContent.Reset()
 				inFile = true
-				filename := filepath.Base(currentFile)
-				var baseName string
-				if currentType == "local" {
-					baseName = strings.TrimSuffix(filename, ".local")
-				} else {
-					baseName = strings.TrimSuffix(filename, ".conf")
-				}
-				if baseName != "" {
-					processedFiles[baseName] = true
-				}
 			}
 		} else if line == "FILE_END" {
 			if inFile && currentFile != "" {
@@ -1064,13 +1128,12 @@ func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLi
 		return "No log lines provided.\n", "", nil
 	}
 
-	// Sanitize filter name to prevent path traversal
+	// Enforce the shared strict allowlist (blocks path traversal and shell
+	// metacharacters) rather than the previous ad-hoc string stripping.
 	filterName = strings.TrimSpace(filterName)
-	if filterName == "" {
-		return "", "", fmt.Errorf("filter name cannot be empty")
+	if err := ValidateFilterName(filterName); err != nil {
+		return "", "", err
 	}
-	filterName = strings.ReplaceAll(filterName, "/", "")
-	filterName = strings.ReplaceAll(filterName, "..", "")
 
 	fail2banPath := sc.getFail2banPath(ctx)
 	localPath := filepath.Join(fail2banPath, "filter.d", filterName+".local")
@@ -1174,8 +1237,8 @@ fail2ban-regex "$TMPFILE" "$FILTER_PATH" || true
 
 func (sc *SSHConnector) GetJailConfig(ctx context.Context, jail string) (string, string, error) {
 	jail = strings.TrimSpace(jail)
-	if jail == "" {
-		return "", "", fmt.Errorf("jail name cannot be empty")
+	if err := ValidateJailName(jail); err != nil {
+		return "", "", err
 	}
 
 	fail2banPath := sc.getFail2banPath(ctx)
@@ -1197,8 +1260,8 @@ func (sc *SSHConnector) GetJailConfig(ctx context.Context, jail string) (string,
 
 func (sc *SSHConnector) SetJailConfig(ctx context.Context, jail, content string) error {
 	jail = strings.TrimSpace(jail)
-	if jail == "" {
-		return fmt.Errorf("jail name cannot be empty")
+	if err := ValidateJailName(jail); err != nil {
+		return err
 	}
 
 	fail2banPath := sc.getFail2banPath(ctx)
@@ -1403,7 +1466,7 @@ func (sc *SSHConnector) UpdateDefaultSettings(ctx context.Context) error {
 }
 
 func (sc *SSHConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
-	const jailLocalPath = "/etc/fail2ban/jail.local"
+	jailLocalPath := sc.getFail2banPath(ctx) + "/jail.local"
 	output, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
 	if err != nil {
 		if strings.Contains(err.Error(), "No such file") || strings.Contains(output, "No such file") {
@@ -1416,14 +1479,13 @@ func (sc *SSHConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool
 }
 
 func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
-	jailLocalPath := "/etc/fail2ban/jail.local"
+	jailLocalPath := sc.getFail2banPath(ctx) + "/jail.local"
 
 	exists, hasUI, chkErr := sc.CheckJailLocalIntegrity(ctx)
 	if chkErr != nil {
 		debugf("Warning: could not check jail.local integrity on %s: %v", sc.server.Name, chkErr)
 	}
 	if exists && !hasUI {
-		// The file belongs to the user; never overwrite it.
 		debugf("jail.local on server %s exists but is not managed by Fail2ban-UI - skipping overwrite", sc.server.Name)
 		return nil
 	}
@@ -1442,8 +1504,9 @@ func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
 	// Escape single quotes for safe use in a single-quoted heredoc
 	escaped := strings.ReplaceAll(content, "'", "'\"'\"'")
 
-	// Write the rebuilt content via heredoc over SSH
-	writeScript := fmt.Sprintf(`cat > %s <<'JAILLOCAL'
+	// Write the rebuilt content via heredoc over SSH. The path is quoted so a
+	// resolved fail2ban root containing shell metacharacters cannot break out.
+	writeScript := fmt.Sprintf(`cat > '%s' <<'JAILLOCAL'
 %s
 JAILLOCAL
 `, jailLocalPath, escaped)

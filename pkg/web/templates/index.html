@@ -123,8 +123,8 @@
         <div class="hidden md:block">
           <div class="ml-10 flex items-baseline space-x-4 items-center">
             <a href="#" onclick="showSection('dashboardSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.dashboard">Dashboard</a>
-            <a href="#" onclick="showSection('filterSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
-            <a href="#" onclick="showSection('settingsSection')" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
+            <a href="#" onclick="showSection('filterSection')" data-min-access="admin" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
+            <a href="#" onclick="showSection('settingsSection')" data-min-access="admin" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
             <div id="clockDisplay" class="ml-4 text-sm font-mono">
               <span id="clockTime">--:--:--</span>
             </div>
@@ -160,8 +160,8 @@
     <div id="mobileMenu" class="hidden md:hidden">
       <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
         <a href="#" onclick="showSection('dashboardSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.dashboard">Dashboard</a>
-        <a href="#" onclick="showSection('filterSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
-        <a href="#" onclick="showSection('settingsSection')" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
+        <a href="#" onclick="showSection('filterSection')" data-min-access="admin" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.filter_debug">Filter Debug</a>
+        <a href="#" onclick="showSection('settingsSection')" data-min-access="admin" class="block px-3 py-2 rounded-md text-base font-medium hover:bg-blue-700 transition-colors" data-i18n="nav.settings">Settings</a>
         <div id="mobileUserInfoContainer" class="hidden border-t border-blue-500 mt-2 pt-2">
           <div class="px-3 py-2">
             <div class="text-sm font-medium" id="mobileUserDisplayName"></div>
@@ -249,12 +249,12 @@
           {{end}}
           <div class="flex flex-col sm:flex-row gap-3">
             <button class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
-              onclick="openServerManager()">
+              data-min-access="admin" onclick="openServerManager()">
               <i class="fas fa-network-wired"></i>
               <span data-i18n="dashboard.manage_servers">Manage Servers</span>
             </button>
             <button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors flex items-center gap-2"
-              onclick="openManageJailsModal()">
+              data-min-access="admin" onclick="openManageJailsModal()">
               <i class="fas fa-cog"></i>
               <span data-i18n="dashboard.manage_jails">Manage Jails</span>
             </button>
@@ -466,7 +466,7 @@
                 </div>
                 <div class="md:col-span-2">
                   <label class="block text-sm font-medium text-gray-700" for="pfSenseToken" data-i18n="settings.advanced.pfsense.token">API Key</label>
-                  <input id="pfSenseToken" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key from System > REST API > Keys">
+                  <input id="pfSenseToken" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key from System > REST API > Keys">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.pfsense.token_hint">Generate in System > REST API > Keys in pfSense webConfigurator</p>
                 </div>
                 <div>
@@ -491,12 +491,12 @@
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700" for="opnsenseKey" data-i18n="settings.advanced.opnsense.key">API Key</label>
-                  <input id="opnsenseKey" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key">
+                  <input id="opnsenseKey" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.key_hint">Generate in System > Access > Users > API Keys</p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700" for="opnsenseSecret" data-i18n="settings.advanced.opnsense.secret">API Secret</label>
-                  <input id="opnsenseSecret" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API secret">
+                  <input id="opnsenseSecret" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API secret">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.secret_hint">Generate together with API key</p>
                 </div>
                 <div>
@@ -583,6 +583,11 @@
             <label for="maxLogLines" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.max_log_lines">Maximum Log Lines</label>
             <input type="number" id="maxLogLines" min="1" max="500" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="50">
             <p class="text-xs text-gray-500 mt-1" data-i18n="settings.max_log_lines.description">Maximum number of log lines to include in ban notifications. Most relevant lines are selected automatically.</p>
+          </div>
+          <div class="mb-4">
+            <label for="eventRetentionDays" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.event_retention_days">Event Retention (Days)</label>
+            <input type="number" id="eventRetentionDays" min="0" max="36500" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="180">
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.event_retention_days.description">Ban/unban events older than this are deleted automatically once per day. Set to 0 to keep events forever (the database will grow unbounded).</p>
           </div>
           <div class="mb-4">
             <label for="alertCountries" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.alert_countries">Alert Countries</label>
@@ -793,11 +798,12 @@
         <!-- ========================= Email Configuration ========================= -->
         <div id="alertEmailFields" class="space-y-6">
         <div class="bg-white rounded-lg shadow p-6" id="emailFieldsContainer">
-          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Email (Alerts Receiver)</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Emails (Alerts Receivers)</h3>
           <div class="mb-4">
-            <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
-                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch" />
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
+                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch, admin@example.com" />
             <p class="text-xs text-red-600 mt-1 hidden" id="destEmailError"></p>
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.destination_email_hint">Multiple email addresses can be specified using comma-separated values.</p>
           </div>
         </div>
         <div class="bg-white rounded-lg shadow p-6" id="smtpFieldsContainer">
@@ -835,6 +841,7 @@
               <option value="login" data-i18n="settings.smtp_auth_method_login">LOGIN</option>
               <option value="plain" data-i18n="settings.smtp_auth_method_plain">PLAIN</option>
               <option value="cram-md5" data-i18n="settings.smtp_auth_method_cram_md5">CRAM-MD5</option>
+              <option value="none" data-i18n="settings.smtp_auth_method_none">None (no authentication)</option>
             </select>
             <p class="mt-1 text-xs text-gray-500" data-i18n="settings.smtp_auth_method_hint">LOGIN is recommended for Office365/Gmail. PLAIN is standard SMTP auth. CRAM-MD5 is challenge-response based.</p>
           </div>
@@ -951,6 +958,25 @@
             <p class="text-xs text-gray-500 mb-2" data-i18n="settings.bantime_rndtime.description">Optional. Max random seconds added in bantime increment formula (e.g. 2048). Leave empty to use Fail2ban default.</p>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="bantimeRndtime"
                    data-i18n-placeholder="settings.bantime_rndtime_placeholder" placeholder="e.g., 2048" />
+          </div>
+          <div class="mb-4">
+            <label for="bantimeMaxtime" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.bantime_maxtime">Bantime Maxtime</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.bantime_maxtime.description">Optional. Caps how long escalating bans may grow when Bantime Increment is enabled (e.g. 5w). Leave empty to use the Fail2ban default (no cap).</p>
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="bantimeMaxtime"
+                   data-i18n-placeholder="settings.bantime_maxtime_placeholder" placeholder="e.g., 5w" />
+          </div>
+          <div class="mb-4">
+            <label for="bantimeFactor" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.bantime_factor">Bantime Factor</label>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.bantime_factor.description">Optional. Multiplier used by the bantime increment formula; higher values escalate repeat-offender bans faster (Fail2ban default: 1). Leave empty to use the default.</p>
+            <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="bantimeFactor"
+                   data-i18n-placeholder="settings.bantime_factor_placeholder" placeholder="e.g., 2" />
+          </div>
+          <div class="mb-4">
+            <div class="flex items-center mb-2">
+              <input type="checkbox" id="bantimeOveralljails" class="h-4 w-7 text-blue-600 transition duration-150 ease-in-out" />
+              <label for="bantimeOveralljails" class="ml-2 block text-sm font-medium text-gray-700" data-i18n="settings.bantime_overalljails">Count Repeat Offenses Across All Jails</label>
+            </div>
+            <p class="text-xs text-gray-500 ml-9" data-i18n="settings.bantime_overalljails.description">When Bantime Increment is enabled, previous bans from every jail (not just the current one) are considered when escalating an IP's ban time.</p>
           </div>
           <div class="mb-4">
             <label for="banaction" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.banaction">Banaction</label>
@@ -1415,7 +1441,7 @@
                   </div>
                   <div data-server-fields="agent">
                     <label for="serverAgentSecret" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.agent_secret">Agent Secret</label>
-                    <input type="text" id="serverAgentSecret" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.agent_secret_placeholder" placeholder="shared secret token">
+                    <input type="password" id="serverAgentSecret" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.agent_secret_placeholder" placeholder="shared secret token">
                   </div>
                   <div>
                     <label for="serverTags" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.tags">Tags</label>
@@ -1428,6 +1454,15 @@
                   <div class="flex items-center">
                     <input type="checkbox" id="serverEnabled" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
                     <label for="serverEnabled" class="ml-2 text-sm text-gray-700" data-i18n="servers.form.enabled">Enable connector</label>
+                  </div>
+                  <div data-server-fields="ssh">
+                    <div class="flex items-center">
+                      <input type="checkbox" id="serverReverseTunnel" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                      <label for="serverReverseTunnel" class="ml-2 text-sm text-gray-700" data-i18n="servers.form.reverse_tunnel">Enable reverse tunnel for events</label>
+                    </div>
+                    <p class="mt-0.5 ml-6 text-xs text-gray-500" data-i18n="servers.form.reverse_tunnel_help">
+                      Automatically creates a reverse SSH tunnel (-R port:localhost:port) so fail2ban callback events on the remote server can reach this UI server. The tunnel port is derived from the Callback URL setting.
+                    </p>
                   </div>
                   <input type="hidden" id="serverId">
                   <div class="flex gap-3">

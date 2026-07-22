@@ -19,9 +19,34 @@ package fail2ban
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
+
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
+
+// =========================================================================
+//  Validation
+// =========================================================================
+
+// Ensures an IP/CIDR is well-formed
+func ValidateIP(ip string) error {
+	return shared.ValidateIP(ip)
+}
+
+// Inspects fail2ban-client reload output for the markers that indicate the daemon reloaded but a jail/filter failed to apply.
+func checkReloadOutput(output string) error {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" || trimmed == "OK" {
+		return nil
+	}
+	if strings.Contains(output, "Errors in jail") || strings.Contains(output, "Unable to read the filter") {
+		return fmt.Errorf("fail2ban reload completed but with errors (output: %s)", trimmed)
+	}
+	return nil
+}
 
 // =========================================================================
 //  Types

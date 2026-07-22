@@ -80,8 +80,11 @@ func WriteLocalActionFile(configPath, callbackURL, serverID string) error {
 	}
 	secret := p.CallbackSecret()
 	cfg := p.BuildFail2banActionConfig(callbackURL, serverID, secret)
-	if err := os.WriteFile(actionPath, []byte(cfg), 0644); err != nil {
+	if err := os.WriteFile(actionPath, []byte(cfg), 0600); err != nil {
 		return fmt.Errorf("failed to write action file: %w", err)
+	}
+	if err := os.Chmod(actionPath, 0600); err != nil {
+		return fmt.Errorf("failed to restrict action file permissions: %w", err)
 	}
 	debugf("Custom-action file successfully written to %s\n", actionPath)
 	return nil
@@ -89,7 +92,7 @@ func WriteLocalActionFile(configPath, callbackURL, serverID string) error {
 
 // Ensures jail.local and the UI action file for a local tree.
 func EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath string) error {
-	debugf("ensureFail2banActionFiles called")
+	debugf("Running EnsureLocalConnectorArtifacts()")
 	jailPath := JailLocal(configPath)
 	if _, err := os.Stat(filepath.Dir(jailPath)); os.IsNotExist(err) {
 		rootDir := NormalizeConfigPath(configPath)

@@ -138,8 +138,12 @@ function loadSettings() {
       onGeoIPProviderChange(geoipProvider);
       document.getElementById('geoipDatabasePath').value = data.geoipDatabasePath || '/usr/share/GeoIP/GeoLite2-Country.mmdb';
       document.getElementById('maxLogLines').value = data.maxLogLines || 50;
+      document.getElementById('eventRetentionDays').value = (typeof data.eventRetentionDays === 'number') ? data.eventRetentionDays : 180;
       document.getElementById('banTime').value = data.bantime || '';
       document.getElementById('bantimeRndtime').value = data.bantimeRndtime || '';
+      document.getElementById('bantimeMaxtime').value = data.bantimeMaxtime || '';
+      document.getElementById('bantimeFactor').value = data.bantimeFactor || '';
+      document.getElementById('bantimeOveralljails').checked = data.bantimeOveralljails || false;
       document.getElementById('findTime').value = data.findtime || '';
       document.getElementById('maxRetry').value = data.maxretry || '';
       document.getElementById('defaultChain').value = data.chain || 'INPUT';
@@ -153,7 +157,7 @@ function loadSettings() {
       loadPermanentBlockLog();
     })
     .catch(err => {
-      showToast('Error loading settings: ' + err, 'error');
+      showToast(t('settings.toast.load_error', 'Error loading settings') + ': ' + err, 'error');
     })
     .finally(() => showLoading(false));
 }
@@ -166,7 +170,7 @@ function saveSettings(event) {
   event.preventDefault();
   
   if (!validateAllSettings()) {
-    showToast('Please fix validation errors before saving', 'error');
+    showToast(t('settings.toast.fix_validation', 'Please fix validation errors before saving'), 'error');
     return;
   }
   
@@ -174,24 +178,27 @@ function saveSettings(event) {
   
   const smtpPort = parseInt(document.getElementById('smtpPort').value, 10);
   if (isNaN(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
-    showToast('SMTP port must be between 1 and 65535', 'error');
+    showToast(t('settings.toast.smtp_port_invalid', 'SMTP port must be between 1 and 65535'), 'error');
     showLoading(false);
     return;
   }
 
+  const authMethod = document.getElementById('smtpAuthMethod').value || 'auto';
+  const isNone = authMethod === 'none';
   const smtpSettings = {
     host: document.getElementById('smtpHost').value.trim(),
     port: smtpPort,
-    username: document.getElementById('smtpUsername').value.trim(),
-    password: document.getElementById('smtpPassword').value.trim(),
+    username: isNone ? '' : document.getElementById('smtpUsername').value.trim(),
+    password: isNone ? '' : document.getElementById('smtpPassword').value.trim(),
     from: document.getElementById('smtpFrom').value.trim(),
     useTLS: document.getElementById('smtpUseTLS').checked,
     insecureSkipVerify: document.getElementById('smtpInsecureSkipVerify').checked,
-    authMethod: document.getElementById('smtpAuthMethod').value || 'auto',
+    authMethod: authMethod,
   };
 
+  const eventRetentionRaw = parseInt(document.getElementById('eventRetentionDays').value, 10);
+  const eventRetentionDays = isNaN(eventRetentionRaw) ? 180 : Math.max(eventRetentionRaw, 0);
   const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);
-
   const callbackURLInput = document.getElementById('callbackURL');
   let callbackUrl = callbackURLInput.value.trim();
   const currentPort = parseInt(document.getElementById('uiPort').value, 10) || 8080;
@@ -215,6 +222,9 @@ function saveSettings(event) {
     defaultJailEnable: document.getElementById('defaultJailEnable').checked,
     bantime: document.getElementById('banTime').value.trim(),
     bantimeRndtime: document.getElementById('bantimeRndtime').value.trim(),
+    bantimeMaxtime: document.getElementById('bantimeMaxtime').value.trim(),
+    bantimeFactor: document.getElementById('bantimeFactor').value.trim(),
+    bantimeOveralljails: document.getElementById('bantimeOveralljails').checked,
     findtime: document.getElementById('findTime').value.trim(),
     maxretry: parseInt(document.getElementById('maxRetry').value, 10) || 3,
     ignoreips: getIgnoreIPsArray(),
@@ -224,6 +234,7 @@ function saveSettings(event) {
     geoipProvider: document.getElementById('geoipProvider').value || 'builtin',
     geoipDatabasePath: document.getElementById('geoipDatabasePath').value || '/usr/share/GeoIP/GeoLite2-Country.mmdb',
     maxLogLines: parseInt(document.getElementById('maxLogLines').value, 10) || 50,
+    eventRetentionDays: eventRetentionDays,
     alertProvider: document.getElementById('alertProvider').value || 'email',
     smtp: smtpSettings,
     webhook: collectWebhookSettings(),
@@ -240,7 +251,7 @@ function saveSettings(event) {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Error saving settings: ' + (data.error + (data.details || '')), 'error');
+        showToast(t('settings.toast.save_error', 'Error saving settings') + ': ' + (data.error + (data.details || '')), 'error');
       } else {
         var selectedLang = $('#languageSelect').val();
         loadTranslations(selectedLang);
@@ -250,7 +261,7 @@ function saveSettings(event) {
         
         if (Array.isArray(data.warnings) && data.warnings.length > 0) {
           const warningPreview = data.warnings.slice(0, 2).join(' | ');
-          showToast('Settings saved with warnings: ' + warningPreview, 'info');
+          showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'info');
           console.warn('Settings warnings:', data.warnings);
         }
         if (data.restartNeeded) {
@@ -263,7 +274,7 @@ function saveSettings(event) {
         }
       }
     })
-    .catch(err => showToast('Error saving settings: ' + err, 'error'))
+    .catch(err => showToast(t('settings.toast.save_error', 'Error saving settings') + ': ' + err, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -279,6 +290,27 @@ function updateAlertProviderFields() {
   if (emailDiv) emailDiv.classList.toggle('hidden', selected !== 'email');
   if (webhookDiv) webhookDiv.classList.toggle('hidden', selected !== 'webhook');
   if (esDiv) esDiv.classList.toggle('hidden', selected !== 'elasticsearch');
+}
+
+function updateSmtpAuthOnChange() {
+  updateSmtpAuthFields();
+}
+
+// Wire up auth method change handler
+document.addEventListener('DOMContentLoaded', function() {
+  const authSelect = document.getElementById('smtpAuthMethod');
+  if (authSelect) {
+    authSelect.addEventListener('change', updateSmtpAuthOnChange);
+  }
+});
+
+function updateSmtpAuthFields() {
+  const authMethod = document.getElementById('smtpAuthMethod').value;
+  const isNone = authMethod === 'none';
+  const smtpUsername = document.getElementById('smtpUsername');
+  const smtpPassword = document.getElementById('smtpPassword');
+  if (smtpUsername) smtpUsername.disabled = isNone;
+  if (smtpPassword) smtpPassword.disabled = isNone;
 }
 
 function updateAlertFieldsState() {
@@ -302,6 +334,11 @@ function updateAlertFieldsState() {
     if (field) field.disabled = !alertsEnabled;
   });
 
+  // Re-apply auth method field state after enabling
+  if (alertsEnabled) {
+    updateSmtpAuthFields();
+  }
+
   const providerSelect = document.getElementById('alertProvider');
   if (providerSelect) providerSelect.disabled = !alertsEnabled;
 }
@@ -323,12 +360,12 @@ function sendTestEmail() {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Error sending test email: ' + data.error, 'error');
+        showToast(t('settings.toast.test_email_error', 'Error sending test email') + ': ' + data.error, 'error');
       } else {
-        showToast('Test email sent successfully!', 'success');
+        showToast(t('settings.toast.test_email_success', 'Test email sent successfully!'), 'success');
       }
     })
-    .catch(error => showToast('Error sending test email: ' + error, 'error'))
+    .catch(error => showToast(t('settings.toast.test_email_error', 'Error sending test email') + ': ' + error, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -377,12 +414,12 @@ function sendTestWebhook() {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Webhook test failed: ' + data.error, 'error');
+        showToast(t('settings.toast.webhook_test_failed', 'Webhook test failed') + ': ' + data.error, 'error');
       } else {
-        showToast('Test webhook sent successfully!', 'success');
+        showToast(t('settings.toast.webhook_test_success', 'Test webhook sent successfully!'), 'success');
       }
     })
-    .catch(error => showToast('Webhook test failed: ' + error, 'error'))
+    .catch(error => showToast(t('settings.toast.webhook_test_failed', 'Webhook test failed') + ': ' + error, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -420,12 +457,12 @@ function sendTestElasticsearch() {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Elasticsearch test failed: ' + data.error, 'error');
+        showToast(t('settings.toast.es_test_failed', 'Elasticsearch test failed') + ': ' + data.error, 'error');
       } else {
-        showToast('Test document indexed successfully!', 'success');
+        showToast(t('settings.toast.es_test_success', 'Test document indexed successfully!'), 'success');
       }
     })
-    .catch(error => showToast('Elasticsearch test failed: ' + error, 'error'))
+    .catch(error => showToast(t('settings.toast.es_test_failed', 'Elasticsearch test failed') + ': ' + error, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -475,11 +512,11 @@ function copyElasticsearchTemplate(btn) {
   navigator.clipboard.writeText(pre.textContent).then(() => {
     const label = btn.querySelector('span');
     if (label) {
-      label.textContent = 'Copied!';
-      setTimeout(() => { label.textContent = 'Copy'; }, 2000);
+      label.textContent = t('common.copied', 'Copied!');
+      setTimeout(() => { label.textContent = t('common.copy', 'Copy'); }, 2000);
     }
   }).catch(() => {
-    showToast('Failed to copy to clipboard', 'error');
+    showToast(t('settings.toast.copy_failed', 'Failed to copy to clipboard'), 'error');
   });
 }
 
@@ -583,13 +620,13 @@ function loadPermanentBlockLog() {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Error loading permanent block log: ' + data.error, 'error');
+        showToast(t('settings.toast.block_log_error', 'Error loading permanent block log') + ': ' + data.error, 'error');
         return;
       }
       renderPermanentBlockLog(data.blocks || []);
     })
     .catch(err => {
-      showToast('Error loading permanent block log: ' + err, 'error');
+      showToast(t('settings.toast.block_log_error', 'Error loading permanent block log') + ': ' + err, 'error');
     });
 }
 
@@ -700,7 +737,7 @@ function openAdvancedTestModal() {
 function submitAdvancedTest(action) {
   const ipValue = document.getElementById('advancedTestIP').value.trim();
   if (!ipValue) {
-    showToast('Please enter an IP address.', 'info');
+    showToast(t('settings.toast.enter_ip', 'Please enter an IP address.'), 'info');
     return;
   }
   showLoading(true);
@@ -712,13 +749,13 @@ function submitAdvancedTest(action) {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Advanced action failed: ' + data.error, 'error');
+        showToast(t('settings.toast.advanced_action_failed', 'Advanced action failed') + ': ' + data.error, 'error');
       } else {
-        showToast(data.message || 'Action completed', data.info ? 'info' : 'success');
+        showToast(data.message || t('settings.toast.action_completed', 'Action completed'), data.info ? 'info' : 'success');
         loadPermanentBlockLog();
       }
     })
-    .catch(err => showToast('Advanced action failed: ' + err, 'error'))
+    .catch(err => showToast(t('settings.toast.advanced_action_failed', 'Advanced action failed') + ': ' + err, 'error'))
     .finally(() => {
       showLoading(false);
       closeModal('advancedTestModal');
@@ -739,13 +776,13 @@ function advancedUnblockIP(ip, event) {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Failed to remove IP: ' + data.error, 'error');
+        showToast(t('settings.toast.remove_ip_failed', 'Failed to remove IP') + ': ' + data.error, 'error');
       } else {
-        showToast(data.message || 'IP removed', 'success');
+        showToast(data.message || t('settings.toast.ip_removed', 'IP removed'), 'success');
         loadPermanentBlockLog();
       }
     })
-    .catch(err => showToast('Failed to remove IP: ' + err, 'error'));
+    .catch(err => showToast(t('settings.toast.remove_ip_failed', 'Failed to remove IP') + ': ' + err, 'error'));
 }
 
 // =========================================================================
@@ -769,9 +806,16 @@ if (threatIntelProviderSelect) {
 function toggleCallbackSecretVisibility() {
   const input = document.getElementById('callbackSecret');
   const link = document.getElementById('toggleCallbackSecretLink');
-  
+
   if (!input || !link) return;
-  
+
+  // The backend masks stored secrets with a sentinel; revealing it would only
+  // show the placeholder string, so explain instead of "revealing".
+  if (input.value === '__f2bui_secret_unchanged__') {
+    link.textContent = t('settings.callback_secret.hidden', 'secret is stored on the server and never displayed');
+    return;
+  }
+
   const isPassword = input.type === 'password';
   input.type = isPassword ? 'text' : 'password';
   link.textContent = isPassword

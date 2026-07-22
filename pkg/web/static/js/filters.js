@@ -10,7 +10,7 @@ function createFilter() {
   const content = document.getElementById('newFilterContent').value.trim();
 
   if (!filterName) {
-    showToast('Filter name is required', 'error');
+    showToast(t('filters.toast.name_required', 'Filter name is required'), 'error');
     return;
   }
 
@@ -33,16 +33,16 @@ function createFilter() {
     })
     .then(function(data) {
       if (data.error) {
-        showToast('Error creating filter: ' + data.error, 'error');
+        showToast(t('filters.toast.create_error', 'Error creating filter') + ': ' + data.error, 'error');
         return;
       }
       closeModal('createFilterModal');
-      showToast(data.message || 'Filter created successfully', 'success');
+      showToast(data.message || t('filters.toast.create_success', 'Filter created successfully'), 'success');
       loadFilters();
     })
     .catch(function(err) {
       console.error('Error creating filter:', err);
-      showToast('Error creating filter: ' + (err.message || err), 'error');
+      showToast(t('filters.toast.create_error', 'Error creating filter') + ': ' + (err.message || err), 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -61,7 +61,7 @@ function loadFilters() {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Error loading filters: ' + data.error, 'error');
+        showToast(t('filters.toast.load_error', 'Error loading filters') + ': ' + data.error, 'error');
         return;
       }
       const select = document.getElementById('filterSelect');
@@ -117,7 +117,7 @@ function loadFilters() {
       }
     })
     .catch(err => {
-      showToast('Error loading filters: ' + err, 'error');
+      showToast(t('filters.toast.load_error', 'Error loading filters') + ': ' + err, 'error');
     })
     .finally(() => showLoading(false));
 }
@@ -134,7 +134,7 @@ function loadFilterContent(filterName) {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Error loading filter content: ' + data.error, 'error');
+        showToast(t('filters.toast.load_content_error', 'Error loading filter content') + ': ' + data.error, 'error');
         filterContentTextarea.value = '';
         filterContentTextarea.readOnly = true;
         if (editBtn) editBtn.classList.add('hidden');
@@ -149,7 +149,7 @@ function loadFilterContent(filterName) {
       updateFilterContentHints(false);
     })
     .catch(err => {
-      showToast('Error loading filter content: ' + err, 'error');
+      showToast(t('filters.toast.load_content_error', 'Error loading filter content') + ': ' + err, 'error');
       filterContentTextarea.value = '';
       filterContentTextarea.readOnly = true;
       if (editBtn) editBtn.classList.add('hidden');
@@ -212,11 +212,11 @@ function updateFilterContentHints(isEditable) {
 function deleteFilter() {
   const filterName = document.getElementById('filterSelect').value;
   if (!filterName) {
-    showToast('Please select a filter to delete', 'info');
+    showToast(t('filters.toast.select_delete', 'Please select a filter to delete'), 'info');
     return;
   }
 
-  if (!confirm('Are you sure you want to delete the filter "' + escapeHtml(filterName) + '"? This action cannot be undone.')) {
+  if (!confirm(t('filters.confirm.delete', 'Are you sure you want to delete the filter "{name}"? This action cannot be undone.').replace('{name}', filterName))) {
     return;
   }
   showLoading(true);
@@ -234,10 +234,10 @@ function deleteFilter() {
     })
     .then(function(data) {
       if (data.error) {
-        showToast('Error deleting filter: ' + data.error, 'error');
+        showToast(t('filters.toast.delete_error', 'Error deleting filter') + ': ' + data.error, 'error');
         return;
       }
-      showToast(data.message || 'Filter deleted successfully', 'success');
+      showToast(data.message || t('filters.toast.delete_success', 'Filter deleted successfully'), 'success');
       loadFilters();
       document.getElementById('testResults').innerHTML = '';
       document.getElementById('testResults').classList.add('hidden');
@@ -255,7 +255,7 @@ function deleteFilter() {
     })
     .catch(function(err) {
       console.error('Error deleting filter:', err);
-      showToast('Error deleting filter: ' + (err.message || err), 'error');
+      showToast(t('filters.toast.delete_error', 'Error deleting filter') + ': ' + (err.message || err), 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -272,11 +272,11 @@ function testSelectedFilter() {
   const filterContentTextarea = document.getElementById('filterContentTextarea');
   
   if (!filterName) {
-    showToast('Please select a filter.', 'info');
+    showToast(t('filters.toast.select_filter', 'Please select a filter.'), 'info');
     return;
   }
   if (lines.length === 0) {
-    showToast('Please enter at least one log line to test.', 'info');
+    showToast(t('filters.toast.enter_log_lines', 'Please enter at least one log line to test.'), 'info');
     return;
   }
   const testResultsEl = document.getElementById('testResults');
@@ -301,13 +301,13 @@ function testSelectedFilter() {
     .then(res => res.json())
     .then(data => {
       if (data.error) {
-        showToast('Error testing filter: ' + data.error, 'error');
+        showToast(t('filters.toast.test_error', 'Error testing filter') + ': ' + data.error, 'error');
         return;
       }
       renderTestResults(data.output || '', data.filterPath || '');
     })
     .catch(err => {
-      showToast('Error testing filter: ' + err, 'error');
+      showToast(t('filters.toast.test_error', 'Error testing filter') + ': ' + err, 'error');
     })
     .finally(() => showLoading(false));
 }

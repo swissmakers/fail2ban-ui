@@ -47,6 +47,9 @@ Fail2Ban UI receives ban and unban callbacks at:
 |----------|-------------|
 | `CALLBACK_URL` | URL reachable from every managed Fail2Ban host: scheme, host, optional port, and `BASE_PATH` if used. No trailing slash. |
 | `CALLBACK_SECRET` | Shared secret validated through the `X-Callback-Secret` header. If unset, Fail2Ban UI generates one on first start. |
+| `CALLBACK_INSECURE_TLS` | Default `false`. When `true` (or `1`/`yes`/`on`), the `curl` command in the generated ban action skips TLS certificate verification (`-k`) for an `https://` callback URL. Only enable this if the UI uses a self-signed certificate that the managed hosts do not trust. |
+
+> **Upgrade note:** older releases always passed `-k` for `https://` callback URLs. TLS verification is now on by default because the callback carries the shared secret. If your UI runs with a self-signed certificate, either install the certificate on every managed host or set `CALLBACK_INSECURE_TLS=true`, otherwise ban callbacks will fail silently after upgrading. The regenerated action file is pushed to managed hosts automatically at startup.
 
 Example:
 
@@ -62,6 +65,12 @@ With a subpath:
 -e CALLBACK_URL=https://fail2ban.example.com/myf2b \
 -e CALLBACK_SECRET='replace-with-a-random-secret'
 ```
+
+### Reverse SSH tunnel for callbacks
+
+SSH-connected servers can enable **reverse tunnel for events** (server form). The UI then opens a reverse tunnel (`ssh -R <port>:localhost:<port>`) alongside the SSH control connection so callbacks reach the UI even when the managed host cannot connect to it directly (NAT, firewall). The port is derived from `CALLBACK_URL` (explicit port, otherwise 443/80 by scheme).
+
+The tunnel is only used if `CALLBACK_URL` points to `localhost`/`127.0.0.1` — the remote Fail2Ban sends its callbacks to that URL, which the tunnel forwards to the UI. With a public callback URL the callbacks bypass the tunnel; the UI logs a warning in that case. Note that a localhost callback URL applies globally, so mixing tunneled and non-tunneled remote servers is not possible.
 
 ## Privacy and telemetry controls
 
@@ -82,6 +91,19 @@ With a subpath:
 |----------|-------------|
 | `JAIL_AUTOMIGRATION=true` | Experimental migration from a monolithic `jail.local` to `jail.d/*.local`. On production systems, migrate manually instead. |
 
+## Global Fail2Ban defaults (UI-managed)
+
+Configure under **Settings → Global Settings**. These values are written to the `[DEFAULT]` section of the managed `jail.local` and pushed to every managed host:
+
+* `bantime`, `findtime`, `maxretry`, `ignoreip`, `banaction` / `banaction_allports`, firewall `chain`
+* Bantime increment escalation (optional, only emitted when set):
+  * `bantime.rndtime` — random jitter added to escalating bans
+  * `bantime.maxtime` — cap for escalating bans (e.g. `5w`)
+  * `bantime.factor` — escalation multiplier (Fail2Ban default: `1`)
+  * `bantime.overalljails` — count repeat offenses across all jails instead of per jail
+
+Duration fields accept plain seconds or Fail2Ban time suffixes (`3600`, `48h`, `5w`, `1d 12h`). `bantime` additionally accepts `-1` for permanent bans.
+
 ## Alert settings (UI-managed)
 
 Configure under **Settings → Alert Settings**:
@@ -90,6 +112,8 @@ Configure under **Settings → Alert Settings**:
 * Enable alerts for bans and/or unbans
 * Alert country filters
 * GeoIP provider and log-line limits
+
+> **Privacy note on the `builtin` GeoIP provider:** it resolves countries via the free ip-api.com service, which means every enriched (banned) IP address is sent to a third party — and the free tier only supports plain HTTP, so the queries travel unencrypted. For privacy-sensitive deployments use the MaxMind provider with a local GeoLite2 database instead.
 
 For provider behavior and payloads, see [alert-providers.md](alert-providers.md) and [webhooks.md](webhooks.md).
 
@@ -132,6 +156,14 @@ Common optional variables:
 | `OIDC_USERNAME_CLAIM` | `preferred_username` | Claim used as the display username |
 | `OIDC_SKIP_VERIFY` | `false` | Skips TLS verification toward the provider. Development only. |
 | `OIDC_SKIP_LOGINPAGE` | `false` | Skips the UI login page and redirects to the provider directly |
+
+OIDC role-based access control is optional. When no role variables are set, every authenticated OIDC user keeps the previous full-access behavior.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OIDC_ROLE_CLAIM` | `groups` | Claim containing roles/groups. Dot paths are supported, for example `realm_access.roles` for Keycloak. |
+| `OIDC_ADMIN_ROLES` | empty | Comma-separated OIDC role/group names that grant full admin access. |
+| `OIDC_SUPPORT_ROLES` | empty | Comma-separated OIDC role/group names that grant support access: dashboard/event reads plus manual ban/unban. |
 
 Provider notes:
 

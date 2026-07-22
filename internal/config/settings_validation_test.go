@@ -69,12 +69,11 @@ func TestValidateServerUniqueness(t *testing.T) {
 	})
 }
 
-func TestFail2banActionTemplateQuotesUnresolvedTags(t *testing.T) {
+func TestFail2banActionTemplateRobustness(t *testing.T) {
 	t.Parallel()
 
-	if strings.Contains(fail2banActionTemplate, "journalctl -r <journalmatch>") {
-		t.Fatal("journalmatch must not be used directly in shell syntax; unresolved tags are parsed as redirections")
-	}
+	// Unresolved fail2ban tags must never appear bare in shell position (they get
+	// parsed as redirections/filenames).
 	if strings.Contains(fail2banActionTemplate, "tac <logpath>") {
 		t.Fatal("logpath must not be used directly in shell syntax; unresolved tags are parsed as redirections")
 	}
@@ -82,13 +81,46 @@ func TestFail2banActionTemplateQuotesUnresolvedTags(t *testing.T) {
 		t.Fatal(`tac "$logpath" is quoted; globbed/multi-file logpaths will not expand and logs will be empty`)
 	}
 	for _, want := range []string{
-		"journalmatch='<journalmatch>'",
 		"logpath='<logpath>'",
-		`journalctl -r $journalmatch`,
 		`tac $logpath`,
+		"grep -a",
+		"LC_ALL=C tr -cd '\\11\\12\\15\\40-\\176'",
+		"jq -n",
+		"--arg logs",
+		"journalctl",
 	} {
 		if !strings.Contains(fail2banActionTemplate, want) {
 			t.Fatalf("action template missing %q", want)
+		}
+	}
+
+	// The identity fields must be present so a ban is reported even with no logs.
+	for _, want := range []string{"--arg ip '<ip>'", "--arg jail '<name>'"} {
+		if !strings.Contains(fail2banActionTemplate, want) {
+			t.Fatalf("action template missing identity field %q", want)
+		}
+	}
+}
+
+func TestFail2banActionConfigEscapesPercent(t *testing.T) {
+	t.Parallel()
+
+	content := BuildFail2banActionConfig("http://127.0.0.1:9999", "srv-test", "secret")
+	for i := 0; i < len(content); i++ {
+		if content[i] != '%' {
+			continue
+		}
+		if i+1 >= len(content) {
+			t.Fatalf("action config ends with a bare '%%' at offset %d", i)
+		}
+		switch content[i+1] {
+		case '%':
+			i++
+		case '(':
+
+		default:
+			t.Fatalf("action config contains bare '%%' followed by %q at offset %d: %q",
+				content[i+1], i, content[max(0, i-40):min(len(content), i+40)])
 		}
 	}
 }

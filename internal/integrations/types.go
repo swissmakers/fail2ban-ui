@@ -2,13 +2,17 @@ package integrations
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
-	"net"
+	"io"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 // =========================================================================
@@ -32,18 +36,10 @@ type Request struct {
 // Matches only alphanumeric characters, hyphens, underscores and dots
 var safeIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 
-// Validates that the string is a valid IPv4/IPv6 address or CIDR notation and contains no shell metacharacters
+// Validates that the string is a valid IPv4/IPv6 address or CIDR notation and contains no shell metacharacters.
+// Canonical implementation lives in shared (also used by the fail2ban connectors).
 func ValidateIP(ip string) error {
-	if ip == "" {
-		return fmt.Errorf("IP address is required")
-	}
-	if net.ParseIP(ip) != nil {
-		return nil
-	}
-	if _, _, err := net.ParseCIDR(ip); err == nil {
-		return nil
-	}
-	return fmt.Errorf("invalid IP address or CIDR: %q", ip)
+	return shared.ValidateIP(ip)
 }
 
 // Validates that an user-configured base URL is well-formed and uses an allowed scheme (http/https).
@@ -68,6 +64,31 @@ func ValidateOutboundURL(rawURL, label string) error {
 		return fmt.Errorf("%s must include a host", label)
 	}
 	return nil
+}
+
+// Caps how much of a firewall API response is read into memory, so a hostile or broken endpoint cannot exhaust memory.
+const maxIntegrationResponseBytes = 5 << 20 // 5 MiB
+
+// returns client for credential-bearing firewall API requests. Redirects are NOT followed, Go strips Authorization on cross-host
+// redirects but not custom headers (x-api-key), so following one would replay credentials to the redirect target.
+func integrationHTTPClient(timeout time.Duration, skipTLSVerify bool) *http.Client {
+	client := &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	if skipTLSVerify {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+	return client
+}
+
+// Reads at most maxIntegrationResponseBytes from a body.
+func readLimitedResponse(body io.Reader) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(body, maxIntegrationResponseBytes))
 }
 
 // Validates that a user-supplied name (address list, alias, etc.) contains only safe characters and cannot be used for injection attacks.

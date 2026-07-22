@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -14,31 +14,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package web
 
 import (
-	"log"
-	"sync/atomic"
+	"io"
+	"net/http"
+	"time"
 )
 
-// =========================================================================
-//  Debug Logging
-// =========================================================================
+const maxOutboundResponseBytes = 5 << 20
 
-var debugEnabled atomic.Bool
-
-func setDebugFlag(enabled bool) {
-	debugEnabled.Store(enabled)
+func newOutboundHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
-// Prints debug messages if debug mode is enabled.
-func DebugLog(format string, v ...interface{}) {
-	if !debugEnabled.Load() {
-		return
-	}
-	if len(v) > 0 {
-		log.Printf(format, v...)
-	} else {
-		log.Println(format)
-	}
+func readLimitedBody(body io.Reader) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(body, maxOutboundResponseBytes))
 }

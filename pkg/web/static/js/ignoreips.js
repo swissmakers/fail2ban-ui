@@ -23,7 +23,7 @@ function addIgnoreIPTag(ip) {
   const trimmedIP = ip.trim();
   if (typeof isValidIP === 'function' && !isValidIP(trimmedIP)) {
     if (typeof showToast === 'function') {
-      showToast('Invalid IP address, CIDR, or hostname: ' + trimmedIP, 'error');
+      showToast(t('settings.toast.invalid_ignore_ip', 'Invalid IP address, CIDR, or hostname') + ': ' + trimmedIP, 'error');
     }
     return;
   }

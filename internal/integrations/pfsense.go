@@ -2,10 +2,8 @@ package integrations
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -97,14 +95,7 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 	}
 	baseURL := strings.TrimSuffix(cfg.BaseURL, "/")
 
-	httpClient := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-	if cfg.SkipTLSVerify {
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
+	httpClient := integrationHTTPClient(10*time.Second, cfg.SkipTLSVerify)
 
 	// GET the alias by name
 	alias, err := p.getAliasByName(httpClient, baseURL, cfg.APIToken, cfg.Alias, req.Logger)
@@ -229,7 +220,7 @@ func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiTok
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, _ := readLimitedResponse(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
@@ -293,7 +284,7 @@ func (p *pfSenseIntegration) createAlias(client *http.Client, baseURL, apiToken 
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, _ := readLimitedResponse(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {
@@ -360,7 +351,7 @@ func (p *pfSenseIntegration) updateAlias(client *http.Client, baseURL, apiToken 
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, _ := readLimitedResponse(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {
@@ -400,7 +391,7 @@ func (p *pfSenseIntegration) applyFirewallChanges(client *http.Client, baseURL, 
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, _ := readLimitedResponse(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {

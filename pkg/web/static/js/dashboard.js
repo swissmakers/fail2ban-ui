@@ -88,16 +88,19 @@ function fetchSummaryData() {
     .then(function(data) {
       if (data && !data.error) {
         latestSummary = data;
+        latestSummaryServerId = data.serverId || currentServerId || null;
         latestSummaryError = null;
         jailLocalWarning = !!data.jailLocalWarning;
       } else {
         latestSummary = null;
+        latestSummaryServerId = null;
         latestSummaryError = formatApiError(data, 'dashboard.errors.summary_failed', 'Failed to load summary from server.');
         jailLocalWarning = false;
       }
     })
     .catch(function(err) {
       latestSummary = null;
+      latestSummaryServerId = null;
       latestSummaryError = err ? err.toString() : 'Unknown error';
       jailLocalWarning = false;
     });
@@ -179,7 +182,17 @@ function updateSearchLoadingCounter(delta) {
   setJailsSearchLoadingState(bannedSearchPendingCount > 0);
 }
 
+function summaryMatchesCurrentServer() {
+  if (!latestSummaryServerId || !currentServerId) {
+    return true;
+  }
+  return latestSummaryServerId === currentServerId;
+}
+
 function fetchJailBannedIPs(jailName, options) {
+  if (!summaryMatchesCurrentServer()) {
+    return Promise.resolve();
+  }
   options = options || {};
   var append = options.append === true;
   var searchToken = options.searchToken || null;
@@ -233,6 +246,9 @@ function fetchJailBannedIPs(jailName, options) {
 }
 
 function loadInitialJailBannedPages(summary) {
+  if (!summaryMatchesCurrentServer()) {
+    return;
+  }
   var jails = summary && Array.isArray(summary.jails) ? summary.jails : [];
   jails.forEach(function(jail) {
     var jailName = jail && jail.jailName ? String(jail.jailName) : '';
@@ -332,7 +348,7 @@ function fetchBanEventsData(options) {
 function banIP(jail, ip) {
   const confirmMsg = isLOTRModeActive
     ? 'Banish ' + ip + ' from the realm in ' + jail + '?'
-    : 'Block IP ' + ip + ' in jail ' + jail + '?';
+    : t('dashboard.ban.confirm', 'Block IP {ip} in jail {jail}?').replace('{ip}', ip).replace('{jail}', jail);
   if (!confirm(confirmMsg)) {
     return;
   }
@@ -346,16 +362,15 @@ function banIP(jail, ip) {
     .then(function(data) {
       showLoading(false);
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error blocking IP'), 'error');
+        showToast(formatApiError(data, 'dashboard.toast.block_error', 'Error blocking IP'), 'error');
         return;
       }
       showToast(t('dashboard.manual_block.success', 'IP blocked successfully'), 'success');
-      // Refresh the affected sections in the background
       refreshAfterManualAction(jail);
     })
     .catch(function(err) {
       showLoading(false);
-      showToast("Error: " + err, 'error');
+      showToast(t('common.error', 'Error') + ': ' + err, 'error');
     });
 }
 
@@ -399,14 +414,14 @@ function unbanIP(jail, ip) {
     .then(function(data) {
       showLoading(false);
       if (data.error) {
-        showToast(formatApiError(data, '', 'Error unbanning IP'), 'error');
+        showToast(formatApiError(data, 'dashboard.toast.unban_error', 'Error unbanning IP'), 'error');
         return;
       }
       refreshAfterManualAction(jail);
     })
     .catch(function(err) {
       showLoading(false);
-      showToast("Error: " + err, 'error');
+      showToast(t('common.error', 'Error') + ': ' + err, 'error');
     });
 }
 
@@ -704,9 +719,7 @@ function renderLogOverviewContent() {
   var totalStored = totalStoredBans();
   var todayCount = totalBansToday();
   var weekCount = totalBansWeek();
-  if (statsKeys.length === 0 && totalStored === 0) {
-    //html += '<p class="text-gray-500" data-i18n="logs.overview.empty">No ban events recorded yet.</p>';
-  } else {
+  if (statsKeys.length > 0 || totalStored > 0) {
     html += ''
       + '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">'
       + '  <div class="border border-gray-200 rounded-lg p-4 flex flex-col gap-4 bg-gray-50">'
@@ -1170,6 +1183,22 @@ function buildBanEventsQuery(offset, append) {
   return appPath('/api/events/bans?' + params.join('&'));
 }
 
+var DASHBOARD_REFRESH_MIN_INTERVAL_MS = 10000;
+var dashboardRefreshTimer = null;
+var lastDashboardRefreshAt = 0;
+
+function scheduleDashboardRefresh() {
+  if (dashboardRefreshTimer) {
+    return;
+  }
+  var elapsed = Date.now() - lastDashboardRefreshAt;
+  var delay = Math.max(DASHBOARD_REFRESH_MIN_INTERVAL_MS - elapsed, 0);
+  dashboardRefreshTimer = setTimeout(function() {
+    dashboardRefreshTimer = null;
+    refreshDashboardData();
+  }, delay);
+}
+
 // Helper function to add a new ban event from the WebSocket to the dashboard.
 function addBanEventFromWebSocket(event) {
   var hasSearch = (banEventsFilterText || '').trim().length > 0;
@@ -1177,7 +1206,7 @@ function addBanEventFromWebSocket(event) {
     if (typeof showBanEventToast === 'function') {
       showBanEventToast(event);
     }
-    refreshDashboardData();
+    scheduleDashboardRefresh();
     return;
   }
   var exists = false;
@@ -1200,7 +1229,7 @@ function addBanEventFromWebSocket(event) {
     if (typeof showBanEventToast === 'function') {
       showBanEventToast(event);
     }
-    refreshDashboardData();
+    scheduleDashboardRefresh();
   } else {
     console.log('Skipping duplicate event:', event);
   }
@@ -1208,6 +1237,7 @@ function addBanEventFromWebSocket(event) {
 
 // Helper function to refresh the dashboard data by fetching the summary and ban insights.
 function refreshDashboardData() {
+  lastDashboardRefreshAt = Date.now();
   var enabledServers = serversCache.filter(function(s) { return s.enabled; });
   var summaryPromise;
   if (serversCache.length && enabledServers.length && currentServerId) {

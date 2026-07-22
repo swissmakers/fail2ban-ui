@@ -2,19 +2,22 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the PolyForm Shield License 1.0.0.
+// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://polyformproject.org/licenses/shield/1.0.0/
+//     https://www.gnu.org/licenses/gpl-3.0.en.html
 //
-//     or in the LICENSE file in this repository.
-//
-// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -25,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 	"github.com/swissmakers/fail2ban-ui/pkg/web"
 )
@@ -36,11 +40,9 @@ import (
 func main() {
 	settings := config.GetSettings()
 
-	// Initialize base path
 	web.SetBasePathFromEnv()
 	auth.SetSessionCookiePath(web.CookiePath())
 
-	// Initialize storage
 	if err := storage.Init(""); err != nil {
 		log.Fatalf("Failed to initialise storage: %v", err)
 	}
@@ -55,6 +57,41 @@ func main() {
 		log.Fatalf("failed to initialise fail2ban connectors: %v", err)
 	}
 
+	// Sync remote SSH/agent runtime config, then reload so action/callback and jail.local changes become active
+	go func() {
+		synced, failed := fail2ban.GetManager().SyncRemoteStartupConfig(context.Background(), 30*time.Second)
+		if synced+failed > 0 {
+			log.Printf("startup remote config sync complete: %d succeeded, %d failed", synced, failed)
+		}
+	}()
+
+	// Prune ban events beyond the configured retention window once at startup and then daily
+	go func() {
+		pruneBanEvents := func() {
+			retentionDays := config.GetSettings().EventRetentionDays
+			if retentionDays <= 0 {
+				return
+			}
+			cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			deleted, err := storage.PruneBanEventsBefore(ctx, cutoff)
+			cancel()
+			if err != nil {
+				log.Printf("warning: failed to prune ban events older than %d days: %v", retentionDays, err)
+				return
+			}
+			if deleted > 0 {
+				log.Printf("Pruned %d ban events older than %d days", deleted, retentionDays)
+			}
+		}
+		pruneBanEvents()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			pruneBanEvents()
+		}
+	}()
+
 	// Initialize OIDC authentication
 	oidcConfig, err := config.GetOIDCConfigFromEnv()
 	if err != nil {
@@ -68,6 +105,8 @@ func main() {
 			log.Fatalf("failed to initialize OIDC: %v", err)
 		}
 		log.Println("OIDC authentication enabled")
+	} else {
+		log.Println("WARNING: OIDC authentication is DISABLED -> Run this way only in a trusted network or behind an authenticating reverse proxy (see docs/security.md).")
 	}
 
 	// Set Gin mode

@@ -68,9 +68,13 @@ type AppSettings struct {
 	BanactionAllports    string                `json:"banactionAllports"`
 	Chain                string                `json:"chain"`
 	BantimeRndtime       string                `json:"bantimeRndtime"`
+	BantimeMaxtime       string                `json:"bantimeMaxtime"`
+	BantimeFactor        string                `json:"bantimeFactor"`
+	BantimeOveralljails  bool                  `json:"bantimeOveralljails"`
 	GeoIPProvider        string                `json:"geoipProvider"`
 	GeoIPDatabasePath    string                `json:"geoipDatabasePath"`
 	MaxLogLines          int                   `json:"maxLogLines"`
+	EventRetentionDays   int                   `json:"eventRetentionDays"`
 	EmailAlertsForBans   bool                  `json:"emailAlertsForBans"`
 	EmailAlertsForUnbans bool                  `json:"emailAlertsForUnbans"`
 	AlertProvider        string                `json:"alertProvider"`
@@ -149,19 +153,23 @@ type ThreatIntelSettings struct {
 }
 
 type OIDCConfig struct {
-	Enabled       bool     `json:"enabled"`
-	Provider      string   `json:"provider"`
-	IssuerURL     string   `json:"issuerURL"`
-	ClientID      string   `json:"clientID"`
-	ClientSecret  string   `json:"clientSecret"`
-	RedirectURL   string   `json:"redirectURL"`
-	Scopes        []string `json:"scopes"`
-	SessionSecret string   `json:"sessionSecret"`
-	SessionMaxAge int      `json:"sessionMaxAge"`
-	SkipVerify    bool     `json:"skipVerify"`
-	UsernameClaim string   `json:"usernameClaim"`
-	LogoutURL     string   `json:"logoutURL"`
-	SkipLoginPage bool     `json:"skipLoginPage"`
+	Enabled              bool     `json:"enabled"`
+	Provider             string   `json:"provider"`
+	IssuerURL            string   `json:"issuerURL"`
+	ClientID             string   `json:"clientID"`
+	ClientSecret         string   `json:"clientSecret"`
+	RedirectURL          string   `json:"redirectURL"`
+	Scopes               []string `json:"scopes"`
+	SessionSecret        string   `json:"sessionSecret"`
+	SessionMaxAge        int      `json:"sessionMaxAge"`
+	SkipVerify           bool     `json:"skipVerify"`
+	UsernameClaim        string   `json:"usernameClaim"`
+	RoleClaim            string   `json:"roleClaim"`
+	AdminRoles           []string `json:"adminRoles"`
+	SupportRoles         []string `json:"supportRoles"`
+	AuthorizationEnabled bool     `json:"authorizationEnabled"`
+	LogoutURL            string   `json:"logoutURL"`
+	SkipLoginPage        bool     `json:"skipLoginPage"`
 }
 
 func defaultAdvancedActionsConfig() AdvancedActionsConfig {
@@ -225,15 +233,16 @@ norestored = 1
 actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban \
      -H "Content-Type: application/json" \
      -H "X-Callback-Secret: __CALLBACK_SECRET__" \
-     -d "$(journalmatch='<journalmatch>'; logpath='<logpath>'; jq -n --arg serverId '__SERVER_ID__' \
+     -d "$(logpath='<logpath>'; \
+           logs="$(tac $logpath 2>/dev/null | grep -a <grepopts> -wF '<ip>')"; \
+           [ -z "$logs" ] && logs="$(journalctl --no-pager -r -o cat --since '-1 day' 2>/dev/null | grep -a <grepopts> -wF '<ip>')"; \
+           logs="$(printf '%%s' "$logs" | LC_ALL=C tr -cd '\11\12\15\40-\176')"; \
+           jq -n --arg serverId '__SERVER_ID__' \
                  --arg ip '<ip>' \
                  --arg jail '<name>' \
                  --arg hostname '<fq-hostname>' \
                  --arg failures '<failures>' \
-                 --arg logs "$(if [ '<backend>' = 'systemd' ] && [ "$journalmatch" != '<journalmatch>' ] && [ -n "$journalmatch" ]; \
-                               then journalctl -r $journalmatch 2>/dev/null; \
-                               else tac $logpath 2>/dev/null; \
-                               fi | grep <grepopts> -wF <ip>)" \
+                 --arg logs "$logs" \
                  '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
 
 # Executes a cURL request to notify our API when an IP is unbanned.
@@ -253,10 +262,6 @@ name = default
 
 # Path to log files containing relevant lines for the abuser IP
 logpath = /dev/null
-
-# Default journal match -> empty for file backends so '<journalmatch>' always
-# resolves to a valid token; systemd-backed jails override this via their filter.
-journalmatch =
 
 # Number of log lines to include in the callback
 grepmax = 200
@@ -338,6 +343,7 @@ func migrateLegacySettings() error {
 	}
 	settingsLock.Lock()
 	currentSettings = legacy
+	setDebugFlag(currentSettings.Debug)
 	settingsLock.Unlock()
 	return nil
 }
@@ -380,6 +386,7 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.Language = rec.Language
 	currentSettings.Port = rec.Port
 	currentSettings.Debug = rec.Debug
+	setDebugFlag(rec.Debug)
 	currentSettings.CallbackURL = rec.CallbackURL
 	currentSettings.RestartNeeded = rec.RestartNeeded
 	currentSettings.BantimeIncrement = rec.BantimeIncrement
@@ -401,6 +408,9 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 		currentSettings.Chain = "INPUT"
 	}
 	currentSettings.BantimeRndtime = rec.BantimeRndtime
+	currentSettings.BantimeMaxtime = rec.BantimeMaxtime
+	currentSettings.BantimeFactor = rec.BantimeFactor
+	currentSettings.BantimeOveralljails = rec.BantimeOveralljails
 	currentSettings.SMTP = SMTPSettings{
 		Host:               rec.SMTPHost,
 		Port:               rec.SMTPPort,
@@ -432,6 +442,7 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.GeoIPProvider = rec.GeoIPProvider
 	currentSettings.GeoIPDatabasePath = rec.GeoIPDatabasePath
 	currentSettings.MaxLogLines = rec.MaxLogLines
+	currentSettings.EventRetentionDays = rec.EventRetentionDays
 	currentSettings.CallbackSecret = rec.CallbackSecret
 	currentSettings.EmailAlertsForBans = rec.EmailAlertsForBans
 	currentSettings.EmailAlertsForUnbans = rec.EmailAlertsForUnbans
@@ -478,25 +489,26 @@ func applyServerRecordsLocked(records []storage.ServerRecord) {
 			_ = json.Unmarshal([]byte(rec.TagsJSON), &tags)
 		}
 		server := Fail2banServer{
-			ID:            rec.ID,
-			Name:          rec.Name,
-			Type:          rec.Type,
-			Host:          rec.Host,
-			Port:          rec.Port,
-			SocketPath:    rec.SocketPath,
-			ConfigPath:    rec.ConfigPath,
-			SSHUser:       rec.SSHUser,
-			SSHKeyPath:    rec.SSHKeyPath,
-			AgentURL:      rec.AgentURL,
-			AgentSecret:   rec.AgentSecret,
-			Hostname:      rec.Hostname,
-			Tags:          tags,
-			IsDefault:     rec.IsDefault,
-			Enabled:       rec.Enabled,
-			RestartNeeded: rec.NeedsRestart,
-			CreatedAt:     rec.CreatedAt,
-			UpdatedAt:     rec.UpdatedAt,
-			EnabledSet:    true,
+			ID:                   rec.ID,
+			Name:                 rec.Name,
+			Type:                 rec.Type,
+			Host:                 rec.Host,
+			Port:                 rec.Port,
+			SocketPath:           rec.SocketPath,
+			ConfigPath:           rec.ConfigPath,
+			SSHUser:              rec.SSHUser,
+			SSHKeyPath:           rec.SSHKeyPath,
+			AgentURL:             rec.AgentURL,
+			AgentSecret:          rec.AgentSecret,
+			Hostname:             rec.Hostname,
+			Tags:                 tags,
+			IsDefault:            rec.IsDefault,
+			Enabled:              rec.Enabled,
+			ReverseTunnelEnabled: rec.ReverseTunnelEnabled,
+			RestartNeeded:        rec.NeedsRestart,
+			CreatedAt:            rec.CreatedAt,
+			UpdatedAt:            rec.UpdatedAt,
+			EnabledSet:           true,
 		}
 		servers = append(servers, server)
 	}
@@ -566,10 +578,14 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		BanactionAllports:      currentSettings.BanactionAllports,
 		Chain:                  currentSettings.Chain,
 		BantimeRndtime:         currentSettings.BantimeRndtime,
+		BantimeMaxtime:         currentSettings.BantimeMaxtime,
+		BantimeFactor:          currentSettings.BantimeFactor,
+		BantimeOveralljails:    currentSettings.BantimeOveralljails,
 		AdvancedActionsJSON:    string(advancedBytes),
 		GeoIPProvider:          currentSettings.GeoIPProvider,
 		GeoIPDatabasePath:      currentSettings.GeoIPDatabasePath,
 		MaxLogLines:            currentSettings.MaxLogLines,
+		EventRetentionDays:     currentSettings.EventRetentionDays,
 		AlertProvider:          alertProvider,
 		WebhookJSON:            string(webhookBytes),
 		ElasticsearchJSON:      string(esBytes),
@@ -598,24 +614,25 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 			updatedAt = createdAt
 		}
 		records = append(records, storage.ServerRecord{
-			ID:           srv.ID,
-			Name:         srv.Name,
-			Type:         srv.Type,
-			Host:         srv.Host,
-			Port:         srv.Port,
-			SocketPath:   srv.SocketPath,
-			ConfigPath:   srv.ConfigPath,
-			SSHUser:      srv.SSHUser,
-			SSHKeyPath:   srv.SSHKeyPath,
-			AgentURL:     srv.AgentURL,
-			AgentSecret:  srv.AgentSecret,
-			Hostname:     srv.Hostname,
-			TagsJSON:     string(tagBytes),
-			IsDefault:    srv.IsDefault,
-			Enabled:      srv.Enabled,
-			NeedsRestart: srv.RestartNeeded,
-			CreatedAt:    createdAt,
-			UpdatedAt:    updatedAt,
+			ID:                   srv.ID,
+			Name:                 srv.Name,
+			Type:                 srv.Type,
+			Host:                 srv.Host,
+			Port:                 srv.Port,
+			SocketPath:           srv.SocketPath,
+			ConfigPath:           srv.ConfigPath,
+			SSHUser:              srv.SSHUser,
+			SSHKeyPath:           srv.SSHKeyPath,
+			AgentURL:             srv.AgentURL,
+			AgentSecret:          srv.AgentSecret,
+			Hostname:             srv.Hostname,
+			TagsJSON:             string(tagBytes),
+			IsDefault:            srv.IsDefault,
+			Enabled:              srv.Enabled,
+			ReverseTunnelEnabled: srv.ReverseTunnelEnabled,
+			NeedsRestart:         srv.RestartNeeded,
+			CreatedAt:            createdAt,
+			UpdatedAt:            updatedAt,
 		})
 	}
 	return records, nil
@@ -628,6 +645,7 @@ func setDefaults() {
 }
 
 func setDefaultsLocked() {
+	setDebugFlag(currentSettings.Debug)
 	if currentSettings.Language == "" {
 		currentSettings.Language = "en"
 	}
@@ -683,11 +701,16 @@ func setDefaultsLocked() {
 	if currentSettings.SMTP.Port == 0 {
 		currentSettings.SMTP.Port = 587
 	}
-	if currentSettings.SMTP.Username == "" {
-		currentSettings.SMTP.Username = "noreply@swissmakers.ch"
-	}
-	if currentSettings.SMTP.Password == "" {
-		currentSettings.SMTP.Password = "password"
+	if currentSettings.SMTP.AuthMethod == "none" {
+		currentSettings.SMTP.Username = ""
+		currentSettings.SMTP.Password = ""
+	} else {
+		if currentSettings.SMTP.Username == "" {
+			currentSettings.SMTP.Username = "noreply@swissmakers.ch"
+		}
+		if currentSettings.SMTP.Password == "" {
+			currentSettings.SMTP.Password = "password"
+		}
 	}
 	if currentSettings.SMTP.From == "" {
 		currentSettings.SMTP.From = "noreply@swissmakers.ch"
@@ -782,6 +805,15 @@ func initializeFromJailFile() error {
 	}
 	if val, ok := settings["bantime.rndtime"]; ok && val != "" {
 		currentSettings.BantimeRndtime = val
+	}
+	if val, ok := settings["bantime.maxtime"]; ok && val != "" {
+		currentSettings.BantimeMaxtime = val
+	}
+	if val, ok := settings["bantime.factor"]; ok && val != "" {
+		currentSettings.BantimeFactor = val
+	}
+	if val, ok := settings["bantime.overalljails"]; ok && val != "" {
+		currentSettings.BantimeOveralljails = strings.EqualFold(val, "true")
 	}
 	return nil
 }
@@ -981,6 +1013,17 @@ chain = %s
 	if settings.BantimeRndtime != "" {
 		defaultSection += fmt.Sprintf("bantime.rndtime = %s\n", settings.BantimeRndtime)
 	}
+	// bantime.maxtime caps how large escalating bans may grow when
+	// bantime.increment is enabled. Only emitted when the operator sets it.
+	if settings.BantimeMaxtime != "" {
+		defaultSection += fmt.Sprintf("bantime.maxtime = %s\n", settings.BantimeMaxtime)
+	}
+	if settings.BantimeFactor != "" {
+		defaultSection += fmt.Sprintf("bantime.factor = %s\n", settings.BantimeFactor)
+	}
+	if settings.BantimeOveralljails {
+		defaultSection += "bantime.overalljails = true\n"
+	}
 	defaultSection += "\n"
 
 	actionMwlgConfig := `# Custom Fail2Ban action for UI callbacks
@@ -993,12 +1036,6 @@ action = %(action_mwlg)s
 `
 
 	return jailLocalBanner + defaultSection + actionMwlgConfig + actionOverride
-}
-
-// Ensures that the managed jail.local file is valid and exists. (used by all connectors)
-func EnsureJailLocalStructure(configPath string) error {
-	DebugLog("Running EnsureJailLocalStructure()")
-	return fail2ban.EnsureManagedJailLocal(configPath, []byte(BuildJailLocalContent()))
 }
 
 func cloneServer(src Fail2banServer) Fail2banServer {
@@ -1027,7 +1064,7 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 		}
 	}
 	curlInsecureFlag := ""
-	if strings.HasPrefix(strings.ToLower(trimmed), "https://") {
+	if strings.HasPrefix(strings.ToLower(trimmed), "https://") && callbackInsecureTLSEnabled() {
 		curlInsecureFlag = " -k"
 	}
 	config := strings.ReplaceAll(fail2banActionTemplate, actionCallbackPlaceholder, trimmed)
@@ -1233,16 +1270,6 @@ func clearDefaultLocked() {
 	}
 }
 
-/*func setServerRestartFlagLocked(serverID string, value bool) bool {
-	for idx := range currentSettings.Servers {
-		if currentSettings.Servers[idx].ID == serverID {
-			currentSettings.Servers[idx].RestartNeeded = value
-			return true
-		}
-	}
-	return false
-}*/
-
 func anyServerNeedsRestartLocked() bool {
 	for _, srv := range currentSettings.Servers {
 		if srv.RestartNeeded {
@@ -1335,6 +1362,15 @@ func GetCallbackURLFromEnv() (string, bool) {
 		return "", false
 	}
 	return strings.TrimRight(v, "/"), true
+}
+
+func callbackInsecureTLSEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CALLBACK_INSECURE_TLS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func GetBindAddressFromEnv() (string, bool) {
@@ -1433,6 +1469,13 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 	if config.UsernameClaim == "" {
 		config.UsernameClaim = "preferred_username"
 	}
+	config.RoleClaim = os.Getenv("OIDC_ROLE_CLAIM")
+	if config.RoleClaim == "" {
+		config.RoleClaim = "groups"
+	}
+	config.AdminRoles = shared.SplitCommaList(os.Getenv("OIDC_ADMIN_ROLES"))
+	config.SupportRoles = shared.SplitCommaList(os.Getenv("OIDC_SUPPORT_ROLES"))
+	config.AuthorizationEnabled = len(config.AdminRoles) > 0 || len(config.SupportRoles) > 0
 	config.LogoutURL = os.Getenv("OIDC_LOGOUT_URL")
 	return config, nil
 }
@@ -1443,51 +1486,6 @@ func GetSettings() AppSettings {
 	defer settingsLock.RUnlock()
 	return currentSettings
 }
-
-// =========================================================================
-//  Restart Tracking
-// =========================================================================
-
-// Marks the specified server as requiring a restart. -- currently not used
-/*func MarkRestartNeeded(serverID string) error {
-	settingsLock.Lock()
-	defer settingsLock.Unlock()
-
-	if serverID == "" {
-		return fmt.Errorf("server id must be provided")
-	}
-
-	if !setServerRestartFlagLocked(serverID, true) {
-		return fmt.Errorf("server %s not found", serverID)
-	}
-
-	updateGlobalRestartFlagLocked()
-	if err := persistServersLocked(); err != nil {
-		return err
-	}
-	return persistAppSettingsLocked()
-}
-
-// Marks the specified server as no longer requiring a restart.
-func MarkRestartDone(serverID string) error {
-	settingsLock.Lock()
-	defer settingsLock.Unlock()
-
-	if serverID == "" {
-		return fmt.Errorf("server id must be provided")
-	}
-
-	if !setServerRestartFlagLocked(serverID, false) {
-		return fmt.Errorf("server %s not found", serverID)
-	}
-
-	updateGlobalRestartFlagLocked()
-	if err := persistServersLocked(); err != nil {
-		return err
-	}
-	return persistAppSettingsLocked()
-}
-*/
 
 func UpdateSettings(new AppSettings) (AppSettings, error) {
 	settingsLock.Lock()

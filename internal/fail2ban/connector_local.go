@@ -89,6 +89,9 @@ func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 	if err := ValidateJailName(jail); err != nil {
 		return err
 	}
+	if err := ValidateIP(ip); err != nil {
+		return err
+	}
 	args := []string{"set", jail, "unbanip", ip}
 	if _, err := lc.runFail2banClient(ctx, args...); err != nil {
 		return fmt.Errorf("error unbanning IP %s from jail %s: %w", ip, jail, err)
@@ -99,6 +102,9 @@ func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 // Ban an IP in a given jail.
 func (lc *LocalConnector) BanIP(ctx context.Context, jail, ip string) error {
 	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	if err := ValidateIP(ip); err != nil {
 		return err
 	}
 	args := []string{"set", jail, "banip", ip}
@@ -114,15 +120,7 @@ func (lc *LocalConnector) Reload(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("fail2ban reload error: %w (output: %s)", err, strings.TrimSpace(out))
 	}
-	// Check if fail2ban-client returns "OK"
-	outputTrimmed := strings.TrimSpace(out)
-	if outputTrimmed != "OK" && outputTrimmed != "" {
-		debugf("fail2ban reload output: %s", out)
-		if strings.Contains(out, "Errors in jail") || strings.Contains(out, "Unable to read the filter") {
-			return fmt.Errorf("fail2ban reload completed but with errors (output: %s)", strings.TrimSpace(out))
-		}
-	}
-	return nil
+	return checkReloadOutput(out)
 }
 
 // Restart or reload the local Fail2ban instance; returns "restart" or "reload".

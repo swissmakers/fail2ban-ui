@@ -120,7 +120,7 @@ function showBanEventToast(event) {
 
   // Click on toast body scrolls to ban events table
   toast.addEventListener('click', function() {
-    var logSection = document.getElementById('logOverviewSection');
+    var logSection = document.getElementById('logOverview');
     if (logSection) {
       logSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -309,6 +309,9 @@ function updateRestartBanner() {
 }
 
 function showSection(sectionId) {
+  if ((sectionId === 'filterSection' || sectionId === 'settingsSection') && typeof hasAccess === 'function' && !hasAccess('admin')) {
+    sectionId = 'dashboardSection';
+  }
   // hide all sections
   document.getElementById('dashboardSection').classList.add('hidden');
   document.getElementById('filterSection').classList.add('hidden');

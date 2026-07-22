@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -172,7 +173,7 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 		client: client,
 	}
 	if err := conn.ensureCallbackConfig(context.Background()); err != nil {
-		fmt.Printf("warning: failed to configure agent callback for %s: %v\n", server.Name, err)
+		log.Printf("warning: failed to configure agent callback for %s: %v", server.Name, err)
 	}
 	return conn, nil
 }
@@ -255,11 +256,23 @@ func (ac *AgentConnector) GetBannedIPs(ctx context.Context, jail string) ([]stri
 }
 
 func (ac *AgentConnector) UnbanIP(ctx context.Context, jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	if err := ValidateIP(ip); err != nil {
+		return err
+	}
 	payload := map[string]string{"ip": ip}
 	return ac.post(ctx, fmt.Sprintf("/v1/jails/%s/unban", url.PathEscape(jail)), payload, nil)
 }
 
 func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	if err := ValidateIP(ip); err != nil {
+		return err
+	}
 	payload := map[string]string{"ip": ip}
 	return ac.post(ctx, fmt.Sprintf("/v1/jails/%s/ban", url.PathEscape(jail)), payload, nil)
 }

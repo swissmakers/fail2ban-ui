@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -80,38 +80,14 @@ func formatStorageTime(t time.Time) string {
 	return t.UTC().Format(storageTimeFormat)
 }
 
-func formatLegacyStorageTime(t time.Time) string {
-	return t.UTC().Format(legacyStorageTimeFormat)
-}
-
-func parseStorageTime(value string) (time.Time, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, errors.New("empty timestamp")
-	}
-	formats := []string{
-		storageTimeFormat,
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02 15:04:05.999999999 -0700 MST",
-		"2006-01-02 15:04:05 -0700 MST",
-		legacyStorageTimeFormat,
-		"2006-01-02 15:04:05",
-	}
-	for _, format := range formats {
-		if parsed, err := time.Parse(format, value); err == nil {
-			return parsed.UTC(), nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("unsupported timestamp format %q", value)
-}
-
+// All rows are RFC3339 (legacy formats are rewritten by migrateLegacyTimestamps),
+// so a plain string comparison is correct and keeps the occurred_at indexes usable.
 func addOccurredAtSinceFilter(query *string, args *[]any, since time.Time) {
 	if since.IsZero() {
 		return
 	}
-	*query += " AND (CAST(occurred_at AS TEXT) >= ? OR (instr(CAST(occurred_at AS TEXT), 'T') = 0 AND CAST(occurred_at AS TEXT) >= ?))"
-	*args = append(*args, formatStorageTime(since), formatLegacyStorageTime(since))
+	*query += " AND occurred_at >= ?"
+	*args = append(*args, formatStorageTime(since))
 }
 
 // =========================================================================
@@ -148,10 +124,14 @@ type AppSettingsRecord struct {
 	BanactionAllports      string
 	Chain                  string
 	BantimeRndtime         string
+	BantimeMaxtime         string
+	BantimeFactor          string
+	BantimeOveralljails    bool
 	AdvancedActionsJSON    string
 	GeoIPProvider          string
 	GeoIPDatabasePath      string
 	MaxLogLines            int
+	EventRetentionDays     int
 	AlertProvider          string
 	WebhookJSON            string
 	ElasticsearchJSON      string
@@ -159,39 +139,38 @@ type AppSettingsRecord struct {
 }
 
 type ServerRecord struct {
-	ID           string
-	Name         string
-	Type         string
-	Host         string
-	Port         int
-	SocketPath   string
-	ConfigPath   string
-	SSHUser      string
-	SSHKeyPath   string
-	AgentURL     string
-	AgentSecret  string
-	Hostname     string
-	TagsJSON     string
-	IsDefault    bool
-	Enabled      bool
-	NeedsRestart bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                   string
+	Name                 string
+	Type                 string
+	Host                 string
+	Port                 int
+	SocketPath           string
+	ConfigPath           string
+	SSHUser              string
+	SSHKeyPath           string
+	AgentURL             string
+	AgentSecret          string
+	Hostname             string
+	TagsJSON             string
+	IsDefault            bool
+	Enabled              bool
+	ReverseTunnelEnabled bool
+	NeedsRestart         bool
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type BanEventRecord struct {
-	ID         int64  `json:"id"`
-	ServerID   string `json:"serverId"`
-	ServerName string `json:"serverName"`
-	Jail       string `json:"jail"`
-	IP         string `json:"ip"`
-	Country    string `json:"country"`
-	Hostname   string `json:"hostname"`
-	Failures   string `json:"failures"`
-	Whois      string `json:"whois"`
-	Logs       string `json:"logs"`
-	// HasWhois/HasLogs let the list view show the whois/logs buttons without
-	// shipping the heavy text; the content is fetched on demand by id.
+	ID         int64     `json:"id"`
+	ServerID   string    `json:"serverId"`
+	ServerName string    `json:"serverName"`
+	Jail       string    `json:"jail"`
+	IP         string    `json:"ip"`
+	Country    string    `json:"country"`
+	Hostname   string    `json:"hostname"`
+	Failures   string    `json:"failures"`
+	Whois      string    `json:"whois"`
+	Logs       string    `json:"logs"`
 	HasWhois   bool      `json:"hasWhois"`
 	HasLogs    bool      `json:"hasLogs"`
 	EventType  string    `json:"eventType"`
@@ -245,9 +224,47 @@ func Init(dbPath string) error {
 			return
 		}
 
-		initErr = ensureSchema(context.Background())
+		restrictDatabasePermissions(dbPath)
+
+		if initErr = ensureSchema(context.Background()); initErr != nil {
+			return
+		}
+		initErr = migrateLegacyTimestamps(context.Background())
 	})
 	return initErr
+}
+
+// Rewrites legacy Go-default timestamps ("2006-01-02 15:04:05.999999999 +0000 UTC")
+// to RFC3339 so occurred_at / created_at compare correctly as strings and the
+// occurred_at indexes stay usable.
+func migrateLegacyTimestamps(ctx context.Context) error {
+	for _, column := range []string{"occurred_at", "created_at"} {
+		query := fmt.Sprintf(
+			`UPDATE ban_events SET %[1]s = replace(substr(%[1]s, 1, length(%[1]s)-10), ' ', 'T') || 'Z' WHERE %[1]s LIKE '%% +0000 UTC'`,
+			column,
+		)
+		res, err := db.ExecContext(ctx, query)
+		if err != nil {
+			return fmt.Errorf("failed to migrate legacy %s timestamps: %w", column, err)
+		}
+		if affected, err := res.RowsAffected(); err == nil && affected > 0 {
+			log.Printf("Migrated %d legacy %s timestamps to RFC3339", affected, column)
+		}
+	}
+	return nil
+}
+
+// chmods the database to 0600: as a tiny security hardening. Runs on every boot so
+// databases created 0644 by earlier versions are fixed too.
+func restrictDatabasePermissions(dbPath string) {
+	if dbPath == ":memory:" {
+		return
+	}
+	for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		if err := os.Chmod(p, 0o600); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to restrict permissions on %s: %v", p, err)
+		}
+	}
 }
 
 // Close the database.
@@ -265,18 +282,18 @@ func GetAppSettings(ctx context.Context) (AppSettingsRecord, bool, error) {
 	}
 
 	row := db.QueryRowContext(ctx, `
-SELECT language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output, smtp_insecure_skip_verify, smtp_auth_method, chain, bantime_rndtime, alert_provider, webhook, elasticsearch, threat_intel
+SELECT language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, event_retention_days, console_output, smtp_insecure_skip_verify, smtp_auth_method, chain, bantime_rndtime, bantime_maxtime, bantime_factor, bantime_overalljails, alert_provider, webhook, elasticsearch, threat_intel
 FROM app_settings
 WHERE id = 1`)
 
 	var (
-		lang, callback, callbackSecret, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, chain, bantimeRndtime, advancedActions, geoipProvider, geoipDatabasePath, smtpAuthMethod sql.NullString
-		alertProvider, webhookJSON, elasticsearchJSON, threatIntelJSON                                                                                                                                                                                 sql.NullString
-		port, smtpPort, maxretry, maxLogLines                                                                                                                                                                                                          sql.NullInt64
-		debug, restartNeeded, smtpTLS, bantimeInc, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans, consoleOutput, smtpInsecureSkipVerify                                                                                                      sql.NullInt64
+		lang, callback, callbackSecret, alerts, smtpHost, smtpUser, smtpPass, smtpFrom, ignoreIP, bantime, findtime, destemail, banaction, banactionAllports, chain, bantimeRndtime, bantimeMaxtime, bantimeFactor, advancedActions, geoipProvider, geoipDatabasePath, smtpAuthMethod sql.NullString
+		alertProvider, webhookJSON, elasticsearchJSON, threatIntelJSON                                                                                                                                                                                                                sql.NullString
+		port, smtpPort, maxretry, maxLogLines, eventRetentionDays                                                                                                                                                                                                                     sql.NullInt64
+		debug, restartNeeded, smtpTLS, bantimeInc, bantimeOveralljails, defaultJailEn, emailAlertsForBans, emailAlertsForUnbans, consoleOutput, smtpInsecureSkipVerify                                                                                                                sql.NullInt64
 	)
 
-	err := row.Scan(&lang, &port, &debug, &restartNeeded, &callback, &callbackSecret, &alerts, &emailAlertsForBans, &emailAlertsForUnbans, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines, &consoleOutput, &smtpInsecureSkipVerify, &smtpAuthMethod, &chain, &bantimeRndtime, &alertProvider, &webhookJSON, &elasticsearchJSON, &threatIntelJSON)
+	err := row.Scan(&lang, &port, &debug, &restartNeeded, &callback, &callbackSecret, &alerts, &emailAlertsForBans, &emailAlertsForUnbans, &smtpHost, &smtpPort, &smtpUser, &smtpPass, &smtpFrom, &smtpTLS, &bantimeInc, &defaultJailEn, &ignoreIP, &bantime, &findtime, &maxretry, &destemail, &banaction, &banactionAllports, &advancedActions, &geoipProvider, &geoipDatabasePath, &maxLogLines, &eventRetentionDays, &consoleOutput, &smtpInsecureSkipVerify, &smtpAuthMethod, &chain, &bantimeRndtime, &bantimeMaxtime, &bantimeFactor, &bantimeOveralljails, &alertProvider, &webhookJSON, &elasticsearchJSON, &threatIntelJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AppSettingsRecord{}, false, nil
 	}
@@ -313,10 +330,14 @@ WHERE id = 1`)
 		BanactionAllports:      stringFromNull(banactionAllports),
 		Chain:                  stringFromNull(chain),
 		BantimeRndtime:         stringFromNull(bantimeRndtime),
+		BantimeMaxtime:         stringFromNull(bantimeMaxtime),
+		BantimeFactor:          stringFromNull(bantimeFactor),
+		BantimeOveralljails:    intToBool(intFromNull(bantimeOveralljails)),
 		AdvancedActionsJSON:    stringFromNull(advancedActions),
 		GeoIPProvider:          stringFromNull(geoipProvider),
 		GeoIPDatabasePath:      stringFromNull(geoipDatabasePath),
 		MaxLogLines:            intFromNull(maxLogLines),
+		EventRetentionDays:     intFromNull(eventRetentionDays),
 		AlertProvider:          stringFromNull(alertProvider),
 		WebhookJSON:            stringFromNull(webhookJSON),
 		ElasticsearchJSON:      stringFromNull(elasticsearchJSON),
@@ -333,9 +354,9 @@ func SaveAppSettings(ctx context.Context, rec AppSettingsRecord) error {
 	}
 	_, err := db.ExecContext(ctx, `
 INSERT INTO app_settings (
-	id, language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, console_output, smtp_insecure_skip_verify, smtp_auth_method, chain, bantime_rndtime, alert_provider, webhook, elasticsearch, threat_intel
+	id, language, port, debug, restart_needed, callback_url, callback_secret, alert_countries, email_alerts_for_bans, email_alerts_for_unbans, smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, smtp_use_tls, bantime_increment, default_jail_enable, ignore_ip, bantime, findtime, maxretry, destemail, banaction, banaction_allports, advanced_actions, geoip_provider, geoip_database_path, max_log_lines, event_retention_days, console_output, smtp_insecure_skip_verify, smtp_auth_method, chain, bantime_rndtime, bantime_maxtime, bantime_factor, bantime_overalljails, alert_provider, webhook, elasticsearch, threat_intel
 ) VALUES (
-	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 ) ON CONFLICT(id) DO UPDATE SET
 	language = excluded.language,
 	port = excluded.port,
@@ -365,11 +386,15 @@ INSERT INTO app_settings (
 	geoip_provider = excluded.geoip_provider,
 	geoip_database_path = excluded.geoip_database_path,
 	max_log_lines = excluded.max_log_lines,
+	event_retention_days = excluded.event_retention_days,
 	console_output = excluded.console_output,
 	smtp_insecure_skip_verify = excluded.smtp_insecure_skip_verify,
 	smtp_auth_method = excluded.smtp_auth_method,
 	chain = excluded.chain,
 	bantime_rndtime = excluded.bantime_rndtime,
+	bantime_maxtime = excluded.bantime_maxtime,
+	bantime_factor = excluded.bantime_factor,
+	bantime_overalljails = excluded.bantime_overalljails,
 	alert_provider = excluded.alert_provider,
 	webhook = excluded.webhook,
 	elasticsearch = excluded.elasticsearch,
@@ -402,11 +427,15 @@ INSERT INTO app_settings (
 		rec.GeoIPProvider,
 		rec.GeoIPDatabasePath,
 		rec.MaxLogLines,
+		rec.EventRetentionDays,
 		boolToInt(rec.ConsoleOutput),
 		boolToInt(rec.SMTPInsecureSkipVerify),
 		rec.SMTPAuthMethod,
 		rec.Chain,
 		rec.BantimeRndtime,
+		rec.BantimeMaxtime,
+		rec.BantimeFactor,
+		boolToInt(rec.BantimeOveralljails),
 		rec.AlertProvider,
 		rec.WebhookJSON,
 		rec.ElasticsearchJSON,
@@ -424,7 +453,7 @@ func ListServers(ctx context.Context) ([]ServerRecord, error) {
 	}
 
 	rows, err := db.QueryContext(ctx, `
-SELECT id, name, type, host, port, socket_path, config_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
+SELECT id, name, type, host, port, socket_path, config_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, reverse_tunnel, needs_restart, created_at, updated_at
 FROM servers
 ORDER BY created_at`)
 	if err != nil {
@@ -439,7 +468,7 @@ ORDER BY created_at`)
 		var name, serverType sql.NullString
 		var created, updated sql.NullString
 		var port sql.NullInt64
-		var isDefault, enabled, needsRestart sql.NullInt64
+		var isDefault, enabled, reverseTunnel, needsRestart sql.NullInt64
 
 		if err := rows.Scan(
 			&rec.ID,
@@ -457,6 +486,7 @@ ORDER BY created_at`)
 			&tags,
 			&isDefault,
 			&enabled,
+			&reverseTunnel,
 			&needsRestart,
 			&created,
 			&updated,
@@ -478,6 +508,7 @@ ORDER BY created_at`)
 		rec.TagsJSON = stringFromNull(tags)
 		rec.IsDefault = intToBool(intFromNull(isDefault))
 		rec.Enabled = intToBool(intFromNull(enabled))
+		rec.ReverseTunnelEnabled = intToBool(intFromNull(reverseTunnel))
 		rec.NeedsRestart = intToBool(intFromNull(needsRestart))
 
 		if created.Valid {
@@ -518,9 +549,9 @@ func ReplaceServers(ctx context.Context, servers []ServerRecord) error {
 
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO servers (
-	id, name, type, host, port, socket_path, config_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, needs_restart, created_at, updated_at
+	id, name, type, host, port, socket_path, config_path, ssh_user, ssh_key_path, agent_url, agent_secret, hostname, tags, is_default, enabled, reverse_tunnel, needs_restart, created_at, updated_at
 ) VALUES (
-	?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )`)
 	if err != nil {
 		return err
@@ -552,6 +583,7 @@ INSERT INTO servers (
 			srv.TagsJSON,
 			boolToInt(srv.IsDefault),
 			boolToInt(srv.Enabled),
+			boolToInt(srv.ReverseTunnelEnabled),
 			boolToInt(srv.NeedsRestart),
 			createdAt.Format(time.RFC3339Nano),
 			updatedAt.Format(time.RFC3339Nano),
@@ -624,69 +656,6 @@ INSERT INTO ban_events (
 	}
 
 	return nil
-}
-
-// Returns ban events ordered by creation date descending.
-func ListBanEvents(ctx context.Context, serverID string, limit int, since time.Time) ([]BanEventRecord, error) {
-	if db == nil {
-		return nil, errors.New("storage not initialised")
-	}
-
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-
-	baseQuery := `
-SELECT id, server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
-FROM ban_events
-WHERE 1=1`
-
-	args := []any{}
-	if serverID != "" {
-		baseQuery += " AND server_id = ?"
-		args = append(args, serverID)
-	}
-	addOccurredAtSinceFilter(&baseQuery, &args, since)
-
-	baseQuery += " ORDER BY occurred_at DESC LIMIT ?"
-	args = append(args, limit)
-
-	rows, err := db.QueryContext(ctx, baseQuery, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var results []BanEventRecord
-	for rows.Next() {
-		var rec BanEventRecord
-		var eventType sql.NullString
-		if err := rows.Scan(
-			&rec.ID,
-			&rec.ServerID,
-			&rec.ServerName,
-			&rec.Jail,
-			&rec.IP,
-			&rec.Country,
-			&rec.Hostname,
-			&rec.Failures,
-			&rec.Whois,
-			&rec.Logs,
-			&eventType,
-			&rec.OccurredAt,
-			&rec.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		if eventType.Valid {
-			rec.EventType = eventType.String
-		} else {
-			rec.EventType = "ban"
-		}
-		results = append(results, rec)
-	}
-
-	return results, rows.Err()
 }
 
 const (
@@ -927,54 +896,40 @@ WHERE 1=1`
 	return total, nil
 }
 
-// CountRecentBanEventsByJail returns ban events for one server and jail since the provided timestamp.
-func CountRecentBanEventsByJail(ctx context.Context, serverID, jail string, since time.Time) (int, error) {
+// Returns per-jail ban-event counts for one server since the provided timestamp, in a single query.
+func CountRecentBanEventsByJail(ctx context.Context, serverID string, since time.Time) (map[string]int, error) {
 	if db == nil {
-		return 0, errors.New("storage not initialised")
+		return nil, errors.New("storage not initialised")
 	}
 	if serverID == "" {
-		return 0, errors.New("server id is required")
-	}
-	if jail == "" {
-		return 0, errors.New("jail is required")
+		return nil, errors.New("server id is required")
 	}
 
 	query := `
-SELECT occurred_at
+SELECT jail, COUNT(*)
 FROM ban_events
 WHERE server_id = ?
-  AND jail = ?
   AND (event_type = 'ban' OR event_type IS NULL)`
-	rows, err := db.QueryContext(ctx, query, serverID, jail)
+	args := []any{serverID}
+	addOccurredAtSinceFilter(&query, &args, since)
+	query += " GROUP BY jail"
+
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer rows.Close()
 
-	since = since.UTC()
-	var total int
+	counts := make(map[string]int)
 	for rows.Next() {
-		var rawOccurredAt string
-		if err := rows.Scan(&rawOccurredAt); err != nil {
-			return 0, err
+		var jail string
+		var count int
+		if err := rows.Scan(&jail, &count); err != nil {
+			return nil, err
 		}
-		if since.IsZero() {
-			total++
-			continue
-		}
-		occurredAt, err := parseStorageTime(rawOccurredAt)
-		if err != nil {
-			log.Printf("WARNING: skipping ban event with unparsable occurred_at %q for server %s jail %s: %v", rawOccurredAt, serverID, jail, err)
-			continue
-		}
-		if !occurredAt.Before(since) {
-			total++
-		}
+		counts[jail] = count
 	}
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
-	return total, nil
+	return counts, rows.Err()
 }
 
 // Returns total number of ban events for a specific IP and optional server.
@@ -1010,9 +965,13 @@ func CountBanEventsByCountry(ctx context.Context, since time.Time, serverID stri
 		return nil, errors.New("storage not initialised")
 	}
 
+	from := "FROM ban_events"
+	if !since.IsZero() {
+		from = "FROM ban_events INDEXED BY idx_ban_events_occurred_at_ip"
+	}
 	query := `
 SELECT COALESCE(country, '') AS country, COUNT(*)
-FROM ban_events
+` + from + `
 WHERE 1=1`
 	args := []any{}
 
@@ -1056,6 +1015,27 @@ func ClearBanEvents(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
+// Deletes ban event records older than the cutoff (event retention)
+func PruneBanEventsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	if db == nil {
+		return 0, errors.New("storage not initialised")
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM ban_events WHERE occurred_at < ?`, formatStorageTime(cutoff))
+	if err != nil {
+		return 0, err
+	}
+	deleted, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if deleted > 0 {
+		if _, err := db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			log.Printf("Warning: wal_checkpoint after ban-event prune failed: %v", err)
+		}
+	}
+	return deleted, nil
+}
+
 // =========================================================================
 //  Recurring IP Statistics
 // =========================================================================
@@ -1073,9 +1053,13 @@ func ListRecurringIPStats(ctx context.Context, since time.Time, minCount, limit 
 		limit = 100
 	}
 
+	from := "FROM ban_events"
+	if !since.IsZero() {
+		from = "FROM ban_events INDEXED BY idx_ban_events_occurred_at_ip"
+	}
 	query := `
 SELECT ip, COALESCE(country, '') AS country, COUNT(*) AS cnt, MAX(occurred_at) AS last_seen
-FROM ban_events
+` + from + `
 WHERE ip != '' AND (event_type = 'ban' OR event_type IS NULL)`
 	args := []any{}
 
@@ -1188,6 +1172,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 	geoip_provider TEXT,
 	geoip_database_path TEXT,
 	max_log_lines INTEGER,
+	event_retention_days INTEGER DEFAULT 180,
 	-- Console output settings
 	console_output INTEGER DEFAULT 0
 );
@@ -1208,6 +1193,7 @@ CREATE TABLE IF NOT EXISTS servers (
 	tags TEXT,
 	is_default INTEGER,
 	enabled INTEGER,
+	reverse_tunnel INTEGER DEFAULT 0,
 	needs_restart INTEGER DEFAULT 0,
 	created_at TEXT,
 	updated_at TEXT
@@ -1233,6 +1219,7 @@ CREATE INDEX IF NOT EXISTS idx_ban_events_server_id ON ban_events(server_id);
 CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_ban_events_ip ON ban_events(ip);
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_jail_occurred_at ON ban_events(server_id, jail, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at_ip ON ban_events(occurred_at, ip, country, event_type, server_id);
 
 CREATE TABLE IF NOT EXISTS permanent_blocks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1278,6 +1265,21 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 			return err
 		}
 	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_maxtime TEXT DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_factor TEXT DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_overalljails INTEGER DEFAULT 0`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN alert_provider TEXT DEFAULT 'email'`); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
@@ -1299,6 +1301,16 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 		}
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE servers ADD COLUMN config_path TEXT`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE servers ADD COLUMN reverse_tunnel INTEGER DEFAULT 0`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN event_retention_days INTEGER DEFAULT 180`); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}

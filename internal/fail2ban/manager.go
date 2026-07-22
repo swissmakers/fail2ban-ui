@@ -19,7 +19,9 @@ package fail2ban
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
@@ -195,7 +197,7 @@ func (m *Manager) UpdateActionFiles(ctx context.Context) error {
 	var lastErr error
 	for _, conn := range connectors {
 		if err := updateConnectorAction(ctx, conn); err != nil {
-			fmt.Printf("warning: failed to update action file for server %s: %v\n", conn.Server().Name, err)
+			log.Printf("warning: failed to update action file for server %s: %v", conn.Server().Name, err)
 			lastErr = err
 		}
 	}
@@ -222,6 +224,65 @@ func updateConnectorAction(ctx context.Context, conn Connector) error {
 	default:
 		return nil
 	}
+}
+
+// Pushes all runtime config needed by remote (SSH/agent) connectors, then reloads Fail2Ban so the daemon uses it immediately.
+// Is intended to run once at startup after the connector registry was rebuilt.
+func (m *Manager) SyncRemoteStartupConfig(ctx context.Context, perHostTimeout time.Duration) (synced int, failed int) {
+	m.mu.RLock()
+	connectors := make([]Connector, 0, len(m.connectors))
+	for _, conn := range m.connectors {
+		switch conn.Server().Type {
+		case "ssh", "agent":
+			connectors = append(connectors, conn)
+		}
+	}
+	m.mu.RUnlock()
+
+	if perHostTimeout <= 0 {
+		perHostTimeout = 30 * time.Second
+	}
+
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+	for _, conn := range connectors {
+		wg.Add(1)
+		go func(conn Connector) {
+			defer wg.Done()
+			server := conn.Server()
+
+			hostCtx, cancel := context.WithTimeout(ctx, perHostTimeout)
+			defer cancel()
+
+			ok := true
+			if err := updateConnectorAction(hostCtx, conn); err != nil {
+				log.Printf("warning: failed to update startup action config for %s: %v", server.Name, err)
+				ok = false
+			}
+			if err := conn.EnsureJailLocalStructure(hostCtx); err != nil {
+				log.Printf("warning: failed to ensure startup jail.local on %s: %v", server.Name, err)
+				ok = false
+			}
+			if err := conn.Reload(hostCtx); err != nil {
+				log.Printf("warning: failed to reload fail2ban on %s after startup config sync: %v", server.Name, err)
+				ok = false
+			} else {
+				log.Printf("reloaded fail2ban on %s (%s) after startup config sync", server.Name, server.ID)
+			}
+
+			mu.Lock()
+			if ok {
+				synced++
+			} else {
+				failed++
+			}
+			mu.Unlock()
+		}(conn)
+	}
+	wg.Wait()
+	return synced, failed
 }
 
 // =========================================================================

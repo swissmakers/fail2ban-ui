@@ -6,6 +6,7 @@ var serversCache = [];
 var currentServerId = null;
 var currentServer = null;
 var latestSummary = null;
+var latestSummaryServerId = null;
 var latestSummaryError = null;
 var latestBanStats = {};
 var latestBanEvents = [];

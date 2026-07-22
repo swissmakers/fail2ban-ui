@@ -2,11 +2,9 @@ package integrations
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -90,14 +88,7 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 		return fmt.Errorf("failed to encode OPNsense payload: %w", err)
 	}
 
-	httpClient := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-	if cfg.SkipTLSVerify {
-		httpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
+	httpClient := integrationHTTPClient(10*time.Second, cfg.SkipTLSVerify)
 
 	reqLogger := "OPNsense"
 	if req.Logger != nil {
@@ -124,7 +115,7 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 		return fmt.Errorf("OPNsense API request to %s failed: %w (check base URL, network connectivity, and API credentials)", apiURL, err)
 	}
 	defer resp.Body.Close()
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, _ := readLimitedResponse(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {

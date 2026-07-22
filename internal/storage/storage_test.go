@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -18,11 +18,27 @@ package storage
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestRestrictDatabasePermissions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	if err := os.WriteFile(dbPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restrictDatabasePermissions(dbPath)
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("db perm = %o, want 600", perm)
+	}
+}
 
 func initTestStorage(t *testing.T) {
 	t.Helper()
@@ -49,6 +65,42 @@ func initTestStorage(t *testing.T) {
 	})
 }
 
+func TestReplaceServersRoundTrip(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	want := ServerRecord{
+		ID:                   "srv-1",
+		Name:                 "Remote via SSH",
+		Type:                 "ssh",
+		Host:                 "203.0.113.10",
+		Port:                 22,
+		SSHUser:              "fail2ban",
+		SSHKeyPath:           "/config/.ssh/id_ed25519",
+		TagsJSON:             `["prod"]`,
+		IsDefault:            true,
+		Enabled:              true,
+		ReverseTunnelEnabled: true,
+		CreatedAt:            time.Date(2026, 5, 27, 14, 30, 0, 0, time.UTC),
+		UpdatedAt:            time.Date(2026, 5, 27, 15, 0, 0, 0, time.UTC),
+	}
+
+	if err := ReplaceServers(ctx, []ServerRecord{want}); err != nil {
+		t.Fatalf("ReplaceServers: %v", err)
+	}
+	records, err := ListServers(ctx)
+	if err != nil {
+		t.Fatalf("ListServers: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("len(records)=%d want 1", len(records))
+	}
+	got := records[0]
+	if got != want {
+		t.Fatalf("round trip mismatch:\n got %+v\nwant %+v", got, want)
+	}
+}
+
 func TestCountRecentBanEventsByJail(t *testing.T) {
 	initTestStorage(t)
 
@@ -69,12 +121,12 @@ func TestCountRecentBanEventsByJail(t *testing.T) {
 		}
 	}
 
-	got, err := CountRecentBanEventsByJail(ctx, "srv-1", "sshd", since)
+	got, err := CountRecentBanEventsByJail(ctx, "srv-1", since)
 	if err != nil {
 		t.Fatalf("CountRecentBanEventsByJail: %v", err)
 	}
-	if got != 1 {
-		t.Fatalf("recent ban count=%d want 1", got)
+	if got["sshd"] != 1 {
+		t.Fatalf("recent ban count=%d want 1", got["sshd"])
 	}
 }
 
@@ -103,12 +155,12 @@ func TestRecordBanEventUsesSortableStorageTime(t *testing.T) {
 		t.Fatalf("occurred_at=%q want %q", rawOccurredAt, want)
 	}
 
-	got, err := CountRecentBanEventsByJail(ctx, "srv-1", "sshd", occurredAt.Add(-time.Minute))
+	got, err := CountRecentBanEventsByJail(ctx, "srv-1", occurredAt.Add(-time.Minute))
 	if err != nil {
 		t.Fatalf("CountRecentBanEventsByJail: %v", err)
 	}
-	if got != 1 {
-		t.Fatalf("recent ban count=%d want 1", got)
+	if got["sshd"] != 1 {
+		t.Fatalf("recent ban count=%d want 1", got["sshd"])
 	}
 }
 
@@ -188,11 +240,10 @@ func TestListBanEventsFilteredOmitsHeavyFields(t *testing.T) {
 	}
 }
 
-func TestCountRecentBanEventsByJailSupportsLegacyTimestampText(t *testing.T) {
+func TestMigrateLegacyTimestampsNormalizesAndFilters(t *testing.T) {
 	initTestStorage(t)
 
 	ctx := context.Background()
-	since := time.Date(2026, 5, 27, 13, 30, 0, 0, time.UTC)
 	_, err := db.ExecContext(ctx, `
 INSERT INTO ban_events (server_id, server_name, jail, ip, event_type, occurred_at, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -208,11 +259,33 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		t.Fatalf("insert legacy event: %v", err)
 	}
 
-	got, err := CountRecentBanEventsByJail(ctx, "srv-1", "sshd", since)
+	if err := migrateLegacyTimestamps(ctx); err != nil {
+		t.Fatalf("migrateLegacyTimestamps: %v", err)
+	}
+
+	var occurredAt, createdAt string
+	if err := db.QueryRowContext(ctx, `SELECT occurred_at, created_at FROM ban_events WHERE server_id = 'srv-1'`).Scan(&occurredAt, &createdAt); err != nil {
+		t.Fatalf("select migrated row: %v", err)
+	}
+	want := "2026-05-27T14:27:38.369492374Z"
+	if occurredAt != want || createdAt != want {
+		t.Fatalf("migrated timestamps = %q / %q, want %q", occurredAt, createdAt, want)
+	}
+
+	// The migrated row must now be found by the plain since filter.
+	since := time.Date(2026, 5, 27, 13, 30, 0, 0, time.UTC)
+	got, err := CountRecentBanEventsByJail(ctx, "srv-1", since)
 	if err != nil {
 		t.Fatalf("CountRecentBanEventsByJail: %v", err)
 	}
-	if got != 1 {
-		t.Fatalf("recent ban count=%d want 1", got)
+	if got["sshd"] != 1 {
+		t.Fatalf("recent ban count=%d want 1", got["sshd"])
+	}
+	got, err = CountRecentBanEventsByJail(ctx, "srv-1", since.Add(2*time.Hour))
+	if err != nil {
+		t.Fatalf("CountRecentBanEventsByJail: %v", err)
+	}
+	if got["sshd"] != 0 {
+		t.Fatalf("recent ban count=%d want 0 for later since", got["sshd"])
 	}
 }

@@ -1,6 +1,6 @@
 // Fail2ban UI - A Swiss made, management interface for Fail2ban.
 //
-// Copyright (C) 2025 Swissmakers GmbH (https://swissmakers.ch)
+// Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
 // Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -34,11 +35,13 @@ import (
 // =========================================================================
 
 type Session struct {
-	UserID    string    `json:"userID"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Username  string    `json:"username"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	UserID      string    `json:"userID"`
+	Email       string    `json:"email"`
+	Name        string    `json:"name"`
+	Username    string    `json:"username"`
+	Roles       []string  `json:"roles,omitempty"`
+	AccessLevel string    `json:"accessLevel,omitempty"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 const (
@@ -82,7 +85,8 @@ func InitializeSessionSecret(secret string) error {
 		if len(secret) < sessionKeyLength {
 			return fmt.Errorf("session secret must be at least %d bytes", sessionKeyLength)
 		}
-		sessionSecret = []byte(secret[:sessionKeyLength])
+		sum := sha256.Sum256([]byte(secret))
+		sessionSecret = sum[:]
 	} else {
 		if len(decoded) < sessionKeyLength {
 			return fmt.Errorf("decoded session secret must be at least %d bytes", sessionKeyLength)
@@ -96,11 +100,13 @@ func InitializeSessionSecret(secret string) error {
 // Creates a session cookie with the user info.
 func CreateSession(w http.ResponseWriter, r *http.Request, userInfo *UserInfo, maxAge int) error {
 	session := &Session{
-		UserID:    userInfo.ID,
-		Email:     userInfo.Email,
-		Name:      userInfo.Name,
-		Username:  userInfo.Username,
-		ExpiresAt: time.Now().Add(time.Duration(maxAge) * time.Second),
+		UserID:      userInfo.ID,
+		Email:       userInfo.Email,
+		Name:        userInfo.Name,
+		Username:    userInfo.Username,
+		Roles:       userInfo.Roles,
+		AccessLevel: userInfo.AccessLevel,
+		ExpiresAt:   time.Now().Add(time.Duration(maxAge) * time.Second),
 	}
 
 	sessionData, err := json.Marshal(session)

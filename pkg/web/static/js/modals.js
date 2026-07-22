@@ -75,7 +75,7 @@ function ensureBanEventDetail(event) {
 // Whois modal
 function openWhoisModal(eventIndex) {
   if (!latestBanEvents || !latestBanEvents[eventIndex]) {
-    showToast("Event not found", 'error');
+    showToast(t('modal.toast.event_not_found', 'Event not found'), 'error');
     return;
   }
   var event = latestBanEvents[eventIndex];
@@ -87,14 +87,14 @@ function openWhoisModal(eventIndex) {
     .then(function() {
       if (!event.whois || !event.whois.trim()) {
         closeModal('whoisModal');
-        showToast("No whois data available for this event", 'info');
+        showToast(t('modal.toast.no_whois', 'No whois data available for this event'), 'info');
         return;
       }
       contentEl.textContent = event.whois;
     })
     .catch(function(err) {
       closeModal('whoisModal');
-      showToast("Error loading whois data: " + err, 'error');
+      showToast(t('modal.toast.whois_error', 'Error loading whois data') + ': ' + err, 'error');
     });
 }
 
@@ -133,7 +133,7 @@ function renderLogsModalContent(event) {
 // Logs modal
 function openLogsModal(eventIndex) {
   if (!latestBanEvents || !latestBanEvents[eventIndex]) {
-    showToast("Event not found", 'error');
+    showToast(t('modal.toast.event_not_found', 'Event not found'), 'error');
     return;
   }
   var event = latestBanEvents[eventIndex];
@@ -146,14 +146,14 @@ function openLogsModal(eventIndex) {
     .then(function() {
       if (!event.logs || !event.logs.trim()) {
         closeModal('logsModal');
-        showToast("No logs data available for this event", 'info');
+        showToast(t('modal.toast.no_logs', 'No logs data available for this event'), 'info');
         return;
       }
       renderLogsModalContent(event);
     })
     .catch(function(err) {
       closeModal('logsModal');
-      showToast("Error loading logs data: " + err, 'error');
+      showToast(t('modal.toast.logs_error', 'Error loading logs data') + ': ' + err, 'error');
     });
 }
 
@@ -356,7 +356,7 @@ function openManageJailsModal() {
     .then(res => res.json())
     .then(data => {
       if (!data.jails || !data.jails.length) {
-        showToast("No jails found for this server.", 'info');
+        showToast(t('modal.toast.no_jails', 'No jails found for this server.'), 'info');
         return;
       }
 
@@ -419,7 +419,7 @@ function openManageJailsModal() {
 
       openModal('manageJailsModal');
     })
-    .catch(err => showToast("Error fetching jails: " + err, 'error'))
+    .catch(err => showToast(t('modal.toast.fetch_jails_error', 'Error fetching jails') + ': ' + err, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -497,7 +497,7 @@ function openJailConfigModal(jailName) {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
-        showToast("Error loading config: " + data.error, 'error');
+        showToast(t('modal.toast.load_config_error', 'Error loading config') + ': ' + data.error, 'error');
         return;
       }
       filterTextArea.value = data.filter || '';
@@ -529,6 +529,7 @@ function openJailConfigModal(jailName) {
         localServerHint.classList.add('hidden');
       }
 
+      jailTextArea.removeEventListener('input', updateLogpathButtonVisibility);
       jailTextArea.addEventListener('input', updateLogpathButtonVisibility);
 
       preventExtensionInterference(filterTextArea);
@@ -541,7 +542,7 @@ function openJailConfigModal(jailName) {
       }, 200);
     })
     .catch(function(err) {
-      showToast("Error: " + err, 'error');
+      showToast(t('common.error', 'Error') + ': ' + err, 'error');
     })
     .finally(function() {
       showLoading(false);

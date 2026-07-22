@@ -18,9 +18,11 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -107,14 +109,14 @@ func (h *Hub) BroadcastConsoleLog(message string) {
 	}
 	data, err := json.Marshal(logMsg)
 	if err != nil {
-		log.Printf("Error marshaling console log: %v", err)
+		fmt.Fprintf(os.Stderr, "Error marshaling console log: %v\n", err)
 		return
 	}
 
 	select {
 	case h.broadcast <- data:
 	default:
-		log.Printf("Broadcast channel full, dropping console log")
+		fmt.Fprintln(os.Stderr, "Broadcast channel full, dropping console log")
 	}
 }
 

@@ -17,33 +17,13 @@
 package fail2ban
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
-
-// Returns the filter configuration using the default connector.
-func GetFilterConfig(jail string) (string, string, error) {
-	conn, err := GetManager().DefaultConnector()
-	if err != nil {
-		return "", "", err
-	}
-	return conn.GetFilterConfig(context.Background(), jail)
-}
-
-// Writes the filter configuration using the default connector.
-func SetFilterConfig(jail, newContent string) error {
-	conn, err := GetManager().DefaultConnector()
-	if err != nil {
-		return err
-	}
-	return conn.SetFilterConfig(context.Background(), jail, newContent)
-}
 
 func ensureFilterLocalFile(filterName, configPath string) error {
 	filterName = strings.TrimSpace(filterName)
@@ -159,9 +139,12 @@ func ValidateFilterName(name string) error {
 		return fmt.Errorf("filter name cannot be empty")
 	}
 
-	invalidChars := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
-	if invalidChars.MatchString(name) {
+	if invalidNameChars.MatchString(name) {
 		return fmt.Errorf("filter name '%s' contains invalid characters. Only alphanumeric characters, dashes, and underscores are allowed", name)
+	}
+
+	if name[0] == '-' {
+		return fmt.Errorf("filter name '%s' must not start with a dash", name)
 	}
 
 	return nil
