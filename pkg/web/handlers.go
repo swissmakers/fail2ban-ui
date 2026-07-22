@@ -2,15 +2,17 @@
 //
 // Copyright (C) 2026 Swissmakers GmbH (https://swissmakers.ch)
 //
-// Licensed under the PolyForm Shield License 1.0.0.
+// Licensed under the GNU General Public License, Version 3 (GPL-3.0)
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     https://polyformproject.org/licenses/shield/1.0.0/
+//     https://www.gnu.org/licenses/gpl-3.0.en.html
 //
-//     or in the LICENSE file in this repository.
-//
-// Required Notice: Copyright Swissmakers GmbH (https://swissmakers.ch)
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package web
 
@@ -35,6 +37,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,132 +99,6 @@ type settingsUpdateResponse struct {
 	Warnings      []string `json:"warnings,omitempty"`
 }
 
-type settingsPatchRequest struct {
-	Language             *string                       `json:"language"`
-	Port                 *int                          `json:"port"`
-	Debug                *bool                         `json:"debug"`
-	AlertCountries       *[]string                     `json:"alertCountries"`
-	SMTP                 *config.SMTPSettings          `json:"smtp"`
-	CallbackURL          *string                       `json:"callbackUrl"`
-	CallbackSecret       *string                       `json:"callbackSecret"`
-	AdvancedActions      *config.AdvancedActionsConfig `json:"advancedActions"`
-	Servers              *[]config.Fail2banServer      `json:"servers"`
-	BantimeIncrement     *bool                         `json:"bantimeIncrement"`
-	DefaultJailEnable    *bool                         `json:"defaultJailEnable"`
-	IgnoreIPs            *[]string                     `json:"ignoreips"`
-	Bantime              *string                       `json:"bantime"`
-	Findtime             *string                       `json:"findtime"`
-	Maxretry             *int                          `json:"maxretry"`
-	Destemail            *string                       `json:"destemail"`
-	Banaction            *string                       `json:"banaction"`
-	BanactionAllports    *string                       `json:"banactionAllports"`
-	Chain                *string                       `json:"chain"`
-	BantimeRndtime       *string                       `json:"bantimeRndtime"`
-	GeoIPProvider        *string                       `json:"geoipProvider"`
-	GeoIPDatabasePath    *string                       `json:"geoipDatabasePath"`
-	MaxLogLines          *int                          `json:"maxLogLines"`
-	EmailAlertsForBans   *bool                         `json:"emailAlertsForBans"`
-	EmailAlertsForUnbans *bool                         `json:"emailAlertsForUnbans"`
-	AlertProvider        *string                       `json:"alertProvider"`
-	Webhook              *config.WebhookSettings       `json:"webhook"`
-	Elasticsearch        *config.ElasticsearchSettings `json:"elasticsearch"`
-	ThreatIntel          *config.ThreatIntelSettings   `json:"threatIntel"`
-	ConsoleOutput        *bool                         `json:"consoleOutput"`
-}
-
-func (p settingsPatchRequest) applyTo(base *config.AppSettings) {
-	if p.Language != nil {
-		base.Language = *p.Language
-	}
-	if p.Port != nil {
-		base.Port = *p.Port
-	}
-	if p.Debug != nil {
-		base.Debug = *p.Debug
-	}
-	if p.AlertCountries != nil {
-		base.AlertCountries = *p.AlertCountries
-	}
-	if p.SMTP != nil {
-		base.SMTP = *p.SMTP
-	}
-	if p.CallbackURL != nil {
-		base.CallbackURL = *p.CallbackURL
-	}
-	if p.CallbackSecret != nil {
-		base.CallbackSecret = *p.CallbackSecret
-	}
-	if p.AdvancedActions != nil {
-		base.AdvancedActions = *p.AdvancedActions
-	}
-	if p.Servers != nil {
-		base.Servers = *p.Servers
-	}
-	if p.BantimeIncrement != nil {
-		base.BantimeIncrement = *p.BantimeIncrement
-	}
-	if p.DefaultJailEnable != nil {
-		base.DefaultJailEnable = *p.DefaultJailEnable
-	}
-	if p.IgnoreIPs != nil {
-		base.IgnoreIPs = *p.IgnoreIPs
-	}
-	if p.Bantime != nil {
-		base.Bantime = *p.Bantime
-	}
-	if p.Findtime != nil {
-		base.Findtime = *p.Findtime
-	}
-	if p.Maxretry != nil {
-		base.Maxretry = *p.Maxretry
-	}
-	if p.Destemail != nil {
-		base.Destemail = *p.Destemail
-	}
-	if p.Banaction != nil {
-		base.Banaction = *p.Banaction
-	}
-	if p.BanactionAllports != nil {
-		base.BanactionAllports = *p.BanactionAllports
-	}
-	if p.Chain != nil {
-		base.Chain = *p.Chain
-	}
-	if p.BantimeRndtime != nil {
-		base.BantimeRndtime = *p.BantimeRndtime
-	}
-	if p.GeoIPProvider != nil {
-		base.GeoIPProvider = *p.GeoIPProvider
-	}
-	if p.GeoIPDatabasePath != nil {
-		base.GeoIPDatabasePath = *p.GeoIPDatabasePath
-	}
-	if p.MaxLogLines != nil {
-		base.MaxLogLines = *p.MaxLogLines
-	}
-	if p.EmailAlertsForBans != nil {
-		base.EmailAlertsForBans = *p.EmailAlertsForBans
-	}
-	if p.EmailAlertsForUnbans != nil {
-		base.EmailAlertsForUnbans = *p.EmailAlertsForUnbans
-	}
-	if p.AlertProvider != nil {
-		base.AlertProvider = *p.AlertProvider
-	}
-	if p.Webhook != nil {
-		base.Webhook = *p.Webhook
-	}
-	if p.Elasticsearch != nil {
-		base.Elasticsearch = *p.Elasticsearch
-	}
-	if p.ThreatIntel != nil {
-		base.ThreatIntel = *p.ThreatIntel
-	}
-	if p.ConsoleOutput != nil {
-		base.ConsoleOutput = *p.ConsoleOutput
-	}
-}
-
 type threatIntelCacheEntry struct {
 	Body      []byte
 	CachedAt  time.Time
@@ -251,6 +128,27 @@ var (
 	threatIntelCache = make(map[string]threatIntelCacheEntry)
 	threatIntelRetry = make(map[string]time.Time)
 )
+
+const maxThreatIntelEntries = 1000
+
+func pruneThreatIntelCachesLocked(now time.Time) {
+	for k, entry := range threatIntelCache {
+		if now.After(entry.ExpiresAt) {
+			delete(threatIntelCache, k)
+		}
+	}
+	for k, retryUntil := range threatIntelRetry {
+		if now.After(retryUntil) {
+			delete(threatIntelRetry, k)
+		}
+	}
+	if len(threatIntelCache) > maxThreatIntelEntries {
+		threatIntelCache = make(map[string]threatIntelCacheEntry)
+	}
+	if len(threatIntelRetry) > maxThreatIntelEntries {
+		threatIntelRetry = make(map[string]time.Time)
+	}
+}
 
 // =========================================================================
 //  Request Helpers
@@ -330,13 +228,12 @@ func SummaryHandler(c *gin.Context) {
 	}
 	serverID := conn.Server().ID
 	since := time.Now().UTC().Add(-1 * time.Hour)
+	recentCounts, countErr := storage.CountRecentBanEventsByJail(c.Request.Context(), serverID, since)
+	if countErr != nil {
+		config.DebugLog("Warning: failed to count recent bans for server %s: %v", serverID, countErr)
+	}
 	for i := range jailInfos {
-		count, countErr := storage.CountRecentBanEventsByJail(c.Request.Context(), serverID, jailInfos[i].JailName, since)
-		if countErr != nil {
-			config.DebugLog("Warning: failed to count recent bans for server %s jail %s: %v", serverID, jailInfos[i].JailName, countErr)
-		} else {
-			jailInfos[i].NewInLastHour = count
-		}
+		jailInfos[i].NewInLastHour = recentCounts[jailInfos[i].JailName]
 		// Summary should only expose counters; banned IPs are loaded lazily via /api/jails/:jail/banned.
 		jailInfos[i].BannedIPs = []string{}
 	}
@@ -360,6 +257,82 @@ func SummaryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// Searches all servers and jails for a live ban of the given IP via
+// fail2ban-client, unlike the dashboard which only searches stored ban events.
+func SearchBannedIPHandler(c *gin.Context) {
+	ip := c.Param("ip")
+	if err := integrations.ValidateIP(ip); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid IP: " + err.Error()})
+		return
+	}
+
+	type jailMatch struct {
+		ServerID   string `json:"serverId"`
+		ServerName string `json:"serverName"`
+		Jail       string `json:"jail"`
+	}
+	type serverError struct {
+		ServerID   string `json:"serverId"`
+		ServerName string `json:"serverName"`
+		Error      string `json:"error"`
+	}
+
+	var (
+		mu      sync.Mutex
+		matches []jailMatch
+		errs    []serverError
+		wg      sync.WaitGroup
+	)
+
+	for _, conn := range fail2ban.GetManager().Connectors() {
+		wg.Add(1)
+		go func(conn fail2ban.Connector) {
+			defer wg.Done()
+			server := conn.Server()
+
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+			defer cancel()
+
+			infos, err := conn.GetJailInfos(ctx)
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, serverError{ServerID: server.ID, ServerName: server.Name, Error: err.Error()})
+				mu.Unlock()
+				return
+			}
+			for _, info := range infos {
+				if info.TotalBanned == 0 {
+					continue
+				}
+				banned, err := conn.GetBannedIPs(ctx, info.JailName)
+				if err != nil {
+					continue
+				}
+				if slices.Contains(banned, ip) {
+					mu.Lock()
+					matches = append(matches, jailMatch{ServerID: server.ID, ServerName: server.Name, Jail: info.JailName})
+					mu.Unlock()
+				}
+			}
+		}(conn)
+	}
+	wg.Wait()
+
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].ServerName != matches[j].ServerName {
+			return matches[i].ServerName < matches[j].ServerName
+		}
+		return matches[i].Jail < matches[j].Jail
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"ip":      ip,
+		"banned":  len(matches) > 0,
+		"matches": matches,
+		"errors":  errs,
+	})
 }
 
 // Returns paginated banned IPs for a specific jail on the selected server.
@@ -913,7 +886,7 @@ func ThreatIntelHandler(c *gin.Context) {
 		req.Header.Set("Key", strings.TrimSpace(settings.ThreatIntel.AbuseIPDBAPIKey))
 	}
 
-	client := &http.Client{Timeout: 12 * time.Second}
+	client := newOutboundHTTPClient(12 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to query threat-intel provider"})
@@ -921,7 +894,7 @@ func ThreatIntelHandler(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimitedBody(resp.Body)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read threat-intel provider response"})
 		return
@@ -947,6 +920,7 @@ func ThreatIntelHandler(c *gin.Context) {
 
 	if resp.StatusCode == http.StatusOK {
 		threatIntelMu.Lock()
+		pruneThreatIntelCachesLocked(now)
 		threatIntelCache[cacheKey] = threatIntelCacheEntry{
 			Body:      append([]byte(nil), responseBody...),
 			CachedAt:  now,
@@ -959,6 +933,7 @@ func ThreatIntelHandler(c *gin.Context) {
 	if resp.StatusCode == http.StatusTooManyRequests {
 		retryUntil = now.Add(parseRetryAfter(resp.Header.Get("Retry-After"), 2*time.Minute))
 		threatIntelMu.Lock()
+		pruneThreatIntelCachesLocked(now)
 		threatIntelRetry[cacheKey] = retryUntil
 		cached, hasCached = threatIntelCache[cacheKey]
 		threatIntelMu.Unlock()
@@ -1013,7 +988,7 @@ func parseRetryAfter(value string, fallback time.Duration) time.Duration {
 // Returns all configured Fail2ban servers.
 func ListServersHandler(c *gin.Context) {
 	servers := config.ListServers()
-	c.JSON(http.StatusOK, gin.H{"servers": servers})
+	c.JSON(http.StatusOK, gin.H{"servers": maskServerSecrets(servers)})
 }
 
 // Creates or updates a Fail2ban server configuration.
@@ -1022,6 +997,10 @@ func UpsertServerHandler(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
 		return
+	}
+
+	if existing, ok := config.GetServerByID(req.ID); ok {
+		req.AgentSecret = restoreSecret(req.AgentSecret, existing.AgentSecret)
 	}
 
 	switch strings.ToLower(req.Type) {
@@ -1132,7 +1111,7 @@ func UpsertServerHandler(c *gin.Context) {
 		}
 	}
 
-	resp := gin.H{"server": server}
+	resp := gin.H{"server": maskServer(server)}
 	if jailLocalWarning {
 		resp["jailLocalWarning"] = true
 	}
@@ -1179,7 +1158,7 @@ func SetDefaultServerHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"server": server})
+	c.JSON(http.StatusOK, gin.H{"server": maskServer(server)})
 }
 
 // Returns available SSH private keys from the host or container.
@@ -1311,15 +1290,10 @@ func waitForConnectorReady(ctx context.Context, conn fail2ban.Connector, attempt
 //  Notification Processing (Internal)
 // =========================================================================
 
-// Records a ban event, broadcasts it via WebSocket,
-// evaluates advanced actions, and sends an email alert if enabled.
-func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
-	// Loads the settings to get alert countries and GeoIP provider from the database
-	settings := config.GetSettings()
-	var whoisData string
-	var err error
-	if whois == "" {
+func resolveWhoisAndCountry(ip, providedWhois, providedCountry string, settings config.AppSettings) (whoisData, country string) {
+	if providedWhois == "" {
 		log.Printf("Performing whois lookup for IP %s", ip)
+		var err error
 		whoisData, err = lookupWhois(ip)
 		if err != nil {
 			log.Printf("⚠️ Whois lookup failed for IP %s: %v", ip, err)
@@ -1327,27 +1301,30 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		}
 	} else {
 		log.Printf("Using provided whois data for IP %s", ip)
-		whoisData = whois
+		whoisData = providedWhois
 	}
 
-	// Filters the logs for the email alert to show relevant lines
-	filteredLogs := filterRelevantLogs(logs, ip, settings.MaxLogLines)
-
-	// Looks up the country for the given IP using the configured GeoIP provider
-	country, err := lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
-	if err != nil {
-		log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
-		if whoisData != "" {
-			country = extractCountryFromWhois(whoisData)
-			if country != "" {
-				log.Printf("Extracted country %s from whois data for IP %s", country, ip)
+	country = providedCountry
+	if country == "" {
+		var err error
+		country, err = lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
+		if err != nil {
+			log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
+			if whoisData != "" {
+				country = extractCountryFromWhois(whoisData)
+				if country != "" {
+					log.Printf("Extracted country %s from whois data for IP %s", country, ip)
+				}
 			}
 		}
-		if country == "" {
-			country = ""
-		}
 	}
+	return whoisData, country
+}
 
+func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
+	settings := config.GetSettings()
+	whoisData, country := resolveWhoisAndCountry(ip, whois, "", settings)
+	filteredLogs := filterRelevantLogs(logs, ip, settings.MaxLogLines)
 	event := storage.BanEventRecord{
 		ServerID:   server.ID,
 		ServerName: server.Name,
@@ -1395,35 +1372,7 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string) error {
 	// Loads the settings to get alert countries and GeoIP provider from the database
 	settings := config.GetSettings()
-	var whoisData string
-	var err error
-	if whois == "" {
-		log.Printf("Performing whois lookup for IP %s", ip)
-		whoisData, err = lookupWhois(ip)
-		if err != nil {
-			log.Printf("⚠️ Whois lookup failed for IP %s: %v", ip, err)
-			whoisData = ""
-		}
-	} else {
-		log.Printf("Using provided whois data for IP %s", ip)
-		whoisData = whois
-	}
-	if country == "" {
-		country, err = lookupCountry(ip, settings.GeoIPProvider, settings.GeoIPDatabasePath)
-		if err != nil {
-			log.Printf("⚠️ GeoIP lookup failed for IP %s: %v", ip, err)
-			if whoisData != "" {
-				country = extractCountryFromWhois(whoisData)
-				if country != "" {
-					log.Printf("Extracted country %s from whois data for IP %s", country, ip)
-				}
-			}
-			if country == "" {
-				country = ""
-			}
-		}
-	}
-
+	whoisData, country := resolveWhoisAndCountry(ip, whois, country, settings)
 	event := storage.BanEventRecord{
 		ServerID:   server.ID,
 		ServerName: server.Name,
@@ -1534,7 +1483,7 @@ func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, coun
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newOutboundHTTPClient(15 * time.Second)
 	if cfg.SkipTLSVerify {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -1548,7 +1497,7 @@ func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, coun
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readLimitedBody(resp.Body)
 		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -1617,7 +1566,7 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 		req.SetBasicAuth(cfg.Username, cfg.Password)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newOutboundHTTPClient(15 * time.Second)
 	if cfg.SkipTLSVerify {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -1631,7 +1580,7 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readLimitedBody(resp.Body)
 		return fmt.Errorf("elasticsearch returned status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -1695,6 +1644,30 @@ func lookupCountry(ip, provider, dbPath string) (string, error) {
 	}
 }
 
+var (
+	geoIPMu   sync.Mutex
+	geoIPDB   *maxminddb.Reader
+	geoIPPath string
+)
+
+func getGeoIPReader(dbPath string) (*maxminddb.Reader, error) {
+	geoIPMu.Lock()
+	defer geoIPMu.Unlock()
+	if geoIPDB != nil && geoIPPath == dbPath {
+		return geoIPDB, nil
+	}
+	db, err := maxminddb.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if geoIPDB != nil {
+		geoIPDB.Close()
+	}
+	geoIPDB = db
+	geoIPPath = dbPath
+	return db, nil
+}
+
 // Looks up the country ISO code using MaxMind GeoLite2 database.
 func lookupCountryMaxMind(ip, dbPath string) (string, error) {
 	parsedIP := net.ParseIP(ip)
@@ -1702,11 +1675,10 @@ func lookupCountryMaxMind(ip, dbPath string) (string, error) {
 		return "", fmt.Errorf("invalid IP address: %s", ip)
 	}
 
-	db, err := maxminddb.Open(dbPath)
+	db, err := getGeoIPReader(dbPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open GeoIP database at %s: %w", dbPath, err)
 	}
-	defer db.Close()
 
 	var record struct {
 		Country struct {
@@ -1813,21 +1785,13 @@ func filterRelevantLogs(logs, ip string, maxLines int) string {
 			index: i,
 		}
 	}
-	for i := 0; i < len(scored)-1; i++ {
-		for j := i + 1; j < len(scored); j++ {
-			if scored[i].score < scored[j].score {
-				scored[i], scored[j] = scored[j], scored[i]
-			}
-		}
-	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
 	selected := scored[:maxLines]
-	for i := 0; i < len(selected)-1; i++ {
-		for j := i + 1; j < len(selected); j++ {
-			if selected[i].index > selected[j].index {
-				selected[i], selected[j] = selected[j], selected[i]
-			}
-		}
-	}
+	sort.SliceStable(selected, func(i, j int) bool {
+		return selected[i].index < selected[j].index
+	})
 	result := make([]string, len(selected))
 	for i, s := range selected {
 		result[i] = s.line
@@ -2504,6 +2468,8 @@ func splitLogpaths(raw string) []string {
 	return out
 }
 
+var jailErrorPattern = regexp.MustCompile(`Errors in jail '([^']+)'`)
+
 // Extracts problematic jail names from Fail2ban reload output.
 func parseJailErrorsFromReloadOutput(output string) []string {
 	var problematicJails []string
@@ -2511,14 +2477,11 @@ func parseJailErrorsFromReloadOutput(output string) []string {
 
 	for _, line := range lines {
 		if strings.Contains(line, "Errors in jail") && strings.Contains(line, "Skipping") {
-			re := regexp.MustCompile(`Errors in jail '([^']+)'`)
-			matches := re.FindStringSubmatch(line)
+			matches := jailErrorPattern.FindStringSubmatch(line)
 			if len(matches) > 1 {
 				problematicJails = append(problematicJails, matches[1])
 			}
 		}
-		// Also checks for filter errors that might indicate jail problems
-		_ = strings.Contains(line, "Unable to read the filter")
 	}
 
 	seen := make(map[string]bool)
@@ -2784,7 +2747,16 @@ func CreateJailHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' created successfully", req.JailName)})
+	// The new jail file is on disk but inactive until fail2ban re-reads its config.
+	if err := conn.Reload(c.Request.Context()); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": fmt.Sprintf("Jail '%s' created, but fail2ban reload reported a problem", req.JailName),
+			"warning": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' created and applied successfully", req.JailName)})
 }
 
 // Removes a jail and its config file.
@@ -2814,7 +2786,16 @@ func DeleteJailHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' deleted successfully", jailName)})
+	// Reload so the removed jail is actually stopped on the daemon.
+	if err := conn.Reload(c.Request.Context()); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": fmt.Sprintf("Jail '%s' deleted, but fail2ban reload reported a problem", jailName),
+			"warning": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' deleted and applied successfully", jailName)})
 }
 
 // =========================================================================
@@ -2831,7 +2812,7 @@ func GetSettingsHandler(c *gin.Context) {
 	envCallbackURL, envCallbackURLSet := config.GetCallbackURLFromEnv()
 
 	response := appSettingsResponse{
-		AppSettings:        s,
+		AppSettings:        maskAppSettingsSecrets(s),
 		PortFromEnv:        envPort,
 		PortEnvSet:         envPortSet,
 		CallbackUrlEnvSet:  envCallbackURLSet,
@@ -2859,7 +2840,45 @@ func applyEnvLockedSettings(req *config.AppSettings) {
 	}
 }
 
+var fail2banDurationPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?( ?[0-9]*[smhdwy][a-z]*)*$`)
+var fail2banNumberPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+
+func validateFail2banDurationField(name, value string) error {
+	if value == "" {
+		return nil
+	}
+	if !fail2banDurationPattern.MatchString(value) {
+		return fmt.Errorf("%s has an invalid time format: %q (examples: 3600, 48h, 5w)", name, value)
+	}
+	return nil
+}
+
 func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
+	req.Bantime = strings.ToLower(strings.TrimSpace(req.Bantime))
+	req.Findtime = strings.ToLower(strings.TrimSpace(req.Findtime))
+	req.BantimeRndtime = strings.ToLower(strings.TrimSpace(req.BantimeRndtime))
+	req.BantimeMaxtime = strings.ToLower(strings.TrimSpace(req.BantimeMaxtime))
+	req.BantimeFactor = strings.TrimSpace(req.BantimeFactor)
+	bantimeMagnitude := strings.TrimPrefix(req.Bantime, "-")
+	if req.Bantime != "" && bantimeMagnitude == "" {
+		return fmt.Errorf("bantime has an invalid time format: %q (examples: 3600, 48h, -1)", req.Bantime)
+	}
+	if err := validateFail2banDurationField("bantime", bantimeMagnitude); err != nil {
+		return err
+	}
+	for name, value := range map[string]string{
+		"findtime":        req.Findtime,
+		"bantime.rndtime": req.BantimeRndtime,
+		"bantime.maxtime": req.BantimeMaxtime,
+	} {
+		if err := validateFail2banDurationField(name, value); err != nil {
+			return err
+		}
+	}
+	if req.BantimeFactor != "" && !fail2banNumberPattern.MatchString(req.BantimeFactor) {
+		return fmt.Errorf("bantime.factor must be a number, got %q", req.BantimeFactor)
+	}
+
 	req.AlertProvider = strings.ToLower(strings.TrimSpace(req.AlertProvider))
 	if req.AlertProvider == "" {
 		req.AlertProvider = "email"
@@ -2926,6 +2945,7 @@ func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
 
 func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	applyEnvLockedSettings(&req)
+	restoreMaskedSecrets(&req, config.GetSettings())
 	if err := normalizeAndValidateSettingsRequest(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -3033,25 +3053,6 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 		Message:       "Settings updated",
 		RestartNeeded: newSettings.RestartNeeded,
 	})
-}
-
-// Partially updates settings while preserving omitted fields. (not just yet implemented in the frontend)
-func PatchSettingsHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("PatchSettingsHandler called (handlers.go)")
-
-	current := config.GetSettings()
-	req := current
-	var patch settingsPatchRequest
-	if err := c.ShouldBindJSON(&patch); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "invalid JSON",
-			"details": err.Error(),
-		})
-		return
-	}
-	patch.applyTo(&req)
-	applySettingsUpdate(c, req)
 }
 
 // Saves new settings, pushes defaults to servers, and reloads.
@@ -3204,7 +3205,16 @@ func CreateFilterHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' created successfully", req.FilterName)})
+	// Reload so a jail referencing this filter can pick it up immediately.
+	if err := conn.Reload(c.Request.Context()); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": fmt.Sprintf("Filter '%s' created, but fail2ban reload reported a problem", req.FilterName),
+			"warning": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' created and applied successfully", req.FilterName)})
 }
 
 // Removes a filter definition file.
@@ -3234,7 +3244,16 @@ func DeleteFilterHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' deleted successfully", filterName)})
+	// Reload so fail2ban notices the removal (and reports if a jail still needs it).
+	if err := conn.Reload(c.Request.Context()); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": fmt.Sprintf("Filter '%s' deleted, but fail2ban reload reported a problem", filterName),
+			"warning": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' deleted and applied successfully", filterName)})
 }
 
 // =========================================================================
@@ -3246,24 +3265,10 @@ func RestartFail2banHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
 	config.DebugLog("RestartFail2banHandler called (handlers.go)")
 
-	serverID := c.Query("serverId")
-	var conn fail2ban.Connector
-	var err error
-
-	if serverID != "" {
-		manager := fail2ban.GetManager()
-		conn, err = manager.Connector(serverID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Server not found: " + err.Error()})
-			return
-		}
-	} else {
-		// Uses the default connector from the context
-		conn, err = resolveConnector(c)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	server := conn.Server()
@@ -3275,11 +3280,6 @@ func RestartFail2banHandler(c *gin.Context) {
 		return
 	}
 
-	// Only calls MarkRestartDone if the service was successfully restarted
-	//if err := config.MarkRestartDone(server.ID); err != nil {
-	//	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-	//	return
-	//}
 	msg := "Fail2ban service restarted successfully"
 	if mode == "reload" {
 		msg = "Fail2ban configuration reloaded successfully (no systemd service restart)"
@@ -3287,7 +3287,7 @@ func RestartFail2banHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": msg,
 		"mode":    mode,
-		"server":  server,
+		"server":  maskServer(server),
 	})
 }
 
@@ -4158,7 +4158,30 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 //  Auth Handlers
 // =========================================================================
 
-// Initiates the OIDC login flow or renders the login page.
+func redirectToOIDCProvider(c *gin.Context, oidcClient *auth.OIDCClient) {
+	stateBytes := make([]byte, 32)
+	if _, err := rand.Read(stateBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state parameter"})
+		return
+	}
+	state := base64.URLEncoding.EncodeToString(stateBytes)
+	isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+
+	// Stores the state in a session cookie for validation
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    state,
+		Path:     CookiePath(),
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
+
+	c.Redirect(http.StatusFound, oidcClient.GetAuthURL(state))
+}
+
 func LoginHandler(c *gin.Context) {
 	oidcClient := auth.GetOIDCClient()
 	if oidcClient == nil {
@@ -4166,64 +4189,10 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 	oidcConfig := auth.GetConfig()
-	if oidcConfig != nil && oidcConfig.SkipLoginPage {
-		stateBytes := make([]byte, 32)
-		if _, err := rand.Read(stateBytes); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state parameter"})
-			return
-		}
-		state := base64.URLEncoding.EncodeToString(stateBytes)
+	skipLoginPage := oidcConfig != nil && oidcConfig.SkipLoginPage
 
-		// Determine if we're using HTTPS (if not, the state cookie is not secure)
-		isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
-
-		// Stores the state in a session cookie for validation
-		stateCookie := &http.Cookie{
-			Name:     "oidc_state",
-			Value:    state,
-			Path:     CookiePath(),
-			MaxAge:   600,
-			HttpOnly: true,
-			Secure:   isSecure,
-			SameSite: http.SameSiteLaxMode,
-		}
-		http.SetCookie(c.Writer, stateCookie)
-		config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
-
-		// Gets the authorization URL and redirects to it
-		authURL := oidcClient.GetAuthURL(state)
-		c.Redirect(http.StatusFound, authURL)
-		return
-	}
-
-	// Checks if this is a redirect action (triggered by clicking the login button)
-	if c.Query("action") == "redirect" {
-		stateBytes := make([]byte, 32)
-		if _, err := rand.Read(stateBytes); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate state parameter"})
-			return
-		}
-		state := base64.URLEncoding.EncodeToString(stateBytes)
-
-		// Determines if we're using HTTPS (if not, the state cookie is not secure)
-		isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
-
-		// Stores the state in a session cookie for validation
-		stateCookie := &http.Cookie{
-			Name:     "oidc_state",
-			Value:    state,
-			Path:     CookiePath(),
-			MaxAge:   600,
-			HttpOnly: true,
-			Secure:   isSecure,
-			SameSite: http.SameSiteLaxMode,
-		}
-		http.SetCookie(c.Writer, stateCookie)
-		config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
-
-		// Get authorization URL and redirect
-		authURL := oidcClient.GetAuthURL(state)
-		c.Redirect(http.StatusFound, authURL)
+	if skipLoginPage || c.Query("action") == "redirect" {
+		redirectToOIDCProvider(c, oidcClient)
 		return
 	}
 	renderIndexPage(c)
@@ -4295,7 +4264,6 @@ func CallbackHandler(c *gin.Context) {
 // Clears the session and redirects to the OIDC provider logout.
 func LogoutHandler(c *gin.Context) {
 	oidcClient := auth.GetOIDCClient()
-	// Clears the session
 	auth.DeleteSession(c.Writer, c.Request)
 	// If a provider logout URL is configured, redirects there
 	// Otherwise, auto-constructs the logout URL for standard OIDC providers
