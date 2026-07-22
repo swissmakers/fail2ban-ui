@@ -49,6 +49,26 @@ type SSHConnector struct {
 	pathCached   bool
 	pathMutex    sync.RWMutex
 	tunnelPort   int
+
+	// Reverse tunnel heartbeat lifecycle
+	tunnelCtx    context.Context
+	tunnelCancel context.CancelFunc
+	tunnelWg     sync.WaitGroup
+	tunnelCmd    *exec.Cmd
+	tunnelCmdMu  sync.Mutex
+}
+
+// Tunnel heartbeat constants
+const (
+	tunnelHeartbeatInterval = 30 * time.Second
+	tunnelProbeTimeout      = 10 * time.Second
+)
+
+const tunnelControlPathPrefix = "/tmp/ssh_control_"
+
+// Returns the ControlMaster socket path for this server.
+func (sc *SSHConnector) getControlPath() string {
+	return fmt.Sprintf("%s%s_%s", tunnelControlPathPrefix, sc.server.ID, strings.ReplaceAll(sc.server.Host, ".", "_"))
 }
 
 const sshEnsureActionScript = `python3 - <<'PY'
@@ -112,6 +132,14 @@ func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
 	if err := conn.ensureAction(ctx); err != nil {
 		debugf("warning: failed to ensure remote fail2ban action for %s during startup (server may not be ready): %v", server.Name, err)
 	}
+
+	// Start reverse tunnel heartbeat goroutine if tunnel is enabled.
+	// Periodically checks the SSH control master and re-establishes the
+	// persistent -R tunnel if it drops (NAT timeout, network blip, reboot).
+	if server.ReverseTunnelEnabled && conn.tunnelPort > 0 {
+		conn.startTunnelHeartbeat()
+	}
+
 	return conn, nil
 }
 
@@ -372,6 +400,193 @@ func extractMissingToolsWarning(output string) string {
 }
 
 // =========================================================================
+//  Reverse Tunnel Heartbeat
+// =========================================================================
+
+// Starts a background goroutine that periodically checks the reverse tunnel
+// health and re-establishes it if it has dropped (NAT timeout, network blip,
+// remote reboot, etc.). Only called when ReverseTunnelEnabled is true and a
+// tunnelPort was successfully derived.
+func (sc *SSHConnector) startTunnelHeartbeat() {
+	sc.tunnelCtx, sc.tunnelCancel = context.WithCancel(context.Background())
+
+	sc.tunnelWg.Add(1)
+	go func() {
+		defer sc.tunnelWg.Done()
+
+		// Initial establishment — runs synchronously so the connector
+		// doesn't return with a dead tunnel on the very first call.
+		sc.ensureTunnelAlive(sc.tunnelCtx)
+
+		ticker := time.NewTicker(tunnelHeartbeatInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-sc.tunnelCtx.Done():
+				return
+			case <-ticker.C:
+				sc.ensureTunnelAlive(sc.tunnelCtx)
+			}
+		}
+	}()
+}
+
+// Stops the reverse tunnel heartbeat goroutine and kills the persistent
+// tunnel SSH process. Called by Manager on connector replacement.
+func (sc *SSHConnector) Shutdown() {
+	if sc.tunnelCancel != nil {
+		sc.tunnelCancel()
+	}
+	sc.tunnelWg.Wait()
+
+	sc.tunnelCmdMu.Lock()
+	if sc.tunnelCmd != nil && sc.tunnelCmd.Process != nil {
+		_ = syscall.Kill(-sc.tunnelCmd.Process.Pid, syscall.SIGTERM)
+		sc.tunnelCmd = nil
+	}
+	sc.tunnelCmdMu.Unlock()
+
+	// Clean up the stale control socket if present.
+	if cp := sc.getControlPath(); cp != "" {
+		_ = os.Remove(cp)
+	}
+}
+
+// Checks whether the reverse tunnel is functional and re-establishes it
+// if not. Safe to call concurrently.
+func (sc *SSHConnector) ensureTunnelAlive(ctx context.Context) {
+	controlPath := sc.getControlPath()
+
+	// Quick check: does the control socket exist?
+	if _, err := os.Stat(controlPath); err == nil {
+		// Socket exists — run a lightweight command to verify it's live.
+		probeCtx, cancel := context.WithTimeout(ctx, tunnelProbeTimeout)
+		_, cmdErr := sc.runRemoteCommand(probeCtx, []string{"true"})
+		cancel()
+		if cmdErr == nil {
+			return // tunnel is alive
+		}
+		debugf("Tunnel health check failed for server %s (control socket exists but probe failed): %v — re-establishing",
+			sc.server.Name, cmdErr)
+		// Socket might be stale from a dead master — remove it.
+		_ = os.Remove(controlPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		debugf("Could not stat control socket %s for server %s: %v", controlPath, sc.server.Name, err)
+	}
+
+	// Re-establish the tunnel.
+	if err := sc.establishTunnel(ctx); err != nil {
+		debugf("Failed to re-establish reverse tunnel for server %s: %v", sc.server.Name, err)
+	}
+}
+
+// Spawns a persistent SSH process with -N (no remote command) and -R to
+// keep the reverse tunnel alive. The process creates the control master so
+// subsequent runRemoteCommand calls reuse it via ControlMaster=auto.
+func (sc *SSHConnector) establishTunnel(ctx context.Context) error {
+	sc.tunnelCmdMu.Lock()
+	defer sc.tunnelCmdMu.Unlock()
+
+	// Build args without a remote command, adding -N and ExitOnForwardFailure.
+	args := sc.buildTunnelSSHArgs()
+
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+		Pgid:    0,
+	}
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	debugf("Establishing reverse tunnel for server %s: ssh %s", sc.server.Name, strings.Join(args, " "))
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start tunnel process: %w", err)
+	}
+
+	// Track the process so Shutdown can kill it.
+	sc.tunnelCmd = cmd
+
+	// Wait briefly to catch immediate failures (port conflict, auth error).
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		// Process exited immediately — tunnel failed.
+		sc.tunnelCmd = nil
+		if err != nil {
+			return fmt.Errorf("tunnel process exited immediately: %w (stderr: %s)",
+				err, strings.TrimSpace(stderr.String()))
+		}
+		return nil
+	case <-time.After(2 * time.Second):
+		// Process stayed alive past the initial window — tunnel is up.
+		debugf("Reverse tunnel established for server %s (pid %d)", sc.server.Name, cmd.Process.Pid)
+		return nil
+	case <-ctx.Done():
+		// Context cancelled while waiting.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		time.Sleep(100 * time.Millisecond)
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_, _ = cmd.Process.Wait()
+		sc.tunnelCmd = nil
+		return ctx.Err()
+	}
+}
+
+// Builds SSH arguments for the persistent -N tunnel process.
+// Similar to buildSSHArgs but without a remote command, with -N,
+// ControlMaster=yes (must be the master), and ExitOnForwardFailure.
+func (sc *SSHConnector) buildTunnelSSHArgs() []string {
+	args := []string{"-N", "-o", "BatchMode=yes"}
+	args = append(args,
+		"-o", "ConnectTimeout=10",
+		"-o", "ServerAliveInterval=5",
+		"-o", "ServerAliveCountMax=2",
+		"-o", "ExitOnForwardFailure=yes",
+	)
+	if _, container := os.LookupEnv("CONTAINER"); container {
+		args = append(args,
+			"-o", "StrictHostKeyChecking=no",
+			"-o", "UserKnownHostsFile=/dev/null",
+			"-o", "LogLevel=ERROR",
+		)
+	}
+
+	controlPath := sc.getControlPath()
+	args = append(args,
+		"-o", "ControlMaster=yes",
+		"-o", fmt.Sprintf("ControlPath=%s", controlPath),
+		"-o", "ControlPersist=0",
+	)
+
+	// Add the -R reverse tunnel flag.
+	if sc.tunnelPort > 0 {
+		tunnelArg := fmt.Sprintf("%d:localhost:%d", sc.tunnelPort, sc.tunnelPort)
+		args = append(args, "-R", tunnelArg)
+	}
+
+	if sc.server.SSHKeyPath != "" {
+		args = append(args, "-i", sc.server.SSHKeyPath)
+	}
+	if sc.server.Port > 0 {
+		args = append(args, "-p", strconv.Itoa(sc.server.Port))
+	}
+
+	target := sc.server.Host
+	if sc.server.SSHUser != "" {
+		target = fmt.Sprintf("%s@%s", sc.server.SSHUser, target)
+	}
+	args = append(args, target)
+	return args
+}
+
+// =========================================================================
 //  SSH Helpers
 // =========================================================================
 
@@ -490,7 +705,7 @@ func (sc *SSHConnector) buildSSHArgs(command []string) []string {
 			"-o", "LogLevel=ERROR",
 		)
 	}
-	controlPath := fmt.Sprintf("/tmp/ssh_control_%s_%s", sc.server.ID, strings.ReplaceAll(sc.server.Host, ".", "_"))
+	controlPath := sc.getControlPath()
 	// ControlPersist=0 keeps the master SSH process (and with it the reverse
 	// tunnel) alive indefinitely; without a tunnel it expires after 300s.
 	controlPersist := "ControlPersist=300"

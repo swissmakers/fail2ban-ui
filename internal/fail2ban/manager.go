@@ -105,6 +105,15 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Shut down reverse tunnel heartbeat goroutines on old SSH connectors
+	// before replacing them, preventing leaked goroutines and orphaned
+	// ssh -N processes.
+	for _, conn := range m.connectors {
+		if sshConn, ok := conn.(*SSHConnector); ok {
+			sshConn.Shutdown()
+		}
+	}
+
 	connectors := make(map[string]Connector)
 	defaultID := pickDefaultServerID(servers)
 
