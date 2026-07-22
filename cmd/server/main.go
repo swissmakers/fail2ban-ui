@@ -156,7 +156,6 @@ func main() {
 	}
 }
 
-// Print welcome banner.
 func printWelcomeBanner(bindAddress, appPort string, isLOTRMode bool) {
 	greeting := getGreeting()
 

@@ -73,6 +73,8 @@ podman build -t fail2ban-ui:v1.0.0 .
 podman build --no-cache -t fail2ban-ui:dev .
 ```
 
+The image is the usable under the name: "`localhost/fail2ban-ui:dev`"
+
 ## Running the container
 
 ### Basic run command (local Fail2Ban instance)
