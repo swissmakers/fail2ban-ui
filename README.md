@@ -198,7 +198,7 @@ Three alert providers, Email (SMTP), Webhook, and Elasticsearch, with country fi
 
 [![Global Settings](screenshots/4.4_Settings_GlobalSettings.png)](screenshots/4.4_Settings_GlobalSettings.png)
 
-Global Fail2Ban defaults: `bantime`, `findtime`, `maxretry`, and the `banaction` backend (nftables, firewalld, iptables).
+Global Fail2Ban defaults: `bantime`, `findtime`, `maxretry`, and the `banaction` backend (nftables, firewalld, iptables). When bantime increment is enabled, the escalation behavior can be tuned with `bantime.rndtime`, `bantime.maxtime` (cap for escalating bans), `bantime.factor` (escalation multiplier), and `bantime.overalljails` (count repeat offenses across all jails).
 
 ## Contributing
 

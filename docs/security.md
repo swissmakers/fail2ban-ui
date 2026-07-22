@@ -13,6 +13,12 @@ Fail2Ban UI performs security-sensitive operations: it bans addresses, changes f
 
 See [reverse-proxy.md](reverse-proxy.md) for hardened proxy examples and the WebSocket forwarding requirements.
 
+## Authentication model
+
+Sessions are stateless encrypted cookies (AES-GCM), logout clears the cookie but cannot revoke an already-captured session token before its expiry (`OIDC_SESSION_MAX_AGE`, default 1 hour). Keep session lifetimes short and always serve the UI over TLS.
+
+The debug console (Settings → Console Output) mirrors the complete server log to every connected UI client over the WebSocket. Log lines can include client IPs, email addresses, and configuration diagnostics — leave it disabled unless actively debugging.
+
 ## Input validation
 
 All user-supplied IP addresses are validated with Go's `net.ParseIP` and `net.ParseCIDR` before they reach any integration, command, or database query. This applies to:
@@ -39,6 +45,11 @@ Additional hardening:
 
 * Use a long, random secret and rotate it on suspected leakage.
 * Restrict network access so that only the managed Fail2Ban hosts can reach the callback endpoints.
+* Serve the callback URL over `https://` with a certificate the managed hosts trust. The generated ban action verifies TLS certificates by default; `CALLBACK_INSECURE_TLS=true` disables verification and should only be used with self-signed certificates on trusted networks (see [configuration.md](configuration.md)).
+
+## Secrets at rest
+
+Secrets (callback secret, SMTP password, agent tokens, integration API keys) are stored in the SQLite database and embedded in the generated `action.d/ui-custom-action.conf`. Fail2Ban UI restricts both to file mode `0600` on startup. Read APIs never return stored secrets; the frontend receives a placeholder sentinel and unchanged saves keep the stored value.
 
 ## SSH connector hardening
 
@@ -56,6 +67,7 @@ When using the firewall integrations (MikroTik, pfSense, OPNsense):
 * Use a dedicated service account on the firewall device with the minimum permissions needed: address-list management only on MikroTik; alias management only on pfSense and OPNsense.
 * For pfSense and OPNsense, use a dedicated API token with limited scope.
 * Restrict network access so the Fail2Ban UI host is the only source allowed to reach the firewall management interface.
+* Configure the MikroTik SSH host-key fingerprint. When no fingerprint is set, the connector accepts any host key (MITM exposure); with one configured, it is verified with a constant-time comparison.
 
 ## Least privilege and file access
 
