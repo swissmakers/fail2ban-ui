@@ -108,6 +108,8 @@
   "logs.actions.whois": "Whois",
   "logs.actions.logs": "Logs",
   "logs.search.label": "Event sueche",
+  "logs.search.server_label": "Server",
+  "logs.search.server_all": "Alli Server",
   "logs.search.placeholder": "IP, Jail oder Server sueche",
   "logs.search.country_label": "Land",
   "logs.search.country_all": "Aui Länder",

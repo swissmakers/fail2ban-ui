@@ -108,6 +108,8 @@
   "logs.actions.whois": "Whois",
   "logs.actions.logs": "日志",
   "logs.search.label": "搜索事件",
+  "logs.search.server_label": "服务器",
+  "logs.search.server_all": "所有服务器",
   "logs.search.placeholder": "搜索 IP、jail 或服务器",
   "logs.search.country_label": "国家",
   "logs.search.country_all": "所有国家",

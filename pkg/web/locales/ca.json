@@ -108,6 +108,8 @@
   "logs.actions.whois": "Whois",
   "logs.actions.logs": "Registres",
   "logs.search.label": "Cerca esdeveniments",
+  "logs.search.server_label": "Servidor",
+  "logs.search.server_all": "Tots els servidors",
   "logs.search.placeholder": "Cerca per IP, jail o servidor",
   "logs.search.country_label": "País",
   "logs.search.country_all": "Tots els països",

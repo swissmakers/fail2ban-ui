@@ -108,6 +108,8 @@
   "logs.actions.whois": "Whois",
   "logs.actions.logs": "Logs",
   "logs.search.label": "Ereignisse suchen",
+  "logs.search.server_label": "Server",
+  "logs.search.server_all": "Alle Server",
   "logs.search.placeholder": "Nach IP, Jail oder Server suchen",
   "logs.search.country_label": "Land",
   "logs.search.country_all": "Alle Länder",

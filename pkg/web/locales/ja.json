@@ -108,6 +108,8 @@
   "logs.actions.whois": "Whois",
   "logs.actions.logs": "ログ",
   "logs.search.label": "イベントを検索",
+  "logs.search.server_label": "サーバー",
+  "logs.search.server_all": "すべてのサーバー",
   "logs.search.placeholder": "IP、Jail、サーバーを検索",
   "logs.search.country_label": "国",
   "logs.search.country_all": "すべての国",
