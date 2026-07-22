@@ -44,7 +44,7 @@ Management operations originate from the REST API and are executed by the connec
 
 - **Local** invokes `fail2ban-client` against the Unix socket and edits configuration files directly on the filesystem.
 - **SSH** opens a session as the configured service account and runs `sudo fail2ban-client`; configuration files are transferred over the same SSH connection.
-- **Agent** issues HTTP requests to the agent API (for example `POST /v1/jails/:jail/ban`); the agent performs the socket and file operations locally.
+- **Agent** issues HTTP requests to the agent API (for example `POST /v1/jails/:jail/ban`); the agent performs the socket and file operations locally. The agent URL accepts either a bare host (defaults to `http://<host>:9700`, the agent's native port) or a full `http(s)://` URL, which is used exactly as entered - so an agent behind a reverse proxy on a standard port works with, for example, `https://fail2ban-agent.example.com/`.
 
 ### Event path -- Fail2Ban to Fail2Ban-UI
 
