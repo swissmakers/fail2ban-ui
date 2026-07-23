@@ -80,6 +80,17 @@ func formatStorageTime(t time.Time) string {
 	return t.UTC().Format(storageTimeFormat)
 }
 
+// All rows are canonical RFC3339 after migrateLegacyTimestamps, so two layouts suffice
+func parseStorageTime(s string) time.Time {
+	if t, err := time.Parse(storageTimeFormat, s); err == nil {
+		return t.UTC()
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t.UTC()
+	}
+	return time.Time{}
+}
+
 // All rows are RFC3339 (legacy formats are rewritten by migrateLegacyTimestamps),
 // so a plain string comparison is correct and keeps the occurred_at indexes usable.
 func addOccurredAtSinceFilter(query *string, args *[]any, since time.Time) {
@@ -114,6 +125,50 @@ func addSearchFilter(query *string, args *[]any, search string) {
 	for i := 0; i < 5; i++ {
 		*args = append(*args, pattern)
 	}
+}
+
+type BanEventFilter struct {
+	ServerID string
+	Jail     string
+	Country  string
+	Search   string
+	Since    time.Time
+	Until    time.Time
+	BansOnly bool
+}
+
+// Returns a condition fragment (starting with " AND ..." or empty) to append after "WHERE 1=1", plus the positional args
+func (f BanEventFilter) buildWhere() (string, []any) {
+	conditions := ""
+	args := []any{}
+
+	if f.ServerID != "" {
+		conditions += " AND server_id = ?"
+		args = append(args, f.ServerID)
+	}
+	if f.Jail != "" {
+		conditions += " AND jail = ?"
+		args = append(args, f.Jail)
+	}
+	if f.BansOnly {
+		conditions += " AND (event_type = 'ban' OR event_type IS NULL)"
+	}
+	addOccurredAtSinceFilter(&conditions, &args, f.Since)
+	if !f.Until.IsZero() {
+		// Same string-comparison reasoning as addOccurredAtSinceFilter.
+		conditions += " AND occurred_at < ?"
+		args = append(args, formatStorageTime(f.Until))
+	}
+	addSearchFilter(&conditions, &args, strings.TrimSpace(f.Search))
+	if f.Country != "" && f.Country != "all" {
+		if f.Country == "__unknown__" {
+			conditions += " AND (country IS NULL OR country = '')"
+		} else {
+			conditions += " AND LOWER(COALESCE(country,'')) = ?"
+			args = append(args, strings.ToLower(f.Country))
+		}
+	}
+	return conditions, args
 }
 
 // =========================================================================
@@ -777,10 +832,10 @@ const (
 	MaxBanEventsOffset = 1000
 )
 
-// Returns ban events with optional search and country filter, ordered by occurred_at DESC.
-// search is applied as LIKE %search% on ip, jail, server_name, hostname, country.
+// Returns ban events matching the filter, ordered by occurred_at DESC.
+// Search is applied via FTS (or LIKE fallback) on ip, jail, server_name, hostname, country.
 // limit is capped at MaxBanEventsLimit; offset is capped at MaxBanEventsOffset.
-func ListBanEventsFiltered(ctx context.Context, serverID string, limit, offset int, since time.Time, search, country string) ([]BanEventRecord, error) {
+func ListBanEventsFiltered(ctx context.Context, f BanEventFilter, limit, offset int) ([]BanEventRecord, error) {
 	if db == nil {
 		return nil, errors.New("storage not initialised")
 	}
@@ -792,7 +847,7 @@ func ListBanEventsFiltered(ctx context.Context, serverID string, limit, offset i
 	}
 
 	from := "FROM ban_events"
-	search = strings.TrimSpace(search)
+	search := strings.TrimSpace(f.Search)
 	if search != "" && ftsAvailable {
 		var matches int64
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ban_events_fts WHERE ban_events_fts MATCH ?`, buildFTSMatch(search)).Scan(&matches); err == nil && matches > broadSearchThreshold {
@@ -807,22 +862,8 @@ SELECT id, server_id, server_name, jail, ip, country, hostname, failures,
        event_type, occurred_at, created_at
 ` + from + `
 WHERE 1=1`
-	args := []any{}
-
-	if serverID != "" {
-		baseQuery += " AND server_id = ?"
-		args = append(args, serverID)
-	}
-	addOccurredAtSinceFilter(&baseQuery, &args, since)
-	addSearchFilter(&baseQuery, &args, search)
-	if country != "" && country != "all" {
-		if country == "__unknown__" {
-			baseQuery += " AND (country IS NULL OR country = '')"
-		} else {
-			baseQuery += " AND LOWER(COALESCE(country,'')) = ?"
-			args = append(args, strings.ToLower(country))
-		}
-	}
+	conditions, args := f.buildWhere()
+	baseQuery += conditions
 
 	baseQuery += " ORDER BY occurred_at DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
@@ -919,14 +960,15 @@ const MaxSearchCount = 5000
 const broadSearchThreshold = 10000
 
 // Returns the total count of ban events matching the same filters as ListBanEventsFiltered.
-func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Time, search, country string) (int64, error) {
+func CountBanEventsFiltered(ctx context.Context, f BanEventFilter) (int64, error) {
 	if db == nil {
 		return 0, errors.New("storage not initialised")
 	}
 
 	// A search without further filters is answered index-only by FTS.
-	search = strings.TrimSpace(search)
-	if search != "" && ftsAvailable && serverID == "" && since.IsZero() && (country == "" || country == "all") {
+	search := strings.TrimSpace(f.Search)
+	if search != "" && ftsAvailable && f.ServerID == "" && f.Jail == "" && !f.BansOnly &&
+		f.Since.IsZero() && f.Until.IsZero() && (f.Country == "" || f.Country == "all") {
 		var total int64
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ban_events_fts WHERE ban_events_fts MATCH ?`, buildFTSMatch(search)).Scan(&total); err != nil {
 			return 0, err
@@ -937,24 +979,7 @@ func CountBanEventsFiltered(ctx context.Context, serverID string, since time.Tim
 		return total, nil
 	}
 
-	conditions := ""
-	args := []any{}
-
-	if serverID != "" {
-		conditions += " AND server_id = ?"
-		args = append(args, serverID)
-	}
-	addOccurredAtSinceFilter(&conditions, &args, since)
-	search = strings.TrimSpace(search)
-	addSearchFilter(&conditions, &args, search)
-	if country != "" && country != "all" {
-		if country == "__unknown__" {
-			conditions += " AND (country IS NULL OR country = '')"
-		} else {
-			conditions += " AND LOWER(COALESCE(country,'')) = ?"
-			args = append(args, strings.ToLower(country))
-		}
-	}
+	conditions, args := f.buildWhere()
 
 	query := `SELECT COUNT(*) FROM ban_events WHERE 1=1` + conditions
 	if search != "" {
@@ -1136,6 +1161,231 @@ WHERE 1=1`
 	return result, rows.Err()
 }
 
+// Returns overall / today / week ban-event counts in a single query
+func CountBanEventTotals(ctx context.Context, serverID string, now time.Time) (overall, today, week int64, err error) {
+	if db == nil {
+		return 0, 0, 0, errors.New("storage not initialised")
+	}
+
+	query := `
+SELECT COUNT(*),
+       COALESCE(SUM(occurred_at >= ?), 0),
+       COALESCE(SUM(occurred_at >= ?), 0)
+FROM ban_events
+WHERE 1=1`
+	args := []any{
+		formatStorageTime(now.Add(-24 * time.Hour)),
+		formatStorageTime(now.Add(-7 * 24 * time.Hour)),
+	}
+	if serverID != "" {
+		query += " AND server_id = ?"
+		args = append(args, serverID)
+	}
+
+	err = db.QueryRowContext(ctx, query, args...).Scan(&overall, &today, &week)
+	return overall, today, week, err
+}
+
+// =========================================================================
+//  Timeline & IP Aggregation
+// =========================================================================
+
+type TimelineBucket struct {
+	Start  time.Time `json:"start"`
+	Bans   int64     `json:"bans"`
+	Unbans int64     `json:"unbans"`
+}
+
+const maxTimelineBuckets = 1000
+
+// Returns ban / unban counts bucketed into bucketSeconds-wide intervals aligned to epoch multiples, zero-filled across [f.Since, f.Until)
+func BanEventTimeline(ctx context.Context, f BanEventFilter, bucketSeconds int64) ([]TimelineBucket, error) {
+	if db == nil {
+		return nil, errors.New("storage not initialised")
+	}
+	if bucketSeconds <= 0 {
+		return nil, errors.New("bucket size must be positive")
+	}
+	if f.Since.IsZero() || f.Until.IsZero() || !f.Until.After(f.Since) {
+		return nil, errors.New("a valid since/until range is required")
+	}
+	startBucket := (f.Since.Unix() / bucketSeconds) * bucketSeconds
+	endEpoch := f.Until.Unix()
+	if (endEpoch-startBucket)/bucketSeconds+1 > maxTimelineBuckets {
+		return nil, errors.New("time range yields too many buckets")
+	}
+
+	conditions, args := f.buildWhere()
+	query := `
+SELECT (CAST(strftime('%s', occurred_at) AS INTEGER) / ?) * ? AS bucket,
+       SUM(CASE WHEN event_type = 'unban' THEN 0 ELSE 1 END) AS bans,
+       SUM(CASE WHEN event_type = 'unban' THEN 1 ELSE 0 END) AS unbans
+FROM ban_events
+WHERE 1=1` + conditions + `
+GROUP BY bucket
+ORDER BY bucket`
+	queryArgs := append([]any{bucketSeconds, bucketSeconds}, args...)
+
+	rows, err := db.QueryContext(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type bucketCounts struct{ bans, unbans int64 }
+	counts := make(map[int64]bucketCounts)
+	for rows.Next() {
+		var bucket, bans, unbans int64
+		if err := rows.Scan(&bucket, &bans, &unbans); err != nil {
+			return nil, err
+		}
+		counts[bucket] = bucketCounts{bans: bans, unbans: unbans}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	buckets := make([]TimelineBucket, 0, (endEpoch-startBucket)/bucketSeconds+1)
+	for ts := startBucket; ts < endEpoch; ts += bucketSeconds {
+		c := counts[ts]
+		buckets = append(buckets, TimelineBucket{
+			Start:  time.Unix(ts, 0).UTC(),
+			Bans:   c.bans,
+			Unbans: c.unbans,
+		})
+	}
+	return buckets, nil
+}
+
+// Aggregates ban events per IP within a time range.
+type BanEventIPStat struct {
+	IP        string    `json:"ip"`
+	Country   string    `json:"country"`
+	Count     int64     `json:"count"`
+	FirstSeen time.Time `json:"firstSeen"`
+	LastSeen  time.Time `json:"lastSeen"`
+	Jails     string    `json:"jails"`
+}
+
+// Returns per-IP ban aggregates ordered by count desc, plus the total number of
+// distinct IPs matching the filter so callers can detect truncation.
+func ListBanEventIPs(ctx context.Context, f BanEventFilter, limit int) ([]BanEventIPStat, int64, error) {
+	if db == nil {
+		return nil, 0, errors.New("storage not initialised")
+	}
+	if limit <= 0 || limit > 10000 {
+		limit = 2000
+	}
+	f.BansOnly = true
+
+	conditions, args := f.buildWhere()
+	query := `
+SELECT ip,
+       MAX(COALESCE(country, '')) AS country,
+       COUNT(*) AS cnt,
+       MIN(occurred_at) AS first_seen,
+       MAX(occurred_at) AS last_seen,
+       GROUP_CONCAT(DISTINCT jail) AS jails
+FROM ban_events
+WHERE ip != ''` + conditions + `
+GROUP BY ip
+ORDER BY cnt DESC, ip
+LIMIT ?`
+	queryArgs := append(append([]any{}, args...), limit)
+
+	rows, err := db.QueryContext(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var results []BanEventIPStat
+	for rows.Next() {
+		var stat BanEventIPStat
+		var firstSeen, lastSeen, jails sql.NullString
+		if err := rows.Scan(&stat.IP, &stat.Country, &stat.Count, &firstSeen, &lastSeen, &jails); err != nil {
+			return nil, 0, err
+		}
+		if firstSeen.Valid {
+			stat.FirstSeen = parseStorageTime(firstSeen.String)
+		}
+		if lastSeen.Valid {
+			stat.LastSeen = parseStorageTime(lastSeen.String)
+		}
+		stat.Jails = stringFromNull(jails)
+		results = append(results, stat)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	var total int64
+	countQuery := `SELECT COUNT(DISTINCT ip) FROM ban_events WHERE ip != ''` + conditions
+	if err := db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	return results, total, nil
+}
+
+type IPActivityPeriod struct {
+	Day     string `json:"day"`
+	Overlap int64  `json:"overlap"`
+	Events  int64  `json:"events"`
+}
+
+func ListBanEventIPActivity(ctx context.Context, f BanEventFilter, minOverlap int) ([]IPActivityPeriod, error) {
+	if db == nil {
+		return nil, errors.New("storage not initialised")
+	}
+	if f.Since.IsZero() || f.Until.IsZero() || !f.Until.After(f.Since) {
+		return nil, errors.New("a valid since/until range is required")
+	}
+	if minOverlap < 1 {
+		minOverlap = 1
+	}
+	f.BansOnly = true
+
+	innerConditions, innerArgs := f.buildWhere()
+	query := `
+SELECT strftime('%Y-%m-%d', occurred_at) AS day,
+       COUNT(DISTINCT ip) AS overlap,
+       COUNT(*) AS events
+FROM ban_events
+WHERE ip != ''
+  AND (event_type = 'ban' OR event_type IS NULL)
+  AND ip IN (SELECT DISTINCT ip FROM ban_events WHERE ip != ''` + innerConditions + `)
+  AND (occurred_at < ? OR occurred_at >= ?)`
+	args := append(append([]any{}, innerArgs...), formatStorageTime(f.Since), formatStorageTime(f.Until))
+
+	if f.ServerID != "" {
+		query += " AND server_id = ?"
+		args = append(args, f.ServerID)
+	}
+
+	query += `
+GROUP BY day
+HAVING overlap >= ?
+ORDER BY overlap DESC, day DESC
+LIMIT 20`
+	args = append(args, minOverlap)
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []IPActivityPeriod
+	for rows.Next() {
+		var period IPActivityPeriod
+		if err := rows.Scan(&period.Day, &period.Overlap, &period.Events); err != nil {
+			return nil, err
+		}
+		results = append(results, period)
+	}
+	return results, rows.Err()
+}
+
 // Deletes all ban event records.
 func ClearBanEvents(ctx context.Context) (int64, error) {
 	if db == nil {
@@ -1268,7 +1518,7 @@ func ensureSchema(ctx context.Context) error {
 		return errors.New("storage not initialised")
 	}
 
-	const createTable = `
+	const createTables = `
 CREATE TABLE IF NOT EXISTS app_settings (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	-- Basic app settings
@@ -1348,14 +1598,6 @@ CREATE TABLE IF NOT EXISTS ban_events (
 	created_at DATETIME NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_ban_events_server_id ON ban_events(server_id);
-CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at);
-CREATE INDEX IF NOT EXISTS idx_ban_events_ip ON ban_events(ip);
-CREATE INDEX IF NOT EXISTS idx_ban_events_server_jail_occurred_at ON ban_events(server_id, jail, occurred_at);
-CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at_ip ON ban_events(occurred_at, ip, country, event_type, server_id);
-CREATE INDEX IF NOT EXISTS idx_ban_events_server_occurred_at ON ban_events(server_id, occurred_at);
-CREATE INDEX IF NOT EXISTS idx_ban_events_country ON ban_events(country);
-
 CREATE TABLE IF NOT EXISTS permanent_blocks (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	ip TEXT NOT NULL,
@@ -1368,85 +1610,57 @@ CREATE TABLE IF NOT EXISTS permanent_blocks (
 	updated_at TEXT NOT NULL,
 	UNIQUE(ip, integration)
 );
+`
+
+	const createIndexes = `
+CREATE INDEX IF NOT EXISTS idx_ban_events_server_id ON ban_events(server_id);
+CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_ban_events_ip ON ban_events(ip);
+CREATE INDEX IF NOT EXISTS idx_ban_events_server_jail_occurred_at ON ban_events(server_id, jail, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at_ip ON ban_events(occurred_at, ip, country, event_type, server_id);
+CREATE INDEX IF NOT EXISTS idx_ban_events_server_occurred_at ON ban_events(server_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_ban_events_country ON ban_events(country);
 
 CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 CREATE INDEX IF NOT EXISTS idx_perm_blocks_updated_at ON permanent_blocks(updated_at);
 `
 
-	if _, err := db.ExecContext(ctx, createTable); err != nil {
+	// Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS is a no-op on existing databases, so every later column needs an entry here
+	alterColumns := []string{
+		`ALTER TABLE app_settings ADD COLUMN console_output INTEGER DEFAULT 0`,
+		`ALTER TABLE app_settings ADD COLUMN smtp_insecure_skip_verify INTEGER DEFAULT 0`,
+		`ALTER TABLE app_settings ADD COLUMN smtp_auth_method TEXT DEFAULT 'auto'`,
+		`ALTER TABLE app_settings ADD COLUMN chain TEXT DEFAULT 'INPUT'`,
+		`ALTER TABLE app_settings ADD COLUMN bantime_rndtime TEXT DEFAULT ''`,
+		`ALTER TABLE app_settings ADD COLUMN bantime_maxtime TEXT DEFAULT ''`,
+		`ALTER TABLE app_settings ADD COLUMN bantime_factor TEXT DEFAULT ''`,
+		`ALTER TABLE app_settings ADD COLUMN bantime_overalljails INTEGER DEFAULT 0`,
+		`ALTER TABLE app_settings ADD COLUMN alert_provider TEXT DEFAULT 'email'`,
+		`ALTER TABLE app_settings ADD COLUMN webhook TEXT DEFAULT '{}'`,
+		`ALTER TABLE app_settings ADD COLUMN elasticsearch TEXT DEFAULT '{}'`,
+		`ALTER TABLE app_settings ADD COLUMN threat_intel TEXT DEFAULT '{}'`,
+		`ALTER TABLE servers ADD COLUMN config_path TEXT`,
+		`ALTER TABLE servers ADD COLUMN reverse_tunnel INTEGER DEFAULT 0`,
+		`ALTER TABLE app_settings ADD COLUMN event_retention_days INTEGER DEFAULT 180`,
+		`ALTER TABLE ban_events ADD COLUMN event_type TEXT NOT NULL DEFAULT 'ban'`,
+	}
+
+	if _, err := db.ExecContext(ctx, createTables); err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN console_output INTEGER DEFAULT 0`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+	for _, ddl := range alterColumns {
+		if err := addColumnIfMissing(ctx, ddl); err != nil {
 			return err
 		}
 	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN smtp_insecure_skip_verify INTEGER DEFAULT 0`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
+	if _, err := db.ExecContext(ctx, createIndexes); err != nil {
+		return err
 	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN smtp_auth_method TEXT DEFAULT 'auto'`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN chain TEXT DEFAULT 'INPUT'`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_rndtime TEXT DEFAULT ''`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_maxtime TEXT DEFAULT ''`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_factor TEXT DEFAULT ''`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN bantime_overalljails INTEGER DEFAULT 0`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN alert_provider TEXT DEFAULT 'email'`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN webhook TEXT DEFAULT '{}'`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN elasticsearch TEXT DEFAULT '{}'`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN threat_intel TEXT DEFAULT '{}'`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE servers ADD COLUMN config_path TEXT`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE servers ADD COLUMN reverse_tunnel INTEGER DEFAULT 0`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `ALTER TABLE app_settings ADD COLUMN event_retention_days INTEGER DEFAULT 180`); err != nil {
+	return nil
+}
+
+func addColumnIfMissing(ctx context.Context, ddl string) error {
+	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
 			return err
 		}
