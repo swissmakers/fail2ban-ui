@@ -1644,6 +1644,70 @@
                 </button>
               </div>
               <p class="text-sm text-gray-600 mb-4" data-i18n="logs.modal.insights_description">Country distribution and recurring offenders.</p>
+
+              <!-- Timeline card -->
+              <div class="border border-gray-200 rounded-lg p-4 bg-gray-50 mb-6">
+                <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+                  <div>
+                    <h4 class="text-base font-semibold text-gray-900" data-i18n="logs.timeline.title">Ban &amp; unban activity</h4>
+                    <p class="text-xs text-gray-500 mt-1" data-i18n="logs.timeline.hint">Drag on the chart to zoom into a time range.</p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <div id="timelinePresets" class="flex items-center gap-1">
+                      <button type="button" class="timeline-preset px-3 py-1 text-xs rounded border" data-hours="8" onclick="setTimelinePreset(8)" data-i18n="logs.timeline.preset_8h">8h</button>
+                      <button type="button" class="timeline-preset px-3 py-1 text-xs rounded border" data-hours="24" onclick="setTimelinePreset(24)" data-i18n="logs.timeline.preset_24h">24h</button>
+                      <button type="button" class="timeline-preset px-3 py-1 text-xs rounded border" data-hours="48" onclick="setTimelinePreset(48)" data-i18n="logs.timeline.preset_48h">48h</button>
+                      <button type="button" class="timeline-preset px-3 py-1 text-xs rounded border" data-hours="168" onclick="setTimelinePreset(168)" data-i18n="logs.timeline.preset_7d">7d</button>
+                      <button type="button" class="timeline-preset px-3 py-1 text-xs rounded border" data-hours="336" onclick="setTimelinePreset(336)" data-i18n="logs.timeline.preset_14d">14d</button>
+                      <button type="button" class="timeline-preset px-3 py-1 text-xs rounded border" data-hours="720" onclick="setTimelinePreset(720)" data-i18n="logs.timeline.preset_30d">30d</button>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <input type="number" id="timelineCustomAmount" min="1" value="8" class="w-16 border border-gray-300 rounded-md px-2 py-1 text-xs">
+                      <select id="timelineCustomUnit" class="border border-gray-300 rounded-md px-2 py-1 text-xs">
+                        <option value="hours" data-i18n="logs.timeline.custom_unit_hours">Hours</option>
+                        <option value="days" data-i18n="logs.timeline.custom_unit_days">Days</option>
+                        <option value="weeks" data-i18n="logs.timeline.custom_unit_weeks">Weeks</option>
+                        <option value="months" data-i18n="logs.timeline.custom_unit_months">Months</option>
+                      </select>
+                      <button type="button" onclick="applyCustomTimelineRange()" class="px-3 py-1 text-xs rounded border border-blue-200 text-blue-600 hover:bg-blue-50" data-i18n="logs.timeline.custom_apply">Apply</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                  <button type="button" id="timelineBackBtn" class="hidden px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100" onclick="timelineBack()">&larr; <span data-i18n="logs.timeline.back">Back to previous range</span></button>
+                  <span id="timelineRangeLabel" class="text-xs text-gray-500"></span>
+                  <button type="button" id="timelineLiveChip" class="hidden px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200" onclick="timelineJumpToLive()"></button>
+                </div>
+                <div id="insightsTimelineChart" class="w-full" style="height:300px;"></div>
+                <div id="timelineSelectionBar" class="flex flex-wrap items-center gap-2 mt-3">
+                  <button type="button" class="px-3 py-1 text-xs rounded border border-blue-200 text-blue-600 hover:bg-blue-50" onclick="pinIncident('A')" data-i18n="logs.timeline.selection_pin_a">Pin as Incident A</button>
+                  <button type="button" class="px-3 py-1 text-xs rounded border border-blue-200 text-blue-600 hover:bg-blue-50" onclick="pinIncident('B')" data-i18n="logs.timeline.selection_pin_b">Pin as Incident B</button>
+                  <span class="flex-1"></span>
+                  <button type="button" class="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100" onclick="exportTimelineIPs('csv')" data-i18n="logs.timeline.export_csv">Export CSV</button>
+                  <button type="button" class="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100" onclick="exportTimelineIPs('json')" data-i18n="logs.timeline.export_json">Export JSON</button>
+                  <button type="button" data-min-access="admin" class="px-3 py-1 text-xs rounded border border-red-200 text-red-600 hover:bg-red-50" onclick="openBulkBlockConfirm('range')" data-i18n="logs.timeline.block_all">Block all via firewall</button>
+                </div>
+              </div>
+
+              <!-- Incident compare -->
+              <div id="timelineCompare" class="hidden border border-gray-200 rounded-lg p-4 bg-gray-50 mb-6">
+                <h4 class="text-base font-semibold text-gray-900 mb-1" data-i18n="logs.timeline.compare_title">Incident compare</h4>
+                <p class="text-xs text-gray-500 mb-3" data-i18n="logs.timeline.compare_pin_hint">Pin two incidents to compare their IPs.</p>
+                <div id="timelineIncidentChips" class="flex flex-wrap gap-2 mb-3"></div>
+                <div id="timelineOverlapPanel"></div>
+                <div id="timelineSuggestions" class="mt-3"></div>
+              </div>
+
+              <!-- Events in selected range -->
+              <div class="border border-gray-200 rounded-lg p-4 bg-gray-50 mb-6">
+                <div class="flex items-center justify-between mb-3">
+                  <h4 class="text-base font-semibold text-gray-900" data-i18n="logs.timeline.events_title">Events in selected range</h4>
+                  <span id="timelineEventCount" class="text-xs text-gray-500"></span>
+                </div>
+                <div id="timelineEventList" class="space-y-1 max-h-96 overflow-y-auto"></div>
+                <div id="timelineEventListMore" class="mt-2 text-center"></div>
+              </div>
+
               <div id="insightsSummary" class="grid gap-4 sm:grid-cols-3 mb-6"></div>
               <div class="grid gap-6 lg:grid-cols-2">
                 <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
@@ -1679,6 +1743,31 @@
         </div>
         <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
           <button type="button" class="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('banInsightsModal')" data-i18n="modal.close">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================= Bulk Block Confirm Modal ======================== -->
+  <div id="bulkBlockConfirmModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="relative flex min-h-full w-full items-center justify-center p-4 sm:p-6">
+      <div class="fixed inset-0 bg-gray-500 opacity-75" aria-hidden="true"></div>
+      <div class="modal-content relative z-10 w-full rounded-lg bg-white text-left shadow-xl transition-all" style="max-width: 640px;">
+        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="logs.timeline.block_confirm_title">Confirm permanent block</h3>
+            <button type="button" onclick="closeModal('bulkBlockConfirmModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <p id="bulkBlockConfirmText" class="text-sm text-gray-600 mb-3"></p>
+          <div id="bulkBlockIPList" class="max-h-64 overflow-y-auto font-mono text-xs border border-gray-200 rounded-md p-3 bg-gray-50"></div>
+        </div>
+        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+          <button type="button" id="bulkBlockConfirmBtn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm" onclick="confirmBulkBlock()">Block</button>
+          <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('bulkBlockConfirmModal')" data-i18n="modal.cancel">Cancel</button>
         </div>
       </div>
     </div>
@@ -1895,6 +1984,7 @@
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/jquery/jquery-3.6.0.min.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/select2/select2.min.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/globe/globe.gl.min.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/echarts/echarts.min.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/globals.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/theme.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/core.js?v={{.version}}"></script>
@@ -1906,6 +1996,7 @@
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/translations.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/ignoreips.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/dashboard.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/insights-timeline.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/globe.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/servers.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/jails.js?v={{.version}}"></script>

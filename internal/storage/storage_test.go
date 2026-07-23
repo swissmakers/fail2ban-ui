@@ -18,6 +18,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"sync"
@@ -63,6 +64,75 @@ func initTestStorage(t *testing.T) {
 		initOnce = sync.Once{}
 		initErr = nil
 	})
+}
+
+func TestEnsureSchemaMigratesLegacyBanEvents(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "fail2ban-ui-legacy.db")
+	legacy, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	const legacySchema = `
+CREATE TABLE ban_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	server_id TEXT NOT NULL,
+	server_name TEXT NOT NULL,
+	jail TEXT NOT NULL,
+	ip TEXT NOT NULL,
+	country TEXT,
+	hostname TEXT,
+	failures TEXT,
+	whois TEXT,
+	logs TEXT,
+	occurred_at DATETIME NOT NULL,
+	created_at DATETIME NOT NULL
+);`
+	if _, err := legacy.Exec(legacySchema); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if _, err := legacy.Exec(
+		`INSERT INTO ban_events (server_id, server_name, jail, ip, occurred_at, created_at)
+		 VALUES ('local', 'Local', 'sshd', '203.0.113.7', '2026-01-02 03:04:05', '2026-01-02 03:04:05')`,
+	); err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	if db != nil {
+		_ = db.Close()
+	}
+	db = nil
+	initOnce = sync.Once{}
+	initErr = nil
+	t.Cleanup(func() {
+		if db != nil {
+			_ = db.Close()
+		}
+		db = nil
+		initOnce = sync.Once{}
+		initErr = nil
+	})
+
+	if err := Init(dbPath); err != nil {
+		t.Fatalf("Init on legacy database: %v", err)
+	}
+
+	var eventType string
+	if err := db.QueryRow(`SELECT event_type FROM ban_events WHERE ip = '203.0.113.7'`).Scan(&eventType); err != nil {
+		t.Fatalf("read migrated event_type: %v", err)
+	}
+	if eventType != "ban" {
+		t.Fatalf("migrated event_type = %q, want %q", eventType, "ban")
+	}
+
+	var indexName string
+	if err := db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_ban_events_occurred_at_ip'`,
+	).Scan(&indexName); err != nil {
+		t.Fatalf("index idx_ban_events_occurred_at_ip missing after migration: %v", err)
+	}
 }
 
 func TestReplaceServersRoundTrip(t *testing.T) {
@@ -125,7 +195,7 @@ func TestBanEventsFTSSearchAndEnrichment(t *testing.T) {
 
 	searchTotal := func(term string) int64 {
 		t.Helper()
-		total, err := CountBanEventsFiltered(ctx, "", time.Time{}, term, "")
+		total, err := CountBanEventsFiltered(ctx, BanEventFilter{Search: term})
 		if err != nil {
 			t.Fatalf("CountBanEventsFiltered(%q): %v", term, err)
 		}
@@ -145,7 +215,7 @@ func TestBanEventsFTSSearchAndEnrichment(t *testing.T) {
 		}
 	}
 
-	events, err := ListBanEventsFiltered(ctx, "", 10, 0, time.Time{}, "nextcloud", "")
+	events, err := ListBanEventsFiltered(ctx, BanEventFilter{Search: "nextcloud"}, 10, 0)
 	if err != nil || len(events) != 1 || events[0].IP != "203.0.113.45" {
 		t.Fatalf("ListBanEventsFiltered(nextcloud) = %+v, err=%v", events, err)
 	}
@@ -219,7 +289,7 @@ func TestBanEventsFTSBackfillsExistingRows(t *testing.T) {
 		t.Fatal("FTS not available after ensureBanEventsFTS")
 	}
 
-	total, err := CountBanEventsFiltered(ctx, "", time.Time{}, "legacy", "")
+	total, err := CountBanEventsFiltered(ctx, BanEventFilter{Search: "legacy"})
 	if err != nil || total != 1 {
 		t.Fatalf("search for pre-existing row: total=%d err=%v (backfill missing)", total, err)
 	}
@@ -326,7 +396,7 @@ func TestListBanEventsFilteredOmitsHeavyFields(t *testing.T) {
 		}
 	}
 
-	events, err := ListBanEventsFiltered(ctx, "srv-1", 50, 0, time.Time{}, "", "")
+	events, err := ListBanEventsFiltered(ctx, BanEventFilter{ServerID: "srv-1"}, 50, 0)
 	if err != nil {
 		t.Fatalf("ListBanEventsFiltered: %v", err)
 	}
@@ -420,5 +490,194 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 	}
 	if got["sshd"] != 0 {
 		t.Fatalf("recent ban count=%d want 0 for later since", got["sshd"])
+	}
+}
+
+func TestBanEventFilterUntilIsExclusive(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	cutoff := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	for i, occurredAt := range []time.Time{
+		cutoff.Add(-time.Minute),
+		cutoff,
+		cutoff.Add(time.Minute),
+	} {
+		if _, err := RecordBanEvent(ctx, BanEventRecord{
+			ServerID: "srv-1", ServerName: "server 1", Jail: "sshd",
+			IP: "192.0.2.10", EventType: "ban", OccurredAt: occurredAt,
+		}); err != nil {
+			t.Fatalf("RecordBanEvent %d: %v", i, err)
+		}
+	}
+
+	filter := BanEventFilter{Since: cutoff.Add(-time.Hour), Until: cutoff}
+	total, err := CountBanEventsFiltered(ctx, filter)
+	if err != nil {
+		t.Fatalf("CountBanEventsFiltered: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("count with until=%v is %d, want 1 (until must be exclusive)", cutoff, total)
+	}
+	events, err := ListBanEventsFiltered(ctx, filter, 10, 0)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("ListBanEventsFiltered = %d events, err=%v, want 1", len(events), err)
+	}
+}
+
+func TestBanEventTimelineBucketsAndZeroFill(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	base := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	events := []BanEventRecord{
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "ban", OccurredAt: base.Add(5 * time.Minute)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.2", EventType: "ban", OccurredAt: base.Add(30 * time.Minute)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "unban", OccurredAt: base.Add(40 * time.Minute)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.3", EventType: "ban", OccurredAt: base.Add(2*time.Hour + 10*time.Minute)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.4", EventType: "ban", OccurredAt: base.Add(4 * time.Hour)},
+	}
+	for i, event := range events {
+		if _, err := RecordBanEvent(ctx, event); err != nil {
+			t.Fatalf("RecordBanEvent %d: %v", i, err)
+		}
+	}
+
+	filter := BanEventFilter{Since: base, Until: base.Add(3 * time.Hour)}
+	buckets, err := BanEventTimeline(ctx, filter, 3600)
+	if err != nil {
+		t.Fatalf("BanEventTimeline: %v", err)
+	}
+	if len(buckets) != 3 {
+		t.Fatalf("got %d buckets, want 3 (zero-filled)", len(buckets))
+	}
+	if !buckets[0].Start.Equal(base) {
+		t.Fatalf("bucket[0].Start=%v want %v", buckets[0].Start, base)
+	}
+	if buckets[0].Bans != 2 || buckets[0].Unbans != 1 {
+		t.Fatalf("bucket[0] = %+v, want bans=2 unbans=1", buckets[0])
+	}
+	if buckets[1].Bans != 0 || buckets[1].Unbans != 0 {
+		t.Fatalf("bucket[1] = %+v, want zero-filled empty bucket", buckets[1])
+	}
+	if buckets[2].Bans != 1 || buckets[2].Unbans != 0 {
+		t.Fatalf("bucket[2] = %+v, want bans=1", buckets[2])
+	}
+}
+
+func TestListBanEventIPsAggregatesAndTruncates(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	base := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	events := []BanEventRecord{
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", Country: "DE", EventType: "ban", OccurredAt: base},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "nginx", IP: "192.0.2.1", Country: "DE", EventType: "ban", OccurredAt: base.Add(10 * time.Minute)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "unban", OccurredAt: base.Add(20 * time.Minute)}, // not counted
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "198.51.100.7", Country: "BR", EventType: "ban", OccurredAt: base.Add(5 * time.Minute)},
+	}
+	for i, event := range events {
+		if _, err := RecordBanEvent(ctx, event); err != nil {
+			t.Fatalf("RecordBanEvent %d: %v", i, err)
+		}
+	}
+
+	filter := BanEventFilter{Since: base.Add(-time.Hour), Until: base.Add(time.Hour)}
+	stats, total, err := ListBanEventIPs(ctx, filter, 10)
+	if err != nil {
+		t.Fatalf("ListBanEventIPs: %v", err)
+	}
+	if total != 2 || len(stats) != 2 {
+		t.Fatalf("total=%d len=%d, want 2/2", total, len(stats))
+	}
+	top := stats[0]
+	if top.IP != "192.0.2.1" || top.Count != 2 || top.Country != "DE" {
+		t.Fatalf("top stat = %+v, want 192.0.2.1 count=2 country=DE (unban must not count)", top)
+	}
+	if !top.FirstSeen.Equal(base) || !top.LastSeen.Equal(base.Add(10*time.Minute)) {
+		t.Fatalf("first/last seen = %v / %v", top.FirstSeen, top.LastSeen)
+	}
+	if top.Jails != "sshd,nginx" && top.Jails != "nginx,sshd" {
+		t.Fatalf("jails = %q, want both sshd and nginx", top.Jails)
+	}
+
+	// limit=1 truncates but reports the full distinct count
+	stats, total, err = ListBanEventIPs(ctx, filter, 1)
+	if err != nil || len(stats) != 1 || total != 2 {
+		t.Fatalf("truncated: len=%d total=%d err=%v, want 1/2", len(stats), total, err)
+	}
+}
+
+func TestListBanEventIPActivityFindsOverlappingDays(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	incident := time.Date(2026, 6, 10, 8, 0, 0, 0, time.UTC)
+	earlier := time.Date(2026, 4, 15, 20, 0, 0, 0, time.UTC)
+	events := []BanEventRecord{
+		// current incident: 3 IPs
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "ban", OccurredAt: incident},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.2", EventType: "ban", OccurredAt: incident.Add(time.Minute)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.3", EventType: "ban", OccurredAt: incident.Add(2 * time.Minute)},
+		// two months earlier: 2 of the same IPs plus an unrelated one
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "ban", OccurredAt: earlier},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.2", EventType: "ban", OccurredAt: earlier.Add(time.Minute)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "203.0.113.9", EventType: "ban", OccurredAt: earlier.Add(2 * time.Minute)},
+	}
+	for i, event := range events {
+		if _, err := RecordBanEvent(ctx, event); err != nil {
+			t.Fatalf("RecordBanEvent %d: %v", i, err)
+		}
+	}
+
+	filter := BanEventFilter{Since: incident.Add(-time.Hour), Until: incident.Add(time.Hour)}
+	periods, err := ListBanEventIPActivity(ctx, filter, 2)
+	if err != nil {
+		t.Fatalf("ListBanEventIPActivity: %v", err)
+	}
+	if len(periods) != 1 {
+		t.Fatalf("got %d periods, want 1: %+v", len(periods), periods)
+	}
+	if periods[0].Day != "2026-04-15" || periods[0].Overlap != 2 || periods[0].Events != 2 {
+		t.Fatalf("period = %+v, want day=2026-04-15 overlap=2 events=2", periods[0])
+	}
+
+	periods, err = ListBanEventIPActivity(ctx, filter, 3)
+	if err != nil || len(periods) != 0 {
+		t.Fatalf("minOverlap=3: got %d periods err=%v, want 0", len(periods), err)
+	}
+}
+
+func TestCountBanEventTotals(t *testing.T) {
+	initTestStorage(t)
+
+	ctx := context.Background()
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	events := []BanEventRecord{
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "ban", OccurredAt: now.Add(-time.Hour)},           // today+week
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.2", EventType: "ban", OccurredAt: now.Add(-3 * 24 * time.Hour)},  // week
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.3", EventType: "ban", OccurredAt: now.Add(-30 * 24 * time.Hour)}, // overall only
+		{ServerID: "srv-2", ServerName: "s2", Jail: "sshd", IP: "192.0.2.4", EventType: "ban", OccurredAt: now.Add(-time.Hour)},
+	}
+	for i, event := range events {
+		if _, err := RecordBanEvent(ctx, event); err != nil {
+			t.Fatalf("RecordBanEvent %d: %v", i, err)
+		}
+	}
+
+	overall, today, week, err := CountBanEventTotals(ctx, "", now)
+	if err != nil {
+		t.Fatalf("CountBanEventTotals: %v", err)
+	}
+	if overall != 4 || today != 2 || week != 3 {
+		t.Fatalf("totals = %d/%d/%d, want 4/2/3", overall, today, week)
+	}
+
+	overall, today, week, err = CountBanEventTotals(ctx, "srv-1", now)
+	if err != nil {
+		t.Fatalf("CountBanEventTotals(srv-1): %v", err)
+	}
+	if overall != 3 || today != 1 || week != 2 {
+		t.Fatalf("srv-1 totals = %d/%d/%d, want 3/1/2", overall, today, week)
 	}
 }

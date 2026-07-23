@@ -184,3 +184,29 @@ function isSuspiciousLogLine(line, ip) {
   }
   return (hasBadStatus || hasIndicator) && !ip;
 }
+
+// Builds escaped log HTML with suspicious lines wrapped in .logs-highlighted-line.
+// Returns {html, highlighted} so callers can fall back to plain text.
+function buildHighlightedLogsHtml(logs, ip) {
+  var logLines = (logs || '').split('\n');
+  var html = '';
+  var highlighted = false;
+  for (var i = 0; i < logLines.length; i++) {
+    var safeLine = escapeHtml(logLines[i] || '');
+    if (isSuspiciousLogLine(logLines[i], ip)) {
+      highlighted = true;
+      html += '<span class="logs-highlighted-line">' + safeLine + '</span>';
+    } else {
+      html += safeLine + '\n';
+    }
+  }
+  return { html: html, highlighted: highlighted };
+}
+
+// =========================================================================
+//  Display Helpers
+// =========================================================================
+
+function countryLabel(country) {
+  return country || t('logs.overview.country_unknown', 'Unknown');
+}
