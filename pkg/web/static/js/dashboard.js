@@ -487,23 +487,10 @@ function renderDashboard() {
     var recurringWeekCount = recurringIPsLastWeekCount();
     html += ''
       + '<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">'
-      + '  <div class="bg-white rounded-lg shadow p-4">'
-      + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.active_jails">Active Jails</p>'
-      + '    <p id="summaryActiveJails" class="text-2xl font-semibold text-gray-800">' + (summary.jails ? summary.jails.length : 0) + '</p>'
-      + '  </div>'
-      + '  <div class="bg-white rounded-lg shadow p-4">'
-      + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.total_banned">Total Banned IPs</p>'
-      + '    <p id="summaryTotalBanned" class="text-2xl font-semibold text-gray-800">' + totalBanned + '</p>'
-      + '  </div>'
-      + '  <div class="bg-white rounded-lg shadow p-4">'
-      + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.new_last_hour">New Last Hour</p>'
-      + '    <p id="summaryNewLastHour" class="text-2xl font-semibold text-gray-800">' + newLastHour + '</p>'
-      + '  </div>'
-      + '  <div class="bg-white rounded-lg shadow p-4">'
-      + '    <p class="text-sm text-gray-500" data-i18n="dashboard.cards.recurring_week">Recurring IPs</p>'
-      + '    <p id="summaryRecurringWeek" class="text-2xl font-semibold text-gray-800">' + recurringWeekCount + '</p>'
-      + '    <p class="text-xs text-gray-500 mt-1" data-i18n="dashboard.cards.recurring_hint">Keep an eye on repeated offenders across all servers.</p>'
-      + '  </div>'
+      + renderStatCard({ variant: 'card', labelKey: 'dashboard.cards.active_jails', label: 'Active Jails', id: 'summaryActiveJails', value: summary.jails ? summary.jails.length : 0 })
+      + renderStatCard({ variant: 'card', labelKey: 'dashboard.cards.total_banned', label: 'Total Banned IPs', id: 'summaryTotalBanned', value: totalBanned })
+      + renderStatCard({ variant: 'card', labelKey: 'dashboard.cards.new_last_hour', label: 'New Last Hour', id: 'summaryNewLastHour', value: newLastHour })
+      + renderStatCard({ variant: 'card', labelKey: 'dashboard.cards.recurring_week', label: 'Recurring IPs', id: 'summaryRecurringWeek', value: recurringWeekCount, subKey: 'dashboard.cards.recurring_hint', sub: 'Keep an eye on repeated offenders across all servers.' })
       + '</div>'
       + '<div class="bg-white rounded-lg shadow p-6 mb-6">'
       + '  <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">'
@@ -1012,6 +999,9 @@ function clearStoredBanEvents() {
       latestBanInsights = null;
       banEventsTotal = 0;
       banEventsHasMore = false;
+      if (typeof resetInsightsTimeline === 'function') {
+        resetInsightsTimeline();
+      }
       renderLogOverviewSection();
     })
     .catch(function(err) { showToast(String(err), 'error'); });
@@ -1313,29 +1303,31 @@ function refreshDashboardData() {
   });
 }
 
-function totalStoredBans() {
-  if (latestBanInsights && latestBanInsights.totals && typeof latestBanInsights.totals.overall === 'number') {
-    return latestBanInsights.totals.overall;
+function insightsTotals() {
+  var totals = (latestBanInsights && latestBanInsights.totals) || {};
+  var overall = (typeof totals.overall === 'number') ? totals.overall : null;
+  if (overall === null) {
+    overall = latestBanStats ? Object.keys(latestBanStats).reduce(function(sum, key) {
+      return sum + (latestBanStats[key] || 0);
+    }, 0) : 0;
   }
-  if (!latestBanStats) return 0;
-  return Object.keys(latestBanStats).reduce(function(sum, key) {
-    return sum + (latestBanStats[key] || 0);
-  }, 0);
+  return {
+    overall: overall,
+    today: (typeof totals.today === 'number') ? totals.today : 0,
+    week: (typeof totals.week === 'number') ? totals.week : 0
+  };
 }
 
-// Helper functions to query the total number of banned IPs of today.
+function totalStoredBans() {
+  return insightsTotals().overall;
+}
+
 function totalBansToday() {
-  if (latestBanInsights && latestBanInsights.totals && typeof latestBanInsights.totals.today === 'number') {
-    return latestBanInsights.totals.today;
-  }
-  return 0;
+  return insightsTotals().today;
 }
 
 function totalBansWeek() {
-  if (latestBanInsights && latestBanInsights.totals && typeof latestBanInsights.totals.week === 'number') {
-    return latestBanInsights.totals.week;
-  }
-  return 0;
+  return insightsTotals().week;
 }
 
 function recurringIPsLastWeekCount() {

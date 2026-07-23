@@ -206,6 +206,21 @@ function formatDateTime(value) {
   return year + '.' + month + '.' + day + ', ' + hours + ':' + minutes + ':' + seconds;
 }
 
+function renderStatCard(card) {
+  var isCard = card.variant === 'card';
+  var wrapperClass = isCard ? 'bg-white rounded-lg shadow p-4' : 'border border-gray-200 rounded-lg p-4 bg-gray-50';
+  var labelClass = isCard ? 'text-sm text-gray-500' : 'text-xs uppercase tracking-wide text-gray-500';
+  var valueClass = isCard ? 'text-2xl font-semibold text-gray-800' : 'text-3xl font-semibold text-gray-900 mt-1';
+  var html = '<div class="' + wrapperClass + '">'
+    + '<p class="' + labelClass + '"' + (card.labelKey ? ' data-i18n="' + card.labelKey + '"' : '') + '>' + escapeHtml(card.label || '') + '</p>'
+    + '<p' + (card.id ? ' id="' + card.id + '"' : '') + ' class="' + valueClass + '">' + escapeHtml(card.value) + '</p>';
+  if (card.sub || card.subKey) {
+    html += '<p class="text-xs text-gray-500 mt-1"' + (card.subKey ? ' data-i18n="' + card.subKey + '"' : '') + '>' + escapeHtml(card.sub || '') + '</p>';
+  }
+  html += '</div>';
+  return html;
+}
+
 // =========================================================================
 //  External IP
 // =========================================================================

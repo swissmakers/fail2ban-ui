@@ -18,8 +18,13 @@ function closeModal(modalId) {
   if (!modal || modal.classList.contains('hidden')) {
     return;
   }
-  if (modalId === 'banInsightsModal' && typeof destroyInsightsGlobe === 'function') {
-    destroyInsightsGlobe();
+  if (modalId === 'banInsightsModal') {
+    if (typeof destroyInsightsGlobe === 'function') {
+      destroyInsightsGlobe();
+    }
+    if (typeof destroyInsightsTimeline === 'function') {
+      destroyInsightsTimeline();
+    }
   }
   modal.classList.add('hidden');
   openModalCount = Math.max(0, openModalCount - 1);
@@ -102,27 +107,10 @@ function renderLogsModalContent(event) {
   document.getElementById('logsModalJail').textContent = event.jail || 'N/A';
   var logs = event.logs;
   var ip = event.ip || '';
-  var logLines = logs.split('\n');
-  var suspiciousIndices = [];
-  for (var i = 0; i < logLines.length; i++) {
-    if (isSuspiciousLogLine(logLines[i], ip)) {
-      suspiciousIndices.push(i);
-    }
-  }
   var contentEl = document.getElementById('logsModalContent');
-  if (suspiciousIndices.length) {
-    var highlightMap = {};
-    suspiciousIndices.forEach(function(idx) { highlightMap[idx] = true; });
-    var html = '';
-    for (var j = 0; j < logLines.length; j++) {
-      var safeLine = escapeHtml(logLines[j] || '');
-      if (highlightMap[j]) {
-        html += '<span class="logs-highlighted-line">' + safeLine + '</span>';
-      } else {
-        html += safeLine + '\n';
-      }
-    }
-    contentEl.innerHTML = html;
+  var result = buildHighlightedLogsHtml(logs, ip);
+  if (result.highlighted) {
+    contentEl.innerHTML = result.html;
   } else {
     contentEl.textContent = logs;
   }
@@ -250,14 +238,7 @@ function openBanInsightsModal() {
         sub: t('logs.modal.total_week_note', 'Weekly activity')
       }
     ];
-    summaryContainer.innerHTML = summaryCards.map(function(card) {
-      return ''
-        + '<div class="border border-gray-200 rounded-lg p-4 bg-gray-50">'
-        + '  <p class="text-xs uppercase tracking-wide text-gray-500">' + escapeHtml(card.label) + '</p>'
-        + '  <p class="text-3xl font-semibold text-gray-900 mt-1">' + escapeHtml(card.value) + '</p>'
-        + '  <p class="text-xs text-gray-500 mt-1">' + escapeHtml(card.sub) + '</p>'
-        + '</div>';
-    }).join('');
+    summaryContainer.innerHTML = summaryCards.map(renderStatCard).join('');
   }
   var countries = (latestBanInsights && latestBanInsights.countries) || [];
   if (!countries.length) {
@@ -267,7 +248,7 @@ function openBanInsightsModal() {
       return sum + (stat.count || 0);
     }, 0) || 1;
     var countryHTML = countries.map(function(stat) {
-      var label = stat.country || t('logs.overview.country_unknown', 'Unknown');
+      var label = countryLabel(stat.country);
       var percent = Math.round(((stat.count || 0) / totalCountries) * 100);
       percent = Math.min(Math.max(percent, 3), 100);
       return ''
@@ -288,14 +269,14 @@ function openBanInsightsModal() {
     recurringContainer.innerHTML = '<p class="text-sm text-gray-500" data-i18n="logs.modal.insights_recurring_empty">No recurring IPs detected.</p>';
   } else {
     var recurringHTML = recurring.map(function(stat) {
-      var countryLabel = stat.country || t('logs.overview.country_unknown', 'Unknown');
+      var statCountry = countryLabel(stat.country);
       var lastSeenLabel = stat.lastSeen ? formatDateTime(stat.lastSeen) : ' - ';
       return ''
         + '<div class="rounded-lg bg-white border border-gray-200 shadow-sm p-4">'
         + '  <div class="flex items-center justify-between">'
         + '    <div>'
         + '      <p class="font-mono text-base text-gray-900">' + escapeHtml(stat.ip || ' - ') + '</p>'
-        + '      <p class="text-xs text-gray-500 mt-1">' + escapeHtml(countryLabel) + '</p>'
+        + '      <p class="text-xs text-gray-500 mt-1">' + escapeHtml(statCountry) + '</p>'
         + '    </div>'
         + '    <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">' + formatNumber(stat.count || 0) + '×</span>'
         + '  </div>'
@@ -313,6 +294,9 @@ function openBanInsightsModal() {
   openModal('banInsightsModal');
   if (typeof renderInsightsGlobe === 'function') {
     setTimeout(renderInsightsGlobe, 150);
+  }
+  if (typeof initInsightsTimeline === 'function') {
+    setTimeout(initInsightsTimeline, 150);
   }
 }
 
