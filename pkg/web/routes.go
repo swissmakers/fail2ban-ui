@@ -86,6 +86,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// Internal API calls for advanced actions
 		api.GET("/advanced-actions/blocks", RequirePermission(PermissionAdmin), ListPermanentBlocksHandler)
+		api.POST("/advanced-actions/blocks", RequirePermission(PermissionAdmin), BulkPermanentBlockHandler)
 		api.DELETE("/advanced-actions/blocks", RequirePermission(PermissionAdmin), ClearPermanentBlocksHandler)
 		api.POST("/advanced-actions/test", RequirePermission(PermissionAdmin), AdvancedActionsTestHandler)
 
@@ -106,6 +107,9 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		api.DELETE("/events/bans", RequirePermission(PermissionAdmin), ClearBanEventsHandler)
 		api.GET("/events/bans/stats", RequirePermission(PermissionRead), BanStatisticsHandler)
 		api.GET("/events/bans/insights", RequirePermission(PermissionRead), BanInsightsHandler)
+		api.GET("/events/bans/timeline", RequirePermission(PermissionRead), BanTimelineHandler)
+		api.GET("/events/bans/ips", RequirePermission(PermissionRead), ListBanEventIPsHandler)
+		api.GET("/events/bans/ips/activity", RequirePermission(PermissionRead), BanEventIPActivityHandler)
 		api.GET("/events/bans/:id", RequirePermission(PermissionRead), GetBanEventHandler)
 		api.GET("/threat-intel/:ip", RequirePermission(PermissionRead), ThreatIntelHandler)
 
