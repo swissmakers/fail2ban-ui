@@ -624,14 +624,26 @@ func ListBanEventsHandler(c *gin.Context) {
 		}
 	}
 
-	var since time.Time
+	var since, until time.Time
 	if sinceStr := c.Query("since"); sinceStr != "" {
 		if parsed, err := time.Parse(time.RFC3339, sinceStr); err == nil {
 			since = parsed
 		}
 	}
-	search := strings.TrimSpace(c.Query("search"))
-	country := strings.TrimSpace(c.Query("country"))
+	if untilStr := c.Query("until"); untilStr != "" {
+		if parsed, err := time.Parse(time.RFC3339, untilStr); err == nil {
+			until = parsed
+		}
+	}
+
+	filter := storage.BanEventFilter{
+		ServerID: serverID,
+		Jail:     strings.TrimSpace(c.Query("jail")),
+		Country:  strings.TrimSpace(c.Query("country")),
+		Search:   strings.TrimSpace(c.Query("search")),
+		Since:    since,
+		Until:    until,
+	}
 
 	ctx := c.Request.Context()
 
@@ -645,13 +657,13 @@ func ListBanEventsHandler(c *gin.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		events, listErr = storage.ListBanEventsFiltered(ctx, serverID, limit, offset, since, search, country)
+		events, listErr = storage.ListBanEventsFiltered(ctx, filter, limit, offset)
 	}()
 	if offset == 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			total, countErr = storage.CountBanEventsFiltered(ctx, serverID, since, search, country)
+			total, countErr = storage.CountBanEventsFiltered(ctx, filter)
 		}()
 	}
 	wg.Wait()
@@ -743,7 +755,7 @@ func BanInsightsHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	now := time.Now().UTC()
 
-	// The five queries are independent; run them concurrently.
+	// The three queries are independent; run them concurrently.
 	var (
 		countriesMap             map[string]int64
 		recurring                []storage.RecurringIPStat
@@ -751,12 +763,10 @@ func BanInsightsHandler(c *gin.Context) {
 		totalWeek                int64
 		countriesErr             error
 		recurringErr             error
-		overallErr               error
-		todayErr                 error
-		weekErr                  error
+		totalsErr                error
 		wg                       sync.WaitGroup
 	)
-	wg.Add(5)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		countriesMap, countriesErr = storage.CountBanEventsByCountry(ctx, since, serverID)
@@ -767,15 +777,7 @@ func BanInsightsHandler(c *gin.Context) {
 	}()
 	go func() {
 		defer wg.Done()
-		totalOverall, overallErr = storage.CountBanEvents(ctx, time.Time{}, serverID)
-	}()
-	go func() {
-		defer wg.Done()
-		totalToday, todayErr = storage.CountBanEvents(ctx, now.Add(-24*time.Hour), serverID)
-	}()
-	go func() {
-		defer wg.Done()
-		totalWeek, weekErr = storage.CountBanEvents(ctx, now.Add(-7*24*time.Hour), serverID)
+		totalOverall, totalToday, totalWeek, totalsErr = storage.CountBanEventTotals(ctx, serverID, now)
 	}()
 	wg.Wait()
 
@@ -799,11 +801,9 @@ func BanInsightsHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errorMsg})
 		return
 	}
-	for _, err := range []error{overallErr, todayErr, weekErr} {
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	if totalsErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": totalsErr.Error()})
+		return
 	}
 
 	type countryStat struct {
@@ -835,6 +835,162 @@ func BanInsightsHandler(c *gin.Context) {
 			"week":    totalWeek,
 		},
 	})
+}
+
+// Bucket ladder for the timeline endpoint
+var timelineBucketLadder = []int64{60, 300, 900, 1800, 3600, 10800, 21600, 43200, 86400}
+
+const (
+	timelineTargetBuckets = 180
+	timelineMaxBuckets    = 500
+)
+
+func parseEventRange(c *gin.Context) (since, until time.Time, ok bool) {
+	until = time.Now().UTC()
+	if untilStr := c.Query("until"); untilStr != "" {
+		parsed, err := time.Parse(time.RFC3339, untilStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'until' timestamp, expected RFC3339"})
+			return since, until, false
+		}
+		until = parsed.UTC()
+	}
+	since = until.Add(-8 * time.Hour)
+	if sinceStr := c.Query("since"); sinceStr != "" {
+		parsed, err := time.Parse(time.RFC3339, sinceStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'since' timestamp, expected RFC3339"})
+			return since, until, false
+		}
+		since = parsed.UTC()
+	}
+	if !until.After(since) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'until' must be after 'since'"})
+		return since, until, false
+	}
+	return since, until, true
+}
+
+func eventFilterFromQuery(c *gin.Context, since, until time.Time) storage.BanEventFilter {
+	return storage.BanEventFilter{
+		ServerID: c.Query("serverId"),
+		Jail:     strings.TrimSpace(c.Query("jail")),
+		Country:  strings.TrimSpace(c.Query("country")),
+		Search:   strings.TrimSpace(c.Query("search")),
+		Since:    since,
+		Until:    until,
+	}
+}
+
+func chooseBucketSeconds(since, until time.Time, override int64) int64 {
+	rangeSeconds := until.Unix() - since.Unix()
+	if rangeSeconds < 1 {
+		rangeSeconds = 1
+	}
+	minAllowed := rangeSeconds/timelineMaxBuckets + 1
+	if override > 0 {
+		if override < minAllowed {
+			return minAllowed
+		}
+		return override
+	}
+	for _, b := range timelineBucketLadder {
+		if rangeSeconds/b <= timelineTargetBuckets {
+			return b
+		}
+	}
+	bucket := timelineBucketLadder[len(timelineBucketLadder)-1]
+	for rangeSeconds/bucket > timelineMaxBuckets {
+		bucket *= 2
+	}
+	return bucket
+}
+
+// Returns time-bucketed ban/unban counts for the insights timeline.
+func BanTimelineHandler(c *gin.Context) {
+	since, until, ok := parseEventRange(c)
+	if !ok {
+		return
+	}
+	var override int64
+	if bucketStr := c.Query("bucket"); bucketStr != "" {
+		if parsed, err := strconv.ParseInt(bucketStr, 10, 64); err == nil && parsed > 0 {
+			override = parsed
+		}
+	}
+	bucketSeconds := chooseBucketSeconds(since, until, override)
+
+	buckets, err := storage.BanEventTimeline(c.Request.Context(), eventFilterFromQuery(c, since, until), bucketSeconds)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var totalBans, totalUnbans int64
+	for _, b := range buckets {
+		totalBans += b.Bans
+		totalUnbans += b.Unbans
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"since":         since,
+		"until":         until,
+		"bucketSeconds": bucketSeconds,
+		"buckets":       buckets,
+		"totals":        gin.H{"bans": totalBans, "unbans": totalUnbans},
+	})
+}
+
+// Returns per-IP ban aggregates for a time range
+func ListBanEventIPsHandler(c *gin.Context) {
+	since, until, ok := parseEventRange(c)
+	if !ok {
+		return
+	}
+	limit := 2000
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 10000 {
+			limit = parsed
+		}
+	}
+
+	ips, total, err := storage.ListBanEventIPs(c.Request.Context(), eventFilterFromQuery(c, since, until), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if ips == nil {
+		ips = []storage.BanEventIPStat{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ips":       ips,
+		"total":     total,
+		"truncated": total > int64(len(ips)),
+		"since":     since,
+		"until":     until,
+	})
+}
+
+func BanEventIPActivityHandler(c *gin.Context) {
+	since, until, ok := parseEventRange(c)
+	if !ok {
+		return
+	}
+	minOverlap := 3
+	if minOverlapStr := c.Query("minOverlap"); minOverlapStr != "" {
+		if parsed, err := strconv.Atoi(minOverlapStr); err == nil && parsed >= 1 {
+			minOverlap = parsed
+		}
+	}
+
+	periods, err := storage.ListBanEventIPActivity(c.Request.Context(), eventFilterFromQuery(c, since, until), minOverlap)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if periods == nil {
+		periods = []storage.IPActivityPeriod{}
+	}
+	c.JSON(http.StatusOK, gin.H{"periods": periods})
 }
 
 // Deletes all stored ban event records.
@@ -2500,6 +2656,136 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Action %s completed for %s", action, req.IP)})
+}
+
+const bulkBlockMaxIPs = 500
+const bulkBlockAbortThreshold = 5
+
+// Permanently blocks a list of IPs via the configured advanced-actions integration
+func BulkPermanentBlockHandler(c *gin.Context) {
+	var req struct {
+		IPs []string `json:"ips"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+	if len(req.IPs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ips is required"})
+		return
+	}
+	if len(req.IPs) > bulkBlockMaxIPs {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("too many IPs (max %d per request)", bulkBlockMaxIPs)})
+		return
+	}
+
+	settings := config.GetSettings()
+	if settings.AdvancedActions.Integration == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration (MikroTik, pfSense, or OPNsense) in Advanced Actions settings first"})
+		return
+	}
+	integration, ok := integrations.Get(settings.AdvancedActions.Integration)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration %s not found or not registered", settings.AdvancedActions.Integration)})
+		return
+	}
+	if err := integration.Validate(settings.AdvancedActions); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("integration configuration is invalid: %v", err)})
+		return
+	}
+
+	actingUser := ""
+	if sessionValue, exists := c.Get("session"); exists {
+		if session, ok := sessionValue.(*auth.Session); ok && session != nil {
+			actingUser = session.Username
+			if actingUser == "" {
+				actingUser = session.Email
+			}
+		}
+	}
+
+	// Dedupe preserving order.
+	seen := make(map[string]bool, len(req.IPs))
+	ips := make([]string, 0, len(req.IPs))
+	for _, raw := range req.IPs {
+		ip := strings.TrimSpace(raw)
+		if ip == "" || seen[ip] {
+			continue
+		}
+		seen[ip] = true
+		ips = append(ips, ip)
+	}
+
+	type bulkBlockResult struct {
+		IP      string `json:"ip"`
+		Status  string `json:"status"`
+		Message string `json:"message,omitempty"`
+	}
+	results := make([]bulkBlockResult, 0, len(ips))
+	summary := map[string]int{
+		"requested": len(ips), "blocked": 0, "alreadyBlocked": 0,
+		"skipped": 0, "invalid": 0, "failed": 0, "aborted": 0,
+	}
+
+	ctx := c.Request.Context()
+	consecutiveErrors := 0
+	lastErrorMsg := ""
+	aborted := false
+
+	for _, ip := range ips {
+		if aborted {
+			results = append(results, bulkBlockResult{IP: ip, Status: "aborted"})
+			summary["aborted"]++
+			continue
+		}
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
+			results = append(results, bulkBlockResult{IP: ip, Status: "invalid", Message: "not a valid IP address"})
+			summary["invalid"]++
+			continue
+		}
+		if parsed.IsLoopback() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() ||
+			parsed.IsMulticast() || parsed.IsUnspecified() || parsed.IsPrivate() {
+			results = append(results, bulkBlockResult{IP: ip, Status: "skipped_private", Message: "private/reserved address"})
+			summary["skipped"]++
+			continue
+		}
+		if active, err := storage.IsPermanentBlockActive(ctx, ip, settings.AdvancedActions.Integration); err == nil && active {
+			results = append(results, bulkBlockResult{IP: ip, Status: "already_blocked"})
+			summary["alreadyBlocked"]++
+			continue
+		}
+
+		err := runAdvancedIntegrationAction(ctx, "block", ip, settings, config.Fail2banServer{}, map[string]any{
+			"reason":    "bulk_insights",
+			"user":      actingUser,
+			"batchSize": len(ips),
+		}, false)
+		if err != nil {
+			results = append(results, bulkBlockResult{IP: ip, Status: "error", Message: err.Error()})
+			summary["failed"]++
+			if err.Error() == lastErrorMsg {
+				consecutiveErrors++
+			} else {
+				consecutiveErrors = 1
+				lastErrorMsg = err.Error()
+			}
+			if consecutiveErrors >= bulkBlockAbortThreshold {
+				aborted = true
+			}
+			continue
+		}
+		consecutiveErrors = 0
+		lastErrorMsg = ""
+		results = append(results, bulkBlockResult{IP: ip, Status: "blocked"})
+		summary["blocked"]++
+	}
+
+	log.Printf("Bulk permanent block: user=%s requested=%d blocked=%d alreadyBlocked=%d skipped=%d invalid=%d failed=%d aborted=%d",
+		actingUser, summary["requested"], summary["blocked"], summary["alreadyBlocked"],
+		summary["skipped"], summary["invalid"], summary["failed"], summary["aborted"])
+
+	c.JSON(http.StatusOK, gin.H{"results": results, "summary": summary})
 }
 
 func getJailNames(jails map[string]bool) []string {
