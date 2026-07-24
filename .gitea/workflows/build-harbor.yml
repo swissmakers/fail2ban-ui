@@ -32,10 +32,22 @@ jobs:
         run: |
           echo "$DH_TOKEN" | podman login docker.io --username "$DH_USER" --password-stdin
 
+      - name: Login to GHCR
+        if: ${{ secrets.GHCR_USERNAME && secrets.GHCR_TOKEN }}
+        env:
+          GHCR_USER: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | podman login ghcr.io --username "$GHCR_USER" --password-stdin
+
       - name: Extract version
         id: version
         run: |
-          VERSION=$(node -e "console.log(require('./package.json').version)")
+          VERSION=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' internal/version/version.go)
+          if [ -z "$VERSION" ]; then
+            echo "Failed to parse version from internal/version/version.go" >&2
+            exit 1
+          fi
           echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build multi-arch manifest locally
@@ -69,6 +81,18 @@ jobs:
           LOCAL_MANIFEST: localhost/fail2ban-ui:${{ github.sha }}
         run: |
           DEST="docker://docker.io/$DH_NS/$DH_REPO"
+          podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ github.sha }}"
+          podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ steps.version.outputs.version }}"
+          podman manifest push --all "$LOCAL_MANIFEST" "$DEST:latest"
+
+      - name: Push to GHCR
+        if: ${{ secrets.GHCR_USERNAME && secrets.GHCR_TOKEN }}
+        env:
+          GHCR_NS: swissmakers
+          GHCR_REPO: fail2ban-ui
+          LOCAL_MANIFEST: localhost/fail2ban-ui:${{ github.sha }}
+        run: |
+          DEST="docker://ghcr.io/$GHCR_NS/$GHCR_REPO"
           podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ github.sha }}"
           podman manifest push --all "$LOCAL_MANIFEST" "$DEST:${{ steps.version.outputs.version }}"
           podman manifest push --all "$LOCAL_MANIFEST" "$DEST:latest"
