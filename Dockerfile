@@ -30,6 +30,23 @@ RUN set -eux; \
 # ===================================
 FROM --platform=$TARGETPLATFORM alpine:3.23 AS standalone-ui
 
+# Image metadata (OCI labels). VERSION/REVISION/CREATED are passed by CI.
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG CREATED=unknown
+LABEL org.opencontainers.image.title="Fail2ban-UI" \
+      org.opencontainers.image.description="Swiss-made management platform for Fail2ban, supporting local and remote (SSH/agent) Fail2ban servers." \
+      org.opencontainers.image.source="https://github.com/swissmakers/fail2ban-ui" \
+      org.opencontainers.image.url="https://github.com/swissmakers/fail2ban-ui" \
+      org.opencontainers.image.documentation="https://github.com/swissmakers/fail2ban-ui/tree/main/docs" \
+      org.opencontainers.image.vendor="Swissmakers GmbH" \
+      org.opencontainers.image.authors="Swissmakers GmbH <https://swissmakers.ch>" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      org.opencontainers.image.base.name="docker.io/library/alpine:3.23"
+
 # Install required container dependencies
 RUN set -eux; \
     apk update; \

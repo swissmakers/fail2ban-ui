@@ -58,6 +58,9 @@ jobs:
           podman build --pull \
             --platform "$PLATFORMS" \
             --manifest "$LOCAL_MANIFEST" \
+            --build-arg VERSION="${{ steps.version.outputs.version }}" \
+            --build-arg REVISION="${{ github.sha }}" \
+            --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             .
           podman manifest inspect "$LOCAL_MANIFEST"
 
