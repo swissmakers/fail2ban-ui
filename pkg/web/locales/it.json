@@ -565,6 +565,11 @@
   "servers.form.agent_url_placeholder": "https://host:9700",
   "servers.form.agent_secret": "Segreto dell'agente",
   "servers.form.agent_secret_placeholder": "token condiviso",
+  "servers.form.reverse_tunnel": "Abilita tunnel inverso per gli eventi",
+  "servers.form.reverse_tunnel_help": "Crea automaticamente un tunnel SSH inverso (-R <porta del tunnel>:localhost:<porta del server>) affinché gli eventi di callback di fail2ban sul server remoto possano raggiungere questa interfaccia. Il file di azione remoto usa automaticamente http://localhost:<porta del tunnel>, quindi l'URL di callback globale può restare un indirizzo pubblico per i server raggiungibili direttamente.",
+  "servers.form.tunnel_port": "Porta del tunnel",
+  "servers.form.tunnel_port_placeholder": "vuoto = porta del server",
+  "servers.form.tunnel_port_help": "Porta su cui l'host remoto ascolta i callback (vincolata dal tunnel). Lasciare vuoto per usare la porta del server della UI. I callback in arrivo vengono inoltrati attraverso il tunnel alla porta del server della UI. Deve essere compresa tra 1024 e 65535: gli utenti remoti senza privilegi non possono vincolare porte inferiori a 1024.",
   "servers.form.tags": "Tag",
   "servers.form.tags_placeholder": "tag separati da virgole",
   "servers.form.set_default": "Imposta come server predefinito",
@@ -590,6 +595,7 @@
   "servers.errors.agent_invalid_url": "L'URL dell'agente non è valido.",
   "servers.errors.agent_unreachable": "Impossibile raggiungere il servizio agente.",
   "servers.errors.agent_request_failed": "La richiesta all'agente non è riuscita.",
+  "servers.errors.invalid_tunnel_port": "La porta del tunnel deve essere compresa tra 1024 e 65535 (vuoto = porta del server).",
   "servers.jail_local_warning": "Attenzione: jail.local non è gestito da Fail2ban-UI. Sposta ogni jail in un file proprio sotto jail.d/ ed elimina jail.local in modo che Fail2ban-UI possa ricrearlo (salva una volta la pagina delle impostazioni per scrivere il file). Consulta la documentazione per i permessi.",
   "servers.actions.restart": "Riavvia Fail2ban",
   "servers.actions.reload": "Ricarica Fail2ban",
@@ -608,6 +614,7 @@
   "servers.validation.duplicate_socket": "Esiste già un connettore locale con questo percorso socket.",
   "servers.validation.duplicate_config_path": "Esiste già un connettore locale con questo percorso di configurazione.",
   "servers.validation.agent_required": "Per i server API Agent sono obbligatori URL agente e secret agente.",
+  "servers.validation.tunnel_port_range": "La porta del tunnel deve essere compresa tra 1024 e 65535.",
   "servers.card.socket_path": "Percorso socket",
   "servers.card.config_path": "Percorso configurazione",
   "servers.card.server_id": "ID server",
@@ -753,5 +760,6 @@
   "logs.timeline.series_unbans": "Unban",
   "logs.timeline.suggestions_empty": "Nessun periodo simile trovato.",
   "logs.timeline.suggestions_title": "Periodi passati simili",
-  "logs.timeline.title": "Attività di ban e unban"
+  "logs.timeline.title": "Attività di ban e unban",
+  "jails.manage.offender_disabled": "La tua modifica è stata applicata. Il jail non correlato '{jail}' ha una configurazione difettosa ed è stato disabilitato automaticamente."
 }

@@ -568,6 +568,11 @@
   "servers.form.agent_url_placeholder": "https://host:9700",
   "servers.form.agent_secret": "代理密钥",
   "servers.form.agent_secret_placeholder": "共享密钥令牌",
+  "servers.form.reverse_tunnel": "为事件启用反向隧道",
+  "servers.form.reverse_tunnel_help": "自动创建反向 SSH 隧道（-R <隧道端口>:localhost:<服务器端口>），使远程服务器上的 fail2ban 回调事件能够到达此 UI 服务器。远程操作文件会自动使用 http://localhost:<隧道端口>，因此全局回调 URL 可以继续保持为供可直接访问服务器使用的公共地址。",
+  "servers.form.tunnel_port": "隧道端口",
+  "servers.form.tunnel_port_placeholder": "留空 = 服务器端口",
+  "servers.form.tunnel_port_help": "远程主机监听回调的端口（由隧道绑定）。留空则使用 UI 的服务器端口。传入的回调会通过隧道转发到 UI 的服务器端口。必须在 1024-65535 之间：无特权的远程用户无法绑定 1024 以下的端口。",
   "servers.form.tags": "标签",
   "servers.form.tags_placeholder": "逗号,分隔,标签",
   "servers.form.set_default": "设为默认服务器",
@@ -593,6 +598,7 @@
   "servers.errors.agent_invalid_url": "Agent URL 无效。",
   "servers.errors.agent_unreachable": "无法连接到 Agent 服务。",
   "servers.errors.agent_request_failed": "Agent 请求失败。",
+  "servers.errors.invalid_tunnel_port": "隧道端口必须在 1024 至 65535 之间（留空 = 服务器端口）。",
   "servers.jail_local_warning": "警告：jail.local 不由 Fail2ban-UI 管理。将每个 jail 移动到 jail.d/ 下的独立文件中，并删除 jail.local，以便 Fail2ban-UI 可以重新创建它（在设置页面点击一次保存以写入文件）。请参阅文档了解权限要求。",
   "servers.actions.restart": "重启 Fail2ban",
   "servers.actions.reload": "重新加载 Fail2ban",
@@ -608,6 +614,7 @@
   "servers.validation.duplicate_socket": "已存在使用此 socket 路径的本地连接器。",
   "servers.validation.duplicate_config_path": "已存在使用此配置路径的本地连接器。",
   "servers.validation.agent_required": "API 代理服务器需要代理 URL 和代理密钥。",
+  "servers.validation.tunnel_port_range": "隧道端口必须在 1024 至 65535 之间。",
   "servers.card.socket_path": "Socket 路径",
   "servers.card.config_path": "配置路径",
   "servers.card.server_id": "服务器 ID",
@@ -753,5 +760,6 @@
   "logs.timeline.series_unbans": "解封",
   "logs.timeline.suggestions_empty": "未找到相似的时段。",
   "logs.timeline.suggestions_title": "相似的历史时段",
-  "logs.timeline.title": "封禁与解封活动"
+  "logs.timeline.title": "封禁与解封活动",
+  "jails.manage.offender_disabled": "您的更改已应用。无关的监狱 '{jail}' 配置有误，已被自动禁用。"
 }

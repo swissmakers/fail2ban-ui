@@ -38,6 +38,12 @@ func (fail2banRuntime) CallbackSecret() string {
 	return currentSettings.CallbackSecret
 }
 
+func (fail2banRuntime) ServerPort() int {
+	settingsLock.RLock()
+	defer settingsLock.RUnlock()
+	return currentSettings.Port
+}
+
 func (fail2banRuntime) BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 	return BuildFail2banActionConfig(callbackURL, serverID, secret)
 }

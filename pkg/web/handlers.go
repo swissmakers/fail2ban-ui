@@ -215,7 +215,8 @@ func buildErrorResponse(err error, fallbackKey string) gin.H {
 //  Dashboard
 // =========================================================================
 
-// Returns a JSON summary of all jails for the selected server.
+const summaryBannedPreviewLimit = 5
+
 func SummaryHandler(c *gin.Context) {
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -223,39 +224,39 @@ func SummaryHandler(c *gin.Context) {
 		return
 	}
 
-	jailInfos, err := conn.GetJailInfos(c.Request.Context())
+	summary, err := conn.GetJailSummary(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "dashboard.errors.summary_failed"))
 		return
 	}
+	resp := SummaryResponse{ServerID: conn.Server().ID, Jails: summary.Jails}
+
 	serverID := conn.Server().ID
 	since := time.Now().UTC().Add(-1 * time.Hour)
 	recentCounts, countErr := storage.CountRecentBanEventsByJail(c.Request.Context(), serverID, since)
 	if countErr != nil {
 		config.DebugLog("Warning: failed to count recent bans for server %s: %v", serverID, countErr)
 	}
-	for i := range jailInfos {
-		jailInfos[i].NewInLastHour = recentCounts[jailInfos[i].JailName]
-		// Summary should only expose counters; banned IPs are loaded lazily via /api/jails/:jail/banned.
-		jailInfos[i].BannedIPs = []string{}
+	for i := range resp.Jails {
+		resp.Jails[i].NewInLastHour = recentCounts[resp.Jails[i].JailName]
+		if len(resp.Jails[i].BannedIPs) > summaryBannedPreviewLimit {
+			resp.Jails[i].BannedIPs = resp.Jails[i].BannedIPs[:summaryBannedPreviewLimit]
+		}
+		if resp.Jails[i].BannedIPs == nil {
+			resp.Jails[i].BannedIPs = []string{}
+		}
 	}
 
-	resp := SummaryResponse{
-		ServerID: serverID,
-		Jails:    jailInfos,
-	}
-
-	// Checks the jail.local integrity on every summary request to warn the user if not managed by Fail2ban-UI.
-	if exists, hasUI, chkErr := conn.CheckJailLocalIntegrity(c.Request.Context()); chkErr == nil {
-		if exists && !hasUI {
-			resp.JailLocalWarning = true
-		} else if !exists {
-			// File was removed (user finished migration) - initialize a fresh managed file
-			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
-				config.DebugLog("Warning: failed to initialize jail.local on summary request: %v", err)
-			} else {
-				config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
-			}
+	// jail.local integrity comes back with the summary itself.
+	switch {
+	case summary.JailLocalExists && !summary.JailLocalManaged:
+		resp.JailLocalWarning = true
+	case !summary.JailLocalExists:
+		// The user finished a migration and removed it -> recreate a managed one.
+		if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
+			config.DebugLog("Warning: failed to initialize jail.local on summary request: %v", err)
+		} else {
+			config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
 		}
 	}
 
@@ -309,9 +310,12 @@ func SearchBannedIPHandler(c *gin.Context) {
 				if info.TotalBanned == 0 {
 					continue
 				}
-				banned, err := conn.GetBannedIPs(ctx, info.JailName)
-				if err != nil {
-					continue
+				banned := info.BannedIPs
+				if len(banned) == 0 {
+					banned, err = conn.GetBannedIPs(ctx, info.JailName)
+					if err != nil {
+						continue
+					}
 				}
 				if slices.Contains(banned, ip) {
 					mu.Lock()
@@ -1249,21 +1253,34 @@ func UpsertServerHandler(c *gin.Context) {
 
 	server, err := config.UpsertServer(req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		resp := gin.H{"error": err.Error()}
+		if errors.Is(err, config.ErrInvalidTunnelPort) {
+			resp["messageKey"] = "servers.errors.invalid_tunnel_port"
+		}
+		c.JSON(http.StatusBadRequest, resp)
 		return
 	}
 
 	// Check if server was just enabled (transition from disabled to enabled)
 	justEnabled := wasDisabled && server.Enabled
+	tunnelChanged := wasEnabled && oldServer.Enabled && server.Enabled &&
+		(oldServer.ReverseTunnelEnabled != server.ReverseTunnelEnabled || oldServer.TunnelPort != server.TunnelPort)
 
 	if err := config.ReloadFail2banManager(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if justEnabled && (server.Type == "ssh" || server.Type == "agent") {
+	if (justEnabled || tunnelChanged) && (server.Type == "ssh" || server.Type == "agent") {
 		if err := fail2ban.GetManager().UpdateActionFileForServer(c.Request.Context(), server.ID); err != nil {
 			config.DebugLog("Warning: failed to update action file for server %s: %v", server.Name, err)
+		}
+		if tunnelChanged {
+			if conn, err := fail2ban.GetManager().Connector(server.ID); err == nil {
+				if err := conn.Reload(c.Request.Context()); err != nil {
+					config.DebugLog("Warning: failed to reload fail2ban on server %s after tunnel change: %v", server.Name, err)
+				}
+			}
 		}
 	}
 
@@ -1553,7 +1570,18 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 // Records an unban event, broadcasts it via WebSocket, and sends an email alert if enabled.
 func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string) error {
 	settings := config.GetSettings()
-	country = resolveCountry(ip, country, settings)
+	if country == "" || whois == "" {
+		if storedCountry, storedWhois, err := storage.LatestBanEnrichmentForIP(ctx, ip); err == nil {
+			if country == "" {
+				country = storedCountry
+			}
+			if whois == "" {
+				whois = storedWhois
+			}
+		} else {
+			log.Printf("WARNING: failed to look up stored enrichment for IP %s: %v", ip, err)
+		}
+	}
 	event := storage.BanEventRecord{
 		ServerID:   server.ID,
 		ServerName: server.Name,
@@ -2501,6 +2529,18 @@ func TestLogpathHandler(c *gin.Context) {
 		}
 		_, resolvedPath, filesOnServer, err := conn.TestLogpathWithResolution(c.Request.Context(), logpathLine)
 		if err != nil {
+			if errors.Is(err, fail2ban.ErrLogpathInaccessible) {
+				allResults = append(allResults, map[string]interface{}{
+					"logpath":       logpathLine,
+					"resolved_path": resolvedPath,
+					"found":         false,
+					"inaccessible":  true,
+					"files":         []string{},
+					"error":         "",
+					"message":       "Cannot verify: the log directory is not readable by the connector's SSH user. fail2ban runs as root and will read it, so the jail can still be enabled.",
+				})
+				continue
+			}
 			allResults = append(allResults, map[string]interface{}{
 				"logpath":       logpathLine,
 				"resolved_path": resolvedPath,
@@ -2797,15 +2837,6 @@ func getJailNames(jails map[string]bool) []string {
 	return names
 }
 
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
 func splitLogpaths(raw string) []string {
 	var out []string
 	for line := range strings.SplitSeq(raw, "\n") {
@@ -2819,17 +2850,19 @@ func splitLogpaths(raw string) []string {
 	return out
 }
 
-var jailErrorPattern = regexp.MustCompile(`Errors in jail '([^']+)'`)
+var jailErrorPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`Errors in jail '([^']+)'`),
+	regexp.MustCompile(`Have not found any log file for (\S+) jail`),
+}
 
 func parseJailErrorsFromReloadOutput(output string) []string {
 	var problematicJails []string
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		if strings.Contains(line, "Errors in jail") && strings.Contains(line, "Skipping") {
-			matches := jailErrorPattern.FindStringSubmatch(line)
-			if len(matches) > 1 {
-				problematicJails = append(problematicJails, matches[1])
+	for _, line := range strings.Split(output, "\n") {
+		for _, pattern := range jailErrorPatterns {
+			for _, matches := range pattern.FindAllStringSubmatch(line, -1) {
+				if len(matches) > 1 {
+					problematicJails = append(problematicJails, matches[1])
+				}
 			}
 		}
 	}
@@ -2913,10 +2946,15 @@ func UpdateJailManagementHandler(c *gin.Context) {
 		}
 
 		foundAnyFiles := false
+		inaccessible := false
 		var checkErrors []string
 		for _, lp := range paths {
 			_, resolvedPath, filesOnServer, testErr := conn.TestLogpathWithResolution(c.Request.Context(), lp)
 			if testErr != nil {
+				if errors.Is(testErr, fail2ban.ErrLogpathInaccessible) {
+					inaccessible = true
+					continue
+				}
 				checkErrors = append(checkErrors, fmt.Sprintf("%s (%v)", lp, testErr))
 				continue
 			}
@@ -2931,10 +2969,15 @@ func UpdateJailManagementHandler(c *gin.Context) {
 		}
 
 		if !foundAnyFiles {
-			c.JSON(http.StatusOK, gin.H{
-				"error": fmt.Sprintf("Jail '%s' cannot be enabled because no matching log files were found for its logpath(s): %s", jailName, strings.Join(checkErrors, "; ")),
-			})
-			return
+			if inaccessible {
+				log.Printf("WARNING: cannot verify logpath(s) for jail %s on server %s (log directory not readable by the connector's user); enabling anyway and relying on fail2ban (root) to read them",
+					jailName, conn.Server().Name)
+			} else {
+				c.JSON(http.StatusOK, gin.H{
+					"error": fmt.Sprintf("Jail '%s' cannot be enabled because no matching log files were found for its logpath(s): %s", jailName, strings.Join(checkErrors, "; ")),
+				})
+				return
+			}
 		}
 	}
 
@@ -2969,7 +3012,10 @@ func UpdateJailManagementHandler(c *gin.Context) {
 			}
 		}
 
-		// If problematic jails are found, disables them // TODO: @matthias we need to further enhance this
+		if detailedErrorOutput != "" {
+			errMsg = strings.TrimSpace(detailedErrorOutput)
+		}
+
 		if len(problematicJails) > 0 {
 			config.DebugLog("Found %d problematic jail(s) in reload output: %v", len(problematicJails), problematicJails)
 
@@ -2978,30 +3024,35 @@ func UpdateJailManagementHandler(c *gin.Context) {
 				disableUpdate[jailName] = false
 			}
 
-			for jailName := range enabledJails {
-				if contains(problematicJails, jailName) {
-					disableUpdate[jailName] = false
-				}
-			}
-
-			if len(disableUpdate) > 0 {
-				if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
-					config.DebugLog("Error disabling problematic jails: %v", disableErr)
-				} else {
-					// Reload again after disabling
-					if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
-						config.DebugLog("Error: failed to reload fail2ban after disabling problematic jails: %v", reloadErr2)
+			if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
+				config.DebugLog("Error disabling problematic jails: %v", disableErr)
+			} else if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
+				config.DebugLog("Error: failed to reload fail2ban after disabling problematic jails: %v", reloadErr2)
+			} else {
+				// Recovered by disabling the offenders only
+				var revertedToggled []string
+				for _, jailName := range problematicJails {
+					if enabledJails[jailName] {
+						revertedToggled = append(revertedToggled, jailName)
 					}
 				}
+				if len(revertedToggled) > 0 {
+					c.JSON(http.StatusOK, gin.H{
+						"error":         fmt.Sprintf("Jail '%s' was enabled but caused a reload error: %s. It has been automatically disabled.", strings.Join(revertedToggled, "', '"), errMsg),
+						"autoDisabled":  true,
+						"enabledJails":  revertedToggled,
+						"disabledJails": problematicJails,
+					})
+					return
+				}
+				config.DebugLog("Disabled unrelated broken jail(s) %v; requested change kept", problematicJails)
+				c.JSON(http.StatusOK, gin.H{
+					"message":       fmt.Sprintf("Your change was applied. Unrelated jail '%s' has a broken configuration and was automatically disabled (%s).", strings.Join(problematicJails, "', '"), errMsg),
+					"messageKey":    "jails.manage.offender_disabled",
+					"disabledJails": problematicJails,
+				})
+				return
 			}
-
-			for _, jailName := range problematicJails {
-				enabledJails[jailName] = true
-			}
-		}
-
-		if detailedErrorOutput != "" {
-			errMsg = strings.TrimSpace(detailedErrorOutput)
 		}
 
 		if len(enabledJails) > 0 {

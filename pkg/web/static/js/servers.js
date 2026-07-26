@@ -314,6 +314,8 @@ function resetServerForm() {
   document.getElementById('serverDefault').checked = false;
   document.getElementById('serverEnabled').checked = false;
   document.getElementById('serverReverseTunnel').checked = false;
+  document.getElementById('serverTunnelPort').value = '';
+  onReverseTunnelToggle();
   populateSSHKeySelect(sshKeysCache || [], '');
   onServerTypeChange('local');
 }
@@ -338,11 +340,23 @@ function editServer(serverId) {
   document.getElementById('serverDefault').checked = !!server.isDefault;
   document.getElementById('serverEnabled').checked = !!server.enabled;
   document.getElementById('serverReverseTunnel').checked = !!server.reverseTunnelEnabled;
+  document.getElementById('serverTunnelPort').value = server.tunnelPort || '';
+  onReverseTunnelToggle();
   onServerTypeChange(server.type || 'local');
   if ((server.type || 'local') === 'ssh') {
     loadSSHKeys().then(function(keys) {
       populateSSHKeySelect(keys, server.sshKeyPath || '');
     });
+  }
+}
+
+function onReverseTunnelToggle() {
+  var group = document.getElementById('serverTunnelPortGroup');
+  if (!group) return;
+  if (document.getElementById('serverReverseTunnel').checked) {
+    group.classList.remove('hidden');
+  } else {
+    group.classList.add('hidden');
   }
 }
 
@@ -455,8 +469,13 @@ function submitServerForm(event) {
       ? document.getElementById('serverTags').value.split(',').map(function(tag) { return tag.trim(); }).filter(Boolean)
       : [],
     enabled: document.getElementById('serverEnabled').checked,
-    reverseTunnelEnabled: document.getElementById('serverReverseTunnel').checked
+    reverseTunnelEnabled: document.getElementById('serverReverseTunnel').checked,
+    tunnelPort: document.getElementById('serverTunnelPort').value ? parseInt(document.getElementById('serverTunnelPort').value, 10) : 0
   };
+  if (payload.type === 'ssh' && payload.tunnelPort && (payload.tunnelPort < 1024 || payload.tunnelPort > 65535)) {
+    showToast(t('servers.validation.tunnel_port_range', 'Tunnel port must be between 1024 and 65535.'), 'error');
+    return;
+  }
   var nameKey = normalizeNameForCompare(payload.name);
   if (!nameKey) {
     showToast(t('servers.validation.name_required', 'Server name is required.'), 'error');
@@ -512,6 +531,7 @@ function submitServerForm(event) {
     delete payload.sshUser;
     delete payload.sshKeyPath;
     delete payload.reverseTunnelEnabled;
+    delete payload.tunnelPort;
   }
   if (payload.type !== 'agent') {
     delete payload.agentUrl;

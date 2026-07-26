@@ -242,6 +242,18 @@ func (ac *AgentConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) 
 	return resp.Jails, nil
 }
 
+func (ac *AgentConnector) GetJailSummary(ctx context.Context) (*JailSummary, error) {
+	infos, err := ac.GetJailInfos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	exists, managed, err := ac.CheckJailLocalIntegrity(ctx)
+	if err != nil {
+		debugf("Warning: could not check jail.local integrity on %s: %v", ac.server.Name, err)
+	}
+	return &JailSummary{Jails: infos, JailLocalExists: exists, JailLocalManaged: managed}, nil
+}
+
 func (ac *AgentConnector) GetBannedIPs(ctx context.Context, jail string) ([]string, error) {
 	var resp struct {
 		Jail        string   `json:"jail"`

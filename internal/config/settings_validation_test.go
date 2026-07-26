@@ -124,3 +124,19 @@ func TestFail2banActionConfigEscapesPercent(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateTunnelPort(t *testing.T) {
+	t.Parallel()
+	valid := []int{0, 1024, 8080, 65535}
+	for _, port := range valid {
+		if err := validateTunnelPort(port); err != nil {
+			t.Fatalf("validateTunnelPort(%d) = %v, want nil", port, err)
+		}
+	}
+	invalid := []int{-1, 1, 80, 443, 1023, 65536}
+	for _, port := range invalid {
+		if err := validateTunnelPort(port); err == nil {
+			t.Fatalf("validateTunnelPort(%d) = nil, want error", port)
+		}
+	}
+}

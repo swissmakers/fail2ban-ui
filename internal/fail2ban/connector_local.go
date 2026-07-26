@@ -41,10 +41,6 @@ func NewLocalConnector(server shared.Fail2banServer) *LocalConnector {
 	return &LocalConnector{server: server}
 }
 
-func (lc *LocalConnector) ID() string {
-	return lc.server.ID
-}
-
 func (lc *LocalConnector) Server() shared.Fail2banServer {
 	return lc.server
 }
@@ -55,33 +51,43 @@ func (lc *LocalConnector) configPath() string {
 
 // Collects jail status for every active local jail.
 func (lc *LocalConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
-	jails, err := lc.getJails(ctx)
+	summary, err := lc.GetJailSummary(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return collectJailInfos(ctx, jails, lc.GetBannedIPs)
+	return summary.Jails, nil
 }
 
-// Get banned IPs for a given jail.
-func (lc *LocalConnector) GetBannedIPs(ctx context.Context, jail string) ([]string, error) {
-	args := []string{"status", jail}
-	out, err := lc.runFail2banClient(ctx, args...)
+func (lc *LocalConnector) GetJailSummary(ctx context.Context) (*JailSummary, error) {
+	out, err := lc.runFail2banClient(ctx, "banned")
 	if err != nil {
-		return nil, fmt.Errorf("fail2ban-client status %s failed: %w", jail, err)
-	}
-	var bannedIPs []string
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "IP list:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) > 1 {
-				ips := strings.Fields(strings.TrimSpace(parts[1]))
-				bannedIPs = append(bannedIPs, ips...)
-			}
-			break
+		socketPath := lc.server.SocketPath
+		if strings.TrimSpace(socketPath) == "" {
+			socketPath = "default socket"
 		}
+		return nil, fmt.Errorf("unable to retrieve jail information via socket %s. is your fail2ban service running? details: %w (output: %s)",
+			socketPath, err, strings.TrimSpace(out))
 	}
-	return bannedIPs, nil
+	infos, err := parseBannedJails(out)
+	if err != nil {
+		return nil, fmt.Errorf("%w (fail2ban 0.11 or newer is required)", err)
+	}
+	exists, managed, err := lc.CheckJailLocalIntegrity(ctx)
+	if err != nil {
+		debugf("Warning: could not check jail.local integrity on %s: %v", lc.server.Name, err)
+	}
+	return &JailSummary{Jails: infos, JailLocalExists: exists, JailLocalManaged: managed}, nil
+}
+
+func (lc *LocalConnector) GetBannedIPs(ctx context.Context, jail string) ([]string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return nil, err
+	}
+	out, err := lc.runFail2banClient(ctx, "get", jail, "banip")
+	if err != nil {
+		return nil, fmt.Errorf("fail2ban-client get %s banip failed: %w (output: %s)", jail, err, strings.TrimSpace(out))
+	}
+	return strings.Fields(out), nil
 }
 
 // Unban an IP from a given jail.
@@ -159,66 +165,19 @@ func (lc *LocalConnector) SetFilterConfig(ctx context.Context, jail, content str
 	return SetFilterConfigLocal(jail, content, lc.configPath())
 }
 
-// Get all jails.
-func (lc *LocalConnector) getJails(ctx context.Context) ([]string, error) {
-	out, err := lc.runFail2banClient(ctx, "status")
-	if err != nil {
-		socketPath := lc.server.SocketPath
-		if strings.TrimSpace(socketPath) == "" {
-			socketPath = "default socket"
-		}
-		trimmedOut := strings.TrimSpace(out)
-		if trimmedOut != "" {
-			return nil, fmt.Errorf("error: unable to retrieve jail information via socket %s. is your fail2ban service running? details: %w (output: %s)", socketPath, err, trimmedOut)
-		}
-		return nil, fmt.Errorf("error: unable to retrieve jail information via socket %s. is your fail2ban service running? details: %w", socketPath, err)
-	}
-	var jails []string
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Jail list:") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) > 1 {
-				raw := strings.TrimSpace(parts[1])
-				jails = strings.Split(raw, ",")
-				for i := range jails {
-					jails[i] = strings.TrimSpace(jails[i])
-				}
-			}
-		}
-	}
-	return jails, nil
-}
-
 // =========================================================================
 //  CLI Helpers
 // =========================================================================
 
 func (lc *LocalConnector) runFail2banClient(ctx context.Context, args ...string) (string, error) {
-	cmdArgs := lc.buildFail2banArgs(args...)
-	cmd := exec.CommandContext(ctx, "fail2ban-client", cmdArgs...)
+	cmd := exec.CommandContext(ctx, "fail2ban-client", fail2banArgs(lc.server.SocketPath, args...)...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-func (lc *LocalConnector) buildFail2banArgs(args ...string) []string {
-	if lc.server.SocketPath == "" {
-		return args
-	}
-	base := []string{"-s", lc.server.SocketPath}
-	return append(base, args...)
-}
-
 func (lc *LocalConnector) checkFail2banHealthy(ctx context.Context) error {
 	out, err := lc.runFail2banClient(ctx, "ping")
-	trimmed := strings.TrimSpace(out)
-	if err != nil {
-		return fmt.Errorf("fail2ban ping error: %w (output: %s)", err, trimmed)
-	}
-	if !strings.Contains(strings.ToLower(trimmed), "pong") {
-		return fmt.Errorf("unexpected fail2ban ping output: %s", trimmed)
-	}
-	return nil
+	return checkPingOutput(out, err, "fail2ban")
 }
 
 // =========================================================================
@@ -292,7 +251,7 @@ func (lc *LocalConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 		}
 		return false, false, fmt.Errorf("failed to read jail.local: %w", err)
 	}
-	hasUIAction := strings.Contains(string(content), "ui-custom-action")
+	hasUIAction := strings.Contains(string(content), managedJailLocalMarker)
 	return true, hasUIAction, nil
 }
 

@@ -565,6 +565,11 @@
   "servers.form.agent_url_placeholder": "https://amfitrió:9700",
   "servers.form.agent_secret": "Secret de l'Agent",
   "servers.form.agent_secret_placeholder": "token secret compartit",
+  "servers.form.reverse_tunnel": "Activa el túnel invers per als esdeveniments",
+  "servers.form.reverse_tunnel_help": "Crea automàticament un túnel SSH invers (-R <port del túnel>:localhost:<port del servidor>) perquè els esdeveniments de callback de fail2ban al servidor remot puguin arribar a aquesta interfície. El fitxer d'acció remot utilitza automàticament http://localhost:<port del túnel>, de manera que l'URL de callback global pot continuar sent una adreça pública per als servidors accessibles directament.",
+  "servers.form.tunnel_port": "Port del túnel",
+  "servers.form.tunnel_port_placeholder": "buit = port del servidor",
+  "servers.form.tunnel_port_help": "Port on l'amfitrió remot escolta els callbacks (vinculat pel túnel). Deixeu-ho buit per utilitzar el port del servidor de la UI. Els callbacks entrants es reenvien a través del túnel al port del servidor de la UI. Ha d'estar entre 1024 i 65535: els usuaris remots sense privilegis no poden vincular ports per sota de 1024.",
   "servers.form.tags": "Etiquetes",
   "servers.form.tags_placeholder": "etiquetes,separades,per,comes",
   "servers.form.set_default": "Defineix com a servidor per defecte",
@@ -590,6 +595,7 @@
   "servers.errors.agent_invalid_url": "L'URL de l'agent no és vàlida.",
   "servers.errors.agent_unreachable": "No es pot contactar amb el servei de l'agent.",
   "servers.errors.agent_request_failed": "La petició a l'agent ha fallat.",
+  "servers.errors.invalid_tunnel_port": "El port del túnel ha d'estar entre 1024 i 65535 (buit = port del servidor).",
   "servers.jail_local_warning": "Avís: jail.local no està gestionat per Fail2ban-UI. Moveu cada jail al seu propi fitxer a jail.d/ i suprimiu jail.local perquè Fail2ban-UI el pugui tornar a crear (premeu una vegada Desar a la pàgina de configuració per escriure el fitxer). Vegeu la documentació per a temes de permisos.",
   "servers.actions.restart": "Reinicia Fail2ban",
   "servers.actions.reload": "Recarrega Fail2ban",
@@ -608,6 +614,7 @@
   "servers.validation.duplicate_socket": "Ja existeix un connector local amb aquesta ruta de socket.",
   "servers.validation.duplicate_config_path": "Ja existeix un connector local amb aquesta ruta de configuració.",
   "servers.validation.agent_required": "Per als servidors API Agent, l'URL de l'agent i el secret de l'agent són obligatoris.",
+  "servers.validation.tunnel_port_range": "El port del túnel ha d'estar entre 1024 i 65535.",
   "servers.card.socket_path": "Ruta del socket",
   "servers.card.config_path": "Ruta de configuració",
   "servers.card.server_id": "ID del servidor",
@@ -753,5 +760,6 @@
   "logs.timeline.series_unbans": "Desbans",
   "logs.timeline.suggestions_empty": "No s'han trobat períodes semblants.",
   "logs.timeline.suggestions_title": "Períodes passats semblants",
-  "logs.timeline.title": "Activitat de bans i desbans"
+  "logs.timeline.title": "Activitat de bans i desbans",
+  "jails.manage.offender_disabled": "El vostre canvi s'ha aplicat. El jail no relacionat '{jail}' té una configuració defectuosa i s'ha desactivat automàticament."
 }

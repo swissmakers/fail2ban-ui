@@ -68,9 +68,13 @@ With a subpath:
 
 ### Reverse SSH tunnel for callbacks
 
-SSH-connected servers can enable **reverse tunnel for events** (server form). The UI then opens a reverse tunnel (`ssh -R <port>:localhost:<port>`) alongside the SSH control connection so callbacks reach the UI even when the managed host cannot connect to it directly (NAT, firewall). The port is derived from `CALLBACK_URL` (explicit port, otherwise 443/80 by scheme).
+SSH-connected servers can enable **reverse tunnel for events** (server form). The UI then opens a reverse tunnel (`ssh -R <tunnel port>:localhost:<server port>`) alongside the SSH control connection so callbacks reach the UI even when the managed host cannot connect to it directly (NAT, firewall, isolated DMZ without outbound access). Two ports are involved: the **tunnel port** is where the remote host listens locally for the fail2ban callbacks, and the **server port** is where the UI's HTTP API listens -> the tunnel carries connections from the former to the latter.
 
-The tunnel is only used if `CALLBACK_URL` points to `localhost`/`127.0.0.1`  -  the remote Fail2Ban sends its callbacks to that URL, which the tunnel forwards to the UI. With a public callback URL the callbacks bypass the tunnel; the UI logs a warning in that case. Note that a localhost callback URL applies globally, so mixing tunneled and non-tunneled remote servers is not possible.
+Each server has its own tunnel port setting. Leave it empty to use the UI bind port (`PORT`, default 8080). If set, it must be between 1024 and 65535: the unprivileged SSH service account on the managed host cannot bind ports below 1024, and `ssh` only reports such a failure as a stderr warning while the connection itself stays up. The same applies when the chosen port is already occupied on the remote host, pick a free unprivileged port in that case. The tunnel port only affects the remote side; the tunnel always forwards to the UI's configured server port, so a custom tunnel port does not need to match it.
+
+For tunneled servers, the UI writes `http://localhost:<tunnel port>` into the remote action file, so the callbacks travel through the tunnel regardless of the global `CALLBACK_URL`. This means mixed setups work: keep `CALLBACK_URL` pointing at a public address for directly reachable servers while tunneled servers use the loopback URL. Plain `http` is correct inside the tunnel, the transport is already SSH-encrypted, so TLS (and `CALLBACK_INSECURE_TLS`) is irrelevant for tunneled servers.
+
+The UI checks every tunnel's SSH master connection every 45 seconds and automatically re-establishes it when it has died (for example after a short network outage), so callback delivery resumes without waiting for the next UI-triggered command. Changing a server's tunnel settings tears down the old connection and builds a new one immediately.
 
 ## Privacy and telemetry controls
 

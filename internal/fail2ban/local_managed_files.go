@@ -58,7 +58,7 @@ func EnsureManagedJailLocal(configPath string, content []byte) error {
 		existingContent = string(raw)
 		fileExists = strings.TrimSpace(existingContent) != ""
 	}
-	if fileExists && !strings.Contains(existingContent, "ui-custom-action") {
+	if fileExists && !strings.Contains(existingContent, managedJailLocalMarker) {
 		debugf("jail.local file exists but is not managed by Fail2ban-UI - skipping overwrite")
 		return nil
 	}

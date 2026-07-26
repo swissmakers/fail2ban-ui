@@ -338,6 +338,11 @@ semodule -i fail2ban-container-ui.pp
 semodule -i fail2ban-container-client.pp
 ```
 
+What the modules cover:
+
+- `fail2ban-container-ui`: lets the container write the managed files under `/etc/fail2ban` and stat/read `/var/log/fail2ban.log`. The latter is required as soon as a jail uses Fail2Ban's own log as `logpath` (e.g. the `recidive` jail): `fail2ban-client reload` stats every logpath while parsing the config, and a denial surfaces as `Have not found any log file for recidive jail`.
+- `fail2ban-container-client`: lets the container connect to the host Fail2Ban socket and read the monitored logs (`httpd_log_t`, `var_log_t`).
+
 ### Compile and install the policies manually
 
 To modify or rebuild the SELinux rules:
@@ -413,8 +418,10 @@ Symptoms: empty dashboard, no servers visible.
   - sudo access for `fail2ban-client` and `systemctl restart fail2ban` (via sudoers)
   - filesystem ACLs on `/etc/fail2ban` for configuration file access
   - see [docs/security.md](../../docs/security.md#ssh-connector-hardening) for the recommended service-account setup
-3. Check the key location: SSH keys belong in `/config/.ssh` inside the container, with permissions `600`.
-4. Enable debug mode under **Settings** for detailed error messages.
+3. Check the key location: SSH keys belong in `/config/.ssh` inside the container, with permissions `600` (and the `.ssh` directory itself `700`).
+4. Host keys: the connector uses `StrictHostKeyChecking=accept-new` with a persistent `known_hosts` next to the configured SSH key (e.g. `/config/.ssh/known_hosts`). The first connection records the remote host key; if the remote key ever CHANGES, connections fail on purpose - verify the remote host and remove the stale entry with `ssh-keygen -R <host> -f /config/.ssh/known_hosts` to re-trust it. (Earlier versions disabled host-key verification entirely inside containers.)
+5. ControlMaster sockets live in a private `ctl/` directory next to the SSH key (e.g. `/config/.ssh/ctl/`), not in `/tmp`. Stale sockets are cleaned up automatically.
+6. Enable debug mode under **Settings** for detailed error messages.
 5. Verify network connectivity: the container needs network access to the remote SSH servers. Check whether `--network=host` is in use, or configure the appropriate port mappings.
 
 ### Permission denied errors

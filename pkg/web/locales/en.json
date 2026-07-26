@@ -568,6 +568,11 @@
   "servers.form.agent_url_placeholder": "https://host:9700",
   "servers.form.agent_secret": "Agent Secret",
   "servers.form.agent_secret_placeholder": "shared secret token",
+  "servers.form.reverse_tunnel": "Enable reverse tunnel for events",
+  "servers.form.reverse_tunnel_help": "Automatically creates a reverse SSH tunnel (-R <tunnel port>:localhost:<server port>) so fail2ban callback events on the remote server can reach this UI server. The remote action file automatically posts to http://localhost:<tunnel port>, so the global Callback URL can stay a public address for directly reachable servers.",
+  "servers.form.tunnel_port": "Tunnel Port",
+  "servers.form.tunnel_port_placeholder": "empty = server port",
+  "servers.form.tunnel_port_help": "Port the remote host listens on for callbacks (bound by the tunnel). Leave empty to use the UI server port. Incoming callbacks are forwarded through the tunnel to the UI server port. Must be 1024-65535: unprivileged remote users cannot bind ports below 1024.",
   "servers.form.tags": "Tags",
   "servers.form.tags_placeholder": "comma,separated,tags",
   "servers.form.set_default": "Set as default server",
@@ -593,6 +598,7 @@
   "servers.errors.agent_invalid_url": "Agent URL is invalid.",
   "servers.errors.agent_unreachable": "Cannot reach agent service.",
   "servers.errors.agent_request_failed": "Agent request failed.",
+  "servers.errors.invalid_tunnel_port": "Tunnel port must be between 1024 and 65535 (empty = server port).",
   "servers.jail_local_warning": "Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it (hit once save on the settings page to write the file). See docs for permissions.",
   "servers.actions.restart": "Restart Fail2ban",
   "servers.actions.reload": "Reload Fail2ban",
@@ -608,6 +614,7 @@
   "servers.validation.duplicate_socket": "A local connector with this socket path already exists.",
   "servers.validation.duplicate_config_path": "A local connector with this configuration path already exists.",
   "servers.validation.agent_required": "Agent URL and Agent Secret are required for API Agent servers.",
+  "servers.validation.tunnel_port_range": "Tunnel port must be between 1024 and 65535.",
   "servers.card.socket_path": "Socket path",
   "servers.card.config_path": "Configuration path",
   "servers.card.server_id": "Server-ID",
@@ -753,5 +760,6 @@
   "logs.timeline.series_unbans": "Unbans",
   "logs.timeline.suggestions_empty": "No similar periods found.",
   "logs.timeline.suggestions_title": "Similar past periods",
-  "logs.timeline.title": "Ban & unban activity"
+  "logs.timeline.title": "Ban & unban activity",
+  "jails.manage.offender_disabled": "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled."
 }

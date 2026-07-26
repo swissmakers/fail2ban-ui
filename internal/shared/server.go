@@ -40,6 +40,7 @@ type Fail2banServer struct {
 	IsDefault            bool      `json:"isDefault"`
 	Enabled              bool      `json:"enabled"`
 	ReverseTunnelEnabled bool      `json:"reverseTunnelEnabled,omitempty"`
+	TunnelPort           int       `json:"tunnelPort,omitempty"`
 	RestartNeeded        bool      `json:"restartNeeded"`
 	CreatedAt            time.Time `json:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"`

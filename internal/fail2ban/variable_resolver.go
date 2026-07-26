@@ -19,6 +19,7 @@ package fail2ban
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -56,8 +57,11 @@ func searchVariableInFile(filePath, varName string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
+	return searchVariableInReader(file, filePath, varName)
+}
 
-	scanner := bufio.NewScanner(file)
+func searchVariableInReader(r io.Reader, filePath, varName string) (string, error) {
+	scanner := bufio.NewScanner(r)
 	var currentVar string
 	var currentValue strings.Builder
 	var inMultiLine bool
@@ -169,6 +173,34 @@ func searchVariableInFile(filePath, varName string) (string, error) {
 	return "", nil
 }
 
+type variableSource interface {
+	findVariable(varName string) (string, error)
+}
+type fsVariableSource struct{ root string }
+
+func (s fsVariableSource) findVariable(varName string) (string, error) {
+	return findVariableDefinition(varName, s.root)
+}
+
+type snapshotVariableSource struct{ files []remoteFile }
+
+func (s snapshotVariableSource) findVariable(varName string) (string, error) {
+	for _, suffix := range []string{".local", ".conf"} {
+		for _, f := range s.files {
+			if !strings.HasSuffix(strings.ToLower(f.path), suffix) {
+				continue
+			}
+			value, err := searchVariableInReader(strings.NewReader(f.content), f.path, varName)
+			if err != nil || value == "" {
+				continue
+			}
+			debugf("findVariable: '%s' = '%s' (from %s)", varName, value, f.path)
+			return value, nil
+		}
+	}
+	return "", fmt.Errorf("variable '%s' not found in Fail2Ban configuration files", varName)
+}
+
 // Searches for a variable definition in all .local files first, then .conf files under /etc/fail2ban/ and subdirectories.
 // Returns the FIRST value found (prioritizing .local over .conf).
 func findVariableDefinition(varName, fail2banPath string) (string, error) {
@@ -249,7 +281,7 @@ func findVariableDefinition(varName, fail2banPath string) (string, error) {
 //  Resolution
 // =========================================================================
 
-func resolveVariableRecursive(varName string, visited map[string]bool, fail2banPath string) (string, error) {
+func resolveVariableRecursive(varName string, visited map[string]bool, src variableSource) (string, error) {
 	if visited[varName] {
 		return "", fmt.Errorf("circular reference detected for variable '%s'", varName)
 	}
@@ -257,7 +289,7 @@ func resolveVariableRecursive(varName string, visited map[string]bool, fail2banP
 	visited[varName] = true
 	defer delete(visited, varName)
 
-	value, err := findVariableDefinition(varName, fail2banPath)
+	value, err := src.findVariable(varName)
 	if err != nil {
 		return "", err
 	}
@@ -280,7 +312,7 @@ func resolveVariableRecursive(varName string, visited map[string]bool, fail2banP
 			}
 
 			debugf("resolveVariableRecursive: resolving nested variable '%s' for '%s'", nestedVar, varName)
-			nestedValue, err := resolveVariableRecursive(nestedVar, visited, fail2banPath)
+			nestedValue, err := resolveVariableRecursive(nestedVar, visited, src)
 			if err != nil {
 				return "", fmt.Errorf("failed to resolve variable '%s' in '%s': %w", nestedVar, varName, err)
 			}
@@ -311,8 +343,11 @@ func resolveVariableRecursive(varName string, visited map[string]bool, fail2banP
 	return resolved, nil
 }
 
-// Expands %(var)s patterns in logpath using fail2ban config path.
 func ResolveLogpathVariables(logpath, fail2banPath string) (string, error) {
+	return resolveLogpathVariablesFrom(logpath, fsVariableSource{root: fail2banPath})
+}
+
+func resolveLogpathVariablesFrom(logpath string, src variableSource) (string, error) {
 	if logpath == "" {
 		return "", nil
 	}
@@ -333,7 +368,7 @@ func ResolveLogpathVariables(logpath, fail2banPath string) (string, error) {
 		visited := make(map[string]bool)
 		for _, varName := range variables {
 			debugf("ResolveLogpathVariables: resolving variable '%s' from string '%s'", varName, resolved)
-			varValue, err := resolveVariableRecursive(varName, visited, fail2banPath)
+			varValue, err := resolveVariableRecursive(varName, visited, src)
 			if err != nil {
 				return "", fmt.Errorf("failed to resolve variable '%s': %w", varName, err)
 			}

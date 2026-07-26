@@ -34,6 +34,7 @@ type testProvider struct{}
 func (testProvider) DebugLog(format string, v ...interface{}) {}
 func (testProvider) CallbackURL() string                      { return "http://127.0.0.1:8080" }
 func (testProvider) CallbackSecret() string                   { return "test-secret" }
+func (testProvider) ServerPort() int                          { return 8080 }
 func (testProvider) BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 	return ""
 }

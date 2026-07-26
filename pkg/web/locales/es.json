@@ -565,6 +565,11 @@
   "servers.form.agent_url_placeholder": "https://host:9700",
   "servers.form.agent_secret": "Secreto del agente",
   "servers.form.agent_secret_placeholder": "token compartido",
+  "servers.form.reverse_tunnel": "Habilitar túnel inverso para eventos",
+  "servers.form.reverse_tunnel_help": "Crea automáticamente un túnel SSH inverso (-R <puerto del túnel>:localhost:<puerto del servidor>) para que los eventos de callback de fail2ban en el servidor remoto puedan llegar a esta interfaz. El archivo de acción remoto usa automáticamente http://localhost:<puerto del túnel>, por lo que la URL de callback global puede seguir siendo una dirección pública para los servidores accesibles directamente.",
+  "servers.form.tunnel_port": "Puerto del túnel",
+  "servers.form.tunnel_port_placeholder": "vacío = puerto del servidor",
+  "servers.form.tunnel_port_help": "Puerto en el que el host remoto escucha los callbacks (vinculado por el túnel). Déjelo vacío para usar el puerto del servidor de la UI. Los callbacks entrantes se reenvían a través del túnel al puerto del servidor de la UI. Debe estar entre 1024 y 65535: los usuarios remotos sin privilegios no pueden vincular puertos por debajo de 1024.",
   "servers.form.tags": "Etiquetas",
   "servers.form.tags_placeholder": "etiquetas separadas por comas",
   "servers.form.set_default": "Establecer como servidor predeterminado",
@@ -590,6 +595,7 @@
   "servers.errors.agent_invalid_url": "La URL del agente no es válida.",
   "servers.errors.agent_unreachable": "No se puede conectar con el servicio del agente.",
   "servers.errors.agent_request_failed": "La solicitud al agente falló.",
+  "servers.errors.invalid_tunnel_port": "El puerto del túnel debe estar entre 1024 y 65535 (vacío = puerto del servidor).",
   "servers.jail_local_warning": "Advertencia: jail.local no está gestionado por Fail2ban-UI. Mueva cada jail a su propio archivo en jail.d/ y elimine jail.local para que Fail2ban-UI pueda recrearlo (pulse una vez en la página de configuración para escribir el archivo). Consulte la documentación para permisos.",
   "servers.actions.restart": "Reiniciar Fail2ban",
   "servers.actions.reload": "Recargar Fail2ban",
@@ -608,6 +614,7 @@
   "servers.validation.duplicate_socket": "Ya existe un conector local con esta ruta de socket.",
   "servers.validation.duplicate_config_path": "Ya existe un conector local con esta ruta de configuración.",
   "servers.validation.agent_required": "La URL del agente y el secreto del agente son obligatorios para servidores API Agent.",
+  "servers.validation.tunnel_port_range": "El puerto del túnel debe estar entre 1024 y 65535.",
   "servers.card.socket_path": "Ruta del socket",
   "servers.card.config_path": "Ruta de configuración",
   "servers.card.server_id": "ID del servidor",
@@ -753,5 +760,6 @@
   "logs.timeline.series_unbans": "Desbaneos",
   "logs.timeline.suggestions_empty": "No se encontraron períodos similares.",
   "logs.timeline.suggestions_title": "Períodos pasados similares",
-  "logs.timeline.title": "Actividad de baneos y desbaneos"
+  "logs.timeline.title": "Actividad de baneos y desbaneos",
+  "jails.manage.offender_disabled": "Su cambio se ha aplicado. El jail no relacionado '{jail}' tiene una configuración defectuosa y se ha desactivado automáticamente."
 }

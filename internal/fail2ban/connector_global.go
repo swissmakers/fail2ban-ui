@@ -20,9 +20,9 @@ package fail2ban
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
@@ -36,7 +36,7 @@ func ValidateIP(ip string) error {
 	return shared.ValidateIP(ip)
 }
 
-// Inspects fail2ban-client reload output for the markers that indicate the daemon reloaded but a jail/filter failed to apply.
+// Inspects fail2ban-client reload output for the markers tha indicate the daemon reloaded but a jail/filter failed to apply
 func checkReloadOutput(output string) error {
 	trimmed := strings.TrimSpace(output)
 	if trimmed == "" || trimmed == "OK" {
@@ -48,11 +48,201 @@ func checkReloadOutput(output string) error {
 	return nil
 }
 
+// Marker that identifies a jail.local as generated and owned by Fail2ban-UI
+const managedJailLocalMarker = "ui-custom-action"
+
+// =========================================================================
+//  Shared fail2ban-client Output Parsers
+// =========================================================================
+
+func parseBannedJails(out string) ([]JailInfo, error) {
+	s := &reprScanner{in: strings.TrimSpace(out)}
+	if s.rest() == "" {
+		return nil, fmt.Errorf("empty output from `fail2ban-client banned`")
+	}
+	if !s.accept('[') {
+		return nil, fmt.Errorf("unexpected output from `fail2ban-client banned`: %s", truncateForError(s.in))
+	}
+
+	infos := []JailInfo{}
+	s.skipSpace()
+	for !s.accept(']') {
+		if s.done() {
+			return nil, fmt.Errorf("unterminated jail list in `fail2ban-client banned` output")
+		}
+		if !s.accept('{') {
+			return nil, fmt.Errorf("expected a jail entry at offset %d in `fail2ban-client banned` output", s.pos)
+		}
+		name, err := s.quotedString()
+		if err != nil {
+			return nil, fmt.Errorf("bad jail name in `fail2ban-client banned` output: %w", err)
+		}
+		if !s.accept(':') {
+			return nil, fmt.Errorf("missing ':' after jail %q in `fail2ban-client banned` output", name)
+		}
+		ips, err := s.stringList()
+		if err != nil {
+			return nil, fmt.Errorf("bad banned IP list for jail %q: %w", name, err)
+		}
+		if !s.accept('}') {
+			return nil, fmt.Errorf("unterminated entry for jail %q in `fail2ban-client banned` output", name)
+		}
+		infos = append(infos, JailInfo{
+			JailName:    name,
+			TotalBanned: len(ips),
+			BannedIPs:   ips,
+			Enabled:     true,
+		})
+		s.accept(',')
+		s.skipSpace()
+	}
+
+	sort.SliceStable(infos, func(i, j int) bool { return infos[i].JailName < infos[j].JailName })
+	return infos, nil
+}
+
+// Keeps parse errors readable when the remote returns something unexpected.
+func truncateForError(s string) string {
+	const limit = 120
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "..."
+}
+
+// Minimal scanner for the subset of Python repr that fail2ban emits
+type reprScanner struct {
+	in  string
+	pos int
+}
+
+func (s *reprScanner) rest() string { return s.in[s.pos:] }
+func (s *reprScanner) done() bool   { return s.pos >= len(s.in) }
+
+func (s *reprScanner) skipSpace() {
+	for s.pos < len(s.in) && (s.in[s.pos] == ' ' || s.in[s.pos] == '\t' || s.in[s.pos] == '\n' || s.in[s.pos] == '\r') {
+		s.pos++
+	}
+}
+
+func (s *reprScanner) accept(c byte) bool {
+	s.skipSpace()
+	if s.pos < len(s.in) && s.in[s.pos] == c {
+		s.pos++
+		return true
+	}
+	return false
+}
+
+// Reads a 'single' or "double" quoted string, honouring backslash escapes.
+func (s *reprScanner) quotedString() (string, error) {
+	s.skipSpace()
+	if s.done() {
+		return "", fmt.Errorf("unexpected end of input")
+	}
+	quote := s.in[s.pos]
+	if quote != '\'' && quote != '"' {
+		return "", fmt.Errorf("expected a quoted string at offset %d", s.pos)
+	}
+	s.pos++
+	var b strings.Builder
+	for s.pos < len(s.in) {
+		c := s.in[s.pos]
+		switch c {
+		case '\\':
+			if s.pos+1 >= len(s.in) {
+				return "", fmt.Errorf("dangling escape at offset %d", s.pos)
+			}
+			b.WriteByte(s.in[s.pos+1])
+			s.pos += 2
+		case quote:
+			s.pos++
+			return b.String(), nil
+		default:
+			b.WriteByte(c)
+			s.pos++
+		}
+	}
+	return "", fmt.Errorf("unterminated string starting at offset %d", s.pos)
+}
+
+// Reads ['a', 'b'] into a slice -> an empty list yields a non-nil empty slice.
+func (s *reprScanner) stringList() ([]string, error) {
+	if !s.accept('[') {
+		return nil, fmt.Errorf("expected a list at offset %d", s.pos)
+	}
+	items := []string{}
+	s.skipSpace()
+	for !s.accept(']') {
+		if s.done() {
+			return nil, fmt.Errorf("unterminated list")
+		}
+		item, err := s.quotedString()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+		s.accept(',')
+		s.skipSpace()
+	}
+	return items, nil
+}
+
+func fail2banArgs(socketPath string, args ...string) []string {
+	if socketPath == "" {
+		return args
+	}
+	return append([]string{"-s", socketPath}, args...)
+}
+
+func isNonConfigFile(filename string) bool {
+	return strings.Contains(filename, "README") ||
+		strings.HasSuffix(filename, ".bak") ||
+		strings.HasSuffix(filename, "~") ||
+		strings.HasSuffix(filename, ".old") ||
+		strings.HasSuffix(filename, ".rpmnew") ||
+		strings.HasSuffix(filename, ".rpmsave")
+}
+
+func dedupeConfigBaseNames(localFiles, confFiles []string) []string {
+	seen := make(map[string]bool)
+	var names []string
+	add := func(paths []string, suffix string) {
+		for _, p := range paths {
+			filename := filepath.Base(p)
+			if isNonConfigFile(filename) {
+				continue
+			}
+			base := strings.TrimSuffix(filename, suffix)
+			if base == "" || base == filename || seen[base] {
+				continue
+			}
+			seen[base] = true
+			names = append(names, base)
+		}
+	}
+	add(localFiles, ".local")
+	add(confFiles, ".conf")
+	sort.Strings(names)
+	return names
+}
+
+func checkPingOutput(out string, err error, label string) error {
+	trimmed := strings.TrimSpace(out)
+	if err != nil {
+		return fmt.Errorf("%s ping error: %w (output: %s)", label, err, trimmed)
+	}
+	if !strings.Contains(strings.ToLower(trimmed), "pong") {
+		return fmt.Errorf("unexpected %s ping output: %s", label, trimmed)
+	}
+	return nil
+}
+
 // =========================================================================
 //  Types
 // =========================================================================
 
-// JailInfo holds summary data for a single Fail2ban jail.
+// A single Fail2ban jail
 type JailInfo struct {
 	JailName      string   `json:"jailName"`
 	TotalBanned   int      `json:"totalBanned"`
@@ -61,11 +251,17 @@ type JailInfo struct {
 	Enabled       bool     `json:"enabled"`
 }
 
+// Result of one summary fetch
+type JailSummary struct {
+	Jails            []JailInfo
+	JailLocalExists  bool
+	JailLocalManaged bool
+}
+
 // =========================================================================
 //  Service Control
 // =========================================================================
 
-// RestartFail2ban restarts (or reloads) the Fail2ban service on the given server.
 func RestartFail2ban(serverID string) (string, error) {
 	manager := GetManager()
 	var (
@@ -89,75 +285,4 @@ func RestartFail2ban(serverID string) (string, error) {
 		return "", err
 	}
 	return "restart", nil
-}
-
-// =========================================================================
-//  Jail Info Collection
-// =========================================================================
-
-// bannedIPsFn is the signature used by any connector's GetBannedIPs method.
-type bannedIPsFn func(ctx context.Context, jail string) ([]string, error)
-
-// Fans out to fetch banned IPs for each jail concurrently, then returns the results sorted alphabetically. (local connector)
-func collectJailInfos(ctx context.Context, jails []string, getBannedIPs bannedIPsFn) ([]JailInfo, error) {
-	return collectJailInfosLimited(ctx, jails, getBannedIPs, 0)
-}
-
-// Caps the number of concurrent getBannedIPs calls when maxConcurrent > 0. (SSH connector)
-func collectJailInfosLimited(ctx context.Context, jails []string, getBannedIPs bannedIPsFn, maxConcurrent int) ([]JailInfo, error) {
-	type jailResult struct {
-		jail JailInfo
-		err  error
-	}
-	results := make(chan jailResult, len(jails))
-	var wg sync.WaitGroup
-
-	var sem chan struct{}
-	if maxConcurrent > 0 {
-		sem = make(chan struct{}, maxConcurrent)
-	}
-
-	for _, jail := range jails {
-		wg.Add(1)
-		go func(j string) {
-			defer wg.Done()
-			if sem != nil {
-				sem <- struct{}{}
-				defer func() { <-sem }()
-			}
-			ips, err := getBannedIPs(ctx, j)
-			if err != nil {
-				results <- jailResult{err: err}
-				return
-			}
-			totalBanned := len(ips)
-			results <- jailResult{
-				jail: JailInfo{
-					JailName:    j,
-					TotalBanned: totalBanned,
-					BannedIPs:   []string{},
-					Enabled:     true,
-				},
-			}
-		}(jail)
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	var infos []JailInfo
-	for r := range results {
-		if r.err != nil {
-			continue
-		}
-		infos = append(infos, r.jail)
-	}
-
-	sort.SliceStable(infos, func(i, j int) bool {
-		return infos[i].JailName < infos[j].JailName
-	})
-
-	return infos, nil
 }

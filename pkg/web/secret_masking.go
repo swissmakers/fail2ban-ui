@@ -122,6 +122,7 @@ func stripServerConnectionDetails(servers []shared.Fail2banServer) []shared.Fail
 		servers[i].SSHKeyPath = ""
 		servers[i].AgentURL = ""
 		servers[i].AgentSecret = ""
+		servers[i].TunnelPort = 0
 	}
 	return servers
 }

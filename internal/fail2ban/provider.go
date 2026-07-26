@@ -23,6 +23,7 @@ type Provider interface {
 	DebugLog(format string, v ...interface{})
 	CallbackURL() string
 	CallbackSecret() string
+	ServerPort() int
 	BuildFail2banActionConfig(callbackURL, serverID, secret string) string
 	BuildJailLocalContent() string
 }
@@ -60,6 +61,8 @@ func (noopProvider) DebugLog(format string, v ...interface{}) {}
 func (noopProvider) CallbackURL() string { return "" }
 
 func (noopProvider) CallbackSecret() string { return "" }
+
+func (noopProvider) ServerPort() int { return 0 }
 
 func (noopProvider) BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 	return ""

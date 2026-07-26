@@ -2,6 +2,22 @@
 // Dashboard data fetching and rendering.
 
 var threatIntelProvider = 'none';
+var dashboardRenderScheduled = false;
+
+// life-saver if it should somehow happen that a race or function wants to render multible times.
+function scheduleRender() {
+  if (dashboardRenderScheduled) {
+    return;
+  }
+  dashboardRenderScheduled = true;
+  var raf = (typeof requestAnimationFrame === 'function')
+    ? requestAnimationFrame
+    : function(cb) { setTimeout(cb, 0); };
+  raf(function() {
+    dashboardRenderScheduled = false;
+    renderDashboard();
+  });
+}
 
 // =========================================================================
 //  Data Fetching
@@ -22,33 +38,42 @@ function refreshData(options) {
     showLoading(true);
   }
 
-  // Slower sections load independently and don't hold up the page.
-  banEventsLoading = true;
-  Promise.all([
-    fetchBanStatisticsData(),
-    fetchBanEventsData(),
-    fetchBanInsightsData(),
-    fetchBanEventCountries()
-  ])
-    .catch(function(err) {
-      console.error('Error loading ban events/insights:', err);
-    })
-    .finally(function() {
-      banEventsLoading = false;
-      renderDashboard();
+  if (!options.silent) {
+    Object.keys(jailBannedState || {}).forEach(function(jailName) {
+      if (jailBannedState[jailName]) {
+        jailBannedState[jailName].lastErrorAt = 0;
+      }
     });
+  }
 
-  return Promise.all([
+  if (!options.summaryOnly) {
+    banEventsLoading = true;
+    Promise.all([
+      fetchBanStatisticsData(),
+      fetchBanEventsData(),
+      fetchBanInsightsData(),
+      fetchBanEventCountries()
+    ])
+      .catch(function(err) {
+        console.error('Error loading ban events/insights:', err);
+      })
+      .finally(function() {
+        banEventsLoading = false;
+        scheduleRender();
+      });
+  }
+
+  return Promise.all(options.summaryOnly ? [summaryPromise] : [
     summaryPromise,
     fetchThreatIntelProviderData()
   ])
     .then(function() {
-      renderDashboard();
+      scheduleRender();
     })
     .catch(function(err) {
       console.error('Error refreshing data:', err);
       latestSummaryError = err ? err.toString() : 'Unknown error';
-      renderDashboard();
+      scheduleRender();
     })
     .finally(function() {
       if (!options.silent) {
@@ -111,13 +136,31 @@ function normalizeJailBannedState(summary) {
   var nextState = {};
   var existing = jailBannedState || {};
   var jails = summary && Array.isArray(summary.jails) ? summary.jails : [];
+  var activeQuery = (bannedIPsFilterText || '').trim();
   jails.forEach(function(jail) {
     var jailName = jail && jail.jailName ? String(jail.jailName) : '';
     if (!jailName) {
       return;
     }
-    if (existing[jailName]) {
-      nextState[jailName] = existing[jailName];
+    var prev = existing[jailName];
+    var preview = Array.isArray(jail.bannedIPs) ? jail.bannedIPs : null;
+    var canSeed = !activeQuery && preview !== null &&
+      (!prev || (!prev.loading && prev.ips.length <= preview.length));
+    if (canSeed) {
+      var total = typeof jail.totalBanned === 'number' ? jail.totalBanned : preview.length;
+      nextState[jailName] = {
+        ips: preview.slice(),
+        total: total,
+        hasMore: total > preview.length,
+        loading: false,
+        loadedQuery: '',
+        error: null,
+        lastErrorAt: 0
+      };
+      return;
+    }
+    if (prev) {
+      nextState[jailName] = prev;
       return;
     }
     nextState[jailName] = {
@@ -126,7 +169,8 @@ function normalizeJailBannedState(summary) {
       hasMore: false,
       loading: false,
       loadedQuery: null,
-      error: null
+      error: null,
+      lastErrorAt: 0
     };
   });
   jailBannedState = nextState;
@@ -140,7 +184,8 @@ function getJailBannedState(jailName) {
       hasMore: false,
       loading: false,
       loadedQuery: null,
-      error: null
+      error: null,
+      lastErrorAt: 0
     };
   }
   return jailBannedState[jailName];
@@ -223,12 +268,14 @@ function fetchJailBannedIPs(jailName, options) {
       state.hasMore = data && data.hasMore === true;
       state.loadedQuery = activeQuery;
       state.error = data && data.error ? formatApiError(data, '', '') : null;
+      state.lastErrorAt = state.error ? Date.now() : 0;
     })
     .catch(function(err) {
       if (!isActiveBannedSearchToken(searchToken)) {
         return;
       }
       state.error = err ? String(err) : 'Unknown error';
+      state.lastErrorAt = Date.now();
       if (!append) {
         state.ips = [];
       }
@@ -267,6 +314,10 @@ function loadInitialJailBannedPages(summary) {
       return;
     }
     if (state.loadedQuery === activeQuery && state.total === 0 && !state.error) {
+      applyJailRowVisibility(jailName);
+      return;
+    }
+    if (state.error && state.lastErrorAt && (Date.now() - state.lastErrorAt < JAIL_BANNED_ERROR_RETRY_MS)) {
       applyJailRowVisibility(jailName);
       return;
     }
@@ -382,13 +433,15 @@ function refreshAfterManualAction(jail) {
     fetchJailBannedIPs(jail, { append: false }),
     fetchBanEventsData()
   ]).then(function() {
+    jailListLastRefreshAt[jail] = Date.now();
+    lastDashboardRefreshAt = Date.now();
     if ((bannedIPsFilterText || '').trim()) {
       updateSummaryCountersFromLatestSummary();
       updateJailRowCountersFromSummary(jail);
       renderJailBannedCell(jail);
       renderLogOverviewSection();
     } else {
-      renderDashboard();
+      scheduleRender();
     }
   }).catch(function(err) {
     console.error('Error refreshing after manual action:', err);
@@ -456,6 +509,9 @@ function renderDashboard() {
     return;
   }
   var summary = latestSummary;
+  if (summary && summary.jails && summary.jails.length > 0) {
+    normalizeJailBannedState(summary);
+  }
   var html = '';
   // Persistent warning banner when jail.local is not managed by Fail2ban-UI
   if (jailLocalWarning) {
@@ -616,7 +672,6 @@ function renderDashboard() {
   }
   setJailsSearchLoadingState(isBannedSearchLoading);
   if (summary && summary.jails && summary.jails.length > 0) {
-    normalizeJailBannedState(summary);
     applyAllJailRowVisibility();
     loadInitialJailBannedPages(summary);
   }
@@ -630,7 +685,7 @@ function renderBannedIPs(jailName) {
   var state = getJailBannedState(jailName);
   var query = (bannedIPsFilterText || '').trim();
   var content = '<div class="space-y-2">';
-  if (state.loading && (!state.ips || state.ips.length === 0)) {
+  if (state.loadedQuery === null || (state.loading && (!state.ips || state.ips.length === 0))) {
     return content + '<em class="text-gray-500">' + t('dashboard.banned.loading', 'Loading banned IPs...') + '</em></div>';
   }
   if (state.error) {
@@ -1225,7 +1280,26 @@ function updateBanEventFromWebSocket(event) {
   }
 }
 
+var JAIL_LIST_REFRESH_MIN_INTERVAL_MS = 3000;
+var jailListLastRefreshAt = {};
+
+function refreshJailBannedListLive(jailName) {
+  if (!jailName || typeof fetchJailBannedIPs !== 'function') {
+    return;
+  }
+  var now = Date.now();
+  if (jailListLastRefreshAt[jailName] && now - jailListLastRefreshAt[jailName] < JAIL_LIST_REFRESH_MIN_INTERVAL_MS) {
+    return;
+  }
+  jailListLastRefreshAt[jailName] = now;
+  fetchJailBannedIPs(jailName, { append: false });
+}
+
 function addBanEventFromWebSocket(event) {
+  var matchesCurrentServer = !!(event && event.serverId && currentServerId && event.serverId === currentServerId);
+  if (event && event.jail && matchesCurrentServer) {
+    refreshJailBannedListLive(event.jail);
+  }
   // Server-filtered view must not receive live rows from other servers.
   if (banEventsFilterServer !== 'all' && event && event.serverId !== banEventsFilterServer) {
     if (typeof showBanEventToast === 'function') {

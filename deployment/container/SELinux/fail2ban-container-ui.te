@@ -1,13 +1,17 @@
 
-module fail2ban-container-ui 1.0;
+module fail2ban-container-ui 1.1;
 
 require {
 	type fail2ban_log_t;
 	type etc_t;
 	type container_t;
-	class file { open read write };
+	class file { getattr open read write };
 }
 
 #============= container_t ==============
 allow container_t etc_t:file write;
-allow container_t fail2ban_log_t:file { open read };
+# getattr is required in addition to open/read: fail2ban-client stats every
+# jail logpath while parsing the config, so without it a jail reading
+# /var/log/fail2ban.log (e.g. recidive) fails the client-side reload with
+# "Have not found any log file for <jail> jail".
+allow container_t fail2ban_log_t:file { getattr open read };

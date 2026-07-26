@@ -43,9 +43,6 @@ func main() {
 	web.SetBasePathFromEnv()
 	auth.SetSessionCookiePath(web.CookiePath())
 
-	if err := storage.Init(""); err != nil {
-		log.Fatalf("Failed to initialise storage: %v", err)
-	}
 	defer func() {
 		if err := storage.Close(); err != nil {
 			log.Printf("warning: failed to close storage: %v", err)

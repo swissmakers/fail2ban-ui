@@ -83,7 +83,7 @@ function showBanEventToast(event) {
   var ip = event.ip || 'Unknown IP';
   var jail = event.jail || 'Unknown Jail';
   var server = event.serverName || event.serverId || 'Unknown Server';
-  var country = event.country || 'UNKNOWN';
+  var country = event.country || '';
   
   var title = isUnban ? t('toast.unban.title', 'IP unblocked') : t('toast.ban.title', 'New block occurred');
   var action = isUnban ? t('toast.unban.action', 'unblocked from') : t('toast.ban.action', 'banned in');
@@ -102,7 +102,7 @@ function showBanEventToast(event) {
     + '      <span class="font-semibold">' + escapeHtml(jail) + '</span>'
     + '    </div>'
     + '    <div class="text-xs text-gray-400 mt-1">'
-    + '      ' + escapeHtml(server) + ' - ' + escapeHtml(country)
+    + '      ' + escapeHtml(server) + (country ? ' - ' + escapeHtml(country) : '')
     + '    </div>'
     + '  </div>'
     + '  <button class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="Close">'

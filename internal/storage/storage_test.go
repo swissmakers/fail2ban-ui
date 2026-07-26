@@ -151,6 +151,7 @@ func TestReplaceServersRoundTrip(t *testing.T) {
 		IsDefault:            true,
 		Enabled:              true,
 		ReverseTunnelEnabled: true,
+		TunnelPort:           8443,
 		CreatedAt:            time.Date(2026, 5, 27, 14, 30, 0, 0, time.UTC),
 		UpdatedAt:            time.Date(2026, 5, 27, 15, 0, 0, 0, time.UTC),
 	}
@@ -679,5 +680,48 @@ func TestCountBanEventTotals(t *testing.T) {
 	}
 	if overall != 3 || today != 1 || week != 2 {
 		t.Fatalf("srv-1 totals = %d/%d/%d, want 3/1/2", overall, today, week)
+	}
+}
+
+func TestLatestBanEnrichmentForIP(t *testing.T) {
+	initTestStorage(t)
+	ctx := context.Background()
+
+	if _, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srv-1", ServerName: "s", Jail: "sshd", IP: "203.0.113.99",
+		Country: "DE", Whois: "old whois", EventType: "ban",
+		OccurredAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("RecordBanEvent: %v", err)
+	}
+	if _, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srv-1", ServerName: "s", Jail: "sshd", IP: "203.0.113.99",
+		Country: "CH", Whois: "new whois", EventType: "ban",
+		OccurredAt: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("RecordBanEvent: %v", err)
+	}
+	if _, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srv-1", ServerName: "s", Jail: "sshd", IP: "203.0.113.99",
+		EventType:  "unban",
+		OccurredAt: time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("RecordBanEvent: %v", err)
+	}
+
+	country, whois, err := LatestBanEnrichmentForIP(ctx, "203.0.113.99")
+	if err != nil {
+		t.Fatalf("LatestBanEnrichmentForIP: %v", err)
+	}
+	if country != "CH" || whois != "new whois" {
+		t.Fatalf("got country=%q whois=%q, want CH / new whois", country, whois)
+	}
+
+	country, whois, err = LatestBanEnrichmentForIP(ctx, "198.51.100.1")
+	if err != nil {
+		t.Fatalf("LatestBanEnrichmentForIP miss: %v", err)
+	}
+	if country != "" || whois != "" {
+		t.Fatalf("miss returned country=%q whois=%q, want empty", country, whois)
 	}
 }

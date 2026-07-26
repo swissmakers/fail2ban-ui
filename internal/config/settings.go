@@ -505,6 +505,7 @@ func applyServerRecordsLocked(records []storage.ServerRecord) {
 			IsDefault:            rec.IsDefault,
 			Enabled:              rec.Enabled,
 			ReverseTunnelEnabled: rec.ReverseTunnelEnabled,
+			TunnelPort:           rec.TunnelPort,
 			RestartNeeded:        rec.NeedsRestart,
 			CreatedAt:            rec.CreatedAt,
 			UpdatedAt:            rec.UpdatedAt,
@@ -630,6 +631,7 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 			IsDefault:            srv.IsDefault,
 			Enabled:              srv.Enabled,
 			ReverseTunnelEnabled: srv.ReverseTunnelEnabled,
+			TunnelPort:           srv.TunnelPort,
 			NeedsRestart:         srv.RestartNeeded,
 			CreatedAt:            createdAt,
 			UpdatedAt:            updatedAt,
@@ -1183,7 +1185,18 @@ func GetDefaultServer() Fail2banServer {
 	return Fail2banServer{}
 }
 
-// Adds or updates a Fail2ban server.
+// ErrInvalidTunnelPort is returned when a reverse-tunnel port is outside the
+// unprivileged range. Handlers match it to attach a localized message key.
+var ErrInvalidTunnelPort = errors.New("tunnelPort must be between 1024 and 65535 (empty = server port)")
+
+// Reject reverse-tunnel ports outside the unprivileged range
+func validateTunnelPort(port int) error {
+	if port == 0 || (port >= 1024 && port <= 65535) {
+		return nil
+	}
+	return fmt.Errorf("%w, got %d", ErrInvalidTunnelPort, port)
+}
+
 func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	settingsLock.Lock()
 	defer settingsLock.Unlock()
@@ -1217,6 +1230,13 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	} else {
 		input.SocketPath = normalizePathValue(input.SocketPath)
 		input.ConfigPath = ""
+	}
+	if input.Type == "ssh" {
+		if err := validateTunnelPort(input.TunnelPort); err != nil {
+			return Fail2banServer{}, err
+		}
+	} else {
+		input.TunnelPort = 0
 	}
 	if input.Name == "" {
 		input.Name = "Fail2ban Server " + input.ID

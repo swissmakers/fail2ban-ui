@@ -90,7 +90,9 @@ function saveJailConfig() {
       } else {
         showToast(t('filter_debug.save_success', 'Filter and jail config saved and reloaded'), 'success');
       }
-      return refreshData({ silent: true });
+      if (data.jailAutoDisabled) {
+        return refreshData({ silent: true, summaryOnly: true });
+      }
     })
     .catch(function(err) {
       console.error("Error saving config:", err);
@@ -199,7 +201,7 @@ function saveManageJailsSingle(checkbox) {
           }
           loadServers().then(function() {
             updateRestartBanner();
-            return refreshData({ silent: true });
+            return refreshData({ silent: true, summaryOnly: true });
           });
         });
       }
@@ -209,21 +211,24 @@ function saveManageJailsSingle(checkbox) {
       }
 
       console.log('Jail state saved successfully:', data);
-      showToast(data.message || t(isEnabled ? 'jails.toast.enabled_success' : 'jails.toast.disabled_success', 'Jail {jail} ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully').replace('{jail}', jailName), 'success');
-      return fetch(withServerParam('/api/jails/manage'), {
-        headers: serverHeaders()
-      }).then(function(res) { return res.json(); })
-      .then(function(data) {
-        if (data.jails && data.jails.length) {
-          const jail = data.jails.find(function(j) { return j.jailName === jailName; });
-          if (jail) {
-            checkbox.checked = jail.enabled;
-          }
+      var disabledJails = (data.disabledJails && Array.isArray(data.disabledJails)) ? data.disabledJails : [];
+      if (disabledJails.length) {
+        var offenderMsg = t('jails.manage.offender_disabled', "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled.")
+          .replace('{jail}', disabledJails.join("', '"));
+        showToast(offenderMsg, 'warning', 15000);
+      } else {
+        showToast(data.message || t(isEnabled ? 'jails.toast.enabled_success' : 'jails.toast.disabled_success', 'Jail {jail} ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully').replace('{jail}', jailName), 'success');
+      }
+      checkbox.checked = disabledJails.indexOf(jailName) !== -1 ? false : isEnabled;
+      disabledJails.forEach(function(name) {
+        var cb = document.getElementById('toggle-' + String(name).replace(/[^a-zA-Z0-9]/g, '_'));
+        if (cb) {
+          cb.checked = false;
         }
-        loadServers().then(function() {
-          updateRestartBanner();
-          return refreshData({ silent: true });
-        });
+      });
+      return loadServers().then(function() {
+        updateRestartBanner();
+        return refreshData({ silent: true, summaryOnly: true });
       });
     })
     .catch(function(err) {
@@ -261,7 +266,7 @@ function deleteJail(jailName) {
       }
       showToast(data.message || t('jails.toast.delete_success', 'Jail deleted successfully'), 'success');
       openManageJailsModal();
-      refreshData({ silent: true });
+      refreshData({ silent: true, summaryOnly: true });
     })
     .catch(function(err) {
       console.error('Error deleting jail:', err);
@@ -398,6 +403,8 @@ function testLogpath() {
         var found = result.found || false;
         var files = result.files || [];
         var error = result.error || '';
+        var inaccessible = result.inaccessible || false;
+        var message = result.message || '';
 
         if (idx > 0) {
           output += '<div class="my-4 border-t border-gray-300 pt-4"></div>';
@@ -426,6 +433,11 @@ function testLogpath() {
           output += '<span class="text-green-600 text-sm">'
             + t('jails.logpath_test.found_files', 'Found {count} file(s)').replace('{count}', files.length)
             + '</span>';
+        } else if (inaccessible) {
+          output += '<span class="text-yellow-600 font-bold">&#9888;</span>';
+          output += '<span class="text-yellow-600 text-sm">'
+            + escapeHtml(message || t('jails.logpath_test.inaccessible', 'Cannot verify: the log directory is not readable by the connectors SSH user. Fail2Ban runs as root and will read it, so the jail can still be enabled.'))
+            + '</span>';
         } else {
           output += '<span class="text-red-600 font-bold">&#10007;</span>';
           if (isLocalServer) {
@@ -447,9 +459,13 @@ function testLogpath() {
 
       var allFound = results.every(function(r) { return r.found; });
       var anyFound = results.some(function(r) { return r.found; });
+      var anyHardFail = results.some(function(r) { return !r.found && !r.inaccessible; });
 
       if (allFound) {
         resultsDiv.classList.remove('text-red-600', 'text-yellow-600');
+      } else if (!anyHardFail) {
+        resultsDiv.classList.remove('text-red-600');
+        resultsDiv.classList.add('text-yellow-600');
       } else if (anyFound) {
         resultsDiv.classList.remove('text-red-600');
         resultsDiv.classList.add('text-yellow-600');

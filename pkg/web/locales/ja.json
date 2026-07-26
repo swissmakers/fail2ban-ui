@@ -568,6 +568,11 @@
   "servers.form.agent_url_placeholder": "https://host:9700",
   "servers.form.agent_secret": "エージェントシークレット",
   "servers.form.agent_secret_placeholder": "共有シークレットトークン",
+  "servers.form.reverse_tunnel": "イベント用リバーストンネルを有効化",
+  "servers.form.reverse_tunnel_help": "リバースSSHトンネル（-R <トンネルポート>:localhost:<サーバーポート>）を自動的に作成し、リモートサーバー上のfail2banコールバックイベントがこのUIサーバーに届くようにします。リモートのアクションファイルは自動的に http://localhost:<トンネルポート> へ送信するため、グローバルのコールバックURLは直接到達可能なサーバー向けの公開アドレスのままにできます。",
+  "servers.form.tunnel_port": "トンネルポート",
+  "servers.form.tunnel_port_placeholder": "空欄 = サーバーポート",
+  "servers.form.tunnel_port_help": "リモートホストがコールバックを受け付けるポートです（トンネルによってバインドされます）。空欄の場合はUIのサーバーポートを使用します。受信したコールバックはトンネル経由でUIのサーバーポートに転送されます。1024〜65535の範囲で指定してください。権限のないリモートユーザーは1024未満のポートをバインドできません。",
   "servers.form.tags": "タグ",
   "servers.form.tags_placeholder": "カンマ区切りのタグ",
   "servers.form.set_default": "デフォルトサーバーに設定",
@@ -593,6 +598,7 @@
   "servers.errors.agent_invalid_url": "エージェントURLが無効です。",
   "servers.errors.agent_unreachable": "エージェントサービスに接続できません。",
   "servers.errors.agent_request_failed": "エージェントへのリクエストに失敗しました。",
+  "servers.errors.invalid_tunnel_port": "トンネルポートは1024〜65535の範囲で指定してください（空欄 = サーバーポート）。",
   "servers.jail_local_warning": "警告: jail.localはFail2ban-UIで管理されていません。各Jailをjail.d/以下の個別ファイルに移動し、jail.localを削除してFail2ban-UIが再作成できるようにしてください（設定ページで一度保存してください）。権限についてはドキュメントを参照してください。",
   "servers.actions.restart": "Fail2banを再起動",
   "servers.actions.reload": "Fail2banをリロード",
@@ -608,6 +614,7 @@
   "servers.validation.duplicate_socket": "このソケットパスを持つローカルコネクタが既に存在します。",
   "servers.validation.duplicate_config_path": "この設定パスを持つローカルコネクタが既に存在します。",
   "servers.validation.agent_required": "APIエージェントサーバーにはエージェントURLとエージェントシークレットが必須です。",
+  "servers.validation.tunnel_port_range": "トンネルポートは1024〜65535の範囲で指定してください。",
   "servers.card.socket_path": "ソケットパス",
   "servers.card.config_path": "設定パス",
   "servers.card.server_id": "サーバーID",
@@ -753,5 +760,6 @@
   "logs.timeline.series_unbans": "BAN解除",
   "logs.timeline.suggestions_empty": "類似した期間は見つかりませんでした。",
   "logs.timeline.suggestions_title": "類似した過去の期間",
-  "logs.timeline.title": "BAN・BAN解除のアクティビティ"
+  "logs.timeline.title": "BAN・BAN解除のアクティビティ",
+  "jails.manage.offender_disabled": "変更は適用されました。無関係のジェイル「{jail}」の設定に問題があるため、自動的に無効化されました。"
 }

@@ -21,7 +21,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -189,51 +188,16 @@ func DiscoverFiltersFromFiles(configPath string) ([]string, error) {
 		return nil, err
 	}
 
-	filterMap := make(map[string]bool)
-	processedFiles := make(map[string]bool)
-
+	var localFiles, confFiles []string
 	for _, filePath := range files {
-		if !strings.HasSuffix(filePath, ".local") {
-			continue
+		switch {
+		case strings.HasSuffix(filePath, ".local"):
+			localFiles = append(localFiles, filePath)
+		case strings.HasSuffix(filePath, ".conf"):
+			confFiles = append(confFiles, filePath)
 		}
-
-		filename := filepath.Base(filePath)
-		baseName := strings.TrimSuffix(filename, ".local")
-		if baseName == "" {
-			continue
-		}
-
-		if processedFiles[baseName] {
-			continue
-		}
-
-		processedFiles[baseName] = true
-		filterMap[baseName] = true
 	}
-
-	for _, filePath := range files {
-		if !strings.HasSuffix(filePath, ".conf") {
-			continue
-		}
-		filename := filepath.Base(filePath)
-		baseName := strings.TrimSuffix(filename, ".conf")
-		if baseName == "" {
-			continue
-		}
-		if processedFiles[baseName] {
-			continue
-		}
-		processedFiles[baseName] = true
-		filterMap[baseName] = true
-	}
-
-	var filters []string
-	for name := range filterMap {
-		filters = append(filters, name)
-	}
-	sort.Strings(filters)
-
-	return filters, nil
+	return dedupeConfigBaseNames(localFiles, confFiles), nil
 }
 
 // Creates a new filter at the given config path.
@@ -359,7 +323,7 @@ func removeDuplicateVariables(includedContent string, mainVariables map[string]b
 			continue
 		}
 
-		// Check for end of [DEFAULT] section (next section starts)
+		// Check for end of [DEFAULT] section
 		if inDefaultSection && strings.HasPrefix(trimmed, "[") {
 			inDefaultSection = false
 			result.WriteString(originalLine)
@@ -390,7 +354,46 @@ func removeDuplicateVariables(includedContent string, mainVariables map[string]b
 	return result.String()
 }
 
+// Reads an included filter by base name, preferring .local over .conf.
+type filterIncludeReader func(baseName string) (content string, path string, err error)
+
+func localFilterIncludeReader(filterDPath string) filterIncludeReader {
+	return func(baseName string) (string, string, error) {
+		localPath, err := resolveWithinDir(filterDPath, baseName, ".local")
+		if err != nil {
+			return "", "", fmt.Errorf("invalid include filter name %q: %w", baseName, err)
+		}
+		confPath, err := resolveWithinDir(filterDPath, baseName, ".conf")
+		if err != nil {
+			return "", "", fmt.Errorf("invalid include filter name %q: %w", baseName, err)
+		}
+		if content, err := os.ReadFile(localPath); err == nil {
+			return string(content), localPath, nil
+		}
+		content, err := os.ReadFile(confPath)
+		if err != nil {
+			return "", "", fmt.Errorf("could not load included filter file '%s' or '%s': %w", localPath, confPath, err)
+		}
+		return string(content), confPath, nil
+	}
+}
+
+// Strips a .local/.conf extension to get the include's base name
+func filterIncludeBaseName(fileName string) string {
+	if base, ok := strings.CutSuffix(fileName, ".local"); ok {
+		return base
+	}
+	if base, ok := strings.CutSuffix(fileName, ".conf"); ok {
+		return base
+	}
+	return fileName
+}
+
 func resolveFilterIncludes(filterContent string, filterDPath string, currentFilterName string) (string, error) {
+	return resolveFilterIncludesWith(filterContent, currentFilterName, localFilterIncludeReader(filterDPath))
+}
+
+func resolveFilterIncludesWith(filterContent string, currentFilterName string, readInclude filterIncludeReader) (string, error) {
 	lines := strings.Split(filterContent, "\n")
 	var beforeFiles []string
 	var afterFiles []string
@@ -448,44 +451,19 @@ func resolveFilterIncludes(filterContent string, filterDPath string, currentFilt
 	var combined strings.Builder
 
 	for _, fileName := range beforeFiles {
-		baseName := fileName
-		if strings.HasSuffix(baseName, ".local") {
-			baseName = strings.TrimSuffix(baseName, ".local")
-		} else if strings.HasSuffix(baseName, ".conf") {
-			baseName = strings.TrimSuffix(baseName, ".conf")
-		}
-
+		baseName := filterIncludeBaseName(fileName)
 		if baseName == currentFilterName {
 			debugf("Skipping self-inclusion of filter '%s' in before files", baseName)
 			continue
 		}
 
-		localPath, err := resolveWithinDir(filterDPath, baseName, ".local")
+		contentStr, path, err := readInclude(baseName)
 		if err != nil {
-			debugf("Skipping invalid include filter name %q: %v", baseName, err)
+			debugf("Warning: %v", err)
 			continue
 		}
-		confPath, err := resolveWithinDir(filterDPath, baseName, ".conf")
-		if err != nil {
-			debugf("Skipping invalid include filter name %q: %v", baseName, err)
-			continue
-		}
+		debugf("Loading included filter file: %s", path)
 
-		var content []byte
-		var filePath string
-
-		if content, err = os.ReadFile(localPath); err == nil {
-			filePath = localPath
-			debugf("Loading included filter file from .local: %s", filePath)
-		} else if content, err = os.ReadFile(confPath); err == nil {
-			filePath = confPath
-			debugf("Loading included filter file from .conf: %s", filePath)
-		} else {
-			debugf("Warning: could not load included filter file '%s' or '%s': %v", localPath, confPath, err)
-			continue
-		}
-
-		contentStr := string(content)
 		// Remove variables from included file that are defined in main filter.
 		cleanedContent := removeDuplicateVariables(contentStr, mainVariables)
 		combined.WriteString(cleanedContent)
@@ -501,38 +479,15 @@ func resolveFilterIncludes(filterContent string, filterDPath string, currentFilt
 	}
 
 	for _, fileName := range afterFiles {
-		baseName := fileName
-		if strings.HasSuffix(baseName, ".local") {
-			baseName = strings.TrimSuffix(baseName, ".local")
-		} else if strings.HasSuffix(baseName, ".conf") {
-			baseName = strings.TrimSuffix(baseName, ".conf")
-		}
+		baseName := filterIncludeBaseName(fileName)
 
-		localPath, err := resolveWithinDir(filterDPath, baseName, ".local")
+		contentStr, path, err := readInclude(baseName)
 		if err != nil {
-			debugf("Skipping invalid include filter name %q: %v", baseName, err)
+			debugf("Warning: %v", err)
 			continue
 		}
-		confPath, err := resolveWithinDir(filterDPath, baseName, ".conf")
-		if err != nil {
-			debugf("Skipping invalid include filter name %q: %v", baseName, err)
-			continue
-		}
+		debugf("Loading included filter file: %s", path)
 
-		var content []byte
-		var filePath string
-
-		if content, err = os.ReadFile(localPath); err == nil {
-			filePath = localPath
-			debugf("Loading included filter file from .local: %s", filePath)
-		} else if content, err = os.ReadFile(confPath); err == nil {
-			filePath = confPath
-			debugf("Loading included filter file from .conf: %s", filePath)
-		} else {
-			debugf("Warning: could not load included filter file '%s' or '%s': %v", localPath, confPath, err)
-			continue
-		}
-		contentStr := string(content)
 		cleanedContent := removeDuplicateVariables(contentStr, mainVariables)
 		combined.WriteString("\n")
 		combined.WriteString(cleanedContent)

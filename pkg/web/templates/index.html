@@ -1457,12 +1457,19 @@
                   </div>
                   <div data-server-fields="ssh">
                     <div class="flex items-center">
-                      <input type="checkbox" id="serverReverseTunnel" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                      <input type="checkbox" id="serverReverseTunnel" class="h-4 w-4 text-blue-600 border-gray-300 rounded" onchange="onReverseTunnelToggle()">
                       <label for="serverReverseTunnel" class="ml-2 text-sm text-gray-700" data-i18n="servers.form.reverse_tunnel">Enable reverse tunnel for events</label>
                     </div>
                     <p class="mt-0.5 ml-6 text-xs text-gray-500" data-i18n="servers.form.reverse_tunnel_help">
-                      Automatically creates a reverse SSH tunnel (-R port:localhost:port) so fail2ban callback events on the remote server can reach this UI server. The tunnel port is derived from the Callback URL setting.
+                      Automatically creates a reverse SSH tunnel (-R &lt;tunnel port&gt;:localhost:&lt;server port&gt;) so fail2ban callback events on the remote server can reach this UI server. The remote action file automatically posts to http://localhost:&lt;tunnel port&gt;, so the global Callback URL can stay a public address for directly reachable servers.
                     </p>
+                    <div id="serverTunnelPortGroup" class="mt-2 ml-6 hidden">
+                      <label for="serverTunnelPort" class="block text-sm font-medium text-gray-700 mb-1" data-i18n="servers.form.tunnel_port">Tunnel Port</label>
+                      <input type="number" id="serverTunnelPort" min="1024" max="65535" step="1" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="servers.form.tunnel_port_placeholder" placeholder="empty = server port">
+                      <p class="mt-0.5 text-xs text-gray-500" data-i18n="servers.form.tunnel_port_help">
+                        Port the remote host listens on for callbacks (bound by the tunnel). Leave empty to use the UI server port. Incoming callbacks are forwarded through the tunnel to the UI server port. Must be 1024-65535: unprivileged remote users cannot bind ports below 1024.
+                      </p>
+                    </div>
                   </div>
                   <input type="hidden" id="serverId">
                   <div class="flex gap-3">

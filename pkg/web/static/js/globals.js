@@ -36,6 +36,7 @@ var bannedSearchPendingCount = 0;
 var jailBannedState = {};
 var JAIL_BANNED_PAGE_SIZE = 5;
 var JAIL_BANNED_MAX_LIMIT = 100;
+var JAIL_BANNED_ERROR_RETRY_MS = 30000;
 var translations = {};
 var sshKeysCache = null;
 var openModalCount = 0;
