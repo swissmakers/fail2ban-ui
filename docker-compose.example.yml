@@ -3,6 +3,9 @@ services:
     # Use pre-built image from Docker Hub (default)
     image: swissmakers/fail2ban-ui:latest
 
+    # Alternative: Use GitHub Container Registry
+    # image: ghcr.io/swissmakers/fail2ban-ui:latest
+
     # Alternative: Use Swissmakers registry (fallback)
     # image: registry.swissmakers.ch/infra/fail2ban-ui:latest
 

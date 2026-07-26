@@ -21,7 +21,7 @@ Fail2Ban UI does not replace Fail2Ban. Ban decisions are still made by the Fail2
 * Centralized search, ban, and unban operations across all jails and servers
 * Remote jail and filter configuration management (depending on connector capabilities)
 * Filter debugging with live log-pattern testing
-* Ban insights, including country-level analytics on an interactive 3D globe
+* Ban insights with a Kibana-like ban/unban timeline, incident comparison to isolate repeat attackers, one-click permanent blocking of a whole time range, and country-level analytics
 * Recurring-offender handling with permanent blocks on MikroTik, pfSense, and OPNsense
 * Persistent event history and permanent-block records, with data management built in
 * Configurable alerts over Email (SMTP), Webhook, and Elasticsearch, with GeoIP/Whois enrichment and country filtering
@@ -44,7 +44,7 @@ See [docs/architecture.md](docs/architecture.md) for the data-flow description.
 | Connector | Typical use | Notes |
 |-----------|-------------|-------|
 | Local | Fail2Ban runs on the same host as the UI | Uses the Fail2Ban Unix socket and local files |
-| SSH | Manage remote hosts without installing an agent | Key-based SSH and remote `fail2ban-client`; requires a dedicated service account with minimal sudo rules |
+| SSH | Manage remote hosts without installing an agent | Key-based SSH and remote `fail2ban-client`; requires a dedicated service account with minimal sudo rules. Can optionally open a reverse SSH tunnel so ban callbacks reach the UI from hosts that cannot connect to it directly (NAT, isolated DMZ) |
 | Agent | Environments where SSH from the UI host is not desired | HTTP agent runs on the Fail2Ban host; see [fail2ban-ui-agent](https://github.com/swissmakers/fail2ban-ui-agent) and the prebuilt image [swissmakers/fail2ban-ui-agent](https://hub.docker.com/r/swissmakers/fail2ban-ui-agent) |
 
 ## Quick start (container)
@@ -124,7 +124,7 @@ Overview of all active jails, banned IPs, and real-time statistics, total bans, 
 
 #### Unban IP
 ![Unban IP](screenshots/0.1_Dashboard_unban_IP.png)
-Unbanning a IP addresses directly from the dashboard. Shows the unban confirmation dialog.
+Unban an IP address directly from the dashboard. A confirmation dialog shows the affected jail before the unban runs.
 
 ### Server Management
 ![Manage Servers](screenshots/1_Dashboard_Manage_Servers.png)
@@ -136,11 +136,11 @@ Overview of all configured jails with their enabled/disabled status. Allows cent
 
 #### Edit Jail Configuration
 ![Edit Jail](screenshots/1.2_Dashboard_Manage_Jails_Edit.png)
-When clicking on "Edit Filter / Jail" the Jail configuration editor is opened. It shows the current filter and jail configuration  with all options to modify the settings, test or add / modify the logpaths, and save changes.
+Clicking **Edit Filter / Jail** opens the configuration editor. Edit the jail and filter settings, add or change log paths and test them, then save -> the change is pushed to the managed host and Fail2Ban is reloaded.
 
 #### Logpath Test
 ![Logpath Test](screenshots/1.3_Dashboard_Manage_Jails_Edit_Logpathtest.png)
-Logpath testing functionality that verifies log file paths and checks if files are accessible. Shows test results with visual indicators (yes/no) for each log path.
+Logpath testing resolves the configured paths, including wildcards and Fail2Ban variables, and reports one of three results per path: found (green, with the matched files), not found (red), or cannot verify (yellow). The yellow state means the connector's SSH user cannot read the log directory. It is a warning, not a failure. Fail2Ban runs as root on the managed host and will still read the path, so the jail can be enabled.
 
 #### Create new Filter
 ![Create Filter](screenshots/1.4_Dashboard_Manage_Jails_Create_Filter.png)
@@ -152,7 +152,7 @@ The second button opens the jail creation modal for setting up new jails. It sup
 
 ### Search Functionality
 ![Search](screenshots/1.6_Dashboard_search.png)
-Search for a specific IPs, that where blocked in a specific jail, searches in all active jails. Provides a quick and painless filtering.
+Search for an IP address across all active jails of every configured server. The result lists each jail that currently bans the address, so it can be unbanned in the right place.
 
 ### Internal Log Overview
 ![Log Overview](screenshots/2_Dashboard_Log_Overview.png)
@@ -165,6 +165,19 @@ Whois lookup modal displaying detailed information about banned IP addresses, in
 #### Ban Logs
 ![Ban Logs](screenshots/2.2_Dashboard_Log_Overview_BanLogs.png)
 Detailed ban log view showing log lines that triggered the ban, timestamps, and context information for each security event.
+
+#### Ban Insights
+
+[![Ban Insights](screenshots/2.3_Dashboard_Log_Overview_BanInsights.png)](screenshots/2.3_Dashboard_Log_Overview_BanInsights.png)
+
+Ban Insights brings SIEM-like analysis to environments without a full SIEM. The ban and unban activity timeline works similar like the one in Kibana -> drag to zoom into a time range, use presets from 8 hours to 30 days, or define a custom range of up to 12 months, so spikes and attack patterns become visible at a glance.
+
+Typical workflows:
+
+* **Correlate two incidents.** Pin one spike as Incident A and another as Incident B -> for example, last week's attack and this week's. The incident compare lists the IPs present in both. Addresses that return across incidents are repeat attackers rather than false positives, and can be banned permanently right to the recurring-offenders list.
+* **Block a botnet in one click.** Select a time range in which no legitimate user is normally active, such as a nightly spike, and permanently block every IP in it on the configured firewall integration (MikroTik, pfSense, OPNsense).
+
+The modal also suggests similar past periods, exports IP lists as CSV or JSON, and shows country-level analytics on an interactive 3D globe together with the top recurring IPs.
 
 ### Filter Debugging
 ![Filter Debug](screenshots/3_Filter_Debug.png)
@@ -180,7 +193,7 @@ Main settings page with sections for different configuration categories includin
 
 #### Debug Console
 ![Debug Console](screenshots/4.1_Settings_DebugConsole.png)
-When enabled the Debug console  showing real-time application logs, system messages, and debugging information. Useful for troubleshooting and monitoring without the need to query the container logs manually everytime.
+When enabled, the debug console streams the live application log into the browser -> useful for troubleshooting without querying the container logs manually. Leave it disabled in normal operation.
 
 #### Advanced ban actions
 

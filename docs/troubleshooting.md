@@ -427,6 +427,22 @@ sqlite3 /opt/fail2ban-ui/fail2ban-ui.db "PRAGMA integrity_check;"
 
 Expected output: `ok`. Any other output indicates a problem - investigate filesystem errors and restore from backup if needed.
 
+### Database growing large
+
+The `ban_events` table dominates the file size. Check the configured retention window under **Settings -> Alert Settings -> Event Retention (Days)** - the default is 180, and `0` disables pruning entirely. Pruning runs at startup and then every 24 hours; look for `Pruned N ban events older than D days` in the log.
+
+Reducing the window does not shrink the file on its own. To reclaim the space, stop the service and run:
+
+```bash
+sqlite3 /opt/fail2ban-ui/fail2ban-ui.db "VACUUM;"
+```
+
+See [configuration.md](configuration.md#event-retention-ui-managed).
+
+### Event searches return nothing or are slow
+
+The event list uses an SQLite FTS5 index, which is rebuilt automatically when it falls out of sync with `ban_events`. If SQLite was built without FTS5, the UI silently falls back to `LIKE` matching, which is noticeably slower on large tables. Search result counts are capped at 5000, so a total of `5001` means "more than 5000 matches" rather than an exact count.
+
 ## Reverse proxy checks
 
 If the UI loads but real-time updates fail:

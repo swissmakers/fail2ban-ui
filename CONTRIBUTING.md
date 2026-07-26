@@ -9,7 +9,13 @@ Thanks for contributing. This project is security-adjacent; changes should be de
    git checkout -b feature/<name>
    ```
 
-2. Make changes with well described commits. (Run formatting and basic checks.)
+2. Make changes with well described commits. Before opening the PR, run:
+   ```bash
+   gofmt -l .           # must print nothing
+   go vet ./...
+   go test ./...
+   ./build-tailwind.sh  # only if you touched templates or Tailwind classes
+   ```
 
 3. Open a pull request:
 
@@ -23,6 +29,7 @@ Thanks for contributing. This project is security-adjacent; changes should be de
 * Keep public-facing behavior documented (docs or inline help).
 * Do not introduce new external network calls by default; make them opt-in where possible.
 * For changes affecting auth or callback handling, include a short threat-model note in the PR description.
+* To add a UI language, copy `pkg/web/locales/en.json`, translate every value, and save it as `pkg/web/locales/<lang>.json` with a lowercase locale code (for example `ch`, `ch_de`, `es`, `pt_br`).
 
 ## Reporting security issues
 

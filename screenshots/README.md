@@ -8,7 +8,7 @@ This directory contains screenshots showcasing the features and the interface of
 
 ## Unban IP
 ![Unban IP](0.1_Dashboard_unban_IP.png)
-**Description:** Unbanning a IP addresses directly from the dashboard. Shows the unban confirmation dialog.
+**Description:** Unban an IP address directly from the dashboard. A confirmation dialog shows the affected jail before the unban runs.
 
 ## Server Management
 ![Manage Servers](1_Dashboard_Manage_Servers.png)
@@ -20,11 +20,11 @@ This directory contains screenshots showcasing the features and the interface of
 
 ### Edit Jail Configuration
 ![Edit Jail](1.2_Dashboard_Manage_Jails_Edit.png)
-**Description:** When clicking on "Edit Filter / Jail" the Jail configuration editor is opened. It shows the current filter and jail configuration  with all options to modify the settings, test or add / modify the logpaths, and save changes.
+**Description:** Clicking **Edit Filter / Jail** opens the configuration editor. Edit the jail and filter settings, add or change log paths and test them, then save - the change is pushed to the managed host and Fail2Ban is reloaded.
 
 ### Logpath Test
 ![Logpath Test](1.3_Dashboard_Manage_Jails_Edit_Logpathtest.png)
-**Description:** Logpath testing functionality that verifies log file paths and checks if files are accessible. Shows test results with visual indicators (✓/✗) for each log path.
+**Description:** Logpath testing resolves the configured paths, including wildcards and Fail2Ban variables, and checks whether matching files exist. Each path is reported as ✓ found, ✗ not found, or ⚠ cannot verify.
 
 ### Create Filter
 ![Create Filter](1.4_Dashboard_Manage_Jails_Create_Filter.png)
@@ -36,7 +36,7 @@ This directory contains screenshots showcasing the features and the interface of
 
 ## Search Functionality
 ![Search](1.6_Dashboard_search.png)
-**Description:** Search for a specific IPs, that where blocked in a specific jail - searches in all active jails. Provides a quick and painless filtering.
+**Description:** Search for an IP address across all active jails of every configured server. The result lists each jail that currently bans the address, so it can be unbanned in the right place.
 
 ## Internal Log Overview
 ![Log Overview](2_Dashboard_Log_Overview.png)
@@ -49,6 +49,10 @@ This directory contains screenshots showcasing the features and the interface of
 ### Ban Logs
 ![Ban Logs](2.2_Dashboard_Log_Overview_BanLogs.png)
 **Description:** Detailed ban log view showing log lines that triggered the ban, timestamps, and context information for each security event.
+
+### Ban Insights
+![Ban Insights](2.3_Dashboard_Log_Overview_BanInsights.png)
+**Description:** SIEM-like analysis without a full SIEM -> a ban/unban timeline (drag to zoom, presets from 8 hours to 30 days, custom range up to 12 months) makes spikes and attack patterns visible. Pin two spikes as Incident A and B to list the IPs present in both -> repeat attackers, not false positives and ban them permanently to the recurring-offenders list, or select a time range where no legitimate user is active and block every IP in it with one click.
 
 ## Filter Debugging
 ![Filter Debug](3_Filter_Debug.png)
@@ -64,7 +68,7 @@ This directory contains screenshots showcasing the features and the interface of
 
 ### Debug Console
 ![Debug Console](4.1_Settings_DebugConsole.png)
-**Description:** When enabled the Debug console  showing real-time application logs, system messages, and debugging information. Useful for troubleshooting and monitoring without the need to query the container logs manually everytime.
+**Description:** When enabled, the debug console streams the live application log into the browser -> useful for troubleshooting without querying the container logs manually. Leave it disabled in normal operation.
 
 ### Advanced Ban Actions
 ![Advanced Ban Actions](4.2_Settings_AdvancedBanActions.png)
@@ -72,8 +76,11 @@ This directory contains screenshots showcasing the features and the interface of
 
 ### Alert Settings
 ![Alert Settings](4.3_Settings_AlertSettings.png)
-**Description:** Email alert configuration with SMTP settings, country-based filtering (blocks from what country to raport), GeoIP provider selection, and alert preferences for bans and unbans.
+**Description:** Alert provider configuration. One of three mutually exclusive providers is active at a time - Email (SMTP), Webhook, or Elasticsearch with per-event toggles for bans and unbans, country-based filtering (which countries to report on), GeoIP provider selection, the maximum number of log lines per alert, and the event retention window. See [docs/alert-providers.md](../docs/alert-providers.md).
 
 ### Global Settings
 ![Global Settings](4.4_Settings_GlobalSettings.png)
-**Description:** Global Fail2Ban settings including default bantime, findtime, maxretry, banaction configuration (nftables/firewalld/iptables) and so on.
+**Description:** Global Fail2Ban defaults: `bantime`, `findtime`, `maxretry`, `ignoreip`, and the `banaction` backend (nftables, firewalld, iptables). When bantime increment is enabled, the escalation can be tuned with `bantime.rndtime`, `bantime.maxtime`, `bantime.factor`, and `bantime.overalljails`.
+
+## Example Alert Email
+**Description:** [`Example_block_email.pdf`](Example_block_email.pdf) - a rendered example of the Email (SMTP) ban alert, for reference when evaluating the modern template.

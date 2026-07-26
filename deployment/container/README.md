@@ -6,21 +6,22 @@ This guide covers building and running Fail2Ban UI with Podman or Docker.
 
 ### Pull the image
 
-From Docker Hub (default):
+The image is published to three registries. Use whichever your environment prefers:
 
 ```bash
+# Docker Hub (default)
 podman pull swissmakers/fail2ban-ui:latest
-# or with Docker:
-docker pull swissmakers/fail2ban-ui:latest
-```
 
-From the Swissmakers registry (fallback):
+# GitHub Container Registry
+podman pull ghcr.io/swissmakers/fail2ban-ui:latest
 
-```bash
+# Swissmakers registry (fallback)
 podman pull registry.swissmakers.ch/infra/fail2ban-ui:latest
-# or with Docker:
-docker pull registry.swissmakers.ch/infra/fail2ban-ui:latest
 ```
+
+Replace `podman` with `docker` if you use Docker.
+
+All three receive the same multi-arch manifest (`linux/amd64` and `linux/arm64`) from the same CI build, and each push is tagged three ways: `latest`, the release version (for example `v1.5.3`), and the build commit SHA. Pin to a version tag for reproducible deployments. The images carry OCI metadata labels (`org.opencontainers.image.version`, `.revision`, `.created`, `.source`, `.licenses`), so `podman inspect` or `docker inspect` tells you exactly which build you are running.
 
 ### Run the container
 
@@ -205,6 +206,9 @@ services:
   fail2ban-ui:
     # Pre-built image from Docker Hub (default)
     image: swissmakers/fail2ban-ui:latest
+
+    # Alternative: GitHub Container Registry
+    # image: ghcr.io/swissmakers/fail2ban-ui:latest
 
     # Alternative: Swissmakers registry (fallback)
     # image: registry.swissmakers.ch/infra/fail2ban-ui:latest

@@ -28,7 +28,7 @@ A *connector* is the mechanism the UI uses to control a single Fail2Ban instance
 | Connector | Transport                                                                             | Typical use                                                                   | Requirements on the managed host                                                                                   |
 | --------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Local     | Unix socket and direct file access                                                    | Fail2Ban runs on the same host as the UI                                      | Read/write access to `/var/run/fail2ban/fail2ban.sock` and `/etc/fail2ban`; read access to the monitored log files |
-| SSH       | SSH with key-based authentication                                                     | Remote hosts where installing additional software is not wanted               | A dedicated service account with `sudo fail2ban-client `* and `sudo systemctl restart fail2ban`                    |
+| SSH       | SSH with key-based authentication; optional reverse tunnel (`-R`) for the event path  | Remote hosts where installing additional software is not wanted               | A dedicated service account with `sudo fail2ban-client `* and `sudo systemctl restart fail2ban`                    |
 | Agent     | HTTP to the [fail2ban-ui-agent](https://github.com/swissmakers/fail2ban-ui-agent) API | Environments where SSH access from the UI host is not desired or not possible | The agent service, with local access to the Fail2Ban socket and configuration                                      |
 
 
@@ -69,6 +69,10 @@ The backend processes each callback in the following order:
 7. Evaluate advanced ban actions. If a recurring-offender threshold is reached, the address is pushed as a permanent block to the configured edge firewall (MikroTik, pfSense, or OPNsense) and recorded in `permanent_blocks`.
 8. Return `200 OK`.
 
+Steps 3, 6, and 7 are partially asynchronous. The callback returns `200 OK` as soon as the event has been stored and broadcast; Whois and GeoIP enrichment and alert dispatch continue in a background goroutine. When enrichment completes, the stored row is updated and a `ban_event_update` message is broadcast so already-rendered rows pick up the resolved country.
+
+For SSH servers with *reverse tunnel for events* enabled, the action posts to `http://localhost:<tunnel port>` instead of the global `CALLBACK_URL`, and the tunnel forwards that connection to the UI's HTTP port over the existing SSH session. The UI re-checks each tunnel every 45 seconds and rebuilds it after a failure. See [configuration.md](configuration.md#reverse-ssh-tunnel-for-callbacks).
+
 **Note:** The callback endpoints (`/api/ban`, `/api/unban`) are intentionally reachable without an OIDC session, because they are called by machines, not by users. They are protected exclusively by the callback secret. Treat the secret like a credential and only transport callbacks over TLS or a trusted network.
 
 ### Browser to Fail2Ban-UI
@@ -76,7 +80,7 @@ The backend processes each callback in the following order:
 The browser communicates with the backend over HTTPS (REST) and a WebSocket connection (`GET /api/ws`):
 
 - When OIDC is enabled, the index page, all `/api/`* routes except the callbacks, and the WebSocket upgrade require an authenticated session. The login flow (`/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/status`, `/auth/user`) and static assets remain public.
-- The WebSocket hub validates the `Origin` header against the request `Host` and rejects cross-site connections. Connected clients receive `heartbeat` (about every 30 seconds), `console_log` (debug console), `ban_event`, and `unban_event` messages.
+- The WebSocket hub validates the `Origin` header against the request `Host` and rejects cross-site connections. Connected clients receive `heartbeat` (about every 30 seconds), `console_log` (debug console), `ban_event`, `unban_event`, and `ban_event_update` messages. The last one carries the result of the asynchronous Whois/GeoIP enrichment for an event that was already broadcast, so the browser can fill in the country without refetching.
 
 ## Backend components
 
@@ -85,7 +89,7 @@ The browser communicates with the backend over HTTPS (REST) and a WebSocket conn
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | REST API (`/api`)     | Server management, jail and filter configuration, ban/unban actions, settings, event queries and insights, data management (clearing events and blocks), version and update check |
 | WebSocket hub         | Client registration, origin validation, broadcast of heartbeat, console, and ban/unban messages                                                                                   |
-| SQLite storage        | `ban_events`, `app_settings`, `servers`, `permanent_blocks`                                                                                                                       |
+| SQLite storage        | `ban_events`, `app_settings`, `servers`, `permanent_blocks`; `ban_events` is pruned daily according to the configured event retention window                                     |
 | Connector manager     | One connector instance per configured server; installs the callback action on new servers                                                                                         |
 | Alert dispatcher      | Pluggable providers: Email (SMTP), Webhook, Elasticsearch; per-event toggles and country-based filtering                                                                          |
 | GeoIP / Whois         | IP-to-country and hostname resolution through MaxMind databases or ip-api.com; used in the UI, in alerts, and in ban insights                                                     |
@@ -101,6 +105,7 @@ The browser communicates with the backend over HTTPS (REST) and a WebSocket conn
 | Fail2ban-UI -> SSH-connected host   | SSH, port 22                                                     | outbound from Fail2ban-UI | SSH key, dedicated service account |
 | Fail2ban-UI -> agent-connected host | HTTP(S), agent port                                              | outbound from Fail2ban-UI | Agent token                        |
 | Fail2Ban host -> Fail2ban-UI        | HTTP(S) `POST /api/ban`, `/api/unban`                            | inbound to Fail2ban-UI    | `X-Callback-Secret` header         |
+| Fail2Ban host -> Fail2ban-UI (tunneled) | HTTP inside the existing SSH connection (`ssh -R <tunnel port>:localhost:<server port>`) | no additional inbound port; reuses the outbound SSH session | `X-Callback-Secret` header, transport encrypted by SSH |
 | Fail2ban-UI -> alert providers      | SMTP / HTTPS / Elasticsearch API                                 | outbound from Fail2ban-UI | Provider-specific                  |
 | Fail2ban-UI -> edge firewall        | SSH (MikroTik) or HTTPS (pfSense, OPNsense)                      | outbound from Fail2ban-UI | Device credentials / API token     |
 

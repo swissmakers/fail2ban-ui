@@ -13,7 +13,7 @@ Complete OIDC authentication setup with Keycloak and Pocket-ID for testing authe
 ### 2. For SSH, Local and Agent connector testing (`ssh_and_local/`)
 
 Stack for testing Fail2ban UI with:
-- Local Fail2ban instance (container)
+- Local Fail2ban instances (two containers: primary on the host network, secondary on bridge)
 - Remote Fail2ban instance via SSH (container)
 - **Fail2ban Agent:** prebuilt image [`swissmakers/fail2ban-ui-agent`](https://hub.docker.com/r/swissmakers/fail2ban-ui-agent) (sources: [`github.com/swissmakers/fail2ban-ui-agent`](https://github.com/swissmakers/fail2ban-ui-agent))
 
@@ -40,7 +40,7 @@ Stack for testing Fail2ban UI with:
    ```
 
 4. **Access the services:**
-   - Fail2ban UI: `http://localhost:3080` (or configured port)
+   - Fail2ban UI: `http://localhost:3080` (or configured port). The `ssh_and_local` stack serves it under `BASE_PATH=/dev`, so use `http://localhost:3080/dev/` there.
    - OIDC Provider (Pocket-ID): `http://localhost:3000` (if using OIDC setup)
 
 ## Notes

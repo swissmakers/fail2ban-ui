@@ -23,11 +23,6 @@ import (
 	"testing"
 )
 
-// Characterization tests for the filter [INCLUDES] resolution. The output of
-// resolveFilterIncludes is fed straight into fail2ban-regex, so ordering and
-// variable shadowing are load-bearing: these pin the behaviour so the shared
-// implementation used by the local and SSH connectors cannot drift.
-
 func writeFilterFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {

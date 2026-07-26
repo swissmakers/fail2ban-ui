@@ -23,6 +23,14 @@ podman run -d --name fail2ban-ui --network=host \
   swissmakers/fail2ban-ui:latest
 ```
 
+The same image is published to three registries; use whichever your environment prefers:
+
+* `docker.io/swissmakers/fail2ban-ui`
+* `ghcr.io/swissmakers/fail2ban-ui`
+* `registry.swissmakers.ch/infra/fail2ban-ui`
+
+Each carries `latest`, a version tag (for example `v1.5.3`), and a commit-SHA tag. Pin to a version tag for reproducible deployments.
+
 Notes on the mounts:
 
 * `/config` stores the SQLite database, settings, and the SSH keys used by the UI.

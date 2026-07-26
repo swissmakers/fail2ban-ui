@@ -89,6 +89,12 @@ The UI checks every tunnel's SSH master connection every 45 seconds and automati
 |----------|---------|-------------|
 | `AUTODARK` | `false` | When `true`, enables automatic dark mode based on the browser or OS preference. The default remains light mode. |
 
+## Container runtime marker
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CONTAINER` | set to `true` in the official image | Marks a containerized run. It is set by the Dockerfile - do not set or unset it manually. When present, the UI reads and writes SSH private keys and `known_hosts` under `/config/.ssh` instead of `$HOME/.ssh`, and applies container SSH host-key handling (`StrictHostKeyChecking=accept-new` against the persistent `known_hosts` next to the configured key). |
+
 ## Fail2Ban configuration migration
 
 | Variable | Description |
@@ -120,6 +126,23 @@ Configure under **Settings -> Alert Settings**:
 > **Privacy note on the `builtin` GeoIP provider:** it resolves countries via the free ip-api.com service, which means every enriched (banned) IP address is sent to a third party  -  and the free tier only supports plain HTTP, so the queries travel unencrypted. For privacy-sensitive deployments use the MaxMind provider with a local GeoLite2 database instead.
 
 For provider behavior and payloads, see [alert-providers.md](alert-providers.md) and [webhooks.md](webhooks.md).
+
+## Event retention
+
+Configure under **Settings -> Alert Settings**, field *Event Retention (Days)*.
+
+| Setting | JSON field | Default | Range |
+|---------|-----------|---------|-------|
+| Event Retention (Days) | `eventRetentionDays` | `180` | `0` - `36500` |
+
+Ban and unban events older than the configured number of days are deleted from the SQLite database. Pruning runs once at startup and then every 24 hours; the number of deleted rows is written to the application log (`Pruned N ban events older than D days`).
+
+Set the value to `0` to keep events forever. The database then grows without bound on busy hosts `ban_events` is by far the largest table, so only do this if you actively need long-term history and monitor disk usage.
+
+Notes:
+
+* Retention only affects `ban_events`. Permanent-block records are never pruned automatically; clear them from the data-management controls or through `DELETE /api/advanced-actions/blocks`.
+* After a prune the write-ahead log is checkpointed and truncated, but the main database file keeps its allocated size. Run `VACUUM` manually, with the service stopped, if you need to reclaim disk space after shrinking the retention window.
 
 ## Threat intelligence settings (UI-managed)
 
@@ -160,6 +183,8 @@ Common optional variables:
 | `OIDC_USERNAME_CLAIM` | `preferred_username` | Claim used as the display username |
 | `OIDC_SKIP_VERIFY` | `false` | Skips TLS verification toward the provider. Development only. |
 | `OIDC_SKIP_LOGINPAGE` | `false` | Skips the UI login page and redirects to the provider directly |
+| `OIDC_CLIENT_SECRET_FILE` | unset | Only consulted when `OIDC_CLIENT_SECRET=auto-configured`: the client secret is read from this file instead of the environment, for example `/config/keycloak-client-secret`. Startup fails if the file cannot be read. |
+| `OIDC_LOGOUT_URL` | auto-derived | Provider end-session endpoint, used after the local session is cleared. When unset, the UI derives it from `OIDC_ISSUER_URL` per provider, so set it only when your provider needs a different URL. Example: `https://keycloak.example.com/realms/your-realm/protocol/openid-connect/logout` |
 
 OIDC role-based access control is optional. When no role variables are set, every authenticated OIDC user keeps the previous full-access behavior.
 

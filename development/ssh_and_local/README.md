@@ -2,7 +2,7 @@
 
 This stack provides a complete test environment covering all three connector types:
 
-- a **local Fail2Ban instance** (container) for the local connector,
+- **two local Fail2Ban instances** (containers) for testing one or two local connectors side by side,
 - a **remote Fail2Ban instance over SSH** (container) for the SSH connector,
 - **Fail2Ban plus fail2ban-ui-agent** (container) for the HTTP agent connector.
 
@@ -20,6 +20,22 @@ This stack provides a complete test environment covering all three connector typ
 | Network   | `host` mode, for iptables access                |
 | Config    | `./fail2ban-config-local/`                      |
 | Socket    | `./f2b-run-local/`                              |
+
+
+### Fail2ban-Local-Secondary
+
+
+| Property                        | Value                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| Container                       | `DEV_fail2ban-local-secondary`                                           |
+| Purpose                         | Second local Fail2Ban instance, for testing two independent local connectors at once |
+| Network                         | bridge mode, unlike the primary, which uses host mode                    |
+| Config                          | `./fail2ban-config-local-secondary/`                                     |
+| Socket                          | `./f2b-run-local-secondary/`                                             |
+| Paths inside `DEV_fail2ban-ui`  | `/etc/fail2ban-secondary` (config) and `/var/run/fail2ban-secondary` (socket) |
+
+
+Configure it in the UI as a second server of type **Local**, pointing at the `-secondary` config and socket paths above. The primary instance uses the default `/etc/fail2ban` and `/var/run/fail2ban`.
 
 
 ### Fail2ban-SSH
@@ -51,12 +67,13 @@ This stack provides a complete test environment covering all three connector typ
 ### Fail2ban-UI
 
 
-| Property  | Value                                                         |
-| --------- | ------------------------------------------------------------- |
-| Container | `DEV_fail2ban-ui`                                             |
-| Port      | `3080`                                                        |
-| URL       | `http://172.16.10.18:3080`, or your configured `BIND_ADDRESS` |
-| Purpose   | The application under test, managing all three instances      |
+| Property  | Value                                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------ |
+| Container | `DEV_fail2ban-ui`                                                                                            |
+| Port      | `3080`, bound to `0.0.0.0`                                                                                   |
+| Base path | `/dev` (`BASE_PATH=/dev`), so the UI lives at `http://localhost:3080/dev/`; visiting `/` redirects there      |
+| Callback  | `CALLBACK_URL=http://10.88.0.1:3080/dev` - the Podman default bridge gateway; change it if your bridge differs |
+| Purpose   | The application under test, managing all local, SSH and agent instances                                      |
 
 
 ## Setup
@@ -101,7 +118,7 @@ podman logs DEV_fail2ban-ssh
 
 ### 4. Configure Fail2Ban UI
 
-1. **Open the UI** at `http://172.16.10.18:3080` (or your configured `BIND_ADDRESS:PORT`; with host networking also `http://localhost:3080`).
+1. **Open the UI** at `http://localhost:3080/dev/`. The stack sets `BASE_PATH=/dev`, so visiting `http://localhost:3080/` redirects there. With `BIND_ADDRESS=0.0.0.0` and host networking, the UI is also reachable on the host's other addresses.
 2. **Add the local server.** Under **Manage Servers**, the local Fail2Ban instance should be auto-detected; enable the local connector.
 3. **Add the SSH server.** Under **Manage Servers**, click **Add Server** and configure:
 
@@ -149,10 +166,15 @@ Edit `container-compose.yml` to customize:
 ```yaml
 environment:
   - PORT=3080
-  - BIND_ADDRESS=172.16.10.18  # Change to your IP, or 0.0.0.0
-  # OIDC settings (when testing OIDC)
-  - OIDC_ENABLED=false  # Set to true to enable OIDC
+  - BIND_ADDRESS=0.0.0.0
+  - BASE_PATH=/dev                            # remove to serve the UI at the root
+  - CALLBACK_URL=http://10.88.0.1:3080/dev    # must include BASE_PATH
+  - CALLBACK_SECRET=same-as-ui-callback-secret
+  - AUTODARK=true
+  # - OIDC_ENABLED=true                       # use development/oidc/ for a full OIDC stack
 ```
+
+If you remove `BASE_PATH`, drop the `/dev` suffix from `CALLBACK_URL` as well. See [docs/configuration.md](../../docs/configuration.md#http-base-path-subpath-deployment).
 
 ### SSH container
 
@@ -170,10 +192,12 @@ To modify the SSH configuration, edit the `command` section in `container-compos
 ```
 ./config/                  # Fail2Ban UI configuration and database
 ./ssh-keys/                # SSH key pair (shared between containers)
-./fail2ban-config-local/   # Local Fail2Ban configuration
-./f2b-run-local/           # Local Fail2Ban socket directory
-./fail2ban-config-ssh/     # SSH Fail2Ban configuration
-./fail2ban-config-agent/   # Agent Fail2Ban configuration
+./fail2ban-config-local/             # Local Fail2Ban configuration (primary)
+./f2b-run-local/                     # Local Fail2Ban socket directory (primary)
+./fail2ban-config-local-secondary/   # Local Fail2Ban configuration (secondary)
+./f2b-run-local-secondary/           # Local Fail2Ban socket directory (secondary)
+./fail2ban-config-ssh/               # SSH Fail2Ban configuration
+./fail2ban-config-agent/             # Agent Fail2Ban configuration
 ```
 
 ## Test scenarios
@@ -213,6 +237,7 @@ To modify the SSH configuration, edit the `command` section in `container-compos
 3. Switch between servers.
 4. Verify each server's jails are isolated.
 5. Test operations on each server independently.
+6. Add the secondary local instance as a third server (type **Local**, config `/etc/fail2ban-secondary`, socket `/var/run/fail2ban-secondary`) and verify that jail lists, bans, and configuration edits stay isolated between the two local connectors.
 
 ## Troubleshooting
 
