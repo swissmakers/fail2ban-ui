@@ -17,6 +17,7 @@
 package fail2ban
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -70,7 +71,7 @@ func (lc *LocalConnector) GetJailSummary(ctx context.Context) (*JailSummary, err
 	}
 	infos, err := parseBannedJails(out)
 	if err != nil {
-		return nil, fmt.Errorf("%w (fail2ban 0.11 or newer is required)", err)
+		return nil, err
 	}
 	exists, managed, err := lc.CheckJailLocalIntegrity(ctx)
 	if err != nil {
@@ -124,6 +125,9 @@ func (lc *LocalConnector) BanIP(ctx context.Context, jail, ip string) error {
 func (lc *LocalConnector) Reload(ctx context.Context) error {
 	out, err := lc.runFail2banClient(ctx, "reload")
 	if err != nil {
+		if strings.Contains(err.Error(), "Found no accessible config files") {
+			return fmt.Errorf("fail2ban reload error: %w - fail2ban-ui cannot see the complete fail2ban configuration: when sharing a socket with a fail2ban container, /etc/fail2ban inside the fail2ban-ui container must contain the full configuration tree (including fail2ban.conf and jail.conf), not only the custom jail/filter files", err)
+		}
 		return fmt.Errorf("fail2ban reload error: %w (output: %s)", err, strings.TrimSpace(out))
 	}
 	return checkReloadOutput(out)
@@ -171,8 +175,17 @@ func (lc *LocalConnector) SetFilterConfig(ctx context.Context, jail, content str
 
 func (lc *LocalConnector) runFail2banClient(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "fail2ban-client", fail2banArgs(lc.server.SocketPath, args...)...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+	output, err := selectCommandOutput(stdout.String(), stderr.String(), runErr)
+	if err == nil {
+		if s := strings.TrimSpace(stderr.String()); s != "" {
+			debugf("fail2ban-client stderr ignored [%s]: %s", lc.server.Name, truncateForLog(s, maxLoggedOutputBytes))
+		}
+	}
+	return output, err
 }
 
 func (lc *LocalConnector) checkFail2banHealthy(ctx context.Context) error {

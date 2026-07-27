@@ -151,6 +151,41 @@ func TestParseBannedJails(t *testing.T) {
 		}
 	})
 
+	// A fail2ban.conf with 'logtarget = STDOUT' makes the client print its log lines to stdout ahead of the payload -> the parser must skip them.
+	t.Run("log noise ahead of the payload is skipped", func(t *testing.T) {
+		in := "2026-07-26 18:20:56,221 fail2ban.configreader   [18]: ERROR   Found no accessible config files for 'fail2ban' under /etc/fail2ban\n" +
+			"2026-07-26 18:20:56,221 fail2ban.configreader   [18]: ERROR   No section: 'Definition'\n" +
+			"[{'sshd': ['1.2.3.4']}]\n"
+		infos, err := parseBannedJails(in)
+		if err != nil {
+			t.Fatalf("leading log lines must not break parsing: %v", err)
+		}
+		if len(infos) != 1 || infos[0].JailName != "sshd" || infos[0].BannedIPs[0] != "1.2.3.4" {
+			t.Fatalf("unexpected result: %+v", infos)
+		}
+	})
+
+	t.Run("noise without any payload is an error", func(t *testing.T) {
+		in := "2026-07-26 18:20:56,221 fail2ban.configreader   [18]: ERROR   Found no accessible config files\n"
+		if _, err := parseBannedJails(in); err == nil {
+			t.Fatal("expected an error when no payload line exists")
+		}
+	})
+
+	t.Run("version hint only for actual command rejection", func(t *testing.T) {
+		_, err := parseBannedJails("Sorry but the command 'banned' is not supported")
+		if err == nil || !strings.Contains(err.Error(), "0.11") {
+			t.Fatalf("unsupported-command output must carry the version hint, got: %v", err)
+		}
+		_, err = parseBannedJails("2026-07-26 18:20:56 fail2ban.configreader [18]: ERROR Found no accessible config files")
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if strings.Contains(err.Error(), "0.11") {
+			t.Fatalf("config noise is not a version problem; hint must be absent, got: %v", err)
+		}
+	})
+
 	t.Run("parse errors stay readable for huge payloads", func(t *testing.T) {
 		_, err := parseBannedJails(strings.Repeat("x", 5000))
 		if err == nil {

@@ -136,7 +136,7 @@ func (sc *SSHConnector) GetJailSummary(ctx context.Context) (*JailSummary, error
 	}
 	infos, err := parseBannedJails(bannedOut)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w (fail2ban 0.11 or newer is required)", sc.server.Name, err)
+		return nil, fmt.Errorf("%s: %w", sc.server.Name, err)
 	}
 	return &JailSummary{
 		Jails:            infos,

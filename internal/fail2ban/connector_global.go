@@ -55,11 +55,37 @@ const managedJailLocalMarker = "ui-custom-action"
 //  Shared fail2ban-client Output Parsers
 // =========================================================================
 
+// Locates the banned payload line. fail2ban prints the whole repr as one line on stdout, but a fail2ban.conf with 'logtarget = STDOUT' makes the
+// client write its own log lines to stdout first, so skip anything ahead of the first line that starts the list.
+func extractBannedPayload(out string) (string, bool) {
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			return trimmed, true
+		}
+	}
+	return "", false
+}
+
+// Appends the minimum-version hint only when fail2ban actually rejected the command
+func bannedVersionHint(out string) string {
+	lower := strings.ToLower(out)
+	if strings.Contains(lower, "not supported") || strings.Contains(lower, "invalid command") || strings.Contains(lower, "usage:") {
+		return " (the `banned` command needs fail2ban 0.11 or newer)"
+	}
+	return ""
+}
+
 func parseBannedJails(out string) ([]JailInfo, error) {
-	s := &reprScanner{in: strings.TrimSpace(out)}
-	if s.rest() == "" {
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
 		return nil, fmt.Errorf("empty output from `fail2ban-client banned`")
 	}
+	payload, found := extractBannedPayload(trimmed)
+	if !found {
+		return nil, fmt.Errorf("unexpected output from `fail2ban-client banned`: %s%s", truncateForError(trimmed), bannedVersionHint(trimmed))
+	}
+	s := &reprScanner{in: payload}
 	if !s.accept('[') {
 		return nil, fmt.Errorf("unexpected output from `fail2ban-client banned`: %s", truncateForError(s.in))
 	}

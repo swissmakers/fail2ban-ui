@@ -27,16 +27,20 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
-// The following tests run against a fake ssh rather than a real host
-func withFakeSSH(t *testing.T, body string) {
+func withFakeBinary(t *testing.T, name, body string) {
 	t.Helper()
 	dir := t.TempDir()
 	script := "#!/bin/sh\n" + body
-	path := filepath.Join(dir, "ssh")
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
-		t.Fatalf("failed to write fake ssh: %v", err)
+		t.Fatalf("failed to write fake %s: %v", name, err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func withFakeSSH(t *testing.T, body string) {
+	t.Helper()
+	withFakeBinary(t, "ssh", body)
 }
 
 func testSSHConnector() *SSHConnector {
