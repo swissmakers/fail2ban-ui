@@ -533,6 +533,39 @@ func (ac *AgentConnector) SetJailConfig(ctx context.Context, jail, content strin
 //  Logpath Operations
 // =========================================================================
 
+// =========================================================================
+//  IgnoreIP Operations (Per-Jail)
+// =========================================================================
+
+func (ac *AgentConnector) GetJailIgnoreIPs(ctx context.Context, jail string) ([]string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return nil, err
+	}
+	config, _, err := ac.GetJailConfig(ctx, jail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	return parseIgnoreIPsFromConfig(config, jail), nil
+}
+
+func (ac *AgentConnector) SetJailIgnoreIPs(ctx context.Context, jail string, ips []string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	config, _, err := ac.GetJailConfig(ctx, jail)
+	if err != nil {
+		return fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	newContent := setIgnoreIPsInConfig(config, jail, ips)
+	if err := ac.SetJailConfig(ctx, jail, newContent); err != nil {
+		return fmt.Errorf("failed to write jail config for %s: %w", jail, err)
+	}
+	if err := ac.Reload(ctx); err != nil {
+		return fmt.Errorf("failed to reload fail2ban after setting ignoreip for %s: %w", jail, err)
+	}
+	return nil
+}
+
 func (ac *AgentConnector) TestLogpath(ctx context.Context, logpath string) ([]string, error) {
 	payload := map[string]string{"logpath": logpath}
 	var resp struct {
