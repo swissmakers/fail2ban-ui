@@ -51,7 +51,7 @@
   "dashboard.table.new_last_hour": "New Last Hour",
   "dashboard.table.banned_ips": "Banned IPs (Unban)",
   "dashboard.no_jails": "No jails found.",
-  "dashboard.overview_detail": "The lists must not expanded to search for an IP.",
+  "dashboard.overview_detail": "Sort by jail, IP address or ban time, search for an IP, and page through the results below.",
   "dashboard.table.time": "Time",
   "dashboard.table.jail": "Jail",
   "dashboard.table.ip": "IP",
@@ -761,5 +761,16 @@
   "logs.timeline.suggestions_empty": "No similar periods found.",
   "logs.timeline.suggestions_title": "Similar past periods",
   "logs.timeline.title": "Ban & unban activity",
-  "jails.manage.offender_disabled": "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled."
+  "jails.manage.offender_disabled": "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled.",
+  "dashboard.table.current_banned": "Currently Banned",
+  "dashboard.table.ban_time": "Ban Time",
+  "dashboard.table.actions": "Actions",
+  "dashboard.current_banned_title": "Currently banned IPs",
+  "dashboard.ban_time_missing_hint": "No recorded ban event for this IP",
+  "dashboard.pagination.rows_per_page": "Rows per page:",
+  "dashboard.pagination.of": "of",
+  "dashboard.pagination.prev": "Prev",
+  "dashboard.pagination.next": "Next",
+  "dashboard.pagination.page": "Page",
+  "dashboard.table.ip_address": "IP Address"
 }

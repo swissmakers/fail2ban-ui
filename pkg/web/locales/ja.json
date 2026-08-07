@@ -761,5 +761,16 @@
   "logs.timeline.suggestions_empty": "類似した期間は見つかりませんでした。",
   "logs.timeline.suggestions_title": "類似した過去の期間",
   "logs.timeline.title": "BAN・BAN解除のアクティビティ",
-  "jails.manage.offender_disabled": "変更は適用されました。無関係のジェイル「{jail}」の設定に問題があるため、自動的に無効化されました。"
+  "jails.manage.offender_disabled": "変更は適用されました。無関係のジェイル「{jail}」の設定に問題があるため、自動的に無効化されました。",
+  "dashboard.table.current_banned": "現在Ban中",
+  "dashboard.table.ban_time": "Ban時刻",
+  "dashboard.table.actions": "操作",
+  "dashboard.current_banned_title": "現在Ban中のIP",
+  "dashboard.ban_time_missing_hint": "このIPのBanイベントは記録されていません",
+  "dashboard.pagination.rows_per_page": "1ページあたりの行数:",
+  "dashboard.pagination.of": "/",
+  "dashboard.pagination.prev": "前へ",
+  "dashboard.pagination.next": "次へ",
+  "dashboard.pagination.page": "ページ",
+  "dashboard.table.ip_address": "IPアドレス"
 }

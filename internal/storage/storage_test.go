@@ -19,6 +19,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -723,5 +724,86 @@ func TestLatestBanEnrichmentForIP(t *testing.T) {
 	}
 	if country != "" || whois != "" {
 		t.Fatalf("miss returned country=%q whois=%q, want empty", country, whois)
+	}
+}
+
+func TestLatestBanTimeByIP(t *testing.T) {
+	initTestStorage(t)
+	ctx := context.Background()
+
+	// Server A, jail "sshd" with multiple events per IP (ban + unban + reban).
+	for _, e := range []struct {
+		at  time.Time
+		ip  string
+		typ string
+	}{
+		{time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC), "10.0.0.1", "ban"},
+		{time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC), "10.0.0.1", "unban"},
+		{time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC), "10.0.0.1", "ban"},
+		{time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC), "10.0.0.2", "ban"},
+		{time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC), "10.0.0.3", "unban"}, // only unban -> no ban time
+	} {
+		if _, err := RecordBanEvent(ctx, BanEventRecord{
+			ServerID: "srvA", ServerName: "A", Jail: "sshd", IP: e.ip,
+			EventType: e.typ, OccurredAt: e.at,
+		}); err != nil {
+			t.Fatalf("RecordBanEvent: %v", err)
+		}
+	}
+	// A record for a different jail / server that must be ignored.
+	if _, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srvA", ServerName: "A", Jail: "httpd", IP: "10.0.0.1",
+		EventType: "ban", OccurredAt: time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("RecordBanEvent httpd: %v", err)
+	}
+	if _, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srvB", ServerName: "B", Jail: "sshd", IP: "10.0.0.1",
+		EventType: "ban", OccurredAt: time.Date(2026, 1, 1, 2, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("RecordBanEvent srvB: %v", err)
+	}
+
+	got, err := LatestBanTimeByIP(ctx, "srvA", "sshd", []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"})
+	if err != nil {
+		t.Fatalf("LatestBanTimeByIP: %v", err)
+	}
+
+	want1 := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
+	if got["10.0.0.1"] != want1 {
+		t.Fatalf("10.0.0.1 = %v, want %v (latest ban, ignoring unban)", got["10.0.0.1"], want1)
+	}
+	want2 := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	if got["10.0.0.2"] != want2 {
+		t.Fatalf("10.0.0.2 = %v, want %v", got["10.0.0.2"], want2)
+	}
+	if _, ok := got["10.0.0.3"]; ok {
+		t.Fatalf("10.0.0.3 should be absent (only unban events recorded), got %v", got["10.0.0.3"])
+	}
+
+	// Empty inputs should be safe and return an empty map.
+	if m, err := LatestBanTimeByIP(ctx, "srvA", "sshd", nil); err != nil || len(m) != 0 {
+		t.Fatalf("empty input: m=%v err=%v, want empty map", m, err)
+	}
+
+	// Large IP lists are chunked internally so callers do not hit SQLite variable limits.
+	manyIPs := make([]string, 0, 650)
+	for i := 0; i < 650; i++ {
+		manyIPs = append(manyIPs, fmt.Sprintf("192.0.2.%d", i))
+	}
+	chunkedIP := manyIPs[len(manyIPs)-1]
+	chunkedAt := time.Date(2026, 1, 3, 12, 0, 0, 0, time.UTC)
+	if _, err := RecordBanEvent(ctx, BanEventRecord{
+		ServerID: "srvA", ServerName: "A", Jail: "sshd", IP: chunkedIP,
+		EventType: "ban", OccurredAt: chunkedAt,
+	}); err != nil {
+		t.Fatalf("RecordBanEvent chunked: %v", err)
+	}
+	chunked, err := LatestBanTimeByIP(ctx, "srvA", "sshd", manyIPs)
+	if err != nil {
+		t.Fatalf("LatestBanTimeByIP chunked: %v", err)
+	}
+	if chunked[chunkedIP] != chunkedAt {
+		t.Fatalf("chunked lookup %s = %v, want %v", chunkedIP, chunked[chunkedIP], chunkedAt)
 	}
 }

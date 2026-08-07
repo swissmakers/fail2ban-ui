@@ -761,5 +761,16 @@
   "logs.timeline.suggestions_empty": "Nessun periodo simile trovato.",
   "logs.timeline.suggestions_title": "Periodi passati simili",
   "logs.timeline.title": "Attività di ban e unban",
-  "jails.manage.offender_disabled": "La tua modifica è stata applicata. Il jail non correlato '{jail}' ha una configurazione difettosa ed è stato disabilitato automaticamente."
+  "jails.manage.offender_disabled": "La tua modifica è stata applicata. Il jail non correlato '{jail}' ha una configurazione difettosa ed è stato disabilitato automaticamente.",
+  "dashboard.table.current_banned": "Attualmente bannati",
+  "dashboard.table.ban_time": "Ora del ban",
+  "dashboard.table.actions": "Azioni",
+  "dashboard.current_banned_title": "IP attualmente bannati",
+  "dashboard.ban_time_missing_hint": "Nessun evento di ban registrato per questo IP",
+  "dashboard.pagination.rows_per_page": "Righe per pagina:",
+  "dashboard.pagination.of": "di",
+  "dashboard.pagination.prev": "Precedente",
+  "dashboard.pagination.next": "Successivo",
+  "dashboard.pagination.page": "Pagina",
+  "dashboard.table.ip_address": "Indirizzo IP"
 }

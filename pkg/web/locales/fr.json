@@ -761,5 +761,16 @@
   "logs.timeline.suggestions_empty": "Aucune période similaire trouvée.",
   "logs.timeline.suggestions_title": "Périodes passées similaires",
   "logs.timeline.title": "Activité de bannissement et débannissement",
-  "jails.manage.offender_disabled": "Votre modification a été appliquée. Le jail non concerné '{jail}' a une configuration défectueuse et a été désactivé automatiquement."
+  "jails.manage.offender_disabled": "Votre modification a été appliquée. Le jail non concerné '{jail}' a une configuration défectueuse et a été désactivé automatiquement.",
+  "dashboard.table.current_banned": "Actuellement bannies",
+  "dashboard.table.ban_time": "Heure du bannissement",
+  "dashboard.table.actions": "Actions",
+  "dashboard.current_banned_title": "IP actuellement bannies",
+  "dashboard.ban_time_missing_hint": "Aucun événement de bannissement enregistré pour cette IP",
+  "dashboard.pagination.rows_per_page": "Lignes par page :",
+  "dashboard.pagination.of": "sur",
+  "dashboard.pagination.prev": "Préc.",
+  "dashboard.pagination.next": "Suiv.",
+  "dashboard.pagination.page": "Page",
+  "dashboard.table.ip_address": "Adresse IP"
 }
