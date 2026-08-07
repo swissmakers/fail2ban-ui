@@ -30,13 +30,16 @@ var BAN_EVENTS_MAX_LOADED = 1000;
 var isBanEventsLoadingMore = false;
 var bannedIPsFilterText = '';
 var bannedIPsFilterDebounce = null;
-var isBannedSearchLoading = false;
-var bannedSearchRequestToken = 0;
-var bannedSearchPendingCount = 0;
-var jailBannedState = {};
-var JAIL_BANNED_PAGE_SIZE = 5;
-var JAIL_BANNED_MAX_LIMIT = 100;
-var JAIL_BANNED_ERROR_RETRY_MS = 30000;
+
+// Flat "Currently banned IPs" overview table state (server-paginated/sorted).
+var bannedTableState = null;
+var bannedTableLoading = false;
+var bannedTableRequestToken = 0;
+var bannedPagingPage = 1;
+var bannedPagingPageSize = 10;
+var bannedPagingSort = 'banTime';
+var bannedPagingOrder = 'desc';
+var BANNED_TABLE_PAGE_SIZE_OPTIONS = [5, 10, 25, 100];
 var translations = {};
 var sshKeysCache = null;
 var openModalCount = 0;

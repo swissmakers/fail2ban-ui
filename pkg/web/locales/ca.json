@@ -761,5 +761,16 @@
   "logs.timeline.suggestions_empty": "No s'han trobat períodes semblants.",
   "logs.timeline.suggestions_title": "Períodes passats semblants",
   "logs.timeline.title": "Activitat de bans i desbans",
-  "jails.manage.offender_disabled": "El vostre canvi s'ha aplicat. El jail no relacionat '{jail}' té una configuració defectuosa i s'ha desactivat automàticament."
+  "jails.manage.offender_disabled": "El vostre canvi s'ha aplicat. El jail no relacionat '{jail}' té una configuració defectuosa i s'ha desactivat automàticament.",
+  "dashboard.table.current_banned": "Bloquejats actualment",
+  "dashboard.table.ban_time": "Hora del bloqueig",
+  "dashboard.table.actions": "Accions",
+  "dashboard.current_banned_title": "IPs bloquejades actualment",
+  "dashboard.ban_time_missing_hint": "No hi ha cap esdeveniment de bloqueig registrat per a aquesta IP",
+  "dashboard.pagination.rows_per_page": "Files per pàgina:",
+  "dashboard.pagination.of": "de",
+  "dashboard.pagination.prev": "Anterior",
+  "dashboard.pagination.next": "Següent",
+  "dashboard.pagination.page": "Pàgina",
+  "dashboard.table.ip_address": "Adreça IP"
 }

@@ -55,6 +55,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// Internal API calls from frontend (e.g. manual actions) to backend to execute Ban / Unban
 		api.GET("/jails/:jail/banned", RequirePermission(PermissionRead), ListJailBannedIPsHandler)
+		api.GET("/banned", RequirePermission(PermissionRead), ListBannedIPsHandler)
 		api.POST("/jails/:jail/unban/:ip", RequirePermission(PermissionBan), UnbanIPHandler)
 		api.POST("/jails/:jail/ban/:ip", RequirePermission(PermissionBan), BanIPHandler)
 

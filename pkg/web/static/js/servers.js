@@ -282,7 +282,11 @@ function setCurrentServer(serverId) {
   } else {
     clearStoredServerId();
   }
-  jailBannedState = {};
+  bannedTableRequestToken += 1;
+  bannedTableState = null;
+  bannedPagingPage = 1;
+  bannedPagingSort = 'banTime';
+  bannedPagingOrder = 'desc';
   latestSummary = null;
   latestSummaryServerId = null;
   latestServerInsights = null;

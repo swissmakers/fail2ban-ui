@@ -421,6 +421,217 @@ func ListJailBannedIPsHandler(c *gin.Context) {
 }
 
 // =========================================================================
+//  Banned IP overview (flat table for the dashboard Overview section)
+// =========================================================================
+
+type bannedIPRow struct {
+	Jail    string `json:"jail"`
+	IP      string `json:"ip"`
+	BanTime string `json:"banTime"` // RFC3339 or empty when no recorded ban event
+}
+
+type bannedIPListResponse struct {
+	Rows     []bannedIPRow `json:"rows"`
+	Total    int           `json:"total"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"pageSize"`
+	HasMore  bool          `json:"hasMore"`
+}
+
+// ListBannedIPsHandler returns a flat, server-side sorted/filtered/paginated list of
+// currently banned IPs across all active jails, joined with their latest recorded ban
+// event timestamps (from ban_events) for the Overview table.
+func ListBannedIPsHandler(c *gin.Context) {
+	conn, err := resolveConnector(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, buildErrorResponse(err, "dashboard.errors.summary_failed"))
+		return
+	}
+
+	const (
+		defaultPageSize = 10
+		maxPageSize     = 100
+	)
+
+	page := 1
+	if pageStr := strings.TrimSpace(c.Query("page")); pageStr != "" {
+		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed >= 1 {
+			page = parsed
+		}
+	}
+
+	pageSize := defaultPageSize
+	if sizeStr := strings.TrimSpace(c.Query("pageSize")); sizeStr != "" {
+		if parsed, err := strconv.Atoi(sizeStr); err == nil && parsed >= 1 {
+			if parsed > maxPageSize {
+				parsed = maxPageSize
+			}
+			pageSize = parsed
+		}
+	}
+
+	sortField := strings.TrimSpace(c.Query("sort"))
+	if sortField == "" {
+		sortField = "banTime"
+	}
+	order := strings.ToLower(strings.TrimSpace(c.Query("order")))
+	if order != "asc" && order != "desc" {
+		order = "desc"
+	}
+
+	jailFilter := strings.TrimSpace(c.Query("jail"))
+	query := strings.ToLower(strings.TrimSpace(c.Query("q")))
+
+	infos, err := conn.GetJailInfos(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "dashboard.errors.summary_failed"))
+		return
+	}
+
+	var pending []bannedIPRow
+
+	// Collect (jail, ip) pairs, one lookup of ban times per jail for efficiency.
+	for _, jailInfo := range infos {
+		jailName := jailInfo.JailName
+		if jailFilter != "" && jailFilter != jailName {
+			continue
+		}
+		ips := jailInfo.BannedIPs
+		if len(ips) == 0 {
+			fetched, ferr := conn.GetBannedIPs(c.Request.Context(), jailName)
+			if ferr != nil {
+				config.DebugLog("Warning: failed to fetch banned IPs for jail %s on server %s: %v", jailName, conn.Server().ID, ferr)
+			} else {
+				ips = fetched
+			}
+		}
+		for _, ip := range ips {
+			if query != "" && !strings.Contains(strings.ToLower(ip), query) {
+				continue
+			}
+			pending = append(pending, bannedIPRow{Jail: jailName, IP: ip})
+		}
+	}
+
+	// Look up the latest ban event timestamp per (jail, ip).
+	banTimes := make(map[string]string) // key: jail + "\x00" + ip
+	serverID := conn.Server().ID
+	for jailName, jailIPs := range groupIPsByJail(pending) {
+		latest, lerr := storage.LatestBanTimeByIP(c.Request.Context(), serverID, jailName, jailIPs)
+		if lerr != nil {
+			// Non-fatal: missing times just render as empty, but log so DB issues are visible.
+			config.DebugLog("Warning: failed to look up latest ban times for jail %s on server %s: %v", jailName, serverID, lerr)
+			continue
+		}
+		for ip, ts := range latest {
+			if ts.IsZero() {
+				continue
+			}
+			banTimes[jailName+"\x00"+ip] = ts.UTC().Format(time.RFC3339)
+		}
+	}
+
+	rows := make([]bannedIPRow, len(pending))
+	for i, p := range pending {
+		rows[i] = bannedIPRow{
+			Jail:    p.Jail,
+			IP:      p.IP,
+			BanTime: banTimes[p.Jail+"\x00"+p.IP],
+		}
+	}
+
+	sortBannedRows(rows, sortField, order)
+
+	total := len(rows)
+	if page*pageSize > total {
+		// clamp so an out-of-range page lands on an empty-but-valid slice
+		start := (page - 1) * pageSize
+		if start > total {
+			start = total
+		}
+		rows = rows[start:]
+		c.JSON(http.StatusOK, bannedIPListResponse{Rows: rows, Total: total, Page: page, PageSize: pageSize, HasMore: false})
+		return
+	}
+
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	paged := rows[start:end]
+
+	c.JSON(http.StatusOK, bannedIPListResponse{
+		Rows:     paged,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+		HasMore:  end < total,
+	})
+}
+
+// sortBannedRows sorts banned IP rows. For a banTime sort, rows without a recorded
+// ban time are always placed after rows that have one (nulls-last), regardless of order.
+func sortBannedRows(rows []bannedIPRow, field, order string) {
+	asc := order == "asc"
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		switch field {
+		case "jail":
+			if cmp := compareString(a.Jail, b.Jail, asc); cmp != 0 {
+				return cmp < 0
+			}
+			return compareString(a.IP, b.IP, true) < 0
+		case "ip":
+			ai, bi := strings.ToLower(a.IP), strings.ToLower(b.IP)
+			if cmp := compareString(ai, bi, asc); cmp != 0 {
+				return cmp < 0
+			}
+			return compareString(a.Jail, b.Jail, true) < 0
+		default: // banTime
+			if a.BanTime == "" && b.BanTime == "" {
+				if cmp := compareString(a.Jail, b.Jail, true); cmp != 0 {
+					return cmp < 0
+				}
+				return compareString(a.IP, b.IP, true) < 0
+			}
+			if a.BanTime == "" {
+				return false // a has no time -> always after b (which has one)
+			}
+			if b.BanTime == "" {
+				return true // a has time -> always before b (which has none)
+			}
+			return compareString(a.BanTime, b.BanTime, asc) < 0
+		}
+	})
+}
+
+func compareString(a, b string, asc bool) int {
+	if a == b {
+		return 0
+	}
+	if asc {
+		if a < b {
+			return -1
+		}
+		return 1
+	}
+	if a > b {
+		return -1
+	}
+	return 1
+}
+
+// groupIPsByJail groups banned IP rows by jail for batched ban-time lookups.
+func groupIPsByJail(rows []bannedIPRow) map[string][]string {
+	out := make(map[string][]string)
+	for _, r := range rows {
+		out[r.Jail] = append(out[r.Jail], r.IP)
+	}
+	return out
+}
+
+// =========================================================================
 //  Ban / Unban Actions
 // =========================================================================
 

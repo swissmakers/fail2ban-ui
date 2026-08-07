@@ -761,5 +761,16 @@
   "logs.timeline.suggestions_empty": "未找到相似的时段。",
   "logs.timeline.suggestions_title": "相似的历史时段",
   "logs.timeline.title": "封禁与解封活动",
-  "jails.manage.offender_disabled": "您的更改已应用。无关的监狱 '{jail}' 配置有误，已被自动禁用。"
+  "jails.manage.offender_disabled": "您的更改已应用。无关的监狱 '{jail}' 配置有误，已被自动禁用。",
+  "dashboard.table.current_banned": "当前已封禁",
+  "dashboard.table.ban_time": "封禁时间",
+  "dashboard.table.actions": "操作",
+  "dashboard.current_banned_title": "当前已封禁的 IP",
+  "dashboard.ban_time_missing_hint": "此 IP 没有记录的封禁事件",
+  "dashboard.pagination.rows_per_page": "每页行数：",
+  "dashboard.pagination.of": "共",
+  "dashboard.pagination.prev": "上一页",
+  "dashboard.pagination.next": "下一页",
+  "dashboard.pagination.page": "页",
+  "dashboard.table.ip_address": "IP 地址"
 }

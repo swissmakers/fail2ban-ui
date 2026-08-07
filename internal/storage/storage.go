@@ -1092,6 +1092,81 @@ WHERE server_id = ?
 	return counts, rows.Err()
 }
 
+// LatestBanTimeByIP returns the most recent 'ban' event timestamp for each of the given
+// IPs within a single jail on a single server. IPs with no recorded ban event are omitted
+// from the returned map so callers can distinguish "no event" from a zero time.
+func LatestBanTimeByIP(ctx context.Context, serverID, jail string, ips []string) (map[string]time.Time, error) {
+	if db == nil {
+		return nil, errors.New("storage not initialised")
+	}
+	if serverID == "" || jail == "" || len(ips) == 0 {
+		return map[string]time.Time{}, nil
+	}
+
+	// de-duplicate while preserving caller semantics (ip -> latest time)
+	seen := make(map[string]struct{}, len(ips))
+	unique := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if _, ok := seen[ip]; ok {
+			continue
+		}
+		seen[ip] = struct{}{}
+		unique = append(unique, ip)
+	}
+
+	const maxSQLiteQueryVars = 500 // keep comfortably below SQLite's common 999-var limit
+	result := make(map[string]time.Time, len(unique))
+
+	for start := 0; start < len(unique); start += maxSQLiteQueryVars {
+		end := start + maxSQLiteQueryVars
+		if end > len(unique) {
+			end = len(unique)
+		}
+		chunk := unique[start:end]
+
+		placeholders := make([]string, len(chunk))
+		args := make([]any, 0, len(chunk)+2)
+		args = append(args, serverID, jail)
+		for i, ip := range chunk {
+			placeholders[i] = "?"
+			args = append(args, ip)
+		}
+
+		query := `
+SELECT ip, MAX(occurred_at)
+FROM ban_events
+WHERE server_id = ?
+  AND jail = ?
+  AND (event_type = 'ban' OR event_type IS NULL)
+  AND ip IN (` + strings.Join(placeholders, ",") + `)
+GROUP BY ip`
+
+		rows, err := db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var ip string
+			var occurredAt string
+			if err := rows.Scan(&ip, &occurredAt); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			result[ip] = parseStorageTime(occurredAt)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
 // Returns total number of ban events for a specific IP and optional server.
 func CountBanEventsByIP(ctx context.Context, ip, serverID string) (int64, error) {
 	if db == nil {

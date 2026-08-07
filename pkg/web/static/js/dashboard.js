@@ -38,14 +38,6 @@ function refreshData(options) {
     showLoading(true);
   }
 
-  if (!options.silent) {
-    Object.keys(jailBannedState || {}).forEach(function(jailName) {
-      if (jailBannedState[jailName]) {
-        jailBannedState[jailName].lastErrorAt = 0;
-      }
-    });
-  }
-
   if (!options.summaryOnly) {
     banEventsLoading = true;
     Promise.all([
@@ -132,102 +124,9 @@ function fetchSummaryData() {
     });
 }
 
-function normalizeJailBannedState(summary) {
-  var nextState = {};
-  var existing = jailBannedState || {};
-  var jails = summary && Array.isArray(summary.jails) ? summary.jails : [];
-  var activeQuery = (bannedIPsFilterText || '').trim();
-  jails.forEach(function(jail) {
-    var jailName = jail && jail.jailName ? String(jail.jailName) : '';
-    if (!jailName) {
-      return;
-    }
-    var prev = existing[jailName];
-    var preview = Array.isArray(jail.bannedIPs) ? jail.bannedIPs : null;
-    var canSeed = !activeQuery && preview !== null &&
-      (!prev || (!prev.loading && prev.ips.length <= preview.length));
-    if (canSeed) {
-      var total = typeof jail.totalBanned === 'number' ? jail.totalBanned : preview.length;
-      nextState[jailName] = {
-        ips: preview.slice(),
-        total: total,
-        hasMore: total > preview.length,
-        loading: false,
-        loadedQuery: '',
-        error: null,
-        lastErrorAt: 0
-      };
-      return;
-    }
-    if (prev) {
-      nextState[jailName] = prev;
-      return;
-    }
-    nextState[jailName] = {
-      ips: [],
-      total: 0,
-      hasMore: false,
-      loading: false,
-      loadedQuery: null,
-      error: null,
-      lastErrorAt: 0
-    };
-  });
-  jailBannedState = nextState;
-}
-
-function getJailBannedState(jailName) {
-  if (!jailBannedState[jailName]) {
-    jailBannedState[jailName] = {
-      ips: [],
-      total: 0,
-      hasMore: false,
-      loading: false,
-      loadedQuery: null,
-      error: null,
-      lastErrorAt: 0
-    };
-  }
-  return jailBannedState[jailName];
-}
-
-function buildJailBannedQuery(jailName, offset, limit) {
-  var cappedLimit = Math.min(Math.max(limit || JAIL_BANNED_PAGE_SIZE, 1), JAIL_BANNED_MAX_LIMIT);
-  var params = [
-    'limit=' + encodeURIComponent(cappedLimit),
-    'offset=' + encodeURIComponent(Math.max(offset || 0, 0))
-  ];
-  var query = (bannedIPsFilterText || '').trim();
-  if (query) {
-    params.push('q=' + encodeURIComponent(query));
-  }
-  var path = '/api/jails/' + encodeURIComponent(jailName) + '/banned?' + params.join('&');
-  return withServerParam(path);
-}
-
-function isActiveBannedSearchToken(token) {
-  return !token || token === bannedSearchRequestToken;
-}
-
-function setJailsSearchLoadingState(active) {
-  isBannedSearchLoading = !!active;
-  var wrapper = document.getElementById('jailsTableBody');
-  if (!wrapper) {
-    return;
-  }
-  wrapper.classList.toggle('opacity-60', isBannedSearchLoading);
-  wrapper.classList.toggle('pointer-events-none', isBannedSearchLoading);
-  wrapper.setAttribute('aria-busy', isBannedSearchLoading ? 'true' : 'false');
-}
-
-function updateSearchLoadingCounter(delta) {
-  bannedSearchPendingCount += delta;
-  if (bannedSearchPendingCount < 0) {
-    bannedSearchPendingCount = 0;
-  }
-  setJailsSearchLoadingState(bannedSearchPendingCount > 0);
-}
-
+// -------------------------------------------------------------------------
+//  Banned IP overview table (flat, server-paginated/sorted)
+// -------------------------------------------------------------------------
 function summaryMatchesCurrentServer() {
   if (!latestSummaryServerId || !currentServerId) {
     return true;
@@ -235,94 +134,102 @@ function summaryMatchesCurrentServer() {
   return latestSummaryServerId === currentServerId;
 }
 
-function fetchJailBannedIPs(jailName, options) {
+function isActiveBannedTableToken(token) {
+  return !token || token === bannedTableRequestToken;
+}
+
+function setBannedTableLoading(active) {
+  bannedTableLoading = !!active;
+  var section = document.getElementById('bannedTableSection');
+  var tbody = document.getElementById('bannedTableBody');
+  if (section) {
+    section.classList.toggle('opacity-60', bannedTableLoading);
+  }
+  if (tbody) {
+    tbody.classList.toggle('pointer-events-none', bannedTableLoading);
+    tbody.setAttribute('aria-busy', bannedTableLoading ? 'true' : 'false');
+  }
+}
+
+function buildBannedTableQuery() {
+  var params = [
+    'sort=' + encodeURIComponent(bannedPagingSort || 'banTime'),
+    'order=' + encodeURIComponent(bannedPagingOrder || 'desc'),
+    'page=' + encodeURIComponent(bannedPagingPage || 1),
+    'pageSize=' + encodeURIComponent(bannedPagingPageSize || 10)
+  ];
+  var query = (bannedIPsFilterText || '').trim();
+  if (query) {
+    params.push('q=' + encodeURIComponent(query));
+  }
+  return withServerParam('/api/banned?' + params.join('&'));
+}
+
+function fetchBannedTable() {
   if (!summaryMatchesCurrentServer()) {
     return Promise.resolve();
   }
-  options = options || {};
-  var append = options.append === true;
-  var searchToken = options.searchToken || null;
-  var skipCellRender = options.skipCellRender === true;
-  var state = getJailBannedState(jailName);
-  var activeQuery = (bannedIPsFilterText || '').trim();
-  if (state.loading) {
-    return Promise.resolve();
-  }
-  state.loading = true;
-  state.error = null;
-  var offset = append ? state.ips.length : 0;
-  var url = buildJailBannedQuery(jailName, offset, JAIL_BANNED_PAGE_SIZE);
-  return fetch(url)
+  bannedTableRequestToken += 1;
+  var token = bannedTableRequestToken;
+  setBannedTableLoading(true);
+  return fetch(buildBannedTableQuery())
     .then(function(res) { return res.json(); })
     .then(function(data) {
-      if (!isActiveBannedSearchToken(searchToken)) {
+      if (!isActiveBannedTableToken(token)) {
         return;
       }
-      var ips = Array.isArray(data && data.bannedIPs) ? data.bannedIPs : [];
-      if (append) {
-        state.ips = state.ips.concat(ips);
-      } else {
-        state.ips = ips;
-      }
-      state.total = typeof data.total === 'number' ? data.total : state.ips.length;
-      state.hasMore = data && data.hasMore === true;
-      state.loadedQuery = activeQuery;
-      state.error = data && data.error ? formatApiError(data, '', '') : null;
-      state.lastErrorAt = state.error ? Date.now() : 0;
+      var state = {
+        rows: Array.isArray(data && data.rows) ? data.rows : [],
+        total: typeof data.total === 'number' ? data.total : 0,
+        page: data.page || 1,
+        pageSize: data.pageSize || bannedPagingPageSize,
+        hasMore: data.hasMore === true,
+        error: data && data.error ? formatApiError(data, '', '') : null
+      };
+      bannedTableState = state;
+      renderBannedTable();
     })
     .catch(function(err) {
-      if (!isActiveBannedSearchToken(searchToken)) {
+      if (!isActiveBannedTableToken(token)) {
         return;
       }
-      state.error = err ? String(err) : 'Unknown error';
-      state.lastErrorAt = Date.now();
-      if (!append) {
-        state.ips = [];
-      }
-      state.hasMore = false;
-      state.loadedQuery = activeQuery;
+      bannedTableState = {
+        rows: [],
+        total: 0,
+        page: 1,
+        pageSize: bannedPagingPageSize,
+        hasMore: false,
+        error: err ? String(err) : 'Unknown error'
+      };
+      renderBannedTable();
     })
     .finally(function() {
-      if (!isActiveBannedSearchToken(searchToken)) {
+      if (!isActiveBannedTableToken(token)) {
         return;
       }
-      state.loading = false;
-      if (!skipCellRender) {
-        renderJailBannedCell(jailName);
-      }
+      setBannedTableLoading(false);
     });
 }
 
-function loadInitialJailBannedPages(summary) {
-  if (!summaryMatchesCurrentServer()) {
+function ensureBannedTableLoaded() {
+  if (!bannedTableState) {
+    fetchBannedTable();
     return;
   }
-  var jails = summary && Array.isArray(summary.jails) ? summary.jails : [];
-  jails.forEach(function(jail) {
-    var jailName = jail && jail.jailName ? String(jail.jailName) : '';
-    if (!jailName) {
-      return;
-    }
-    var state = getJailBannedState(jailName);
-    var activeQuery = (bannedIPsFilterText || '').trim();
-    if (state.loading) {
-      applyJailRowVisibility(jailName);
-      return;
-    }
-    if (state.loadedQuery === activeQuery && state.ips.length > 0) {
-      applyJailRowVisibility(jailName);
-      return;
-    }
-    if (state.loadedQuery === activeQuery && state.total === 0 && !state.error) {
-      applyJailRowVisibility(jailName);
-      return;
-    }
-    if (state.error && state.lastErrorAt && (Date.now() - state.lastErrorAt < JAIL_BANNED_ERROR_RETRY_MS)) {
-      applyJailRowVisibility(jailName);
-      return;
-    }
-    fetchJailBannedIPs(jailName, { append: false });
-  });
+  renderBannedTable();
+}
+
+// Re-fetches the banned overview table from the backend (debounced for search).
+function scheduleBannedIPsRefetch() {
+  if (bannedIPsFilterDebounce) {
+    clearTimeout(bannedIPsFilterDebounce);
+  }
+  bannedIPsFilterDebounce = setTimeout(function() {
+    bannedIPsFilterDebounce = null;
+    bannedPagingPage = 1;
+    bannedTableState = null;
+    fetchBannedTable();
+  }, 300);
 }
 
 function fetchBanInsightsData() {
@@ -430,19 +337,13 @@ function banIP(jail, ip) {
 function refreshAfterManualAction(jail) {
   return Promise.all([
     fetchSummaryData(),
-    fetchJailBannedIPs(jail, { append: false }),
+    fetchBannedTable(),
     fetchBanEventsData()
   ]).then(function() {
-    jailListLastRefreshAt[jail] = Date.now();
     lastDashboardRefreshAt = Date.now();
-    if ((bannedIPsFilterText || '').trim()) {
-      updateSummaryCountersFromLatestSummary();
-      updateJailRowCountersFromSummary(jail);
-      renderJailBannedCell(jail);
-      renderLogOverviewSection();
-    } else {
-      scheduleRender();
-    }
+    updateSummaryCountersFromLatestSummary();
+    renderLogOverviewSection();
+    scheduleRender();
   }).catch(function(err) {
     console.error('Error refreshing after manual action:', err);
   });
@@ -509,9 +410,6 @@ function renderDashboard() {
     return;
   }
   var summary = latestSummary;
-  if (summary && summary.jails && summary.jails.length > 0) {
-    normalizeJailBannedState(summary);
-  }
   var html = '';
   // Persistent warning banner when jail.local is not managed by Fail2ban-UI
   if (jailLocalWarning) {
@@ -553,7 +451,7 @@ function renderDashboard() {
       + '    <div>'
       + '      <h3 class="text-lg font-medium text-gray-900 mb-2" data-i18n="dashboard.overview">Overview active Jails and Blocks</h3>'
       + '      <p class="text-sm text-gray-500" data-i18n="dashboard.overview_hint">Use the search to filter banned IPs and click a jail to edit its configuration.</p>'
-      + '      <p class="text-sm text-gray-500 mt-1" data-i18n="dashboard.overview_detail">Collapse or expand long lists to quickly focus on impacted services.</p>'
+      + '      <p class="text-sm text-gray-500 mt-1" data-i18n="dashboard.overview_detail">Sort by jail, IP address or ban time, search for an IP, and page through the results below.</p>'
       + '    </div>'
       + '    <div>'
       + '      <label for="ipSearch" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="dashboard.search_label">Search Banned IPs</label>'
@@ -563,42 +461,37 @@ function renderDashboard() {
     if (!summary.jails || summary.jails.length === 0) {
       html += '<p class="text-gray-500 mt-4" data-i18n="dashboard.no_jails">No jails found.</p>';
     } else {
+      // Table 1: per-jail summary counts.
       html += ''
-        + '<div id="jailsTableWrapper" class="overflow-x-auto mt-4">'
+        + '<div class="overflow-x-auto mt-4">'
         + '  <table class="min-w-full divide-y divide-gray-200 text-sm sm:text-base" id="jailsTable">'
         + '    <thead class="bg-gray-50">'
         + '      <tr>'
-        + '        <th class="px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.jail">Jail</th>'
-        + '        <th class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.total_banned">Total Banned</th>'
-        + '        <th class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.new_last_hour">New Last Hour</th>'
-        + '        <th class="px-2 py-1 sm:px-6 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.banned_ips">Banned IPs</th>'
+        + '        <th class="px-2 py-1 sm:px-4 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.jail">Jail</th>'
+        + '        <th class="px-2 py-1 sm:px-4 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.current_banned">Currently Banned</th>'
+        + '        <th class="px-2 py-1 sm:px-4 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.new_last_hour">New Last Hour</th>'
         + '      </tr>'
         + '    </thead>'
-        + '    <tbody id="jailsTableBody" class="bg-white divide-y divide-gray-200 transition-opacity duration-150">';
+        + '    <tbody class="bg-white divide-y divide-gray-200">';
       summary.jails.forEach(function(jail) {
         var jailName = jail.jailName || '';
-        var rowId = slugifyId(jailName, 'jail-row');
-        var cellId = slugifyId(jailName, 'banned-cell');
-        var totalId = slugifyId(jailName, 'total-banned');
-        var newLastHourId = slugifyId(jailName, 'new-last-hour');
-        var bannedHTML = renderBannedIPs(jailName);
         html += ''
-          + '<tr class="jail-row hover:bg-gray-50" id="' + rowId + '">'
-          + '  <td class="px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words">'
+          + '<tr class="hover:bg-gray-50">'
+          + '  <td class="px-2 py-1 sm:px-4 sm:py-3 whitespace-normal break-words">'
           + '    <a href="#" onclick="openJailConfigModal(\'' + escapeHtml(jailName) + '\')" class="text-blue-600 hover:text-blue-800">'
           +        escapeHtml(jailName)
           + '    </a>'
           + '  </td>'
-          + '  <td id="' + totalId + '" class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words">' + (jail.totalBanned || 0) + '</td>'
-          + '  <td id="' + newLastHourId + '" class="hidden sm:table-cell px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words">' + (jail.newInLastHour || 0) + '</td>'
-          + '  <td class="px-2 py-1 sm:px-6 sm:py-4 whitespace-normal break-words" id="' + cellId + '">' + bannedHTML + '</td>'
+          + '  <td class="px-2 py-1 sm:px-4 sm:py-3 whitespace-normal break-words">' + (jail.totalBanned || 0) + '</td>'
+          + '  <td class="px-2 py-1 sm:px-4 sm:py-3 whitespace-normal break-words">' + (jail.newInLastHour || 0) + '</td>'
           + '</tr>';
       });
-
       html += '    </tbody></table>';
       html += '</div>';
+      // Table 2: flat currently banned IPs (server-paginated/sorted).
+      html += '<div id="bannedTableSection" class="mt-6">' + renderBannedTableLoadingMarkup() + '</div>';
+      html += '</div>';
     }
-    html += '</div>';
   }
   if (summary && summary.jails && summary.jails.length > 0) {
     var enabledJails = summary.jails.filter(function(j) { return j.enabled !== false; });
@@ -670,10 +563,8 @@ function renderDashboard() {
   if (isLOTRModeActive) {
     updateDashboardLOTRTerminology(true);
   }
-  setJailsSearchLoadingState(isBannedSearchLoading);
   if (summary && summary.jails && summary.jails.length > 0) {
-    applyAllJailRowVisibility();
-    loadInitialJailBannedPages(summary);
+    ensureBannedTableLoaded();
   }
 }
 
@@ -681,59 +572,211 @@ function renderDashboard() {
 //  Rendering the colapsable "Banned IPs per jail" section
 // =========================================================================
 
-function renderBannedIPs(jailName) {
-  var state = getJailBannedState(jailName);
+function bannedSortIcon(field) {
+  if (bannedPagingSort !== field) {
+    return ' <span class="text-gray-300">\u2195</span>';
+  }
+  return bannedPagingOrder === 'desc'
+    ? ' <span class="text-blue-600">\u25BE</span>'
+    : ' <span class="text-blue-600">\u25B4</span>';
+}
+
+function changeBannedSort(field) {
+  if (bannedPagingSort === field) {
+    bannedPagingOrder = (bannedPagingOrder === 'desc') ? 'asc' : 'desc';
+  } else {
+    bannedPagingSort = field;
+    bannedPagingOrder = (field === 'banTime') ? 'desc' : 'asc';
+  }
+  bannedPagingPage = 1;
+  bannedTableState = null;
+  fetchBannedTable();
+}
+
+function setBannedPageSize(size) {
+  var s = parseInt(size, 10);
+  if (!s || s < 1) {
+    s = 10;
+  }
+  if (s === bannedPagingPageSize) {
+    return;
+  }
+  bannedPagingPageSize = s;
+  bannedPagingPage = 1;
+  bannedTableState = null;
+  fetchBannedTable();
+}
+
+function goBannedPage(delta) {
+  var next = (bannedPagingPage || 1) + delta;
+  if (next < 1) {
+    return;
+  }
+  var maxPage = bannedTableState
+    ? Math.max(1, Math.ceil(bannedTableState.total / (bannedTableState.pageSize || bannedPagingPageSize)))
+    : 1;
+  if (next > maxPage) {
+    return;
+  }
+  bannedPagingPage = next;
+  fetchBannedTable();
+}
+
+function formatBanTime(iso) {
+  if (!iso) {
+    return '';
+  }
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) {
+    return '';
+  }
+  return d.toLocaleString();
+}
+
+function renderBannedIPLabel(row, query) {
+  var encodedIp = encodeURIComponent(row.ip);
+  var safeIp = escapeHtml(row.ip);
+  var ipText = query ? highlightQueryMatch(row.ip, query) : safeIp;
+  if (isThreatIntelEnabled()) {
+    return '<span class="text-blue-600 hover:text-blue-800 cursor-pointer decoration-dotted"'
+      + '    data-ip-value="' + encodedIp + '" role="button" tabindex="0"'
+      + '    onclick="openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')))"'
+      + '    onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')));}">' + ipText + '</span>';
+  }
+  return '<span data-ip-value="' + encodedIp + '">' + ipText + '</span>';
+}
+
+function renderBannedTable() {
+  var section = document.getElementById('bannedTableSection');
+  if (!section) {
+    return;
+  }
+  var focusState = captureFocusState(section);
+  var state = bannedTableState;
   var query = (bannedIPsFilterText || '').trim();
-  var content = '<div class="space-y-2">';
-  if (state.loadedQuery === null || (state.loading && (!state.ips || state.ips.length === 0))) {
-    return content + '<em class="text-gray-500">' + t('dashboard.banned.loading', 'Loading banned IPs...') + '</em></div>';
+  var html = ''
+    + '<div class="flex items-center justify-between mb-3">'
+    + '  <h4 class="text-base font-semibold text-gray-900" data-i18n="dashboard.current_banned_title">Currently banned IPs</h4>'
+    + '</div>';
+
+  if (!state) {
+    section.innerHTML = html + renderBannedTableLoadingMarkup();
+    restoreFocusState(focusState);
+    if (typeof updateTranslations === 'function') updateTranslations();
+    return;
   }
   if (state.error) {
-    return content + '<em class="text-red-600">' + escapeHtml(state.error) + '</em></div>';
+    section.innerHTML = html + '<p class="text-red-600">' + escapeHtml(state.error) + '</p>';
+    restoreFocusState(focusState);
+    if (typeof updateTranslations === 'function') updateTranslations();
+    return;
   }
-  if (!state.ips || state.ips.length === 0) {
-    if (query) {
-      return content + '<em class="text-gray-500">' + t('dashboard.banned.no_matches', 'No matching IPs') + '</em></div>';
-    }
-    return content + '<em class="text-gray-500" data-i18n="dashboard.no_banned_ips">No banned IPs</em></div>';
+  if (state.rows.length === 0) {
+    section.innerHTML = html + '<p class="text-gray-500">'
+      + (query
+          ? t('dashboard.banned.no_matches', 'No matching IPs')
+          : t('dashboard.no_banned_ips', 'No banned IPs'))
+      + '</p>';
+    restoreFocusState(focusState);
+    if (typeof updateTranslations === 'function') updateTranslations();
+    return;
   }
-  function bannedIpRow(ip) {
-    var safeIp = escapeHtml(ip);
-    var encodedIp = encodeURIComponent(ip);
-    var ipLabel = '';
-    var ipText = query ? highlightQueryMatch(ip, query) : safeIp;
-    if (isThreatIntelEnabled()) {
-      ipLabel = ''
-        + '<span class="text-sm text-blue-600 hover:text-blue-800 cursor-pointer decoration-dotted"'
-        + '    data-ip-value="' + encodedIp + '"'
-        + '    role="button" tabindex="0"'
-        + '    onclick="openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')))"'
-        + '    onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openThreatIntelModal(decodeURIComponent(this.getAttribute(\'data-ip-value\')));}">' + ipText + '</span>';
+
+  function sortTh(field, labelKey, label) {
+    return '<th class="px-2 py-1 sm:px-4 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none" onclick="changeBannedSort(\'' + field + '\')">'
+      + '<span data-i18n="' + labelKey + '">' + label + '</span>' + bannedSortIcon(field)
+      + '</th>';
+  }
+
+  html += '<div class="overflow-x-auto">'
+    + '  <table class="min-w-full divide-y divide-gray-200 text-sm sm:text-base" id="bannedTable">'
+    + '    <thead class="bg-gray-50">'
+    + '      <tr>'
+    + '        ' + sortTh('jail', 'dashboard.table.jail', 'Jail')
+    + '        ' + sortTh('ip', 'dashboard.table.ip_address', 'IP Address')
+    + '        ' + sortTh('banTime', 'dashboard.table.ban_time', 'Ban Time')
+    + '        <th class="px-2 py-1 sm:px-4 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" data-i18n="dashboard.table.actions">Actions</th>'
+    + '      </tr>'
+    + '    </thead>'
+    + '    <tbody id="bannedTableBody" class="bg-white divide-y divide-gray-200 transition-opacity duration-150">';
+
+  state.rows.forEach(function(row) {
+    var jailName = row.jail || '';
+    var banTimeText = formatBanTime(row.banTime);
+    var banTimeCell;
+    if (row.banTime && banTimeText) {
+      banTimeCell = '<span>' + escapeHtml(banTimeText) + '</span>';
     } else {
-      ipLabel = '<span class="text-sm" data-ip-value="' + encodedIp + '">' + ipText + '</span>';
+      var hint = t('dashboard.ban_time_missing_hint', 'No recorded ban event for this IP');
+      banTimeCell = '<span title="' + escapeHtml(hint) + '" class="text-gray-400 cursor-help border-b border-dotted border-gray-300">\u2014</span>';
     }
-    return ''
-      + '<div class="flex items-center justify-between banned-ip-item" data-ip="' + safeIp + '">'
-      + ipLabel
-      + '  <button class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600 transition-colors"'
-      + '    onclick="unbanIP(\'' + escapeHtml(jailName) + '\', \'' + escapeHtml(ip) + '\')">'
-      + '    <span data-i18n="dashboard.unban">Unban</span>'
-      + '  </button>'
-      + '</div>';
-  }
-  state.ips.forEach(function(ip) {
-    content += bannedIpRow(ip);
+    html += ''
+      + '<tr class="hover:bg-gray-50">'
+      + '  <td class="px-2 py-1 sm:px-4 sm:py-3 whitespace-normal break-words">'
+      + '    <a href="#" onclick="openJailConfigModal(\'' + escapeHtml(jailName) + '\')" class="text-blue-600 hover:text-blue-800">'
+      +        escapeHtml(jailName)
+      + '    </a>'
+      + '  </td>'
+      + '  <td class="px-2 py-1 sm:px-4 sm:py-3 whitespace-normal break-words">' + renderBannedIPLabel(row, query) + '</td>'
+      + '  <td class="px-2 py-1 sm:px-4 sm:py-3 whitespace-normal break-words">' + banTimeCell + '</td>'
+      + '  <td class="px-2 py-1 sm:px-4 sm:py-3 whitespace-nowrap">'
+      + '    <button class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600 transition-colors"'
+      + '      onclick="unbanIP(\'' + escapeHtml(jailName) + '\', \'' + escapeHtml(row.ip) + '\')">'
+      + '      <span data-i18n="dashboard.unban">Unban</span>'
+      + '    </button>'
+      + '  </td>'
+      + '</tr>';
   });
-  if (state.hasMore) {
-    var loadMoreLabel = t('dashboard.banned.show_more', 'Show more');
-    content += ''
-      + '<button type="button" class="text-xs font-semibold text-blue-600 hover:text-blue-800 banned-ip-toggle"'
-      + ' onclick="loadMoreJailBannedIPs(\'' + escapeHtml(jailName) + '\')">'
-      + escapeHtml(loadMoreLabel)
-      + '</button>';
+
+  html += '    </tbody></table>';
+  html += '</div>';
+  html += renderBannedPaginationMarkup();
+  section.innerHTML = html;
+  restoreFocusState(focusState);
+  if (typeof updateTranslations === 'function') {
+    updateTranslations();
   }
-  content += '</div>';
-  return content;
+  if (isLOTRModeActive) {
+    updateDashboardLOTRTerminology(true);
+  }
+}
+
+function renderBannedPaginationMarkup() {
+  var state = bannedTableState || {};
+  var total = state.total || 0;
+  var pageSize = state.pageSize || bannedPagingPageSize;
+  var page = state.page || bannedPagingPage || 1;
+  var maxPage = Math.max(1, Math.ceil(total / pageSize));
+  var from = total === 0 ? 0 : ((page - 1) * pageSize) + 1;
+  var to = Math.min(page * pageSize, total);
+  var pageOpts = (typeof BANNED_TABLE_PAGE_SIZE_OPTIONS !== 'undefined' && BANNED_TABLE_PAGE_SIZE_OPTIONS.length)
+    ? BANNED_TABLE_PAGE_SIZE_OPTIONS : [5, 10, 25, 100];
+  var sizeSelect = '<select onchange="setBannedPageSize(this.value)" class="border border-gray-300 rounded-md px-2 py-1 text-sm">'
+    + pageOpts.map(function(s) {
+      return '<option value="' + s + '"' + (s === pageSize ? ' selected' : '') + '>' + s + '</option>';
+    }).join('')
+    + '</select>';
+  return ''
+    + '<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-3 text-sm text-gray-600">'
+    + '  <div class="flex items-center gap-2">'
+    + '    <span data-i18n="dashboard.pagination.rows_per_page">Rows per page:</span>'
+    + '    ' + sizeSelect
+    + '    <span class="ml-2">' + from + '\u2013' + to + ' ' + t('dashboard.pagination.of', 'of') + ' ' + total + '</span>'
+    + '  </div>'
+    + '  <div class="flex items-center gap-2">'
+    + '    <button type="button" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-40"'
+    + '      onclick="goBannedPage(-1)"' + (page <= 1 ? ' disabled' : '') + ' data-i18n="dashboard.pagination.prev">Prev</button>'
+    + '    <span class="px-2">' + t('dashboard.pagination.page', 'Page') + ' ' + page + ' / ' + maxPage + '</span>'
+    + '    <button type="button" class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-40"'
+    + '      onclick="goBannedPage(1)"' + (page >= maxPage ? ' disabled' : '') + ' data-i18n="dashboard.pagination.next">Next</button>'
+    + '  </div>'
+    + '</div>';
+}
+
+function renderBannedTableLoadingMarkup() {
+  return '<div class="flex items-center gap-2 text-gray-500 text-sm">'
+    + '  <span data-i18n="dashboard.banned.loading">Loading banned IPs...</span>'
+    + '</div>';
 }
 
 // =========================================================================
@@ -993,50 +1036,6 @@ function updateBannedIPsSearch(value) {
   scheduleBannedIPsRefetch();
 }
 
-function scheduleBannedIPsRefetch() {
-  if (bannedIPsFilterDebounce) {
-    clearTimeout(bannedIPsFilterDebounce);
-  }
-  bannedIPsFilterDebounce = setTimeout(function() {
-    bannedIPsFilterDebounce = null;
-    bannedSearchRequestToken += 1;
-    var token = bannedSearchRequestToken;
-    bannedSearchPendingCount = 0;
-    var jailNames = Object.keys(jailBannedState || {});
-    if (jailNames.length === 0) {
-      setJailsSearchLoadingState(false);
-      return;
-    }
-    jailNames.forEach(function(jailName) {
-      var state = jailBannedState[jailName];
-      state.loading = false;
-      state.ips = [];
-      state.total = 0;
-      state.hasMore = false;
-      state.loadedQuery = null;
-      state.error = null;
-      renderJailBannedCell(jailName);
-      updateSearchLoadingCounter(1);
-      fetchJailBannedIPs(jailName, { append: false, searchToken: token, skipCellRender: true })
-        .finally(function() {
-          if (!isActiveBannedSearchToken(token)) {
-            return;
-          }
-          renderJailBannedCell(jailName);
-          updateSearchLoadingCounter(-1);
-        });
-    });
-  }, 300);
-}
-
-function loadMoreJailBannedIPs(jailName) {
-  var state = getJailBannedState(jailName);
-  if (state.loading || !state.hasMore) {
-    return;
-  }
-  fetchJailBannedIPs(jailName, { append: true });
-}
-
 function clearStoredBanEvents() {
   var msg = t('logs.overview.clear_events_confirm',
     'This will permanently delete all stored ban events. Statistics, insights, and the event history will be reset to zero.\n\nThis action cannot be undone. Continue?');
@@ -1149,46 +1148,6 @@ function renderLogOverviewSection() {
   }
 }
 
-function renderJailBannedCell(jailName) {
-  var cellId = slugifyId(jailName || 'jail', 'banned-cell');
-  var rowId = slugifyId(jailName || 'jail', 'jail-row');
-  var cell = document.getElementById(cellId);
-  var row = document.getElementById(rowId);
-  if (!cell || !row) {
-    return;
-  }
-  var state = getJailBannedState(jailName);
-  cell.innerHTML = renderBannedIPs(jailName);
-  applyJailRowVisibility(jailName);
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-  }
-  if (isLOTRModeActive) {
-    updateDashboardLOTRTerminology(true);
-  }
-}
-
-function applyJailRowVisibility(jailName) {
-  var rowId = slugifyId(jailName || 'jail', 'jail-row');
-  var row = document.getElementById(rowId);
-  if (!row) {
-    return;
-  }
-  var query = (bannedIPsFilterText || '').trim();
-  if (!query) {
-    row.style.display = '';
-    return;
-  }
-  var state = getJailBannedState(jailName);
-  row.style.display = (state.loading || state.total > 0) ? '' : 'none';
-}
-
-function applyAllJailRowVisibility() {
-  Object.keys(jailBannedState || {}).forEach(function(jailName) {
-    applyJailRowVisibility(jailName);
-  });
-}
-
 function updateSummaryCountersFromLatestSummary() {
   if (!latestSummary || !Array.isArray(latestSummary.jails)) {
     return;
@@ -1206,22 +1165,6 @@ function updateSummaryCountersFromLatestSummary() {
   if (totalNode) totalNode.textContent = String(totalBanned);
   if (newNode) newNode.textContent = String(newLastHour);
   if (recurringNode) recurringNode.textContent = String(recurringWeek);
-}
-
-function updateJailRowCountersFromSummary(jailName) {
-  if (!latestSummary || !Array.isArray(latestSummary.jails) || !jailName) {
-    return;
-  }
-  var jail = latestSummary.jails.find(function(item) {
-    return item && item.jailName === jailName;
-  });
-  if (!jail) {
-    return;
-  }
-  var totalNode = document.getElementById(slugifyId(jailName, 'total-banned'));
-  var newNode = document.getElementById(slugifyId(jailName, 'new-last-hour'));
-  if (totalNode) totalNode.textContent = String(jail.totalBanned || 0);
-  if (newNode) newNode.textContent = String(jail.newInLastHour || 0);
 }
 
 function buildBanEventsQuery(offset, append) {
@@ -1280,25 +1223,21 @@ function updateBanEventFromWebSocket(event) {
   }
 }
 
-var JAIL_LIST_REFRESH_MIN_INTERVAL_MS = 3000;
-var jailListLastRefreshAt = {};
-
-function refreshJailBannedListLive(jailName) {
-  if (!jailName || typeof fetchJailBannedIPs !== 'function') {
+function refreshBannedTableLive() {
+  // Throttle live WebSocket-triggered refreshes of the banned IP overview table.
+  if (bannedTableLastRefreshAt && (Date.now() - bannedTableLastRefreshAt < 3000)) {
     return;
   }
-  var now = Date.now();
-  if (jailListLastRefreshAt[jailName] && now - jailListLastRefreshAt[jailName] < JAIL_LIST_REFRESH_MIN_INTERVAL_MS) {
-    return;
-  }
-  jailListLastRefreshAt[jailName] = now;
-  fetchJailBannedIPs(jailName, { append: false });
+  bannedTableLastRefreshAt = Date.now();
+  fetchBannedTable();
 }
+
+var bannedTableLastRefreshAt = 0;
 
 function addBanEventFromWebSocket(event) {
   var matchesCurrentServer = !!(event && event.serverId && currentServerId && event.serverId === currentServerId);
-  if (event && event.jail && matchesCurrentServer) {
-    refreshJailBannedListLive(event.jail);
+  if (matchesCurrentServer) {
+    refreshBannedTableLive();
   }
   // Server-filtered view must not receive live rows from other servers.
   if (banEventsFilterServer !== 'all' && event && event.serverId !== banEventsFilterServer) {
@@ -1359,18 +1298,14 @@ function refreshDashboardData() {
   ]).then(function() {
     if ((bannedIPsFilterText || '').trim()) {
       updateSummaryCountersFromLatestSummary();
-      Object.keys(jailBannedState || {}).forEach(function(jailName) {
-        updateJailRowCountersFromSummary(jailName);
-        renderJailBannedCell(jailName);
-      });
-      applyAllJailRowVisibility();
+      fetchBannedTable();
       return;
     }
     renderDashboard();
   }).catch(function(err) {
     console.error('Error refreshing dashboard data:', err);
     if ((bannedIPsFilterText || '').trim()) {
-      applyAllJailRowVisibility();
+      fetchBannedTable();
       return;
     }
     renderDashboard();
