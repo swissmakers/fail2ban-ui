@@ -40,6 +40,7 @@ func TestNormalizeBasePath(t *testing.T) {
 		{"http://evil.com", ""},
 		{"/path\r\nSet-Cookie: x=y", ""},
 		{"\\\\evil.com", ""},
+		{"/\\evil.com", ""},
 		{"/a:b", ""},
 	}
 	for _, tt := range tests {

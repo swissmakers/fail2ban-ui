@@ -45,6 +45,9 @@ type Fail2banServer struct {
 	CreatedAt            time.Time `json:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"`
 	EnabledSet           bool      `json:"-"`
+	DisabledReason       string    `json:"disabledReason,omitempty"`
+	HostKeyError         string    `json:"hostKeyError,omitempty"`
+	HostKeyFingerprint   string    `json:"hostKeyFingerprint,omitempty"`
 }
 
 // Distinguishes explicit false for "enabled" from a missing key.

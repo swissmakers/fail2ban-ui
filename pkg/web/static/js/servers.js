@@ -219,6 +219,20 @@ function renderServerManagerList() {
       + '<span data-i18n="servers.card.server_id">Server-ID</span>: '
       + '<code class="px-1 py-0.5 bg-gray-100 rounded select-all">' + escapeHtml(server.id || '') + '</code>'
       + '</p>'
+      + (!server.enabled && server.disabledReason
+        ? '<p class="mt-1 text-xs text-red-600">'
+          + escapeHtml(t('servers.card.disabled_reason', 'Disabled reason')) + ': '
+          + escapeHtml(server.disabledReason)
+          + '</p>'
+        : '')
+      + (server.hostKeyError
+        ? '<p class="mt-1 text-xs text-red-600">'
+          + escapeHtml(t('servers.card.host_key_error', 'SSH host key changed'))
+          + (server.hostKeyFingerprint
+            ? ': <code class="px-1 py-0.5 bg-red-50 rounded select-all">' + escapeHtml(server.hostKeyFingerprint) + '</code>'
+            : '')
+          + '</p>'
+        : '')
       +        localDetails
       +        tags
       + '    </div>'
@@ -229,6 +243,9 @@ function renderServerManagerList() {
       + (server.enabled ? (server.type === 'local'
         ? '<button class="text-sm text-blue-600 hover:text-blue-800 relative group" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" title="">Reload Fail2ban</button>'
         : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.restart">Restart Fail2ban</button>') : '')
+      + (server.hostKeyError && server.hostKeyFingerprint
+        ? '<button class="text-sm font-semibold text-red-600 hover:text-red-800" onclick="acceptHostKey(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.accept_hostkey">Accept new host key</button>'
+        : '')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="testServerConnection(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.test">Test connection</button>'
       + '      <button class="text-sm text-red-600 hover:text-red-800" onclick="deleteServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.delete">Delete</button>'
       + '    </div>'
@@ -568,6 +585,10 @@ function submitServerForm(event) {
       if (data.actionFileWarning) {
         showToast(data.actionFileWarning, 'warning', 12000);
       }
+      if (data.hostKeyError) {
+        showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.')
+          + (data.hostKeyFingerprint ? ' ' + data.hostKeyFingerprint : ''), 'warning', 12000);
+      }
       var saved = data.server || {};
       currentServerId = saved.id || currentServerId;
       return loadServers().then(function() {
@@ -713,6 +734,10 @@ function setServerEnabled(serverId, enabled) {
       if (data.actionFileWarning) {
         showToast(data.actionFileWarning, 'warning', 12000);
       }
+      if (data.hostKeyError) {
+        showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.')
+          + (data.hostKeyFingerprint ? ' ' + data.hostKeyFingerprint : ''), 'warning', 12000);
+      }
       return loadServers().then(function() {
         renderServerManagerList();
         renderServerSelector();
@@ -747,6 +772,44 @@ function testServerConnection(serverId) {
     })
     .catch(function(err) {
       showToast(t('servers.actions.test_failure', 'Connection failed') + ': ' + err, 'error');
+    })
+    .finally(function() {
+      showLoading(false);
+    });
+}
+
+function acceptHostKey(serverId) {
+  var server = serversCache.find(function(s) { return s.id === serverId; });
+  if (!server || !server.hostKeyFingerprint) {
+    showToast(t('servers.actions.accept_hostkey_failed', 'Failed to accept the new host key'), 'error');
+    return;
+  }
+  var prompt = t('servers.confirm.accept_hostkey',
+    'Only accept this host key if you have verified the fingerprint on the server (ssh-keygen -lf /etc/ssh/ssh_host_*.pub). Accept and trust this new SSH host key?');
+  if (!confirm(prompt + '\n\n' + server.hostKeyFingerprint)) return;
+  showLoading(true);
+  fetch(appPath('/api/servers/' + encodeURIComponent(serverId) + '/hostkey/accept'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fingerprint: server.hostKeyFingerprint })
+  })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) {
+        showToast(formatApiError(data, 'servers.actions.accept_hostkey_failed', 'Failed to accept the new host key'), 'error');
+        return loadServers().then(function() { renderServerManagerList(); });
+      }
+      return loadServers().then(function() {
+        renderServerManagerList();
+        renderServerSelector();
+        renderServerSubtitle();
+        return refreshData({ silent: true });
+      }).then(function() {
+        showToast(t('servers.actions.accept_hostkey_success', 'New host key accepted and stored'), 'success');
+      });
+    })
+    .catch(function(err) {
+      showToast(t('servers.actions.accept_hostkey_failed', 'Failed to accept the new host key') + ': ' + err, 'error');
     })
     .finally(function() {
       showLoading(false);

@@ -18,7 +18,6 @@ package auth
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/httpx"
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"golang.org/x/oauth2"
 )
@@ -125,10 +125,7 @@ func contextWithSkipVerify(ctx context.Context, skipVerify bool) context.Context
 	if !skipVerify {
 		return ctx
 	}
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
+	client := &http.Client{Transport: httpx.Transport(true)}
 	return oidc.ClientContext(ctx, client)
 }
 

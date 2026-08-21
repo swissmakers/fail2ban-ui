@@ -21,6 +21,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,16 +37,17 @@ import (
 
 // Talks like this to a remote Fail2ban instance over SSH
 type SSHConnector struct {
-	server       shared.Fail2banServer
-	fail2banPath string
-	pathMutex    sync.RWMutex
-	tunnelPort   int
-	forwardPort  int
-	tunnelWasUp  bool
-	closed       atomic.Bool
-	masterMu     sync.Mutex
-	masterUp     atomic.Bool
-	sessionSem   chan struct{}
+	server          shared.Fail2banServer
+	fail2banPath    string
+	pathMutex       sync.RWMutex
+	tunnelPort      int
+	forwardPort     int
+	tunnelWasUp     bool
+	closed          atomic.Bool
+	masterMu        sync.Mutex
+	masterUp        atomic.Bool
+	masterFailUntil time.Time
+	sessionSem      chan struct{}
 }
 
 const sshEnsureActionScript = `python3 - <<'PY'
@@ -73,13 +76,16 @@ PY`
 //  Constructor
 // =========================================================================
 
-// Create a new SSHConnector for the given server config.
-func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
+// Builds a validated SSHConnector without contacting the remote host.
+func newBareSSHConnector(server shared.Fail2banServer) (*SSHConnector, error) {
 	if server.Host == "" {
 		return nil, fmt.Errorf("host is required for ssh connector")
 	}
 	if server.SSHUser == "" {
 		return nil, fmt.Errorf("sshUser is required for ssh connector")
+	}
+	if err := shared.ValidateServerFields(server); err != nil {
+		return nil, err
 	}
 	conn := &SSHConnector{
 		server:     server,
@@ -90,6 +96,21 @@ func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
 		conn.tunnelPort = resolveTunnelPort(server)
 		conn.forwardPort = uiServerPort()
 		debugf("Reverse tunnel enabled for server %s, will use -R %d:localhost:%d", server.Name, conn.tunnelPort, conn.forwardPort)
+	}
+	return conn, nil
+}
+
+// Create a new SSHConnector for the given server config.
+func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
+	conn, err := newBareSSHConnector(server)
+	if err != nil {
+		return nil, err
+	}
+
+	if kh := conn.knownHostsPath(); kh != "" {
+		if err := os.MkdirAll(filepath.Dir(kh), 0o700); err != nil {
+			debugf("failed to create known_hosts directory for %s: %v", server.Name, err)
+		}
 	}
 
 	// Use a timeout context to prevent hanging if SSH server isn't ready yet
@@ -240,11 +261,16 @@ func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 	if execErr != nil && ctx.Err() != nil {
 		return ctx.Err()
 	}
-	output, err := selectCommandOutput(stdout, stderr, execErr)
+	output, err := selectCommandOutput("ssh", stdout, stderr, execErr)
 	if err != nil {
+		if hk := sc.parseHostKeyError(stderr, err); hk != nil {
+			RecordHostKeyIssue(hk)
+			err = hk
+		}
 		debugf("Failed to ensure action file for server %s: %v", sc.server.Name, err)
 		return fmt.Errorf("failed to ensure action file on remote server %s: %w", sc.server.Name, err)
 	}
+	ClearHostKeyIssue(sc.server.ID)
 	if marker := extractMissingToolsWarning(output); marker != "" {
 		log.Printf("warning: managed host %s (%s) is missing required tool(s): %s - ban callbacks will arrive empty until installed",
 			sc.server.Name, sc.server.ID, marker)
@@ -339,6 +365,9 @@ func (sc *SSHConnector) runFail2banCommand(ctx context.Context, args ...string) 
 
 // Detects "no systemd" situations on the remote host or if an interactive authentication is required.
 func (sc *SSHConnector) isSystemctlUnavailable(output string, err error) bool {
+	if carried, ok := CommandOutput(err); ok {
+		output = carried
+	}
 	msg := strings.ToLower(output + " " + err.Error())
 	return strings.Contains(msg, "command not found") ||
 		strings.Contains(msg, "system has not been booted with systemd") ||

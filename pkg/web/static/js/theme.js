@@ -24,31 +24,15 @@ function applyTheme(theme) {
   syncFavicons(resolvedTheme);
 }
 
-// Allows only relative paths or absolute URLs as icon hrefs
-function isSafeIconHref(href) {
-  if (!href) return false;
-  var value = String(href).trim();
-  if (value.indexOf('//') === 0) return false;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
-    return /^https?:/i.test(value);
-  }
-  return true;
-}
-
 function syncFavicons(theme) {
-  var resolvedTheme = theme === 'dark' ? 'dark' : 'light';
-  var hrefAttr = resolvedTheme === 'dark' ? 'data-dark-href' : 'data-light-href';
+  var icons = window.__appIcons;
+  if (!icons) return;
+  var href = theme === 'dark' ? icons.dark : icons.light;
+  if (!href) return;
   var favicon = document.getElementById('appFavicon');
   var appleTouchIcon = document.getElementById('appAppleTouchIcon');
-  var faviconHref = favicon ? favicon.getAttribute(hrefAttr) : '';
-  var appleHref = appleTouchIcon ? appleTouchIcon.getAttribute(hrefAttr) : '';
-
-  if (favicon && isSafeIconHref(faviconHref)) {
-    favicon.setAttribute('href', faviconHref);
-  }
-  if (appleTouchIcon && isSafeIconHref(appleHref)) {
-    appleTouchIcon.setAttribute('href', appleHref);
-  }
+  if (favicon) { favicon.setAttribute('href', href); }
+  if (appleTouchIcon) { appleTouchIcon.setAttribute('href', href); }
 }
 
 function syncSystemTheme() {

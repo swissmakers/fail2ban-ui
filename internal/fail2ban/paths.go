@@ -18,10 +18,13 @@ package fail2ban
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 // The standard Fail2ban configuration directory on Linux.
@@ -30,25 +33,39 @@ const DefaultConfigRoot = "/etc/fail2ban"
 // Allowlist for jail/filter names that become filesystem path segments.
 var safeConfigNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// Returns a cleaned path
 func NormalizeConfigPath(path string) string {
 	trimmed := strings.TrimSpace(path)
-	// Reject embedded NUL bytes, which can truncate paths in syscalls.
-	trimmed = strings.ReplaceAll(trimmed, "\x00", "")
 	if trimmed == "" {
 		return DefaultConfigRoot
 	}
-	return filepath.Clean(trimmed)
+	cleaned := filepath.Clean(trimmed)
+	if err := shared.ValidateAbsolutePath(cleaned, "config path"); err != nil {
+		log.Printf("warning: ignoring unsafe config path %q, falling back to %s", path, DefaultConfigRoot)
+		return DefaultConfigRoot
+	}
+	return cleaned
+}
+
+// Validates a user-supplied jail or filter name used as a single path segment.
+func validateConfigName(name, label string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("%s cannot be empty", label)
+	}
+	if !safeConfigNameRe.MatchString(name) {
+		return fmt.Errorf("%s '%s' contains invalid characters. Only alphanumeric characters, dashes, and underscores are allowed", label, name)
+	}
+	if name[0] == '-' {
+		return fmt.Errorf("%s '%s' must not start with a dash", label, name)
+	}
+	return nil
 }
 
 // Validates a jail or filter name for safe use as a single path segment.
 func safeConfigName(name string) (string, error) {
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", fmt.Errorf("name cannot be empty")
-	}
-	if !safeConfigNameRe.MatchString(name) {
-		return "", fmt.Errorf("name %q contains invalid characters; only alphanumeric characters, dashes, and underscores are allowed", name)
+	if err := validateConfigName(name, "name"); err != nil {
+		return "", err
 	}
 	return name, nil
 }

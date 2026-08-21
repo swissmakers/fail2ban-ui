@@ -135,3 +135,31 @@ func TestContainsJailSection(t *testing.T) {
 		t.Fatal("expected trimmed section header to match")
 	}
 }
+
+func TestSanitizeLogpath(t *testing.T) {
+	valid := []string{
+		"/var/log/auth.log",
+		"/var/log/httpd/*access_log",
+		"/var/log/app/[abc].log",
+		"",
+	}
+	for _, p := range valid {
+		if _, err := sanitizeLogpath(p); err != nil {
+			t.Errorf("sanitizeLogpath(%q) should pass: %v", p, err)
+		}
+	}
+	invalid := []string{
+		"relative/log",
+		"/var/log/../../etc/passwd",
+		"/var/log/x\x00y",
+		"/var/log/x;rm",
+		"/var/log/$(id)",
+		"/var/log/`id`",
+		"/var/log/x'y",
+	}
+	for _, p := range invalid {
+		if _, err := sanitizeLogpath(p); err == nil {
+			t.Errorf("sanitizeLogpath(%q) should fail", p)
+		}
+	}
+}

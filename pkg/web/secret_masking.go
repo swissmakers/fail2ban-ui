@@ -123,6 +123,9 @@ func stripServerConnectionDetails(servers []shared.Fail2banServer) []shared.Fail
 		servers[i].AgentURL = ""
 		servers[i].AgentSecret = ""
 		servers[i].TunnelPort = 0
+		servers[i].DisabledReason = ""
+		servers[i].HostKeyError = ""
+		servers[i].HostKeyFingerprint = ""
 	}
 	return servers
 }

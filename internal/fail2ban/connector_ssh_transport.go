@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -56,6 +57,7 @@ func resolveTunnelPort(server shared.Fail2banServer) int {
 }
 
 const sshMaxConcurrentSessions = 4
+const masterRetryBackoff = 30 * time.Second
 
 // Establishes the ControlMaster (which owns the -R reverse forward) unless the connector has been closed
 // Serialized so concurrent commands cannot race to remove and re-create the same control socket
@@ -67,25 +69,31 @@ func (sc *SSHConnector) ensureMaster(ctx context.Context) {
 	}
 	if sc.checkMaster(ctx) {
 		sc.masterUp.Store(true)
+		sc.masterFailUntil = time.Time{}
 		return
 	}
 	sc.masterUp.Store(false)
+	if time.Now().Before(sc.masterFailUntil) {
+		return
+	}
 	if _, err := os.Stat(sc.controlPath()); err == nil {
 		_ = os.Remove(sc.controlPath())
 	}
 	args := sc.buildMasterSSHArgs([]string{"true"})
-	if _, _, err := sc.execSSH(ctx, args, nil); err != nil {
+	if _, stderr, err := sc.execSSH(ctx, args, nil); err != nil {
+		if hk := sc.parseHostKeyError(stderr, err); hk != nil {
+			RecordHostKeyIssue(hk)
+		}
+		sc.masterFailUntil = time.Now().Add(masterRetryBackoff)
 		debugf("SSH control master establish failed for %s: %v", sc.server.Name, err)
 		return
 	}
+	sc.masterFailUntil = time.Time{}
 	sc.masterUp.Store(true)
 }
 
 // Only tunnel servers need a dedicated master (it owns the -R forward)
 func (sc *SSHConnector) ensureMasterLazy(ctx context.Context) {
-	if sc.tunnelPort == 0 {
-		return
-	}
 	if sc.masterUp.Load() {
 		if _, err := os.Stat(sc.controlPath()); err == nil {
 			return
@@ -96,7 +104,7 @@ func (sc *SSHConnector) ensureMasterLazy(ctx context.Context) {
 }
 
 func (sc *SSHConnector) checkMaster(ctx context.Context) bool {
-	check := exec.CommandContext(ctx, "ssh", "-O", "check", "-o", "ControlPath="+sc.controlPath(), sc.sshTarget())
+	check := exec.CommandContext(ctx, "ssh", "-O", "check", "-o", "ControlPath="+sc.controlPath(), "--", sc.sshTarget())
 	return check.Run() == nil
 }
 
@@ -136,7 +144,7 @@ func (sc *SSHConnector) exitControlMasterLocked() {
 	sc.masterUp.Store(false)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ssh", "-O", "exit", "-o", "ControlPath="+sc.controlPath(), sc.sshTarget())
+	cmd := exec.CommandContext(ctx, "ssh", "-O", "exit", "-o", "ControlPath="+sc.controlPath(), "--", sc.sshTarget())
 	out, err := cmd.CombinedOutput()
 	defer func() { _ = os.Remove(sc.controlPath()) }()
 	if err != nil {
@@ -194,11 +202,7 @@ func (sc *SSHConnector) execSSH(ctx context.Context, args []string, stdin io.Rea
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-
 	err := cmd.Run()
-	if ctx.Err() != nil && cmd.Process != nil && cmd.Process.Pid > 0 {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
 	if err != nil && ctx.Err() != nil {
 		return stdout.String(), stderr.String(), ctx.Err()
 	}
@@ -237,10 +241,30 @@ func summarizeRemoteCommand(command []string) string {
 	return fmt.Sprintf("%s ... (script, %d lines, %d bytes)", truncateForLog(first, 200), lines, len(joined))
 }
 
-func selectCommandOutput(stdout, stderr string, err error) (string, error) {
+type CommandError struct {
+	Kind   string
+	Output string
+	Err    error
+}
+
+func (e *CommandError) Error() string {
+	return fmt.Sprintf("%s command failed: %v (output: %s)", e.Kind, e.Err, truncateForLog(e.Output, maxLoggedOutputBytes))
+}
+
+func (e *CommandError) Unwrap() error { return e.Err }
+
+func CommandOutput(err error) (string, bool) {
+	var ce *CommandError
+	if errors.As(err, &ce) {
+		return ce.Output, true
+	}
+	return "", false
+}
+
+func selectCommandOutput(kind, stdout, stderr string, err error) (string, error) {
 	if err != nil {
 		combined := strings.TrimSpace(strings.TrimSpace(stdout) + "\n" + strings.TrimSpace(stderr))
-		return combined, fmt.Errorf("ssh command failed: %w (output: %s)", err, truncateForLog(combined, maxLoggedOutputBytes))
+		return combined, &CommandError{Kind: kind, Output: combined, Err: err}
 	}
 	return strings.TrimSpace(stdout), nil
 }
@@ -278,10 +302,6 @@ var sshTransportStderrMarkers = []string{
 	"control socket connect",
 }
 
-// Reports whether err is an ssh transport-level failure rather than the remote command failing.
-// ssh uses exit status 255 for its own errors, but it also forwards a remote exit status verbatim and fail2ban-client exits 255 for
-// things like an unknown jail. Treating those as transport failures would pointlessly tear down and re-dial the ControlMaster (and with it the reverse
-// tunnel), so require ssh-shaped stderr as well.
 func isSSHTransportError(err error, stderr string) bool {
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 255 {
@@ -301,6 +321,10 @@ func isSSHTransportError(err error, stderr string) bool {
 
 func (sc *SSHConnector) runRemoteCommand(ctx context.Context, command []string) (string, error) {
 	output, stderr, err := sc.runRemoteCommandOnce(ctx, command)
+	var hk *SSHHostKeyError
+	if errors.As(err, &hk) {
+		return output, err
+	}
 	if err != nil && sc.tunnelPort > 0 && isSSHTransportError(err, stderr) && ctx.Err() == nil {
 		// the master (or its socket) is likely dead.
 		// Re-establish once and retry the command a single time.
@@ -322,11 +346,16 @@ func (sc *SSHConnector) runRemoteCommandOnce(ctx context.Context, command []stri
 	args := sc.buildSSHArgs(command)
 	debugf("SSH command [%s]: %s", sc.server.Name, summarizeSSHInvocation(args, command))
 	stdout, stderr, execErr := sc.execSSH(ctx, args, nil)
-	output, err := selectCommandOutput(stdout, stderr, execErr)
+	output, err := selectCommandOutput("ssh", stdout, stderr, execErr)
 	if err != nil {
+		if hk := sc.parseHostKeyError(stderr, err); hk != nil {
+			RecordHostKeyIssue(hk)
+			err = hk
+		}
 		debugf("SSH command error [%s]: %v", sc.server.Name, err)
 		return output, stderr, err
 	}
+	ClearHostKeyIssue(sc.server.ID)
 	if s := strings.TrimSpace(stderr); s != "" {
 		debugf("SSH stderr ignored [%s]: %s", sc.server.Name, truncateForLog(s, maxLoggedOutputBytes))
 	}
@@ -341,10 +370,34 @@ func (sc *SSHConnector) actionCallbackURL() string {
 	return mustProvider().CallbackURL()
 }
 
+func (sc *SSHConnector) knownHostsPath() string {
+	if keyDir := sc.sshKeyDir(); keyDir != "" {
+		return filepath.Join(keyDir, "known_hosts")
+	}
+	if _, container := os.LookupEnv("CONTAINER"); container {
+		return "/config/.ssh/known_hosts"
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".ssh", "known_hosts")
+	}
+	return ""
+}
+
+func (sc *SSHConnector) sshKeyDir() string {
+	if sc.server.SSHKeyPath == "" {
+		return ""
+	}
+	if err := shared.ValidateAbsolutePath(sc.server.SSHKeyPath, "sshKeyPath"); err != nil {
+		debugf("ignoring invalid sshKeyPath for %s: %v", sc.server.Name, err)
+		return ""
+	}
+	return filepath.Dir(filepath.Clean(sc.server.SSHKeyPath))
+}
+
 func (sc *SSHConnector) sshControlDir() string {
 	var base string
-	if sc.server.SSHKeyPath != "" {
-		base = filepath.Join(filepath.Dir(sc.server.SSHKeyPath), "ctl")
+	if keyDir := sc.sshKeyDir(); keyDir != "" {
+		base = filepath.Join(keyDir, "ctl")
 	} else if cache, err := os.UserCacheDir(); err == nil {
 		base = filepath.Join(cache, "fail2ban-ui", "ssh-ctl")
 	}
@@ -356,8 +409,12 @@ func (sc *SSHConnector) sshControlDir() string {
 	return os.TempDir()
 }
 
+var unsafeSocketNameChars = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+
 func (sc *SSHConnector) controlPath() string {
-	name := fmt.Sprintf("ssh_control_%s_%s", sc.server.ID, strings.ReplaceAll(sc.server.Host, ".", "_"))
+	id := unsafeSocketNameChars.ReplaceAllString(sc.server.ID, "_")
+	host := unsafeSocketNameChars.ReplaceAllString(sc.server.Host, "_")
+	name := fmt.Sprintf("ssh_control_%s_%s", id, host)
 	return filepath.Join(sc.sshControlDir(), name)
 }
 
@@ -383,16 +440,12 @@ func (sc *SSHConnector) buildSSHArgsMode(command []string, forMaster bool) []str
 		"-o", "ServerAliveInterval=5",
 		"-o", "ServerAliveCountMax=2",
 	)
-	if _, container := os.LookupEnv("CONTAINER"); container {
-		knownHosts := "/config/.ssh/known_hosts"
-		if sc.server.SSHKeyPath != "" {
-			knownHosts = filepath.Join(filepath.Dir(sc.server.SSHKeyPath), "known_hosts")
-		}
-		args = append(args,
-			"-o", "StrictHostKeyChecking=accept-new",
-			"-o", "UserKnownHostsFile="+knownHosts,
-			"-o", "LogLevel=ERROR",
-		)
+	args = append(args,
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "LogLevel=ERROR",
+	)
+	if kh := sc.knownHostsPath(); kh != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+kh)
 	}
 	controlPath := fmt.Sprintf("ControlPath=%s", sc.controlPath())
 	switch {
@@ -423,7 +476,7 @@ func (sc *SSHConnector) buildSSHArgsMode(command []string, forMaster bool) []str
 	if sc.server.Port > 0 {
 		args = append(args, "-p", strconv.Itoa(sc.server.Port))
 	}
-	args = append(args, sc.sshTarget())
+	args = append(args, "--", sc.sshTarget())
 	args = append(args, command...)
 	return args
 }

@@ -17,7 +17,9 @@
 package web
 
 import (
+	"bytes"
 	"html/template"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +41,27 @@ func TestEmbeddedTemplatesIndexName(t *testing.T) {
 	}
 	if !ok {
 		t.Fatalf("template index.html not found; templates: %v", names)
+	}
+}
+
+func TestIndexTemplateEmitsAppIcons(t *testing.T) {
+	tmpl, err := template.ParseFS(embeddedTemplates, "templates/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	data := map[string]any{"URLPrefix": "/base", "version": 1234, "appVersion": "test"}
+	if err := tmpl.ExecuteTemplate(&buf, "index.html", data); err != nil {
+		t.Fatalf("template execution failed: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "window.__appIcons") {
+		t.Fatal("template must emit window.__appIcons")
+	}
+	if strings.Contains(out, "data-light-href") || strings.Contains(out, "data-dark-href") {
+		t.Fatal("data-*-href attributes must be gone (the XSS-through-DOM source)")
+	}
+	if strings.Contains(out, "isSafeIconHref") {
+		t.Fatal("the isSafeIconHref workaround should have been removed")
 	}
 }

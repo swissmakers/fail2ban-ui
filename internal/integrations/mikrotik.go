@@ -28,6 +28,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 type mikrotikIntegration struct{}
@@ -68,18 +69,29 @@ func (m *mikrotikIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 //  Block/Unblock
 // =========================================================================
 
+func safeMikrotikArgs(ip, addressList string) (string, string, error) {
+	if err := ValidateIP(ip); err != nil {
+		return "", "", err
+	}
+	if err := ValidateIdentifier(addressList, "address list"); err != nil {
+		return "", "", err
+	}
+	// Defense-in-depth: unreachable while ValidateIP/ValidateIdentifier hold.
+	if strings.ContainsAny(ip, " \t\r\n\"';[]") || strings.ContainsAny(addressList, " \t\r\n\"';[]") {
+		return "", "", fmt.Errorf("mikrotik argument contains unsafe characters")
+	}
+	return ip, addressList, nil
+}
+
 func (m *mikrotikIntegration) BlockIP(req Request) error {
 	if err := m.Validate(req.Config); err != nil {
 		return err
 	}
-	if err := ValidateIP(req.IP); err != nil {
+	ip, list, err := safeMikrotikArgs(req.IP, req.Config.Mikrotik.AddressList)
+	if err != nil {
 		return fmt.Errorf("mikrotik block: %w", err)
 	}
-	if err := ValidateIdentifier(req.Config.Mikrotik.AddressList, "address list"); err != nil {
-		return fmt.Errorf("mikrotik block: %w", err)
-	}
-	cmd := fmt.Sprintf(`/ip firewall address-list add list=%s address=%s comment="Fail2ban-UI permanent block"`,
-		req.Config.Mikrotik.AddressList, req.IP)
+	cmd := fmt.Sprintf(`/ip firewall address-list add list=%s address=%s comment="Fail2ban-UI permanent block"`, list, ip)
 	return m.runCommand(req, cmd)
 }
 
@@ -87,14 +99,11 @@ func (m *mikrotikIntegration) UnblockIP(req Request) error {
 	if err := m.Validate(req.Config); err != nil {
 		return err
 	}
-	if err := ValidateIP(req.IP); err != nil {
+	ip, list, err := safeMikrotikArgs(req.IP, req.Config.Mikrotik.AddressList)
+	if err != nil {
 		return fmt.Errorf("mikrotik unblock: %w", err)
 	}
-	if err := ValidateIdentifier(req.Config.Mikrotik.AddressList, "address list"); err != nil {
-		return fmt.Errorf("mikrotik unblock: %w", err)
-	}
-	cmd := fmt.Sprintf(`/ip firewall address-list remove [/ip firewall address-list find address=%s list=%s]`,
-		req.IP, req.Config.Mikrotik.AddressList)
+	cmd := fmt.Sprintf(`/ip firewall address-list remove [/ip firewall address-list find address=%s list=%s]`, ip, list)
 	return m.runCommand(req, cmd)
 }
 
@@ -110,8 +119,8 @@ func (m *mikrotikIntegration) runCommand(req Request, command string) error {
 		authMethods = append(authMethods, ssh.Password(cfg.Password))
 	}
 	if cfg.SSHKeyPath != "" {
-		if strings.ContainsRune(cfg.SSHKeyPath, 0) {
-			return fmt.Errorf("invalid mikrotik ssh key path")
+		if err := shared.ValidateAbsolutePath(cfg.SSHKeyPath, "mikrotik ssh key path"); err != nil {
+			return err
 		}
 		key, err := os.ReadFile(filepath.Clean(cfg.SSHKeyPath))
 		if err != nil {

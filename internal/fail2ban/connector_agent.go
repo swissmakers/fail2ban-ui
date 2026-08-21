@@ -19,7 +19,6 @@ package fail2ban
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,11 +31,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/swissmakers/fail2ban-ui/internal/httpx"
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
-// Upper bound for agent JSON responses (e.g. /v1/jails/all can exceed a few KiB).
-const maxAgentHTTPResponseBody = 8 << 20
+// Whole-request budget for a single agent call.
+const agentRequestTimeout = 15 * time.Second
 
 // =========================================================================
 //  Types
@@ -159,14 +159,7 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 	if err != nil {
 		return nil, &AgentConfigError{Kind: AgentConfigErrorInvalidURL, Err: err}
 	}
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		},
-	}
+	client := httpx.Client(agentRequestTimeout, false)
 	conn := &AgentConnector{
 		server: server,
 		base:   parsed,
@@ -255,6 +248,9 @@ func (ac *AgentConnector) GetJailSummary(ctx context.Context) (*JailSummary, err
 }
 
 func (ac *AgentConnector) GetBannedIPs(ctx context.Context, jail string) ([]string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return nil, err
+	}
 	var resp struct {
 		Jail        string   `json:"jail"`
 		BannedIPs   []string `json:"bannedIPs"`
@@ -292,7 +288,13 @@ func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
 }
 
 func (ac *AgentConnector) Reload(ctx context.Context) error {
-	return ac.post(ctx, "/v1/actions/reload", nil, nil)
+	var resp struct {
+		Output string `json:"output"`
+	}
+	if err := ac.post(ctx, "/v1/actions/reload", nil, &resp); err != nil {
+		return err
+	}
+	return checkReloadOutput(resp.Output)
 }
 
 func (ac *AgentConnector) Restart(ctx context.Context) error {
@@ -401,7 +403,7 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAgentHTTPResponseBody))
+	data, err := httpx.ReadLimited(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -647,4 +649,9 @@ func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content 
 
 func (ac *AgentConnector) DeleteFilter(ctx context.Context, filterName string) error {
 	return ac.delete(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(filterName)), nil)
+}
+
+func (ac *AgentConnector) Close() error {
+	ac.client.CloseIdleConnections()
+	return nil
 }

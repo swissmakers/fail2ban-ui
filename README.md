@@ -6,6 +6,9 @@
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://golang.org/)
 [![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://www.linux.org/)
 
+> Maintained in our free time and free forever. If it is useful to you,
+> [feel free to sponsor the project](https://github.com/sponsors/swissmakers).
+
 Fail2Ban UI is a management platform for operating Fail2Ban across one or more Linux hosts. It provides a central place to review bans, search and unban IP addresses, manage jails and filters, and receive notifications.
 
 The project is maintained by Swissmakers GmbH and released under AGPL-3.0.
@@ -222,6 +225,20 @@ If you see a clearer way to describe installation steps, safer container default
 To add a UI language: copy `pkg/web/locales/en.json`, translate all values, save it as `pkg/web/locales/<lang>.json`, and open a pull request. Use a lowercase locale code for `<lang>`, for example `ch`, `ch_de`, `es`, or `pt_br`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## Sponsor this project
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/swissmakers?label=Sponsors&logo=github)](https://github.com/sponsors/swissmakers)
+
+Fail2Ban UI is built and maintained by a small team at Swissmakers GmbH, in our free
+time. Nobody is paid for it, there is no paid edition, and no feature is locked behind a licence key.
+
+If the project saves you time, or if your infrastructure depends on it, consider [sponsoring it](https://github.com/sponsors/swissmakers). Sponsorship pays for build and
+release infrastructure, image hosting, the firewall test lab (MikroTik, pfSense, OPNsense) and all the rest of our work.
+
+Company sponsors are listed with their logo in this README and on [fail2ban-ui.com](https://fail2ban-ui.com). See [SPONSORS.md](SPONSORS.md).
+
+Not in a position to sponsor? Reporting a reproducible bug, improving the docs or [translating the UI](CONTRIBUTING.md) helps just as much.
 
 ## License
 

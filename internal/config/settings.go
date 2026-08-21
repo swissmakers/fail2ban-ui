@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -276,6 +277,12 @@ var (
 	settingsLock        sync.RWMutex
 	errSettingsNotFound = errors.New("settings not found")
 	backgroundCtx       = context.Background()
+)
+
+// Package-level compiled patterns
+var (
+	loopbackCallbackURLPattern = regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
+	jailFileKeyValuePattern    = regexp.MustCompile(`^\s*([a-zA-Z0-9_]+)\s*=\s*(.+)$`)
 )
 
 // =========================================================================
@@ -658,12 +665,8 @@ func setDefaultsLocked() {
 			currentSettings.EmailAlertsForUnbans = false
 		}
 	}
-	if portEnv := os.Getenv("PORT"); portEnv != "" {
-		if port, err := strconv.Atoi(portEnv); err == nil && port > 0 && port <= 65535 {
-			currentSettings.Port = port
-		} else if currentSettings.Port == 0 {
-			currentSettings.Port = 8080
-		}
+	if port, ok := GetPortFromEnv(); ok {
+		currentSettings.Port = port
 	} else if currentSettings.Port == 0 {
 		currentSettings.Port = 8080
 	}
@@ -672,8 +675,7 @@ func setDefaultsLocked() {
 	} else if currentSettings.CallbackURL == "" {
 		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 	} else {
-		oldPattern := regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
-		if oldPattern.MatchString(currentSettings.CallbackURL) {
+		if loopbackCallbackURLPattern.MatchString(currentSettings.CallbackURL) {
 			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
 		}
 	}
@@ -763,7 +765,7 @@ func initializeFromJailFile() error {
 	}
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
-	re := regexp.MustCompile(`^\s*(?P<key>[a-zA-Z0-9_]+)\s*=\s*(?P<value>.+)$`)
+	re := jailFileKeyValuePattern
 	settings := map[string]string{}
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -848,9 +850,13 @@ func normalizeServersLocked() {
 		if server.Name == "" {
 			server.Name = "Fail2ban Server " + server.ID
 		}
+		server.Type = strings.ToLower(strings.TrimSpace(server.Type))
 		if server.Type == "" {
 			server.Type = "local"
 		}
+		server.Host = strings.TrimSpace(server.Host)
+		server.SSHUser = strings.TrimSpace(server.SSHUser)
+		server.SSHKeyPath = normalizePathValue(server.SSHKeyPath)
 		server.Name = normalizeServerName(server.Name)
 		if server.CreatedAt.IsZero() {
 			server.CreatedAt = now
@@ -861,6 +867,8 @@ func normalizeServersLocked() {
 		if server.Type == "local" {
 			server.SocketPath = normalizeLocalSocketPath(server.SocketPath)
 			server.ConfigPath = normalizeLocalConfigPath(server.ConfigPath)
+		} else {
+			server.SocketPath = normalizePathValue(server.SocketPath)
 		}
 		if !server.EnabledSet {
 			if server.Type == "local" {
@@ -870,6 +878,24 @@ func normalizeServersLocked() {
 			}
 		}
 		server.EnabledSet = true
+		server.DisabledReason = ""
+		server.HostKeyError = ""
+		server.HostKeyFingerprint = ""
+		if server.Enabled {
+			if err := shared.ValidateServerFields(*server); err != nil {
+				log.Printf("disabling server %q (%s): invalid configuration: %v - fix and save the server in the UI to re-enable it", server.Name, server.ID, err)
+				server.Enabled = false
+				server.DisabledReason = err.Error()
+			} else if server.Type == "agent" {
+				if u, err := fail2ban.NormalizeAgentURL(server.AgentURL); err != nil {
+					log.Printf("disabling server %q (%s): invalid agentUrl: %v - fix and save the server in the UI to re-enable it", server.Name, server.ID, err)
+					server.Enabled = false
+					server.DisabledReason = "invalid agentUrl: " + err.Error()
+				} else {
+					server.AgentURL = u.String()
+				}
+			}
+		}
 		if !server.Enabled {
 			server.RestartNeeded = false
 		}
@@ -1203,6 +1229,12 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 
 	now := time.Now().UTC()
 	input.Type = strings.ToLower(strings.TrimSpace(input.Type))
+	input.Host = strings.TrimSpace(input.Host)
+	input.SSHUser = strings.TrimSpace(input.SSHUser)
+	input.SSHKeyPath = normalizePathValue(input.SSHKeyPath)
+	input.DisabledReason = ""
+	input.HostKeyError = ""
+	input.HostKeyFingerprint = ""
 	if input.ID == "" {
 		input.ID = generateServerID()
 		input.CreatedAt = now
@@ -1237,6 +1269,9 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 		}
 	} else {
 		input.TunnelPort = 0
+	}
+	if err := shared.ValidateServerFields(input); err != nil {
+		return Fail2banServer{}, err
 	}
 	if input.Name == "" {
 		input.Name = "Fail2ban Server " + input.ID
@@ -1537,8 +1572,7 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	new.CallbackURL = strings.TrimSpace(new.CallbackURL)
 	oldPort := currentSettings.Port
 	if new.Port != oldPort && new.Port > 0 {
-		oldPattern := regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
-		if oldPattern.MatchString(new.CallbackURL) || new.CallbackURL == "" {
+		if loopbackCallbackURLPattern.MatchString(new.CallbackURL) || new.CallbackURL == "" {
 			new.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", new.Port)
 		}
 	}

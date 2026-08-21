@@ -35,8 +35,17 @@ func TestNormalizeConfigPath(t *testing.T) {
 	if got := NormalizeConfigPath("/etc/fail2ban/../fail2ban/"); got != "/etc/fail2ban" {
 		t.Fatalf("clean: got %q", got)
 	}
-	if got := NormalizeConfigPath("/etc/fail2\x00ban"); got != "/etc/fail2ban" {
-		t.Fatalf("nul byte stripped: got %q", got)
+	for _, bad := range []string{
+		"relative/dir",
+		"/etc/fail2\x00ban",
+		"/etc/f'oo",
+		"/etc/f;oo",
+		"/etc/f$oo",
+		"/etc/fail2ban\nX",
+	} {
+		if got := NormalizeConfigPath(bad); got != DefaultConfigRoot {
+			t.Fatalf("unsafe %q: got %q, want fallback %q", bad, got, DefaultConfigRoot)
+		}
 	}
 }
 

@@ -17,53 +17,16 @@
 package fail2ban
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
 func ensureFilterLocalFile(filterName, configPath string) error {
-	filterName = strings.TrimSpace(filterName)
-	if filterName == "" {
-		return fmt.Errorf("filter name cannot be empty")
-	}
-
-	filterDPath := FilterDir(configPath)
-	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
-	if err != nil {
-		return err
-	}
-	confPath, err := resolveWithinDir(filterDPath, filterName, ".conf")
-	if err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(localPath); err == nil {
-		debugf("Filter .local file already exists: %s", localPath)
-		return nil
-	}
-
-	if _, err := os.Stat(confPath); err == nil {
-		debugf("Copying filter config from .conf to .local: %s -> %s", confPath, localPath)
-		content, err := os.ReadFile(confPath)
-		if err != nil {
-			return fmt.Errorf("failed to read filter .conf file %s: %w", confPath, err)
-		}
-		if err := os.WriteFile(localPath, content, 0644); err != nil {
-			return fmt.Errorf("failed to write filter .local file %s: %w", localPath, err)
-		}
-		debugf("Successfully copied filter config to .local file")
-		return nil
-	}
-
-	debugf("Neither .local nor .conf exists for filter %s, creating empty .local file", filterName)
-	if err := os.WriteFile(localPath, []byte(""), 0644); err != nil {
-		return fmt.Errorf("failed to create empty filter .local file %s: %w", localPath, err)
-	}
-	debugf("Successfully created empty filter .local file: %s", localPath)
-	return nil
+	return ensureLocalConfigFile(filterKind, filterName, configPath)
 }
 
 func RemoveComments(content string) string {
@@ -87,33 +50,16 @@ func RemoveComments(content string) string {
 	return strings.Join(result, "\n")
 }
 
-// Reads filter config from .local first, then falls back to .conf.
+// Reads filter config from .local first, then falls back to .conf
 func readFilterConfigWithFallback(filterName, configPath string) (string, string, error) {
-	filterName = strings.TrimSpace(filterName)
-	if filterName == "" {
-		return "", "", fmt.Errorf("filter name cannot be empty")
-	}
-
-	filterDPath := FilterDir(configPath)
-	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
+	content, path, found, err := readLocalConfigWithFallback(filterKind, filterName, configPath)
 	if err != nil {
 		return "", "", err
 	}
-	confPath, err := resolveWithinDir(filterDPath, filterName, ".conf")
-	if err != nil {
-		return "", "", err
+	if !found {
+		return "", path, fmt.Errorf("filter config not found for %s in %s", filterName, FilterDir(configPath))
 	}
-
-	if content, err := os.ReadFile(localPath); err == nil {
-		debugf("Reading filter config from .local: %s", localPath)
-		return string(content), localPath, nil
-	}
-
-	if content, err := os.ReadFile(confPath); err == nil {
-		debugf("Reading filter config from .conf: %s", confPath)
-		return string(content), confPath, nil
-	}
-	return "", localPath, fmt.Errorf("filter config not found: neither %s nor %s exists", localPath, confPath)
+	return content, path, nil
 }
 
 func SetFilterConfigLocal(jail, newContent, configPath string) error {
@@ -133,46 +79,12 @@ func SetFilterConfigLocal(jail, newContent, configPath string) error {
 
 // Validates a filter name format.
 func ValidateFilterName(name string) error {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return fmt.Errorf("filter name cannot be empty")
-	}
-
-	if invalidNameChars.MatchString(name) {
-		return fmt.Errorf("filter name '%s' contains invalid characters. Only alphanumeric characters, dashes, and underscores are allowed", name)
-	}
-
-	if name[0] == '-' {
-		return fmt.Errorf("filter name '%s' must not start with a dash", name)
-	}
-
-	return nil
+	return validateConfigName(name, "filter name")
 }
 
 // Lists all filter files in the specified directory.
 func ListFilterFiles(directory string) ([]string, error) {
-	var files []string
-
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read filter directory %s: %w", directory, err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		if strings.HasSuffix(name, ".local") || strings.HasSuffix(name, ".conf") {
-			fullPath := filepath.Join(directory, name)
-			files = append(files, fullPath)
-		}
-	}
-
-	return files, nil
+	return listConfigFiles(filterKind, directory)
 }
 
 // Returns all filters from the filesystem at the given config path.
@@ -205,19 +117,8 @@ func CreateFilter(filterName, content, configPath string) error {
 	if err := ValidateFilterName(filterName); err != nil {
 		return err
 	}
-	filterDPath := FilterDir(configPath)
-	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filterDPath, 0755); err != nil {
-		return fmt.Errorf("failed to create filter.d directory: %w", err)
-	}
-	if err := os.WriteFile(localPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to create filter file %s: %w", localPath, err)
-	}
-	debugf("Created filter file: %s", localPath)
-	return nil
+	// Filters carry no [name] section header, unlike jails.
+	return createLocalConfigFile(filterKind, filterName, content, "", configPath)
 }
 
 // Deletes a filter's .local and .conf files from filter.d/ if they exist.
@@ -225,43 +126,7 @@ func DeleteFilter(filterName, configPath string) error {
 	if err := ValidateFilterName(filterName); err != nil {
 		return err
 	}
-
-	filterDPath := FilterDir(configPath)
-	localPath, err := resolveWithinDir(filterDPath, filterName, ".local")
-	if err != nil {
-		return err
-	}
-	confPath, err := resolveWithinDir(filterDPath, filterName, ".conf")
-	if err != nil {
-		return err
-	}
-
-	var deletedFiles []string
-	var lastErr error
-
-	if _, err := os.Stat(localPath); err == nil {
-		if err := os.Remove(localPath); err != nil {
-			lastErr = fmt.Errorf("failed to delete filter file %s: %w", localPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, localPath)
-			debugf("Deleted filter file: %s", localPath)
-		}
-	}
-	if _, err := os.Stat(confPath); err == nil {
-		if err := os.Remove(confPath); err != nil {
-			lastErr = fmt.Errorf("failed to delete filter file %s: %w", confPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, confPath)
-			debugf("Deleted filter file: %s", confPath)
-		}
-	}
-	if len(deletedFiles) == 0 && lastErr == nil {
-		return fmt.Errorf("filter file %s or %s does not exist", localPath, confPath)
-	}
-	if lastErr != nil {
-		return lastErr
-	}
-	return nil
+	return deleteLocalConfigFiles(filterKind, filterName, configPath)
 }
 
 func normalizeLogLines(logLines []string) []string {
@@ -503,7 +368,7 @@ func resolveFilterIncludesWith(filterContent string, currentFilterName string, r
 //  Filter Testing
 // =========================================================================
 
-func TestFilterLocal(filterName string, logLines []string, filterContent string, configPath string) (string, string, error) {
+func TestFilterLocal(ctx context.Context, filterName string, logLines []string, filterContent string, configPath string) (string, string, error) {
 	cleaned := normalizeLogLines(logLines)
 	if len(cleaned) == 0 {
 		return "No log lines provided.\n", "", nil
@@ -572,18 +437,34 @@ func TestFilterLocal(filterName string, logLines []string, filterContent string,
 		return "", filterPath, fmt.Errorf("failed to create temporary log file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
 
 	for _, logLine := range cleaned {
 		if _, err := tmpFile.WriteString(logLine + "\n"); err != nil {
+			tmpFile.Close()
 			return "", filterPath, fmt.Errorf("failed to write to temporary log file: %w", err)
 		}
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return "", filterPath, fmt.Errorf("failed to write to temporary log file: %w", err)
+	}
 
-	cmd := exec.Command("fail2ban-regex", tmpFile.Name(), filterPath)
-	out, _ := cmd.CombinedOutput()
+	cmd := exec.CommandContext(ctx, "fail2ban-regex", tmpFile.Name(), filterPath)
+	out, err := cmd.CombinedOutput()
 	output := string(out)
+
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", filterPath, ctx.Err()
+		}
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return "", filterPath, fmt.Errorf("failed to run fail2ban-regex: %w", err)
+		}
+		if !exitErr.Exited() {
+			return "", filterPath, fmt.Errorf("fail2ban-regex terminated abnormally: %w", err)
+		}
+		debugf("TestFilterLocal: fail2ban-regex exited with %d for filter %s", exitErr.ExitCode(), filterPath)
+	}
 
 	return output, filterPath, nil
 }

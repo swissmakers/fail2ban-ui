@@ -179,7 +179,7 @@ func (lc *LocalConnector) runFail2banClient(ctx context.Context, args ...string)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
-	output, err := selectCommandOutput(stdout.String(), stderr.String(), runErr)
+	output, err := selectCommandOutput("fail2ban-client", stdout.String(), stderr.String(), runErr)
 	if err == nil {
 		if s := strings.TrimSpace(stderr.String()); s != "" {
 			debugf("fail2ban-client stderr ignored [%s]: %s", lc.server.Name, truncateForLog(s, maxLoggedOutputBytes))
@@ -210,7 +210,7 @@ func (lc *LocalConnector) GetFilters(ctx context.Context) ([]string, error) {
 }
 
 func (lc *LocalConnector) TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (string, string, error) {
-	return TestFilterLocal(filterName, logLines, filterContent, lc.configPath())
+	return TestFilterLocal(ctx, filterName, logLines, filterContent, lc.configPath())
 }
 
 func (lc *LocalConnector) GetJailConfig(ctx context.Context, jail string) (string, string, error) {
@@ -254,6 +254,8 @@ func (lc *LocalConnector) CreateFilter(ctx context.Context, filterName, content 
 func (lc *LocalConnector) DeleteFilter(ctx context.Context, filterName string) error {
 	return DeleteFilter(filterName, lc.configPath())
 }
+
+func (lc *LocalConnector) Close() error { return nil }
 
 func (lc *LocalConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
 	jailLocalPath := JailLocal(lc.configPath())

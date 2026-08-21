@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/httpx"
 )
 
 type pfSenseIntegration struct{}
@@ -111,7 +112,7 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 	}
 	baseURL := strings.TrimSuffix(cfg.BaseURL, "/")
 
-	httpClient := integrationHTTPClient(10*time.Second, cfg.SkipTLSVerify)
+	httpClient := httpx.Client(10*time.Second, cfg.SkipTLSVerify)
 
 	// GET the alias by name
 	alias, err := p.getAliasByName(httpClient, baseURL, cfg.APIToken, cfg.Alias, req.Logger)
@@ -236,7 +237,7 @@ func (p *pfSenseIntegration) getAliasByName(client *http.Client, baseURL, apiTok
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := readLimitedResponse(resp.Body)
+	bodyBytes, _ := httpx.ReadLimited(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK {
@@ -300,7 +301,7 @@ func (p *pfSenseIntegration) createAlias(client *http.Client, baseURL, apiToken 
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := readLimitedResponse(resp.Body)
+	bodyBytes, _ := httpx.ReadLimited(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {
@@ -367,7 +368,7 @@ func (p *pfSenseIntegration) updateAlias(client *http.Client, baseURL, apiToken 
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := readLimitedResponse(resp.Body)
+	bodyBytes, _ := httpx.ReadLimited(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {
@@ -407,7 +408,7 @@ func (p *pfSenseIntegration) applyFirewallChanges(client *http.Client, baseURL, 
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := readLimitedResponse(resp.Body)
+	bodyBytes, _ := httpx.ReadLimited(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {

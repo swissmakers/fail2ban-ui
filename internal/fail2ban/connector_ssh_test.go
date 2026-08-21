@@ -169,7 +169,7 @@ func TestSelectCommandOutput(t *testing.T) {
 	jailFile := "[swissmakers-apache-scanner]\nenabled = true\n"
 
 	t.Run("success returns stdout only, stderr noise dropped", func(t *testing.T) {
-		out, err := selectCommandOutput(jailFile, sshMuxNoise, nil)
+		out, err := selectCommandOutput("ssh", jailFile, sshMuxNoise, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -182,7 +182,7 @@ func TestSelectCommandOutput(t *testing.T) {
 	})
 
 	t.Run("failure folds both streams into the error", func(t *testing.T) {
-		out, err := selectCommandOutput("partial", "sudo: a password is required", errors.New("exit status 1"))
+		out, err := selectCommandOutput("ssh", "partial", "sudo: a password is required", errors.New("exit status 1"))
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -397,7 +397,7 @@ func TestTruncateForLog(t *testing.T) {
 
 func TestSelectCommandOutputCapsErrorPayload(t *testing.T) {
 	huge := strings.Repeat("secret-config-line\n", 5000)
-	out, err := selectCommandOutput(huge, "", errors.New("exit status 1"))
+	out, err := selectCommandOutput("ssh", huge, "", errors.New("exit status 1"))
 	if err == nil {
 		t.Fatal("expected an error")
 	}

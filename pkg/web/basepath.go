@@ -42,8 +42,7 @@ func NormalizeBasePath(s string) string {
 	if !strings.HasPrefix(s, "/") {
 		s = "/" + s
 	}
-	// We reject protocol-relative paths ("//host"), which browsers resolve to another origin when used in a Location header.
-	if strings.HasPrefix(s, "//") {
+	if strings.HasPrefix(s, "//") || strings.HasPrefix(s, "/\\") {
 		return ""
 	}
 	return strings.TrimSuffix(s, "/")

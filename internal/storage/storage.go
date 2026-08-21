@@ -1515,105 +1515,210 @@ LIMIT ?`
 //  Schema Management
 // =========================================================================
 
+type columnDef struct {
+	name   string
+	create string
+	alter  string
+}
+
+type tableDef struct {
+	name        string
+	columns     []columnDef
+	constraints []string // table-level, CREATE only
+}
+
+func col(name, ddl string) columnDef {
+	return columnDef{name: name, create: ddl, alter: ddl}
+}
+
+func colAlter(name, createDDL, alterDDL string) columnDef {
+	return columnDef{name: name, create: createDDL, alter: alterDDL}
+}
+
+func pkCol(name, ddl string) columnDef {
+	return columnDef{name: name, create: ddl}
+}
+
+// The complete schema (single source of truth)
+var schemaTables = []tableDef{
+	{
+		name: "app_settings",
+		columns: []columnDef{
+			pkCol("id", "INTEGER PRIMARY KEY CHECK (id = 1)"),
+			// Basic app settings
+			col("language", "TEXT"),
+			col("port", "INTEGER"),
+			col("debug", "INTEGER"),
+			col("restart_needed", "INTEGER"),
+			// Callback settings
+			col("callback_url", "TEXT"),
+			col("callback_secret", "TEXT"),
+			// Alert settings
+			col("alert_countries", "TEXT"),
+			col("email_alerts_for_bans", "INTEGER DEFAULT 1"),
+			col("email_alerts_for_unbans", "INTEGER DEFAULT 0"),
+			// SMTP settings
+			col("smtp_host", "TEXT"),
+			col("smtp_port", "INTEGER"),
+			col("smtp_username", "TEXT"),
+			col("smtp_password", "TEXT"),
+			col("smtp_from", "TEXT"),
+			col("smtp_use_tls", "INTEGER"),
+			// Fail2Ban DEFAULT settings
+			col("bantime_increment", "INTEGER"),
+			col("default_jail_enable", "INTEGER"),
+			col("ignore_ip", "TEXT"),
+			col("bantime", "TEXT"),
+			col("findtime", "TEXT"),
+			col("maxretry", "INTEGER"),
+			col("destemail", "TEXT"),
+			col("banaction", "TEXT"),
+			col("banaction_allports", "TEXT"),
+			// Advanced features
+			col("advanced_actions", "TEXT"),
+			col("geoip_provider", "TEXT"),
+			col("geoip_database_path", "TEXT"),
+			col("max_log_lines", "INTEGER"),
+			col("event_retention_days", "INTEGER DEFAULT 180"),
+			// Console output settings
+			col("console_output", "INTEGER DEFAULT 0"),
+			col("smtp_insecure_skip_verify", "INTEGER DEFAULT 0"),
+			col("smtp_auth_method", "TEXT DEFAULT 'auto'"),
+			col("chain", "TEXT DEFAULT 'INPUT'"),
+			col("bantime_rndtime", "TEXT DEFAULT ''"),
+			col("bantime_maxtime", "TEXT DEFAULT ''"),
+			col("bantime_factor", "TEXT DEFAULT ''"),
+			col("bantime_overalljails", "INTEGER DEFAULT 0"),
+			col("alert_provider", "TEXT DEFAULT 'email'"),
+			col("webhook", "TEXT DEFAULT '{}'"),
+			col("elasticsearch", "TEXT DEFAULT '{}'"),
+			col("threat_intel", "TEXT DEFAULT '{}'"),
+		},
+	},
+	{
+		name: "servers",
+		columns: []columnDef{
+			pkCol("id", "TEXT PRIMARY KEY"),
+			col("name", "TEXT"),
+			col("type", "TEXT"),
+			col("host", "TEXT"),
+			col("port", "INTEGER"),
+			col("socket_path", "TEXT"),
+			col("config_path", "TEXT"),
+			col("ssh_user", "TEXT"),
+			col("ssh_key_path", "TEXT"),
+			col("agent_url", "TEXT"),
+			col("agent_secret", "TEXT"),
+			col("hostname", "TEXT"),
+			col("tags", "TEXT"),
+			col("is_default", "INTEGER"),
+			col("enabled", "INTEGER"),
+			col("reverse_tunnel", "INTEGER DEFAULT 0"),
+			col("tunnel_port", "INTEGER DEFAULT 0"),
+			col("needs_restart", "INTEGER DEFAULT 0"),
+			col("created_at", "TEXT"),
+			col("updated_at", "TEXT"),
+		},
+	},
+	{
+		name: "ban_events",
+		columns: []columnDef{
+			pkCol("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+			colAlter("server_id", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			colAlter("server_name", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			colAlter("jail", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			colAlter("ip", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			col("country", "TEXT"),
+			col("hostname", "TEXT"),
+			col("failures", "TEXT"),
+			col("whois", "TEXT"),
+			col("logs", "TEXT"),
+			col("event_type", "TEXT NOT NULL DEFAULT 'ban'"),
+			colAlter("occurred_at", "DATETIME NOT NULL", "DATETIME NOT NULL DEFAULT ''"),
+			colAlter("created_at", "DATETIME NOT NULL", "DATETIME NOT NULL DEFAULT ''"),
+		},
+	},
+	{
+		name: "permanent_blocks",
+		columns: []columnDef{
+			pkCol("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+			colAlter("ip", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			colAlter("integration", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			colAlter("status", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			col("details", "TEXT"),
+			col("message", "TEXT"),
+			col("server_id", "TEXT"),
+			colAlter("created_at", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+			colAlter("updated_at", "TEXT NOT NULL", "TEXT NOT NULL DEFAULT ''"),
+		},
+		constraints: []string{"UNIQUE(ip, integration)"},
+	},
+}
+
+// Renders the CREATE TABLE IF NOT EXISTS statement for a table definition
+func (t tableDef) createStatement() string {
+	parts := make([]string, 0, len(t.columns)+len(t.constraints))
+	for _, c := range t.columns {
+		parts = append(parts, "\t"+c.name+" "+c.create)
+	}
+	parts = append(parts, t.constraints...)
+	return "CREATE TABLE IF NOT EXISTS " + t.name + " (\n" + strings.Join(parts, ",\n") + "\n);"
+}
+
+// Returns the column names an existing table currently has
+func tableColumns(ctx context.Context, table string) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect table %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	return columns, rows.Err()
+}
+
+// Adds every column the definition declares but the database does not have
+func reconcileColumns(ctx context.Context, t tableDef) error {
+	existing, err := tableColumns(ctx, t.name)
+	if err != nil {
+		return err
+	}
+	for _, c := range t.columns {
+		if existing[c.name] {
+			continue
+		}
+		if c.alter == "" {
+			return fmt.Errorf("database table %s is missing column %s, which cannot be added automatically; "+
+				"back up and remove the database file so it can be recreated", t.name, c.name)
+		}
+		if err := addColumnIfMissing(ctx, "ALTER TABLE "+t.name+" ADD COLUMN "+c.name+" "+c.alter); err != nil {
+			return fmt.Errorf("failed to add column %s.%s: %w", t.name, c.name, err)
+		}
+		log.Printf("database schema: added missing column %s.%s", t.name, c.name)
+	}
+	return nil
+}
+
 func ensureSchema(ctx context.Context) error {
 	if db == nil {
 		return errors.New("storage not initialised")
 	}
 
-	const createTables = `
-CREATE TABLE IF NOT EXISTS app_settings (
-	id INTEGER PRIMARY KEY CHECK (id = 1),
-	-- Basic app settings
-	language TEXT,
-	port INTEGER,
-	debug INTEGER,
-	restart_needed INTEGER,
-	-- Callback settings
-	callback_url TEXT,
-	callback_secret TEXT,
-	-- Alert settings
-	alert_countries TEXT,
-	email_alerts_for_bans INTEGER DEFAULT 1,
-	email_alerts_for_unbans INTEGER DEFAULT 0,
-	-- SMTP settings
-	smtp_host TEXT,
-	smtp_port INTEGER,
-	smtp_username TEXT,
-	smtp_password TEXT,
-	smtp_from TEXT,
-	smtp_use_tls INTEGER,
-	-- Fail2Ban DEFAULT settings
-	bantime_increment INTEGER,
-	default_jail_enable INTEGER,
-	ignore_ip TEXT,
-	bantime TEXT,
-	findtime TEXT,
-	maxretry INTEGER,
-	destemail TEXT,
-	banaction TEXT,
-	banaction_allports TEXT,
-	-- Advanced features
-	advanced_actions TEXT,
-	geoip_provider TEXT,
-	geoip_database_path TEXT,
-	max_log_lines INTEGER,
-	event_retention_days INTEGER DEFAULT 180,
-	-- Console output settings
-	console_output INTEGER DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS servers (
-	id TEXT PRIMARY KEY,
-	name TEXT,
-	type TEXT,
-	host TEXT,
-	port INTEGER,
-	socket_path TEXT,
-	config_path TEXT,
-	ssh_user TEXT,
-	ssh_key_path TEXT,
-	agent_url TEXT,
-	agent_secret TEXT,
-	hostname TEXT,
-	tags TEXT,
-	is_default INTEGER,
-	enabled INTEGER,
-	reverse_tunnel INTEGER DEFAULT 0,
-	tunnel_port INTEGER DEFAULT 0,
-	needs_restart INTEGER DEFAULT 0,
-	created_at TEXT,
-	updated_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS ban_events (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	server_id TEXT NOT NULL,
-	server_name TEXT NOT NULL,
-	jail TEXT NOT NULL,
-	ip TEXT NOT NULL,
-	country TEXT,
-	hostname TEXT,
-	failures TEXT,
-	whois TEXT,
-	logs TEXT,
-	event_type TEXT NOT NULL DEFAULT 'ban',
-	occurred_at DATETIME NOT NULL,
-	created_at DATETIME NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS permanent_blocks (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	ip TEXT NOT NULL,
-	integration TEXT NOT NULL,
-	status TEXT NOT NULL,
-	details TEXT,
-	message TEXT,
-	server_id TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL,
-	UNIQUE(ip, integration)
-);
-`
+	for _, table := range schemaTables {
+		if _, err := db.ExecContext(ctx, table.createStatement()); err != nil {
+			return fmt.Errorf("failed to create table %s: %w", table.name, err)
+		}
+		if err := reconcileColumns(ctx, table); err != nil {
+			return err
+		}
+	}
 
 	const createIndexes = `
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_id ON ban_events(server_id);
@@ -1628,35 +1733,6 @@ CREATE INDEX IF NOT EXISTS idx_perm_blocks_status ON permanent_blocks(status);
 CREATE INDEX IF NOT EXISTS idx_perm_blocks_updated_at ON permanent_blocks(updated_at);
 `
 
-	// Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS is a no-op on existing databases, so every later column needs an entry here
-	alterColumns := []string{
-		`ALTER TABLE app_settings ADD COLUMN console_output INTEGER DEFAULT 0`,
-		`ALTER TABLE app_settings ADD COLUMN smtp_insecure_skip_verify INTEGER DEFAULT 0`,
-		`ALTER TABLE app_settings ADD COLUMN smtp_auth_method TEXT DEFAULT 'auto'`,
-		`ALTER TABLE app_settings ADD COLUMN chain TEXT DEFAULT 'INPUT'`,
-		`ALTER TABLE app_settings ADD COLUMN bantime_rndtime TEXT DEFAULT ''`,
-		`ALTER TABLE app_settings ADD COLUMN bantime_maxtime TEXT DEFAULT ''`,
-		`ALTER TABLE app_settings ADD COLUMN bantime_factor TEXT DEFAULT ''`,
-		`ALTER TABLE app_settings ADD COLUMN bantime_overalljails INTEGER DEFAULT 0`,
-		`ALTER TABLE app_settings ADD COLUMN alert_provider TEXT DEFAULT 'email'`,
-		`ALTER TABLE app_settings ADD COLUMN webhook TEXT DEFAULT '{}'`,
-		`ALTER TABLE app_settings ADD COLUMN elasticsearch TEXT DEFAULT '{}'`,
-		`ALTER TABLE app_settings ADD COLUMN threat_intel TEXT DEFAULT '{}'`,
-		`ALTER TABLE servers ADD COLUMN config_path TEXT`,
-		`ALTER TABLE servers ADD COLUMN reverse_tunnel INTEGER DEFAULT 0`,
-		`ALTER TABLE app_settings ADD COLUMN event_retention_days INTEGER DEFAULT 180`,
-		`ALTER TABLE ban_events ADD COLUMN event_type TEXT NOT NULL DEFAULT 'ban'`,
-		`ALTER TABLE servers ADD COLUMN tunnel_port INTEGER DEFAULT 0`,
-	}
-
-	if _, err := db.ExecContext(ctx, createTables); err != nil {
-		return err
-	}
-	for _, ddl := range alterColumns {
-		if err := addColumnIfMissing(ctx, ddl); err != nil {
-			return err
-		}
-	}
 	if _, err := db.ExecContext(ctx, createIndexes); err != nil {
 		return err
 	}

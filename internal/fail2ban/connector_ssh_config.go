@@ -363,11 +363,13 @@ func parseLogpathProbe(out string) ([]string, error) {
 }
 
 func (sc *SSHConnector) TestLogpath(ctx context.Context, logpath string) ([]string, error) {
+	logpath, err := sanitizeLogpath(logpath)
+	if err != nil {
+		return nil, err
+	}
 	if logpath == "" {
 		return []string{}, nil
 	}
-
-	logpath = strings.TrimSpace(logpath)
 	hasWildcard := strings.ContainsAny(logpath, "*?[")
 
 	var script string

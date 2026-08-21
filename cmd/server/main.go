@@ -18,11 +18,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +36,9 @@ import (
 	"github.com/swissmakers/fail2ban-ui/pkg/web"
 )
 
+// How long in-flight requests get to finish before the process is killed
+const shutdownTimeout = 10 * time.Second
+
 // =========================================================================
 //  Entrypoint
 // =========================================================================
@@ -42,6 +48,8 @@ func main() {
 
 	web.SetBasePathFromEnv()
 	auth.SetSessionCookiePath(web.CookiePath())
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	defer func() {
 		if err := storage.Close(); err != nil {
@@ -84,8 +92,13 @@ func main() {
 		pruneBanEvents()
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
-		for range ticker.C {
-			pruneBanEvents()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pruneBanEvents()
+			}
 		}
 	}()
 
@@ -148,9 +161,30 @@ func main() {
 		Addr:    serverAddr,
 		Handler: web.StripBasePathHandler(router),
 	}
-	if err := server.ListenAndServe(); err != nil {
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+
+	select {
+	case err := <-serverErr:
 		log.Fatalf("Could not start server: %v\n", err)
+	case <-ctx.Done():
 	}
+
+	// Stop catching signals so a second one kills an unresponsive shutdown
+	stop()
+	log.Println("Shutdown signal received, stopping Fail2Ban-UI ...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("warning: HTTP server shutdown: %v", err)
+	}
+	fail2ban.GetManager().Close()
+	log.Println("Fail2Ban-UI stopped.")
 }
 
 func printWelcomeBanner(bindAddress, appPort string, isLOTRMode bool) {

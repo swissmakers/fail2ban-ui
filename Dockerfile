@@ -52,7 +52,8 @@ RUN set -eux; \
     apk update; \
     apk upgrade --no-cache; \
     apk add --no-cache \
-    bash curl wget whois tzdata jq ca-certificates htop fail2ban geoip openssh-client; \
+    bash curl wget whois tzdata jq ca-certificates htop fail2ban geoip openssh-client tini; \
+    test -x /sbin/tini; \
     adduser -D -u 1000 -G root fail2ban
 
 RUN mkdir -p /app /config /config/.ssh \
@@ -75,4 +76,6 @@ COPY --from=builder /app/fail2ban-ui /app/fail2ban-ui
 RUN chown fail2ban:0 /app/fail2ban-ui && chmod +x /app/fail2ban-ui
 
 EXPOSE 8080
-ENTRYPOINT ["/app/fail2ban-ui"]
+
+# tini runs as PID 1 and reaps orphaned processes
+ENTRYPOINT ["/sbin/tini", "--", "/app/fail2ban-ui"]

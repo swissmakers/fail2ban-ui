@@ -22,15 +22,15 @@ import (
 	"testing"
 )
 
-func TestSanitizeEmailHeaderStripsCRLF(t *testing.T) {
+func TestSanitizeHeaderValueStripsCRLFAndNUL(t *testing.T) {
 	t.Parallel()
-	in := "sshd\r\nBcc: attacker@evil.com"
-	got := sanitizeEmailHeader(in)
-	if strings.ContainsAny(got, "\r\n") {
-		t.Fatalf("sanitizeEmailHeader left CR/LF in %q", got)
+	in := "sshd\r\nBcc: attacker@evil.com\x00"
+	got := sanitizeHeaderValue(in)
+	if strings.ContainsAny(got, "\r\n\x00") {
+		t.Fatalf("sanitizeHeaderValue left CR/LF/NUL in %q", got)
 	}
 	if got != "sshdBcc: attacker@evil.com" {
-		t.Fatalf("sanitizeEmailHeader = %q", got)
+		t.Fatalf("sanitizeHeaderValue = %q", got)
 	}
 }
 

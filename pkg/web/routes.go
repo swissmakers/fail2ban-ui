@@ -97,6 +97,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		api.POST("/servers/:id/default", RequirePermission(PermissionAdmin), SetDefaultServerHandler)
 		api.GET("/ssh/keys", RequirePermission(PermissionAdmin), ListSSHKeysHandler)
 		api.POST("/servers/:id/test", RequirePermission(PermissionAdmin), TestServerHandler)
+		api.POST("/servers/:id/hostkey/accept", RequirePermission(PermissionAdmin), AcceptHostKeyHandler)
 
 		// Internal API to restart Fail2ban
 		api.POST("/fail2ban/restart", RequirePermission(PermissionAdmin), RestartFail2banHandler)

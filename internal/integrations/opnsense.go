@@ -22,10 +22,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"github.com/swissmakers/fail2ban-ui/internal/httpx"
 )
 
 type opnsenseIntegration struct{}
@@ -95,7 +97,11 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 	if err := ValidateIdentifier(cfg.Alias, "OPNsense alias"); err != nil {
 		return err
 	}
-	apiURL := strings.TrimSuffix(cfg.BaseURL, "/") + fmt.Sprintf("/api/firewall/alias_util/%s/%s", action, cfg.Alias)
+	base, err := url.Parse(cfg.BaseURL)
+	if err != nil {
+		return fmt.Errorf("invalid OPNsense base URL: %w", err)
+	}
+	apiURL := base.JoinPath("api", "firewall", "alias_util", action, cfg.Alias).String()
 	payload := map[string]string{
 		"address": ip,
 	}
@@ -104,7 +110,7 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 		return fmt.Errorf("failed to encode OPNsense payload: %w", err)
 	}
 
-	httpClient := integrationHTTPClient(10*time.Second, cfg.SkipTLSVerify)
+	httpClient := httpx.Client(10*time.Second, cfg.SkipTLSVerify)
 
 	reqLogger := "OPNsense"
 	if req.Logger != nil {
@@ -131,7 +137,7 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 		return fmt.Errorf("OPNsense API request to %s failed: %w (check base URL, network connectivity, and API credentials)", apiURL, err)
 	}
 	defer resp.Body.Close()
-	bodyBytes, _ := readLimitedResponse(resp.Body)
+	bodyBytes, _ := httpx.ReadLimited(resp.Body)
 	bodyStr := strings.TrimSpace(string(bodyBytes))
 
 	if resp.StatusCode >= 300 {

@@ -72,6 +72,8 @@ type Connector interface {
 	DeleteJail(ctx context.Context, jailName string) error
 	CreateFilter(ctx context.Context, filterName, content string) error
 	DeleteFilter(ctx context.Context, filterName string) error
+
+	Close() error
 }
 
 // =========================================================================
@@ -111,6 +113,12 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 	connectors := make(map[string]Connector)
 	defaultID := pickDefaultServerID(servers)
 
+	keep := make(map[string]struct{}, len(servers))
+	for _, srv := range servers {
+		keep[srv.ID] = struct{}{}
+	}
+	pruneHostKeyIssues(keep)
+
 	for _, srv := range servers {
 		if !srv.Enabled {
 			continue
@@ -118,19 +126,19 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 		if oldSSH, ok := old[srv.ID].(*SSHConnector); ok && sshTunnelConfigChanged(oldSSH, srv) {
 			_ = oldSSH.Close()
 		}
-		conn, err := newConnectorForServer(srv)
+		conn, err := NewConnector(srv)
 		if err != nil {
 			return fmt.Errorf("failed to initialise connector for %s (%s): %w", srv.Name, srv.ID, err)
 		}
 		connectors[srv.ID] = conn
 	}
 
-	// Tear down tunneled masters of servers that were removed or disabled.
+	// Tear down the SSH master of the server that were removed or disabled
 	for id, conn := range old {
 		if _, still := connectors[id]; still {
 			continue
 		}
-		if oldSSH, ok := conn.(*SSHConnector); ok && oldSSH.tunnelPort > 0 {
+		if oldSSH, ok := conn.(*SSHConnector); ok {
 			_ = oldSSH.Close()
 		}
 	}
@@ -139,6 +147,21 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 	m.defaultServerID = defaultID
 	m.syncTunnelMonitorLocked()
 	return nil
+}
+
+func (m *Manager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.tunnelMonStop != nil {
+		close(m.tunnelMonStop)
+		m.tunnelMonStop = nil
+	}
+	for id, conn := range m.connectors {
+		if err := conn.Close(); err != nil {
+			debugf("failed to close connector %s: %v", id, err)
+		}
+	}
+	m.connectors = make(map[string]Connector)
 }
 
 // Starts or stops the tunnel health monitor
@@ -367,7 +390,7 @@ func (m *Manager) SyncRemoteStartupConfig(ctx context.Context, perHostTimeout ti
 //  Connector Factory
 // =========================================================================
 
-func newConnectorForServer(server shared.Fail2banServer) (Connector, error) {
+func NewConnector(server shared.Fail2banServer) (Connector, error) {
 	switch server.Type {
 	case "local":
 		if isJailAutoMigrationEnabled() {

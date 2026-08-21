@@ -18,14 +18,10 @@ package integrations
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
@@ -51,6 +47,20 @@ type Request struct {
 
 // Matches only alphanumeric characters, hyphens, underscores and dots
 var safeIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+var safeESIndex = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,254}$`)
+
+func ValidateElasticsearchIndex(index string) error {
+	if index == "" {
+		return fmt.Errorf("elasticsearch index is required")
+	}
+	if !safeESIndex.MatchString(index) {
+		return fmt.Errorf("invalid elasticsearch index %q: use lowercase letters, digits, '.', '-' and '_'", index)
+	}
+	if strings.Contains(index, "..") {
+		return fmt.Errorf("elasticsearch index must not contain '..': %q", index)
+	}
+	return nil
+}
 
 // Validates that the string is a valid IPv4/IPv6 address or CIDR notation and contains no shell metacharacters.
 // Canonical implementation lives in shared (also used by the fail2ban connectors).
@@ -82,31 +92,6 @@ func ValidateOutboundURL(rawURL, label string) error {
 	return nil
 }
 
-// Caps how much of a firewall API response is read into memory, so a hostile or broken endpoint cannot exhaust memory.
-const maxIntegrationResponseBytes = 5 << 20 // 5 MiB
-
-// returns client for credential-bearing firewall API requests. Redirects are NOT followed, Go strips Authorization on cross-host
-// redirects but not custom headers (x-api-key), so following one would replay credentials to the redirect target.
-func integrationHTTPClient(timeout time.Duration, skipTLSVerify bool) *http.Client {
-	client := &http.Client{
-		Timeout: timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	if skipTLSVerify {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-	return client
-}
-
-// Reads at most maxIntegrationResponseBytes from a body.
-func readLimitedResponse(body io.Reader) ([]byte, error) {
-	return io.ReadAll(io.LimitReader(body, maxIntegrationResponseBytes))
-}
-
 // Validates that a user-supplied name (address list, alias, etc.) contains only safe characters and cannot be used for injection attacks.
 func ValidateIdentifier(name, label string) error {
 	if name == "" {
@@ -114,6 +99,9 @@ func ValidateIdentifier(name, label string) error {
 	}
 	if !safeIdentifier.MatchString(name) {
 		return fmt.Errorf("%s contains invalid characters: %q", label, name)
+	}
+	if name == "." || strings.Contains(name, "..") {
+		return fmt.Errorf("%s must not contain '..': %q", label, name)
 	}
 	return nil
 }
@@ -146,4 +134,3 @@ func Get(id string) (Integration, bool) {
 	integration, ok := registry[id]
 	return integration, ok
 }
-

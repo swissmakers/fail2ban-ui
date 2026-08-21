@@ -50,3 +50,29 @@ func TestValidateOutboundURL(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateIdentifierRejectsTraversal(t *testing.T) {
+	for _, ok := range []string{"fail2ban-permanent", "alias_1", "a.b.c", "list-42"} {
+		if err := ValidateIdentifier(ok, "id"); err != nil {
+			t.Errorf("ValidateIdentifier(%q) should pass: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "..", ".", "a..b", "../../etc", "a/b", "a b", "a;b"} {
+		if err := ValidateIdentifier(bad, "id"); err == nil {
+			t.Errorf("ValidateIdentifier(%q) should fail", bad)
+		}
+	}
+}
+
+func TestValidateElasticsearchIndex(t *testing.T) {
+	for _, ok := range []string{"fail2ban-events", "logs.app", "abc_123"} {
+		if err := ValidateElasticsearchIndex(ok); err != nil {
+			t.Errorf("ValidateElasticsearchIndex(%q) should pass: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "x/_search", "../..", "UPPER", "-leading", "a..b", "a?b", "a#b"} {
+		if err := ValidateElasticsearchIndex(bad); err == nil {
+			t.Errorf("ValidateElasticsearchIndex(%q) should fail", bad)
+		}
+	}
+}

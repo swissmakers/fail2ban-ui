@@ -41,6 +41,25 @@ func TestResolveLogpathVariablesAtPath_customRoot(t *testing.T) {
 	}
 }
 
+// Regression: values containing regex replacement metacharacters ($1, ${x})
+// must be substituted verbatim, not $-expanded.
+func TestResolveLogpathVariablesDollarValues(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	content := "dollar_dir = /var/log/$1/${site}\n"
+	if err := os.WriteFile(filepath.Join(root, "vars.local"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ResolveLogpathVariables("%(dollar_dir)s/app.log", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "/var/log/$1/${site}/app.log" {
+		t.Fatalf("dollar signs in values must survive substitution, got %q", got)
+	}
+}
+
 func writeConfigFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	full := filepath.Join(dir, name)

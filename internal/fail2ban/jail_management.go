@@ -31,49 +31,7 @@ import (
 var ErrLogpathInaccessible = errors.New("logpath directory not accessible to the connector")
 
 func ensureJailLocalFile(jailName, configPath string) error {
-	jailName = strings.TrimSpace(jailName)
-	if jailName == "" {
-		return fmt.Errorf("jail name cannot be empty")
-	}
-
-	jailDPath := JailDir(configPath)
-	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
-	if err != nil {
-		return err
-	}
-	confPath, err := resolveWithinDir(jailDPath, jailName, ".conf")
-	if err != nil {
-		return err
-	}
-
-	if _, err := os.Stat(localPath); err == nil {
-		debugf("Jail .local file already exists: %s", localPath)
-		return nil
-	}
-
-	if _, err := os.Stat(confPath); err == nil {
-		debugf("Copying jail config from .conf to .local: %s -> %s", confPath, localPath)
-		content, err := os.ReadFile(confPath)
-		if err != nil {
-			return fmt.Errorf("failed to read jail .conf file %s: %w", confPath, err)
-		}
-		if err := os.WriteFile(localPath, content, 0644); err != nil {
-			return fmt.Errorf("failed to write jail .local file %s: %w", localPath, err)
-		}
-		debugf("Successfully copied jail config to .local file")
-		return nil
-	}
-
-	debugf("Creating minimal jail .local file: %s", localPath)
-	if err := os.MkdirAll(jailDPath, 0755); err != nil {
-		return fmt.Errorf("failed to create jail.d directory: %w", err)
-	}
-	minimalContent := fmt.Sprintf("[%s]\n", jailName)
-	if err := os.WriteFile(localPath, []byte(minimalContent), 0644); err != nil {
-		return fmt.Errorf("failed to create jail .local file %s: %w", localPath, err)
-	}
-	debugf("Successfully created minimal jail .local file")
-	return nil
+	return ensureLocalConfigFile(jailKind, jailName, configPath)
 }
 
 // =========================================================================
@@ -81,47 +39,25 @@ func ensureJailLocalFile(jailName, configPath string) error {
 // =========================================================================
 
 func readJailConfigWithFallback(jailName, configPath string) (string, string, error) {
-	jailName = strings.TrimSpace(jailName)
-	if jailName == "" {
-		return "", "", fmt.Errorf("jail name cannot be empty")
-	}
-
-	jailDPath := JailDir(configPath)
-	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
+	content, path, found, err := readLocalConfigWithFallback(jailKind, jailName, configPath)
 	if err != nil {
 		return "", "", err
 	}
-	confPath, err := resolveWithinDir(jailDPath, jailName, ".conf")
-	if err != nil {
-		return "", "", err
+	if !found {
+		debugf("Neither .local nor .conf exists for jail %s, returning empty section", jailName)
+		return jailKind.seed(strings.TrimSpace(jailName)), path, nil
 	}
-
-	if content, err := os.ReadFile(localPath); err == nil {
-		debugf("Reading jail config from .local: %s", localPath)
-		return string(content), localPath, nil
-	}
-
-	if content, err := os.ReadFile(confPath); err == nil {
-		debugf("Reading jail config from .conf: %s", confPath)
-		return string(content), confPath, nil
-	}
-
-	debugf("Neither .local nor .conf exists for jail %s, returning empty section", jailName)
-	return fmt.Sprintf("[%s]\n", jailName), localPath, nil
+	return content, path, nil
 }
 
 // =========================================================================
 //  Validation
 // =========================================================================
 
-var invalidNameChars = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 var enabledTruePattern = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`)
 
 func ValidateJailName(name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return fmt.Errorf("jail name cannot be empty")
-	}
 
 	reservedNames := map[string]bool{
 		"DEFAULT":  true,
@@ -131,15 +67,7 @@ func ValidateJailName(name string) error {
 		return fmt.Errorf("jail name '%s' is reserved and cannot be used", name)
 	}
 
-	if invalidNameChars.MatchString(name) {
-		return fmt.Errorf("jail name '%s' contains invalid characters. Only alphanumeric characters, dashes, and underscores are allowed", name)
-	}
-
-	if name[0] == '-' {
-		return fmt.Errorf("jail name '%s' must not start with a dash", name)
-	}
-
-	return nil
+	return validateConfigName(name, "jail name")
 }
 
 // =========================================================================
@@ -147,30 +75,7 @@ func ValidateJailName(name string) error {
 // =========================================================================
 
 func ListJailFiles(directory string) ([]string, error) {
-	var files []string
-
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read jail directory %s: %w", directory, err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-
-		if strings.HasSuffix(name, ".local") || strings.HasSuffix(name, ".conf") {
-			fullPath := filepath.Join(directory, name)
-			files = append(files, fullPath)
-		}
-	}
-
-	return files, nil
+	return listConfigFiles(jailKind, directory)
 }
 
 // Returns all jails from the given config path's jail.d directory.
@@ -268,29 +173,7 @@ func CreateJail(jailName, content, configPath string) error {
 	if err := ValidateJailName(jailName); err != nil {
 		return err
 	}
-
-	jailDPath := JailDir(configPath)
-	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(jailDPath, 0755); err != nil {
-		return fmt.Errorf("failed to create jail.d directory: %w", err)
-	}
-
-	trimmed := strings.TrimSpace(content)
-	expectedSection := fmt.Sprintf("[%s]", jailName)
-	if !strings.HasPrefix(trimmed, expectedSection) {
-		content = expectedSection + "\n" + content
-	}
-
-	if err := os.WriteFile(localPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to create jail file %s: %w", localPath, err)
-	}
-
-	debugf("Created jail file: %s", localPath)
-	return nil
+	return createLocalConfigFile(jailKind, jailName, content, fmt.Sprintf("[%s]", jailName), configPath)
 }
 
 // =========================================================================
@@ -302,47 +185,7 @@ func DeleteJail(jailName, configPath string) error {
 	if err := ValidateJailName(jailName); err != nil {
 		return err
 	}
-
-	jailDPath := JailDir(configPath)
-	localPath, err := resolveWithinDir(jailDPath, jailName, ".local")
-	if err != nil {
-		return err
-	}
-	confPath, err := resolveWithinDir(jailDPath, jailName, ".conf")
-	if err != nil {
-		return err
-	}
-
-	var deletedFiles []string
-	var lastErr error
-
-	if _, err := os.Stat(localPath); err == nil {
-		if err := os.Remove(localPath); err != nil {
-			lastErr = fmt.Errorf("failed to delete jail file %s: %w", localPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, localPath)
-			debugf("Deleted jail file: %s", localPath)
-		}
-	}
-
-	if _, err := os.Stat(confPath); err == nil {
-		if err := os.Remove(confPath); err != nil {
-			lastErr = fmt.Errorf("failed to delete jail file %s: %w", confPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, confPath)
-			debugf("Deleted jail file: %s", confPath)
-		}
-	}
-
-	if len(deletedFiles) == 0 && lastErr == nil {
-		return fmt.Errorf("jail file %s or %s does not exist", localPath, confPath)
-	}
-
-	if lastErr != nil {
-		return lastErr
-	}
-
-	return nil
+	return deleteLocalConfigFiles(jailKind, jailName, configPath)
 }
 
 // Returns all jails from the given config path.
@@ -702,14 +545,37 @@ func SetJailConfig(jailName, content, configPath string) error {
 //  Logpath Operations
 // =========================================================================
 
+// Glob variant of shared.ValidateAbsolutePath's charset: same allowlist plus
+// the glob metacharacters '*', '?' and '[]' that logpaths may contain.
+var safeLogpathRe = regexp.MustCompile(`^[A-Za-z0-9 ._/*?\[\]-]+$`)
+
+func sanitizeLogpath(logpath string) (string, error) {
+	logpath = strings.TrimSpace(logpath)
+	if logpath == "" {
+		return "", nil
+	}
+	if strings.ContainsRune(logpath, 0) {
+		return "", fmt.Errorf("invalid log path")
+	}
+	if !filepath.IsAbs(logpath) {
+		return "", fmt.Errorf("log path %q must be absolute", logpath)
+	}
+	if !safeLogpathRe.MatchString(logpath) {
+		return "", fmt.Errorf("log path %q contains unsupported characters", logpath)
+	}
+	if strings.Contains(logpath, "..") {
+		return "", fmt.Errorf("log path %q must not contain '..'", logpath)
+	}
+	return logpath, nil
+}
+
 func TestLogpath(logpath string) ([]string, error) {
+	logpath, err := sanitizeLogpath(logpath)
+	if err != nil {
+		return nil, err
+	}
 	if logpath == "" {
 		return []string{}, nil
-	}
-
-	logpath = strings.TrimSpace(logpath)
-	if strings.ContainsRune(logpath, 0) {
-		return nil, fmt.Errorf("invalid log path")
 	}
 	hasWildcard := strings.ContainsAny(logpath, "*?[")
 

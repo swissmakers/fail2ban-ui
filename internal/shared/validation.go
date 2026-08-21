@@ -36,6 +36,18 @@ func ValidateIP(ip string) error {
 	return fmt.Errorf("invalid IP address or CIDR: %q", ip)
 }
 
+func IsReservedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate()
+}
+
+func ValidatePort(port int) error {
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("invalid port %d", port)
+	}
+	return nil
+}
+
 // Splits a comma-separated string into trimmed, non-empty entries.
 func SplitCommaList(value string) []string {
 	if strings.TrimSpace(value) == "" {

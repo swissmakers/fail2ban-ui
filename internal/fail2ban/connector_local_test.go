@@ -106,9 +106,30 @@ exit 255
 	if !strings.Contains(err.Error(), "full configuration tree") {
 		t.Fatalf("expected the incomplete-mount hint, got: %v", err)
 	}
-	// The auto-disable ladder in handlers greps for "output:" in the error.
-	if !strings.Contains(err.Error(), "output:") {
-		t.Fatalf("reload errors must keep the output: marker for the recovery ladder, got: %v", err)
+	output, ok := CommandOutput(err)
+	if !ok {
+		t.Fatalf("reload errors must carry a *CommandError for the recovery ladder, got: %v", err)
+	}
+	if !strings.Contains(output, "Found no accessible config files") {
+		t.Fatalf("captured command output is missing the daemon message, got: %q", output)
+	}
+}
+
+func TestLocalCommandErrorsAreNotLabelledSSH(t *testing.T) {
+	withFakeBinary(t, "fail2ban-client", `echo "boom" >&2
+exit 1
+`)
+	lc := testLocalConnector(t)
+
+	_, err := lc.GetBannedIPs(context.Background(), "sshd")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(err.Error(), "ssh command failed") {
+		t.Fatalf("local failures must not be reported as ssh failures, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "fail2ban-client command failed") {
+		t.Fatalf("expected the fail2ban-client label, got: %v", err)
 	}
 }
 

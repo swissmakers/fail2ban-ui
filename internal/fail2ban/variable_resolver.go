@@ -318,15 +318,14 @@ func resolveVariableRecursive(varName string, visited map[string]bool, src varia
 			}
 
 			debugf("resolveVariableRecursive: resolved '%s' to '%s' for '%s'", nestedVar, nestedValue, varName)
-			pattern := fmt.Sprintf("%%\\(%s\\)s", regexp.QuoteMeta(nestedVar))
-			re := regexp.MustCompile(pattern)
+			token := "%(" + nestedVar + ")s"
 			beforeReplace := resolved
-			resolved = re.ReplaceAllString(resolved, nestedValue)
-			debugf("resolveVariableRecursive: replaced pattern '%s' in '%s' with '%s', result: '%s'", pattern, beforeReplace, nestedValue, resolved)
+			resolved = strings.ReplaceAll(resolved, token, nestedValue)
+			debugf("resolveVariableRecursive: replaced token '%s' in '%s' with '%s', result: '%s'", token, beforeReplace, nestedValue, resolved)
 
 			if beforeReplace == resolved {
-				debugf("resolveVariableRecursive: WARNING - replacement did not change string! Pattern: '%s', Before: '%s', After: '%s'", pattern, beforeReplace, resolved)
-				return "", fmt.Errorf("failed to replace variable '%s' in '%s': pattern '%s' did not match", nestedVar, beforeReplace, pattern)
+				debugf("resolveVariableRecursive: WARNING - replacement did not change string! Token: '%s', Before: '%s', After: '%s'", token, beforeReplace, resolved)
+				return "", fmt.Errorf("failed to replace variable '%s' in '%s': token '%s' did not match", nestedVar, beforeReplace, token)
 			}
 		}
 		remainingVars := extractVariablesFromString(resolved)
@@ -374,12 +373,10 @@ func resolveLogpathVariablesFrom(logpath string, src variableSource) (string, er
 			}
 
 			debugf("ResolveLogpathVariables: resolved variable '%s' to '%s'", varName, varValue)
-
-			pattern := fmt.Sprintf("%%\\(%s\\)s", regexp.QuoteMeta(varName))
-			re := regexp.MustCompile(pattern)
+			token := "%(" + varName + ")s"
 			beforeReplace := resolved
-			resolved = re.ReplaceAllString(resolved, varValue)
-			debugf("ResolveLogpathVariables: replaced pattern '%s' in '%s' with '%s', result: '%s'", pattern, beforeReplace, varValue, resolved)
+			resolved = strings.ReplaceAll(resolved, token, varValue)
+			debugf("ResolveLogpathVariables: replaced token '%s' in '%s' with '%s', result: '%s'", token, beforeReplace, varValue, resolved)
 		}
 
 		iteration++
