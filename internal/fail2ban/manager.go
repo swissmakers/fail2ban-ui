@@ -67,6 +67,12 @@ type Connector interface {
 	// ui-custom-action marker, which indicates it is managed by Fail2ban-UI.
 	CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error)
 
+	// IgnoreIP operations (per-jail)
+	// Returns the configured ignoreip entries for the specified jail.
+	GetJailIgnoreIPs(ctx context.Context, jail string) ([]string, error)
+	// Sets the per-jail ignoreip list and reloads fail2ban to apply.
+	SetJailIgnoreIPs(ctx context.Context, jail string, ips []string) error
+
 	// Jail and filter creation/deletion
 	CreateJail(ctx context.Context, jailName, content string) error
 	DeleteJail(ctx context.Context, jailName string) error

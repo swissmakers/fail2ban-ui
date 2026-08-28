@@ -63,6 +63,11 @@ func renderIndexPage(c *gin.Context) {
 	}
 
 	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
+	allowedIPEnabled := allowedIPFeatureEnabled()
+	allowedIPMinAccess := os.Getenv("ALLOWED_IP_MIN_ACCESS")
+	if allowedIPMinAccess == "" {
+		allowedIPMinAccess = "support"
+	}
 
 	urlPrefix := BasePath()
 
@@ -77,6 +82,8 @@ func renderIndexPage(c *gin.Context) {
 		"oidcEnabled":        oidcEnabled,
 		"skipLoginPage":      skipLoginPage,
 		"URLPrefix":          urlPrefix,
+		"allowedIPEnabled":   allowedIPEnabled,
+		"allowedIPMinAccess": allowedIPMinAccess,
 	})
 }
 

@@ -255,6 +255,41 @@ func (lc *LocalConnector) DeleteFilter(ctx context.Context, filterName string) e
 	return DeleteFilter(filterName, lc.configPath())
 }
 
+// =========================================================================
+//  IgnoreIP Operations (Per-Jail)
+// =========================================================================
+
+// GetJailIgnoreIPs reads the per-jail ignoreip list from the jail's config file.
+func (lc *LocalConnector) GetJailIgnoreIPs(ctx context.Context, jail string) ([]string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return nil, err
+	}
+	content, _, err := lc.GetJailConfig(ctx, jail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	return parseIgnoreIPsFromConfig(content, jail), nil
+}
+
+// SetJailIgnoreIPs sets the per-jail ignoreip list, writes it back to the config file, and reloads fail2ban.
+func (lc *LocalConnector) SetJailIgnoreIPs(ctx context.Context, jail string, ips []string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	content, _, err := lc.GetJailConfig(ctx, jail)
+	if err != nil {
+		return fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	newContent := setIgnoreIPsInConfig(content, jail, ips)
+	if err := lc.SetJailConfig(ctx, jail, newContent); err != nil {
+		return fmt.Errorf("failed to write jail config for %s: %w", jail, err)
+	}
+	if err := lc.Reload(ctx); err != nil {
+		return fmt.Errorf("failed to reload fail2ban after setting ignoreip for %s: %w", jail, err)
+	}
+	return nil
+}
+
 func (lc *LocalConnector) Close() error { return nil }
 
 func (lc *LocalConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {

@@ -17,6 +17,8 @@
 package web
 
 import (
+	"os"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -116,6 +118,21 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// WebSocket endpoint
 		api.GET("/ws", RequirePermission(PermissionRead), WebSocketHandler(hub))
+
+		// Allowed IP Management (ignoreip per-jail)
+		if allowedIPFeatureEnabled() {
+			ignoreIPMinAccess := os.Getenv("ALLOWED_IP_MIN_ACCESS")
+			if ignoreIPMinAccess == "" {
+				ignoreIPMinAccess = "support"
+			}
+			ignoreIPWritePerm := PermissionBan
+			if ignoreIPMinAccess == "admin" {
+				ignoreIPWritePerm = PermissionAdmin
+			}
+			api.GET("/ignoreips", RequirePermission(PermissionRead), ListAllowedIPsHandler)
+			api.POST("/ignoreips", RequirePermission(ignoreIPWritePerm), AddAllowedIPHandler)
+			api.DELETE("/ignoreips", RequirePermission(ignoreIPWritePerm), DeleteAllowedIPHandler)
+		}
 
 		// API to healthchecks (mainly used by agent)
 		api.GET("/healthcheck/callback", HealthcheckCallbackSecret)

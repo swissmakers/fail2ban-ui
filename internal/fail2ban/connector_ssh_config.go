@@ -338,6 +338,41 @@ func (sc *SSHConnector) SetJailConfig(ctx context.Context, jail, content string)
 	return sc.writeConfigOverride(ctx, JailDir(sc.getFail2banPath(ctx)), jail, content, "jail")
 }
 
+// =========================================================================
+//  IgnoreIP Operations (Per-Jail)
+// =========================================================================
+
+// GetJailIgnoreIPs reads the per-jail ignoreip list from the remote jail config file.
+func (sc *SSHConnector) GetJailIgnoreIPs(ctx context.Context, jail string) ([]string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return nil, err
+	}
+	config, _, err := sc.GetJailConfig(ctx, jail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	return parseIgnoreIPsFromConfig(config, jail), nil
+}
+
+// SetJailIgnoreIPs sets the per-jail ignoreip list, writes it remotely, and reloads fail2ban.
+func (sc *SSHConnector) SetJailIgnoreIPs(ctx context.Context, jail string, ips []string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	config, _, err := sc.GetJailConfig(ctx, jail)
+	if err != nil {
+		return fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	newContent := setIgnoreIPsInConfig(config, jail, ips)
+	if err := sc.SetJailConfig(ctx, jail, newContent); err != nil {
+		return fmt.Errorf("failed to write jail config for %s: %w", jail, err)
+	}
+	if err := sc.Reload(ctx); err != nil {
+		return fmt.Errorf("failed to reload fail2ban after setting ignoreip for %s: %w", jail, err)
+	}
+	return nil
+}
+
 const (
 	logpathMarkerNoAccess = "F2BUI_NOACCESS"
 	logpathMarkerNoDir    = "F2BUI_NODIR"
