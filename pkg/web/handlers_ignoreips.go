@@ -42,8 +42,10 @@ const (
 	globalJailSentinel   = "__global__"
 )
 
+// Allowed-IP management is enabled unless explicitly disabled with
+// ALLOWED_IP_ENABLED=false.
 func allowedIPFeatureEnabled() bool {
-	return os.Getenv("ALLOWED_IP_ENABLED") == "true"
+	return os.Getenv("ALLOWED_IP_ENABLED") != "false"
 }
 
 func requireAllowedIPFeature(c *gin.Context) bool {

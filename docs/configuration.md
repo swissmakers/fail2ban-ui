@@ -88,6 +88,8 @@ The UI checks every tunnel's SSH master connection every 45 seconds and automati
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTODARK` | `false` | When `true`, enables automatic dark mode based on the browser or OS preference. The default remains light mode. |
+| `ALLOWED_IP_ENABLED` | `true` | Enables Allowed IP Management. Set to `false` to hide the UI section and disable its API endpoints. |
+| `ALLOWED_IP_MIN_ACCESS` | `support` | Set to `admin` to require administrator access for adding or removing allowed addresses; otherwise the existing ban permission is used. |
 
 ## Container runtime marker
 

@@ -75,6 +75,11 @@ func TestPaginateIgnoreIPs(t *testing.T) {
 }
 
 func TestAllowedIPFeatureEnabled(t *testing.T) {
+	t.Setenv("ALLOWED_IP_ENABLED", "")
+	if !allowedIPFeatureEnabled() {
+		t.Fatal("the feature should be enabled by default")
+	}
+
 	t.Setenv("ALLOWED_IP_ENABLED", "true")
 	if !allowedIPFeatureEnabled() {
 		t.Fatal("ALLOWED_IP_ENABLED=true should enable the feature")
