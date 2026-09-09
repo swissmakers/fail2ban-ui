@@ -17,7 +17,6 @@
 package web
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net"
@@ -39,33 +38,45 @@ import (
 const (
 	defaultIgnoreIPLimit = 10
 	maxIgnoreIPLimit     = 100
-	globalJailSentinel   = "__global__"
 )
 
-// Allowed-IP management is enabled unless explicitly disabled with
-// ALLOWED_IP_ENABLED=false.
-func allowedIPFeatureEnabled() bool {
-	return os.Getenv("ALLOWED_IP_ENABLED") != "false"
+const (
+	jailAllowedIPManagementEnabledEnv   = "JAIL_ALLOWED_IP_MANAGEMENT_ENABLED"
+	jailAllowedIPManagementMinAccessEnv = "JAIL_ALLOWED_IP_MANAGEMENT_MIN_ACCESS"
+)
+
+// Jail-specific allowed-IP management is enabled unless explicitly disabled
+// with JAIL_ALLOWED_IP_MANAGEMENT_ENABLED=false.
+func jailAllowedIPManagementEnabled() bool {
+	return os.Getenv(jailAllowedIPManagementEnabledEnv) != "false"
 }
 
-func requireAllowedIPFeature(c *gin.Context) bool {
-	if allowedIPFeatureEnabled() {
+func jailAllowedIPManagementMinAccess() string {
+	minAccess := os.Getenv(jailAllowedIPManagementMinAccessEnv)
+	if minAccess == "admin" {
+		return "admin"
+	}
+	return "support"
+}
+
+func requireJailAllowedIPManagement(c *gin.Context) bool {
+	if jailAllowedIPManagementEnabled() {
 		return true
 	}
-	c.JSON(http.StatusNotFound, gin.H{"error": "Allowed IP Management is disabled"})
+	c.JSON(http.StatusNotFound, gin.H{"error": "Jail Allowed IP Management is disabled"})
 	return false
 }
 
-// ListAllowedIPsHandler returns ignoreip entries for a jail or the global list.
-// Query parameters: serverId, jail (or __global__), limit, offset, and q.
-func ListAllowedIPsHandler(c *gin.Context) {
-	if !requireAllowedIPFeature(c) {
+// ListJailAllowedIPsHandler returns global and jail-specific ignoreip entries
+// for the requested jail. Query parameters: serverId, limit, offset, and q.
+func ListJailAllowedIPsHandler(c *gin.Context) {
+	if !requireJailAllowedIPManagement(c) {
 		return
 	}
 
-	jail := strings.TrimSpace(c.Query("jail"))
+	jail := strings.TrimSpace(c.Param("jail"))
 	if jail == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "jail parameter is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "jail path parameter is required"})
 		return
 	}
 
@@ -84,19 +95,6 @@ func ListAllowedIPsHandler(c *gin.Context) {
 
 	search := strings.TrimSpace(c.Query("q"))
 	settings := config.GetSettings()
-	if jail == globalJailSentinel {
-		globalIPs := filterIgnoreIPs(settings.IgnoreIPs, search)
-		paged, total, hasMore := paginateIgnoreIPs(globalIPs, offset, limit)
-		c.JSON(http.StatusOK, gin.H{
-			"jail":      globalJailSentinel,
-			"globalIps": []string{},
-			"jailIps":   paged,
-			"total":     total,
-			"hasMore":   hasMore,
-		})
-		return
-	}
-
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, buildErrorResponse(err, "dashboard.errors.summary_failed"))
@@ -107,15 +105,14 @@ func ListAllowedIPsHandler(c *gin.Context) {
 	if globalIPs == nil {
 		globalIPs = []string{}
 	}
-	jailIPs, err := conn.GetJailIgnoreIPs(c.Request.Context(), jail)
+	jailIPs, err := fail2ban.GetJailIgnoreIPs(c.Request.Context(), conn, jail)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "ignoreip.error.read_failed"))
 		return
 	}
 
-	// Per-jail files written by this feature include the global entries. Keep
-	// those global values read-only in the response and expose only the
-	// jail-specific values as removable entries.
+	// Global settings apply to every jail. Keep those entries read-only in the
+	// response and expose only jail-specific values as removable entries.
 	jailIPs = subtractIgnoreIPs(jailIPs, globalIPs)
 	filteredGlobals := filterIgnoreIPs(globalIPs, search)
 	filteredJailIPs := filterIgnoreIPs(jailIPs, search)
@@ -204,22 +201,25 @@ func isValidHostname(host string) bool {
 	return true
 }
 
-// AddAllowedIPHandler adds an address to the global list or a jail-specific list.
-func AddAllowedIPHandler(c *gin.Context) {
-	if !requireAllowedIPFeature(c) {
+// AddJailAllowedIPHandler adds an address to a jail-specific ignoreip list.
+func AddJailAllowedIPHandler(c *gin.Context) {
+	if !requireJailAllowedIPManagement(c) {
 		return
 	}
 
 	var req struct {
-		Jail    string `json:"jail" binding:"required"`
 		Netmask string `json:"netmask" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "jail and address are required", "messageKey": "ignoreip.error.missing_fields"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "address is required", "messageKey": "ignoreip.error.missing_fields"})
 		return
 	}
 
-	req.Jail = strings.TrimSpace(req.Jail)
+	jail := strings.TrimSpace(c.Param("jail"))
+	if jail == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "jail path parameter is required", "messageKey": "ignoreip.error.missing_fields"})
+		return
+	}
 	req.Netmask = strings.TrimSpace(req.Netmask)
 	if !isValidIgnoreEntry(req.Netmask) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Invalid IP address, CIDR notation, or hostname", "messageKey": "ignoreip.error.invalid_format"})
@@ -227,36 +227,20 @@ func AddAllowedIPHandler(c *gin.Context) {
 	}
 
 	settings := config.GetSettings()
-	if req.Jail == globalJailSentinel {
-		for _, ip := range settings.IgnoreIPs {
-			if strings.EqualFold(ip, req.Netmask) {
-				c.JSON(http.StatusConflict, gin.H{"error": "Address already exists in the global ignore list", "messageKey": "ignoreip.error.already_exists_global"})
-				return
-			}
-		}
-
-		oldGlobals := append([]string(nil), settings.IgnoreIPs...)
-		newGlobals := append(append([]string(nil), settings.IgnoreIPs...), req.Netmask)
-		newSettings := settings
-		newSettings.IgnoreIPs = newGlobals
-		if _, err := config.UpdateSettings(newSettings); err != nil {
-			c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "ignoreip.error.write_failed"))
-			return
-		}
-
-		warnings := syncPerJailIgnoreIPsAfterGlobalChange(c.Request.Context(), oldGlobals, newGlobals)
-		logAllowedIPChange(c, "added", req.Netmask, "global ignore list", "")
-		c.JSON(http.StatusOK, gin.H{"message": "Allowed IP added to global ignore list", "address": req.Netmask, "warnings": warnings})
-		return
-	}
-
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, buildErrorResponse(err, "dashboard.errors.summary_failed"))
 		return
 	}
 
-	currentIPs, err := conn.GetJailIgnoreIPs(c.Request.Context(), req.Jail)
+	for _, ip := range settings.IgnoreIPs {
+		if strings.EqualFold(ip, req.Netmask) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Address already exists in the global ignore list", "messageKey": "ignoreip.error.already_exists_global"})
+			return
+		}
+	}
+
+	currentIPs, err := fail2ban.GetJailIgnoreIPs(c.Request.Context(), conn, jail)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "ignoreip.error.read_failed"))
 		return
@@ -269,52 +253,28 @@ func AddAllowedIPHandler(c *gin.Context) {
 		}
 	}
 
-	newIPs := make([]string, 0, len(settings.IgnoreIPs)+len(perJailIPs)+1)
-	newIPs = append(newIPs, settings.IgnoreIPs...)
+	newIPs := make([]string, 0, len(perJailIPs)+1)
 	newIPs = append(newIPs, perJailIPs...)
 	newIPs = append(newIPs, req.Netmask)
-	if err := conn.SetJailIgnoreIPs(c.Request.Context(), req.Jail, newIPs); err != nil {
+	if err := fail2ban.SetJailIgnoreIPs(c.Request.Context(), conn, jail, newIPs); err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "ignoreip.error.write_failed"))
 		return
 	}
 
-	logAllowedIPChange(c, "added", req.Netmask, "jail", fmt.Sprintf("%s on server %s", req.Jail, conn.Server().ID))
+	logAllowedIPChange(c, "added", req.Netmask, "jail", fmt.Sprintf("%s on server %s", jail, conn.Server().ID))
 	c.JSON(http.StatusOK, gin.H{"message": "Allowed IP added successfully", "address": req.Netmask})
 }
 
-// DeleteAllowedIPHandler removes an address from the global list or a
-// jail-specific list.
-func DeleteAllowedIPHandler(c *gin.Context) {
-	if !requireAllowedIPFeature(c) {
+// DeleteJailAllowedIPHandler removes an address from a jail-specific ignoreip list.
+func DeleteJailAllowedIPHandler(c *gin.Context) {
+	if !requireJailAllowedIPManagement(c) {
 		return
 	}
 
-	jail := strings.TrimSpace(c.Query("jail"))
+	jail := strings.TrimSpace(c.Param("jail"))
 	netmask := strings.TrimSpace(c.Query("netmask"))
 	if jail == "" || netmask == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "jail and address query parameters are required", "messageKey": "ignoreip.error.missing_fields"})
-		return
-	}
-
-	if jail == globalJailSentinel {
-		settings := config.GetSettings()
-		oldGlobals := append([]string(nil), settings.IgnoreIPs...)
-		newGlobals, found := removeIgnoreIP(settings.IgnoreIPs, netmask)
-		if !found {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Address not found in the global ignore list", "messageKey": "ignoreip.error.not_found"})
-			return
-		}
-
-		newSettings := settings
-		newSettings.IgnoreIPs = newGlobals
-		if _, err := config.UpdateSettings(newSettings); err != nil {
-			c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "ignoreip.error.write_failed"))
-			return
-		}
-
-		warnings := syncPerJailIgnoreIPsAfterGlobalChange(c.Request.Context(), oldGlobals, newGlobals)
-		logAllowedIPChange(c, "removed", netmask, "global ignore list", "")
-		c.JSON(http.StatusOK, gin.H{"message": "Address removed from global ignore list", "address": netmask, "warnings": warnings})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "jail path and address query parameters are required", "messageKey": "ignoreip.error.missing_fields"})
 		return
 	}
 
@@ -324,7 +284,7 @@ func DeleteAllowedIPHandler(c *gin.Context) {
 		return
 	}
 
-	currentIPs, err := conn.GetJailIgnoreIPs(c.Request.Context(), jail)
+	currentIPs, err := fail2ban.GetJailIgnoreIPs(c.Request.Context(), conn, jail)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "ignoreip.error.read_failed"))
 		return
@@ -338,10 +298,7 @@ func DeleteAllowedIPHandler(c *gin.Context) {
 		return
 	}
 
-	mergedIPs := make([]string, 0, len(settings.IgnoreIPs)+len(newPerJailIPs))
-	mergedIPs = append(mergedIPs, settings.IgnoreIPs...)
-	mergedIPs = append(mergedIPs, newPerJailIPs...)
-	if err := conn.SetJailIgnoreIPs(c.Request.Context(), jail, mergedIPs); err != nil {
+	if err := fail2ban.SetJailIgnoreIPs(c.Request.Context(), conn, jail, newPerJailIPs); err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "ignoreip.error.write_failed"))
 		return
 	}
@@ -361,77 +318,6 @@ func removeIgnoreIP(ips []string, value string) ([]string, bool) {
 		result = append(result, ip)
 	}
 	return result, found
-}
-
-// syncPerJailIgnoreIPsAfterGlobalChange updates each managed connector after
-// the global ignoreip list changes. Existing jail-specific values are retained.
-func syncPerJailIgnoreIPsAfterGlobalChange(ctx context.Context, oldGlobals, newGlobals []string) []string {
-	warnings := make([]string, 0)
-	oldSet := make(map[string]struct{}, len(oldGlobals))
-	for _, ip := range oldGlobals {
-		oldSet[strings.ToLower(ip)] = struct{}{}
-	}
-
-	for _, conn := range fail2ban.GetManager().Connectors() {
-		serverName := conn.Server().Name
-		if serverName == "" {
-			serverName = conn.Server().ID
-		}
-
-		if err := conn.UpdateDefaultSettings(ctx); err != nil {
-			msg := fmt.Sprintf("Failed to update DEFAULT ignoreip on %s: %v", serverName, err)
-			config.DebugLog("[AllowedIP] %s", msg)
-			warnings = append(warnings, msg)
-		} else if err := conn.Reload(ctx); err != nil {
-			msg := fmt.Sprintf("Updated DEFAULT ignoreip on %s, but reload failed: %v", serverName, err)
-			config.DebugLog("[AllowedIP] %s", msg)
-			warnings = append(warnings, msg)
-		}
-
-		jailInfos, err := conn.GetJailInfos(ctx)
-		if err != nil {
-			msg := fmt.Sprintf("Failed to list jails on %s for global sync: %v", serverName, err)
-			config.DebugLog("[AllowedIP] %s", msg)
-			warnings = append(warnings, msg)
-			continue
-		}
-		for _, jailInfo := range jailInfos {
-			rawIPs, err := conn.GetJailIgnoreIPs(ctx, jailInfo.JailName)
-			if err != nil {
-				msg := fmt.Sprintf("Failed to read ignoreip for jail %s on %s: %v", jailInfo.JailName, serverName, err)
-				config.DebugLog("[AllowedIP] %s", msg)
-				warnings = append(warnings, msg)
-				continue
-			}
-
-			perJailIPs := make([]string, 0, len(rawIPs))
-			hadOldGlobal := false
-			for _, ip := range rawIPs {
-				if _, isOldGlobal := oldSet[strings.ToLower(ip)]; isOldGlobal {
-					hadOldGlobal = true
-					continue
-				}
-				perJailIPs = append(perJailIPs, ip)
-			}
-
-			// Do not introduce a jail-level override for a jail that was never
-			// touched by allowed-IP management. An existing override consisting
-			// of old global values must be updated so it does not mask DEFAULT.
-			if !hadOldGlobal && len(perJailIPs) == 0 {
-				continue
-			}
-
-			mergedIPs := make([]string, 0, len(newGlobals)+len(perJailIPs))
-			mergedIPs = append(mergedIPs, newGlobals...)
-			mergedIPs = append(mergedIPs, perJailIPs...)
-			if err := conn.SetJailIgnoreIPs(ctx, jailInfo.JailName, mergedIPs); err != nil {
-				msg := fmt.Sprintf("Failed to update jail %s on %s after global change: %v", jailInfo.JailName, serverName, err)
-				config.DebugLog("[AllowedIP] %s", msg)
-				warnings = append(warnings, msg)
-			}
-		}
-	}
-	return warnings
 }
 
 func logAllowedIPChange(c *gin.Context, action, address, scope, location string) {

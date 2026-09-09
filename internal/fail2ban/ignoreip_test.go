@@ -36,7 +36,7 @@ ignoreip = 127.0.0.1
 
 [sshd]
 enabled = true
-ignoreip = 10.0.0.0/8 host.example # comment
+ignoreip = %(known/ignoreip)s 10.0.0.0/8 host.example # comment
 
 [nginx]
 ignoreip = 192.0.2.1
@@ -77,5 +77,13 @@ func TestSetIgnoreIPsInConfigInsertsMissingEntry(t *testing.T) {
 	want := "[sshd]\nignoreip = 203.0.113.10\nenabled = true\n"
 	if got != want {
 		t.Fatalf("setIgnoreIPsInConfig() = %q, want %q", got, want)
+	}
+}
+
+func TestWithInheritedIgnoreIPs(t *testing.T) {
+	got := withInheritedIgnoreIPs([]string{"%(known/ignoreip)s", "203.0.113.10", ""})
+	want := []string{"%(known/ignoreip)s", "203.0.113.10"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("withInheritedIgnoreIPs() = %#v, want %#v", got, want)
 	}
 }

@@ -16,11 +16,7 @@
 
 package web
 
-import (
-	"os"
-
-	"github.com/gin-gonic/gin"
-)
+import "github.com/gin-gonic/gin"
 
 // =========================================================================
 //  Route Registration
@@ -119,19 +115,15 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		// WebSocket endpoint
 		api.GET("/ws", RequirePermission(PermissionRead), WebSocketHandler(hub))
 
-		// Allowed IP Management (ignoreip per-jail)
-		if allowedIPFeatureEnabled() {
-			ignoreIPMinAccess := os.Getenv("ALLOWED_IP_MIN_ACCESS")
-			if ignoreIPMinAccess == "" {
-				ignoreIPMinAccess = "support"
-			}
+		// Jail Allowed IP Management (per-jail ignoreip)
+		if jailAllowedIPManagementEnabled() {
 			ignoreIPWritePerm := PermissionBan
-			if ignoreIPMinAccess == "admin" {
+			if jailAllowedIPManagementMinAccess() == "admin" {
 				ignoreIPWritePerm = PermissionAdmin
 			}
-			api.GET("/ignoreips", RequirePermission(PermissionRead), ListAllowedIPsHandler)
-			api.POST("/ignoreips", RequirePermission(ignoreIPWritePerm), AddAllowedIPHandler)
-			api.DELETE("/ignoreips", RequirePermission(ignoreIPWritePerm), DeleteAllowedIPHandler)
+			api.GET("/jails/:jail/ignoreips", RequirePermission(PermissionRead), ListJailAllowedIPsHandler)
+			api.POST("/jails/:jail/ignoreips", RequirePermission(ignoreIPWritePerm), AddJailAllowedIPHandler)
+			api.DELETE("/jails/:jail/ignoreips", RequirePermission(ignoreIPWritePerm), DeleteJailAllowedIPHandler)
 		}
 
 		// API to healthchecks (mainly used by agent)

@@ -88,8 +88,8 @@ The UI checks every tunnel's SSH master connection every 45 seconds and automati
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTODARK` | `false` | When `true`, enables automatic dark mode based on the browser or OS preference. The default remains light mode. |
-| `ALLOWED_IP_ENABLED` | `true` | Enables Allowed IP Management. Set to `false` to hide the UI section and disable its API endpoints. |
-| `ALLOWED_IP_MIN_ACCESS` | `support` | Set to `admin` to require administrator access for adding or removing allowed addresses; otherwise the existing ban permission is used. |
+| `JAIL_ALLOWED_IP_MANAGEMENT_ENABLED` | `true` | Enables jail-specific Allowed IP Management. Set to `false` to hide the dashboard section and disable the jail-specific API endpoints. Global ignore IPs remain available in Settings. |
+| `JAIL_ALLOWED_IP_MANAGEMENT_MIN_ACCESS` | `support` | Set to `admin` to require administrator access for adding or removing jail-specific allowed addresses; otherwise the existing ban permission is used. Global ignore IPs still require Settings access. |
 
 ## Container runtime marker
 

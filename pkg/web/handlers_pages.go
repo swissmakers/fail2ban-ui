@@ -63,27 +63,24 @@ func renderIndexPage(c *gin.Context) {
 	}
 
 	updateCheckEnabled := os.Getenv("UPDATE_CHECK") != "false"
-	allowedIPEnabled := allowedIPFeatureEnabled()
-	allowedIPMinAccess := os.Getenv("ALLOWED_IP_MIN_ACCESS")
-	if allowedIPMinAccess == "" {
-		allowedIPMinAccess = "support"
-	}
+	jailAllowedIPEnabled := jailAllowedIPManagementEnabled()
+	jailAllowedIPMinAccess := jailAllowedIPManagementMinAccess()
 
 	urlPrefix := BasePath()
 
 	c.HTML(http.StatusOK, "index.html", gin.H{
-		"timestamp":          time.Now().Format(time.RFC1123),
-		"version":            time.Now().Unix(),
-		"appVersion":         version.Version,
-		"updateCheckEnabled": updateCheckEnabled,
-		"disableExternalIP":  disableExternalIP,
-		"autoDark":           autoDark,
-		"languageOptions":    languageOptions,
-		"oidcEnabled":        oidcEnabled,
-		"skipLoginPage":      skipLoginPage,
-		"URLPrefix":          urlPrefix,
-		"allowedIPEnabled":   allowedIPEnabled,
-		"allowedIPMinAccess": allowedIPMinAccess,
+		"timestamp":              time.Now().Format(time.RFC1123),
+		"version":                time.Now().Unix(),
+		"appVersion":             version.Version,
+		"updateCheckEnabled":     updateCheckEnabled,
+		"disableExternalIP":      disableExternalIP,
+		"autoDark":               autoDark,
+		"languageOptions":        languageOptions,
+		"oidcEnabled":            oidcEnabled,
+		"skipLoginPage":          skipLoginPage,
+		"URLPrefix":              urlPrefix,
+		"jailAllowedIPEnabled":   jailAllowedIPEnabled,
+		"jailAllowedIPMinAccess": jailAllowedIPMinAccess,
 	})
 }
 

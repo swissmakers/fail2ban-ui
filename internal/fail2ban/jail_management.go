@@ -18,6 +18,7 @@ package fail2ban
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -909,6 +910,52 @@ func parseJailSectionsUncommented(content string) (map[string]string, string, er
 //  IgnoreIP Config Helpers
 // =========================================================================
 
+const inheritedIgnoreIPToken = "%(known/ignoreip)s"
+
+// GetJailIgnoreIPs reads the configured ignoreip entries from a jail section.
+func GetJailIgnoreIPs(ctx context.Context, conn Connector, jail string) ([]string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return nil, err
+	}
+	content, _, err := conn.GetJailConfig(ctx, jail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	return parseIgnoreIPsFromConfig(content, jail), nil
+}
+
+// SetJailIgnoreIPs writes jail-specific ignoreip entries and keeps inherited
+// DEFAULT ignoreip values by using Fail2ban's known/ignoreip interpolation.
+func SetJailIgnoreIPs(ctx context.Context, conn Connector, jail string, ips []string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	content, _, err := conn.GetJailConfig(ctx, jail)
+	if err != nil {
+		return fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	newContent := setIgnoreIPsInConfig(content, jail, withInheritedIgnoreIPs(ips))
+	if err := conn.SetJailConfig(ctx, jail, newContent); err != nil {
+		return fmt.Errorf("failed to write jail config for %s: %w", jail, err)
+	}
+	if err := conn.Reload(ctx); err != nil {
+		return fmt.Errorf("failed to reload fail2ban after setting ignoreip for %s: %w", jail, err)
+	}
+	return nil
+}
+
+func withInheritedIgnoreIPs(ips []string) []string {
+	result := []string{inheritedIgnoreIPToken}
+	for _, ip := range ips {
+		ip = strings.TrimSpace(ip)
+		if ip == "" || ip == inheritedIgnoreIPToken {
+			continue
+		}
+		result = append(result, ip)
+	}
+	return result
+}
+
 // parseIgnoreIPsFromConfig extracts the ignoreip list from the named jail section.
 func parseIgnoreIPsFromConfig(content, jail string) []string {
 	lines := strings.Split(content, "\n")
@@ -934,7 +981,7 @@ func parseIgnoreIPValue(raw string) []string {
 	parts := strings.Fields(raw)
 	result := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if p != "" {
+		if p != "" && p != inheritedIgnoreIPToken {
 			result = append(result, p)
 		}
 	}

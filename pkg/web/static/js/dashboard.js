@@ -1144,7 +1144,7 @@ function handleManualBlock() {
 }
 
 // =========================================================================
-//  Allowed IP Management Section (Per-Jail IgnoreIP)
+//  Allowed IP Management Section
 // =========================================================================
 
 var allowedIPState = {
@@ -1157,28 +1157,32 @@ var allowedIPState = {
   offset: 0
 };
 
-function isAllowedIPEnabled() {
+function isJailAllowedIPManagementEnabled() {
   if (!document.body) return false;
-  return document.body.getAttribute('data-allowed-ip-enabled') === 'true';
+  return document.body.getAttribute('data-jail-allowed-ip-management-enabled') === 'true';
 }
 
-function getAllowedIPMinAccess() {
+function getJailAllowedIPManagementMinAccess() {
   if (!document.body) return 'support';
-  return document.body.getAttribute('data-allowed-ip-min-access') || 'support';
+  return document.body.getAttribute('data-jail-allowed-ip-management-min-access') || 'support';
+}
+
+function canManageGlobalAllowedIPs() {
+  return typeof hasAccess !== 'function' || hasAccess('admin');
 }
 
 function renderAllowedIPSection(enabledJails) {
-  if (!isAllowedIPEnabled()) {
+  if (!isJailAllowedIPManagementEnabled()) {
     return '';
   }
-  var minAccess = getAllowedIPMinAccess();
+  var showGlobalOption = canManageGlobalAllowedIPs();
   var html = ''
     + '<div class="bg-white rounded-lg shadow p-6 mb-6">'
     + '  <div class="cursor-pointer hover:bg-gray-50 -m-6 p-6 rounded-lg transition-colors" onclick="toggleAllowedIPSection()">'
     + '    <div class="flex items-center justify-between">'
     + '      <div class="flex-1">'
     + '        <h3 class="text-lg font-medium text-gray-900 mb-2" data-i18n="dashboard.allowed_ip.title">Allowed IP Management</h3>'
-    + '        <p class="text-sm text-gray-500" data-i18n="dashboard.allowed_ip.subtitle">Manage IP ranges that are ignored by fail2ban.</p>'
+    + '        <p class="text-sm text-gray-500" data-i18n="dashboard.allowed_ip.subtitle">Manage global and jail-specific addresses that Fail2ban should ignore.</p>'
     + '        <p class="text-xs text-gray-400 mt-1" data-i18n="dashboard.allowed_ip.expand_hint">Click to expand and manage allowed IPs</p>'
     + '      </div>'
     + '      <div class="ml-4">'
@@ -1188,13 +1192,15 @@ function renderAllowedIPSection(enabledJails) {
     + '  </div>'
     + '  <div id="allowedIPContainer" class="hidden" style="margin-top: 35px;">'
     // Add form
-    + '    <div class="mb-4 p-6 border border-gray-200 rounded-lg bg-gray-50" data-min-access="' + escapeHtml(minAccess) + '">'
+    + '    <div class="mb-4 p-6 border border-gray-200 rounded-lg bg-gray-50">'
     + '      <h4 class="text-sm font-semibold text-gray-700 mb-3" data-i18n="dashboard.allowed_ip.add_title">Add Allowed IP</h4>'
     + '      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">'
     + '        <div>'
-    + '          <label for="allowedIPJailSelect" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="dashboard.allowed_ip.jail_label">Jail</label>'
-    + '          <select id="allowedIPJailSelect" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="onAllowedIPJailChange()">'
-    + '            <option value="__global__" data-i18n="dashboard.allowed_ip.jail_global">Global (all jails on all servers)</option>';
+    + '          <label for="allowedIPJailSelect" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="dashboard.allowed_ip.jail_label">Scope</label>'
+    + '          <select id="allowedIPJailSelect" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="onAllowedIPJailChange()">';
+  if (showGlobalOption) {
+    html += '            <option value="__global__" data-i18n="dashboard.allowed_ip.jail_global">Global Settings (all jails on all servers)</option>';
+  }
   enabledJails.forEach(function(jail) {
     html += '            <option value="' + escapeHtml(jail.jailName) + '">' + escapeHtml(jail.jailName) + '</option>';
   });
@@ -1237,7 +1243,7 @@ function toggleAllowedIPSection() {
     container.classList.remove('hidden');
     icon.classList.remove('fa-chevron-down');
     icon.classList.add('fa-chevron-up');
-    // Sync jail dropdown with Manual Block selection
+    // Sync jail dropdown with Manual Block selection when possible.
     var blockSelect = document.getElementById('blockJailSelect');
     var allowedSelect = document.getElementById('allowedIPJailSelect');
     if (blockSelect && allowedSelect && blockSelect.value) {
@@ -1251,10 +1257,80 @@ function toggleAllowedIPSection() {
   }
 }
 
+function normalizeAllowedIPList(ips) {
+  return Array.isArray(ips) ? ips.filter(function(ip) { return ip && String(ip).trim(); }) : [];
+}
+
+function allowedIPMatchesSearch(ip, searchQuery) {
+  if (!searchQuery) {
+    return true;
+  }
+  return String(ip).toLowerCase().indexOf(searchQuery.toLowerCase()) !== -1;
+}
+
+function getPagedAllowedIPs(ips, searchQuery, offset, limit) {
+  var filtered = normalizeAllowedIPList(ips).filter(function(ip) {
+    return allowedIPMatchesSearch(ip, searchQuery);
+  });
+  var total = filtered.length;
+  var start = Math.min(Math.max(offset || 0, 0), total);
+  var end = Math.min(start + limit, total);
+  return {
+    ips: filtered.slice(start, end),
+    total: total,
+    hasMore: end < total
+  };
+}
+
 function loadAllowedIPs(appendMode) {
   var jailSelect = document.getElementById('allowedIPJailSelect');
   if (!jailSelect || !jailSelect.value) return;
   var jail = jailSelect.value;
+  if (jail === '__global__') {
+    loadGlobalAllowedIPs(appendMode);
+    return;
+  }
+  loadJailAllowedIPs(jail, appendMode);
+}
+
+function loadGlobalAllowedIPs(appendMode) {
+  var searchEl = document.getElementById('allowedIPSearch');
+  var searchQuery = searchEl ? searchEl.value.trim() : '';
+  var limit = 10;
+  var offset = appendMode ? allowedIPState.offset : 0;
+  allowedIPState.loading = true;
+
+  fetch(appPath('/api/settings'))
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      allowedIPState.loading = false;
+      if (data.error) {
+        document.getElementById('allowedIPTableContainer').innerHTML = '<p class="text-sm text-red-600">' + escapeHtml(data.error) + '</p>';
+        return;
+      }
+      var page = getPagedAllowedIPs(data.ignoreips || [], searchQuery, offset, limit);
+      allowedIPState.jail = '__global__';
+      allowedIPState.globalIps = [];
+      if (appendMode) {
+        allowedIPState.jailIps = allowedIPState.jailIps.concat(page.ips);
+      } else {
+        allowedIPState.jailIps = page.ips;
+      }
+      allowedIPState.total = page.total;
+      allowedIPState.hasMore = page.hasMore;
+      allowedIPState.offset = offset + page.ips.length;
+      renderAllowedIPTable();
+    })
+    .catch(function(err) {
+      allowedIPState.loading = false;
+      var container = document.getElementById('allowedIPTableContainer');
+      if (container) {
+        container.innerHTML = '<p class="text-sm text-red-600">' + t('common.error', 'Error') + ': ' + escapeHtml(err.message) + '</p>';
+      }
+    });
+}
+
+function loadJailAllowedIPs(jail, appendMode) {
   var searchEl = document.getElementById('allowedIPSearch');
   var searchQuery = searchEl ? searchEl.value.trim() : '';
   var limit = 10;
@@ -1262,7 +1338,7 @@ function loadAllowedIPs(appendMode) {
 
   allowedIPState.loading = true;
 
-  var url = '/api/ignoreips?jail=' + encodeURIComponent(jail) + '&limit=' + limit + '&offset=' + offset;
+  var url = '/api/jails/' + encodeURIComponent(jail) + '/ignoreips?limit=' + limit + '&offset=' + offset;
   if (searchQuery) {
     url += '&q=' + encodeURIComponent(searchQuery);
   }
@@ -1332,32 +1408,29 @@ function renderAllowedIPTable() {
     + '  <tbody>';
 
   if (isGlobalMode) {
-    // Global mode: all entries are in jailIps, all are removable
     allowedIPState.jailIps.forEach(function(ip) {
       var safeAddr = escapeHtml(ip);
       var encodedAddr = encodeURIComponent(ip);
       html += ''
         + '    <tr>'
         + '      <td class="px-3 py-2 border-t border-gray-200">' + safeAddr + '</td>'
-        + '      <td class="px-3 py-2 border-t border-gray-200">' + t('dashboard.allowed_ip.source_global', 'Global') + '</td>'
+        + '      <td class="px-3 py-2 border-t border-gray-200">' + t('dashboard.allowed_ip.source_global', 'Global Settings') + '</td>'
         + '      <td class="px-3 py-2 border-t border-gray-200">'
-        + '        <button type="button" data-min-access="' + escapeHtml(getAllowedIPMinAccess()) + '" onclick="deleteAllowedIP(\'__global__\', \'' + encodedAddr + '\')" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition-colors">'
+        + '        <button type="button" data-min-access="admin" onclick="deleteAllowedIP(\'__global__\', \'' + encodedAddr + '\')" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition-colors">'
         + '          <span data-i18n="dashboard.allowed_ip.delete_button">Remove</span>'
         + '        </button>'
         + '      </td>'
         + '    </tr>';
     });
   } else {
-    // Per-jail mode: global rows (read-only) first
     allowedIPState.globalIps.forEach(function(ip) {
       html += ''
         + '    <tr>'
         + '      <td class="px-3 py-2 border-t border-gray-200">' + escapeHtml(ip) + '</td>'
-        + '      <td class="px-3 py-2 border-t border-gray-200">' + t('dashboard.allowed_ip.source_global', 'Global') + '</td>'
+        + '      <td class="px-3 py-2 border-t border-gray-200">' + t('dashboard.allowed_ip.source_global', 'Global Settings') + '</td>'
         + '      <td class="px-3 py-2 border-t border-gray-200 text-xs text-gray-400" data-i18n="dashboard.allowed_ip.readonly">—</td>'
         + '    </tr>';
     });
-    // Per-jail rows (removable)
     allowedIPState.jailIps.forEach(function(ip) {
       var safeAddr = escapeHtml(ip);
       var encodedJail = encodeURIComponent(allowedIPState.jail);
@@ -1367,7 +1440,7 @@ function renderAllowedIPTable() {
         + '      <td class="px-3 py-2 border-t border-gray-200">' + safeAddr + '</td>'
         + '      <td class="px-3 py-2 border-t border-gray-200">' + escapeHtml(allowedIPState.jail) + '</td>'
         + '      <td class="px-3 py-2 border-t border-gray-200">'
-        + '        <button type="button" data-min-access="' + escapeHtml(getAllowedIPMinAccess()) + '" onclick="deleteAllowedIP(\'' + encodedJail + '\', \'' + encodedAddr + '\')" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition-colors">'
+        + '        <button type="button" data-min-access="' + escapeHtml(getJailAllowedIPManagementMinAccess()) + '" onclick="deleteAllowedIP(\'' + encodedJail + '\', \'' + encodedAddr + '\')" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition-colors">'
         + '          <span data-i18n="dashboard.allowed_ip.delete_button">Remove</span>'
         + '        </button>'
         + '      </td>'
@@ -1379,7 +1452,6 @@ function renderAllowedIPTable() {
     + '  </tbody>'
     + '</table>';
 
-  // Show more button
   if (allowedIPState.hasMore) {
     html += ''
       + '<div class="mt-3 text-center">'
@@ -1399,7 +1471,6 @@ function renderAllowedIPTable() {
 function onAllowedIPJailChange() {
   allowedIPState.offset = 0;
   allowedIPState.jailIps = [];
-  // Clear search when switching jails
   var searchEl = document.getElementById('allowedIPSearch');
   if (searchEl) {
     searchEl.value = '';
@@ -1411,6 +1482,32 @@ function searchAllowedIPs() {
   allowedIPState.offset = 0;
   allowedIPState.jailIps = [];
   loadAllowedIPs(false);
+}
+
+function saveGlobalAllowedIPs(ips) {
+  return fetch(appPath('/api/settings'))
+    .then(function(res) {
+      return res.json().then(function(data) {
+        return {status: res.status, data: data};
+      });
+    })
+    .then(function(result) {
+      if (result.status >= 400 || result.data.error) {
+        throw new Error(formatApiError(result.data, 'dashboard.allowed_ip.error.generic', 'Failed to load settings'));
+      }
+      var payload = Object.assign({}, result.data);
+      payload.ignoreips = ips;
+      return fetch(appPath('/api/settings'), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+    })
+    .then(function(res) {
+      return res.json().then(function(data) {
+        return {status: res.status, data: data};
+      });
+    });
 }
 
 function addAllowedIP() {
@@ -1434,15 +1531,25 @@ function addAllowedIP() {
     return;
   }
 
-  // Hide any previous error
   errorEl.classList.add('hidden');
   errorEl.textContent = '';
 
-  var url = '/api/ignoreips';
+  if (typeof isValidIP === 'function' && !isValidIP(netmask)) {
+    errorEl.textContent = t('dashboard.allowed_ip.error.invalid_format', 'Invalid IP address, CIDR notation, or hostname');
+    errorEl.classList.remove('hidden');
+    return;
+  }
+
+  if (jail === '__global__') {
+    addGlobalAllowedIP(netmask, ipInput, errorEl);
+    return;
+  }
+
+  var url = '/api/jails/' + encodeURIComponent(jail) + '/ignoreips';
   fetch(withServerParam(url), {
     method: 'POST',
     headers: serverHeaders({'Content-Type': 'application/json'}),
-    body: JSON.stringify({jail: jail, netmask: netmask})
+    body: JSON.stringify({netmask: netmask})
   })
     .then(function(res) {
       return res.json().then(function(data) {
@@ -1465,11 +1572,50 @@ function addAllowedIP() {
         }
         return;
       }
-      // Success
       ipInput.value = '';
       showToast(t('dashboard.allowed_ip.add_success', 'Allowed address added successfully'), 'success');
-      console.log('[AllowedIP] Added ' + netmask + ' to ' + (jail === '__global__' ? 'global ignore list' : 'jail ' + jail) + ' on server ' + (currentServerId || 'unknown'));
-      // Reload table
+      console.log('[AllowedIP] Added ' + netmask + ' to jail ' + jail + ' on server ' + (currentServerId || 'unknown'));
+      allowedIPState.offset = 0;
+      allowedIPState.jailIps = [];
+      loadAllowedIPs(false);
+    })
+    .catch(function(err) {
+      showToast(t('common.error', 'Error') + ': ' + err.message, 'error');
+    });
+}
+
+function addGlobalAllowedIP(netmask, ipInput, errorEl) {
+  if (!canManageGlobalAllowedIPs()) {
+    showToast(t('common.error', 'Error') + ': Insufficient permissions', 'error');
+    return;
+  }
+  fetch(appPath('/api/settings'))
+    .then(function(res) { return res.json(); })
+    .then(function(settings) {
+      if (settings.error) {
+        throw new Error(formatApiError(settings, 'dashboard.allowed_ip.error.generic', 'Failed to load settings'));
+      }
+      var ips = normalizeAllowedIPList(settings.ignoreips || []);
+      for (var i = 0; i < ips.length; i++) {
+        if (ips[i].toLowerCase() === netmask.toLowerCase()) {
+          errorEl.textContent = t('dashboard.allowed_ip.error.already_exists_global', 'This address already exists in the global ignore list');
+          errorEl.classList.remove('hidden');
+          return null;
+        }
+      }
+      return saveGlobalAllowedIPs(ips.concat([netmask]));
+    })
+    .then(function(result) {
+      if (!result) {
+        return;
+      }
+      if (result.status >= 400 || result.data.error) {
+        showToast(formatApiError(result.data, 'dashboard.allowed_ip.error.generic', 'Failed to add allowed IP'), 'error');
+        return;
+      }
+      ipInput.value = '';
+      showToast(t('dashboard.allowed_ip.add_success', 'Allowed address added successfully'), 'success');
+      console.log('[AllowedIP] Added ' + netmask + ' to global settings');
       allowedIPState.offset = 0;
       allowedIPState.jailIps = [];
       loadAllowedIPs(false);
@@ -1482,13 +1628,18 @@ function addAllowedIP() {
 function deleteAllowedIP(jail, netmask) {
   jail = decodeURIComponent(jail);
   netmask = decodeURIComponent(netmask);
-  var jailLabel = jail === '__global__' ? t('dashboard.allowed_ip.jail_global', 'Global (all jails on all servers)') : jail;
+  var jailLabel = jail === '__global__' ? t('dashboard.allowed_ip.jail_global', 'Global Settings (all jails on all servers)') : jail;
   var msg = t('dashboard.allowed_ip.delete_confirm', 'Remove {address} from {jail}?').replace('{address}', netmask).replace('{jail}', jailLabel);
   if (!confirm(msg)) {
     return;
   }
 
-  var url = '/api/ignoreips?jail=' + encodeURIComponent(jail) + '&netmask=' + encodeURIComponent(netmask);
+  if (jail === '__global__') {
+    deleteGlobalAllowedIP(netmask);
+    return;
+  }
+
+  var url = '/api/jails/' + encodeURIComponent(jail) + '/ignoreips?netmask=' + encodeURIComponent(netmask);
   fetch(withServerParam(url), {
     method: 'DELETE',
     headers: serverHeaders()
@@ -1500,8 +1651,48 @@ function deleteAllowedIP(jail, netmask) {
         return;
       }
       showToast(t('dashboard.allowed_ip.delete_success', 'Address removed successfully'), 'success');
-      console.log('[AllowedIP] Removed ' + netmask + ' from ' + (jail === '__global__' ? 'global ignore list' : 'jail ' + jail) + ' on server ' + (currentServerId || 'unknown'));
-      // Reload table - reset to beginning
+      console.log('[AllowedIP] Removed ' + netmask + ' from jail ' + jail + ' on server ' + (currentServerId || 'unknown'));
+      allowedIPState.offset = 0;
+      allowedIPState.jailIps = [];
+      loadAllowedIPs(false);
+    })
+    .catch(function(err) {
+      showToast(t('common.error', 'Error') + ': ' + err.message, 'error');
+    });
+}
+
+function deleteGlobalAllowedIP(netmask) {
+  if (!canManageGlobalAllowedIPs()) {
+    showToast(t('common.error', 'Error') + ': Insufficient permissions', 'error');
+    return;
+  }
+  fetch(appPath('/api/settings'))
+    .then(function(res) { return res.json(); })
+    .then(function(settings) {
+      if (settings.error) {
+        throw new Error(formatApiError(settings, 'dashboard.allowed_ip.error.generic', 'Failed to load settings'));
+      }
+      var ips = normalizeAllowedIPList(settings.ignoreips || []);
+      var found = false;
+      var next = ips.filter(function(ip) {
+        if (ip.toLowerCase() === netmask.toLowerCase()) {
+          found = true;
+          return false;
+        }
+        return true;
+      });
+      if (!found) {
+        throw new Error(t('dashboard.allowed_ip.error.not_found', 'Address not found'));
+      }
+      return saveGlobalAllowedIPs(next);
+    })
+    .then(function(result) {
+      if (result.status >= 400 || result.data.error) {
+        showToast(formatApiError(result.data, 'dashboard.allowed_ip.error.generic', 'Failed to remove allowed IP'), 'error');
+        return;
+      }
+      showToast(t('dashboard.allowed_ip.delete_success', 'Address removed successfully'), 'success');
+      console.log('[AllowedIP] Removed ' + netmask + ' from global settings');
       allowedIPState.offset = 0;
       allowedIPState.jailIps = [];
       loadAllowedIPs(false);

@@ -74,19 +74,36 @@ func TestPaginateIgnoreIPs(t *testing.T) {
 	}
 }
 
-func TestAllowedIPFeatureEnabled(t *testing.T) {
-	t.Setenv("ALLOWED_IP_ENABLED", "")
-	if !allowedIPFeatureEnabled() {
+func TestJailAllowedIPManagementEnabled(t *testing.T) {
+	t.Setenv(jailAllowedIPManagementEnabledEnv, "")
+	if !jailAllowedIPManagementEnabled() {
 		t.Fatal("the feature should be enabled by default")
 	}
 
-	t.Setenv("ALLOWED_IP_ENABLED", "true")
-	if !allowedIPFeatureEnabled() {
-		t.Fatal("ALLOWED_IP_ENABLED=true should enable the feature")
+	t.Setenv(jailAllowedIPManagementEnabledEnv, "true")
+	if !jailAllowedIPManagementEnabled() {
+		t.Fatal("JAIL_ALLOWED_IP_MANAGEMENT_ENABLED=true should enable the feature")
 	}
 
-	t.Setenv("ALLOWED_IP_ENABLED", "false")
-	if allowedIPFeatureEnabled() {
-		t.Fatal("ALLOWED_IP_ENABLED=false should disable the feature")
+	t.Setenv(jailAllowedIPManagementEnabledEnv, "false")
+	if jailAllowedIPManagementEnabled() {
+		t.Fatal("JAIL_ALLOWED_IP_MANAGEMENT_ENABLED=false should disable the feature")
+	}
+}
+
+func TestJailAllowedIPManagementMinAccess(t *testing.T) {
+	t.Setenv(jailAllowedIPManagementMinAccessEnv, "")
+	if got := jailAllowedIPManagementMinAccess(); got != "support" {
+		t.Fatalf("default min access = %q, want support", got)
+	}
+
+	t.Setenv(jailAllowedIPManagementMinAccessEnv, "admin")
+	if got := jailAllowedIPManagementMinAccess(); got != "admin" {
+		t.Fatalf("admin min access = %q, want admin", got)
+	}
+
+	t.Setenv(jailAllowedIPManagementMinAccessEnv, "invalid")
+	if got := jailAllowedIPManagementMinAccess(); got != "support" {
+		t.Fatalf("invalid min access = %q, want support", got)
 	}
 }
