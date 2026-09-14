@@ -18,6 +18,7 @@ package fail2ban
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -54,7 +55,10 @@ func readJailConfigWithFallback(jailName, configPath string) (string, string, er
 //  Validation
 // =========================================================================
 
-var enabledTruePattern = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`)
+var (
+	enabledTruePattern  = regexp.MustCompile(`(?m)^\s*enabled\s*=\s*true\s*$`)
+	ignoreIPLinePattern = regexp.MustCompile(`(?i)^\s*ignoreip\s*=\s*(.*)$`)
+)
 
 func ValidateJailName(name string) error {
 	name = strings.TrimSpace(name)
@@ -900,4 +904,148 @@ func parseJailSectionsUncommented(content string) (map[string]string, string, er
 	}
 
 	return sections, defaultContent.String(), scanner.Err()
+}
+
+// =========================================================================
+//  IgnoreIP Config Helpers
+// =========================================================================
+
+const inheritedIgnoreIPToken = "%(known/ignoreip)s"
+
+// GetJailIgnoreIPs reads the configured ignoreip entries from a jail section.
+func GetJailIgnoreIPs(ctx context.Context, conn Connector, jail string) ([]string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return nil, err
+	}
+	content, _, err := conn.GetJailConfig(ctx, jail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	return parseIgnoreIPsFromConfig(content, jail), nil
+}
+
+// SetJailIgnoreIPs writes jail-specific ignoreip entries and keeps inherited
+// DEFAULT ignoreip values by using Fail2ban's known/ignoreip interpolation.
+func SetJailIgnoreIPs(ctx context.Context, conn Connector, jail string, ips []string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	content, _, err := conn.GetJailConfig(ctx, jail)
+	if err != nil {
+		return fmt.Errorf("failed to read jail config for %s: %w", jail, err)
+	}
+	newContent := setIgnoreIPsInConfig(content, jail, withInheritedIgnoreIPs(ips))
+	if err := conn.SetJailConfig(ctx, jail, newContent); err != nil {
+		return fmt.Errorf("failed to write jail config for %s: %w", jail, err)
+	}
+	if err := conn.Reload(ctx); err != nil {
+		return fmt.Errorf("failed to reload fail2ban after setting ignoreip for %s: %w", jail, err)
+	}
+	return nil
+}
+
+func withInheritedIgnoreIPs(ips []string) []string {
+	result := []string{inheritedIgnoreIPToken}
+	for _, ip := range ips {
+		ip = strings.TrimSpace(ip)
+		if ip == "" || ip == inheritedIgnoreIPToken {
+			continue
+		}
+		result = append(result, ip)
+	}
+	return result
+}
+
+// parseIgnoreIPsFromConfig extracts the ignoreip list from the named jail section.
+func parseIgnoreIPsFromConfig(content, jail string) []string {
+	lines := strings.Split(content, "\n")
+	sectionStart, sectionEnd := findConfigSection(lines, jail)
+	if sectionStart < 0 {
+		return nil
+	}
+	for _, line := range lines[sectionStart+1 : sectionEnd] {
+		m := ignoreIPLinePattern.FindStringSubmatch(line)
+		if len(m) < 2 {
+			continue
+		}
+		return parseIgnoreIPValue(m[1])
+	}
+	return nil
+}
+
+func parseIgnoreIPValue(raw string) []string {
+	raw = stripInlineConfigComment(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Fields(raw)
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" && p != inheritedIgnoreIPToken {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+func stripInlineConfigComment(raw string) string {
+	commentIdx := -1
+	for _, marker := range []string{"#", ";"} {
+		if idx := strings.Index(raw, marker); idx >= 0 && (commentIdx == -1 || idx < commentIdx) {
+			commentIdx = idx
+		}
+	}
+	if commentIdx >= 0 {
+		raw = raw[:commentIdx]
+	}
+	return strings.TrimSpace(raw)
+}
+
+func findConfigSection(lines []string, section string) (int, int) {
+	sectionHeader := "[" + strings.TrimSpace(section) + "]"
+	start := -1
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			if start >= 0 {
+				return start, i
+			}
+			if strings.EqualFold(trimmed, sectionHeader) {
+				start = i
+			}
+		}
+	}
+	if start >= 0 {
+		return start, len(lines)
+	}
+	return -1, -1
+}
+
+// setIgnoreIPsInConfig sets the ignoreip line in the named jail section only.
+// If an ignoreip line already exists in that section, it is replaced. Otherwise
+// the line is added after the section header.
+func setIgnoreIPsInConfig(configContent, jail string, ips []string) string {
+	ipLine := "ignoreip = " + strings.Join(ips, " ")
+	lines := strings.Split(configContent, "\n")
+	sectionStart, sectionEnd := findConfigSection(lines, jail)
+	if sectionStart < 0 {
+		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+			lines = lines[:len(lines)-1]
+		}
+		lines = append(lines, "["+jail+"]", ipLine)
+		return strings.Join(lines, "\n")
+	}
+
+	for i := sectionStart + 1; i < sectionEnd; i++ {
+		if ignoreIPLinePattern.MatchString(lines[i]) {
+			lines[i] = ipLine
+			return strings.Join(lines, "\n")
+		}
+	}
+
+	newLines := make([]string, 0, len(lines)+1)
+	newLines = append(newLines, lines[:sectionStart+1]...)
+	newLines = append(newLines, ipLine)
+	newLines = append(newLines, lines[sectionStart+1:]...)
+	return strings.Join(newLines, "\n")
 }
