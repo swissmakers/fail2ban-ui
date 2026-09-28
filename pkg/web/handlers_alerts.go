@@ -58,7 +58,7 @@ func resolveCountry(ip, providedCountry string, settings config.AppSettings) str
 	return country
 }
 
-func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string) error {
+func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, failures, whois, logs string, callbackID ...string) error {
 	jail = sanitizeHeaderValue(jail)
 	hostname = sanitizeHeaderValue(hostname)
 	failures = sanitizeHeaderValue(failures)
@@ -78,9 +78,15 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 		EventType:  "ban",
 		OccurredAt: time.Now().UTC(),
 	}
-	eventID, err := storage.RecordBanEvent(ctx, event)
+	if len(callbackID) > 0 {
+		event.CallbackID = callbackID[0]
+	}
+	eventID, inserted, err := storage.RecordBanEventOnce(ctx, event)
 	if err != nil {
-		log.Printf("WARNING: Failed to record ban event: %v", err)
+		return fmt.Errorf("persist ban event: %w", err)
+	}
+	if !inserted {
+		return nil
 	}
 	event.ID = eventID
 
@@ -96,7 +102,7 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 }
 
 // Records an unban event, broadcasts it via WebSocket, and sends an email alert if enabled.
-func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string) error {
+func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string, callbackID ...string) error {
 	jail = sanitizeHeaderValue(jail)
 	hostname = sanitizeHeaderValue(hostname)
 	settings := config.GetSettings()
@@ -125,9 +131,15 @@ func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, 
 		EventType:  "unban",
 		OccurredAt: time.Now().UTC(),
 	}
-	eventID, err := storage.RecordBanEvent(ctx, event)
+	if len(callbackID) > 0 {
+		event.CallbackID = callbackID[0]
+	}
+	eventID, inserted, err := storage.RecordBanEventOnce(ctx, event)
 	if err != nil {
-		log.Printf("WARNING: Failed to record unban event: %v", err)
+		return fmt.Errorf("persist unban event: %w", err)
+	}
+	if !inserted {
+		return nil
 	}
 	event.ID = eventID
 
@@ -212,7 +224,8 @@ func enrichAndAlertAsync(eventID int64, alertType, ip, jail, hostname, failures,
 		if err := dispatchAlert(alertType, ip, jail, hostname, failures, whoisData, logs, country, settings); err != nil {
 			log.Printf("ERROR: Failed to send %s alert for IP %s: %v", alertType, ip, err)
 			if wsHub != nil {
-				wsHub.BroadcastToast("error", fmt.Sprintf("Failed to send %s alert for %s: %v", alertType, ip, err))
+				// Toasts reach read-only users too; the error can embed a webhook URL with its token.
+				wsHub.BroadcastToast("error", fmt.Sprintf("Failed to send %s alert for %s (details in the server log)", alertType, ip))
 			}
 		}
 	}()

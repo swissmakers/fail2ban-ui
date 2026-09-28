@@ -332,6 +332,11 @@ func BanNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	if len(c.GetHeader("X-Callback-Event-ID")) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "callback event ID is too long"})
+		return
+	}
+
 	var request struct {
 		ServerID string `json:"serverId"`
 		IP       string `json:"ip" binding:"required"`
@@ -344,7 +349,7 @@ func BanNotificationHandler(c *gin.Context) {
 
 	// Reads the request body so it can be parsed and inspected (in debug mode).
 	body, _ := io.ReadAll(c.Request.Body)
-	config.DebugLog("Incoming ban notification (%d bytes): %s", c.Request.ContentLength, string(body))
+	config.DebugLog("Incoming ban notification (%d bytes): %q", c.Request.ContentLength, string(body))
 
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
@@ -362,6 +367,11 @@ func BanNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	// Sanitize before the first log line: a host with the callback secret could otherwise forge log entries.
+	request.IP = sanitizeHeaderValue(request.IP)
+	request.Jail = sanitizeHeaderValue(request.Jail)
+	request.Hostname = sanitizeHeaderValue(request.Hostname)
+	request.Failures = sanitizeHeaderValue(request.Failures)
 	log.Printf("Parsed ban request successfully - IP: %s, Jail: %s, Hostname: %s, Failures: %s",
 		request.IP, request.Jail, request.Hostname, request.Failures)
 
@@ -377,7 +387,7 @@ func BanNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	if err := HandleBanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, request.Failures, request.Whois, request.Logs); err != nil {
+	if err := HandleBanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, request.Failures, request.Whois, request.Logs, c.GetHeader("X-Callback-Event-ID")); err != nil {
 		log.Printf("ERROR: Failed to process ban notification: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process ban notification: " + err.Error()})
 		return
@@ -392,6 +402,11 @@ func UnbanNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	if len(c.GetHeader("X-Callback-Event-ID")) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "callback event ID is too long"})
+		return
+	}
+
 	var request struct {
 		ServerID string `json:"serverId"`
 		IP       string `json:"ip" binding:"required"`
@@ -400,7 +415,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 	}
 
 	body, _ := io.ReadAll(c.Request.Body)
-	config.DebugLog("Incoming unban notification: %s\n", string(body))
+	config.DebugLog("Incoming unban notification: %q", string(body))
 
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
@@ -418,6 +433,9 @@ func UnbanNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	request.IP = sanitizeHeaderValue(request.IP)
+	request.Jail = sanitizeHeaderValue(request.Jail)
+	request.Hostname = sanitizeHeaderValue(request.Hostname)
 	log.Printf("Parsed unban request successfully - IP: %s, Jail: %s, Hostname: %s",
 		request.IP, request.Jail, request.Hostname)
 
@@ -433,7 +451,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	if err := HandleUnbanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, "", ""); err != nil {
+	if err := HandleUnbanNotification(c.Request.Context(), server, request.IP, request.Jail, request.Hostname, "", "", c.GetHeader("X-Callback-Event-ID")); err != nil {
 		log.Printf("ERROR: Failed to process unban notification: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process unban notification: " + err.Error()})
 		return
