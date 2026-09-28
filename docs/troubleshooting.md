@@ -77,7 +77,7 @@ Recommended minimum sudoers for SSH connector accounts:
 
 **Note:** Fail2Ban UI executes the Fail2Ban commands with `sudo` over SSH. The `NOPASSWD` option is therefore required.
 
-Configuration files, including `ui-custom-action.conf`, are written as the service account itself, not through `sudo`. The account therefore needs write access to the Fail2Ban configuration tree, `action.d` included. Grant it with an ACL rather than a new sudoers entry:
+Configuration files, including `ui-custom-action.conf`, are written as the service account itself, not through `sudo`. Each file is staged next to its target and renamed into place, so the account needs write access to the **directories** of the Fail2Ban configuration tree, `action.d` included, and rewritten files become owned by that account. Grant it with an ACL rather than a new sudoers entry:
 
 ```bash
 setfacl -R -m u:<user>:rwX /etc/fail2ban
@@ -103,11 +103,11 @@ cat /etc/fail2ban/action.d/ui-custom-action.conf
 
 On containerised hosts the file lives under `/config/fail2ban/action.d/` instead. The UI writes it wherever that host keeps its Fail2Ban configuration.
 
-The UI rewrites this file on start, whenever you change the callback URL or secret, and whenever it reads the server's jail status and finds the file out of date. If the URL is still wrong, the UI could not write the file - it reports the reason as a warning when you save the settings, and logs it. Check that the SSH service account may write to `action.d` (see the SSH connector section below).
+The UI synchronizes this file on startup, after callback settings change, and when SSH jail status reveals drift. Failed writes, config validation, or reloads remain pending. The first retry runs after 45 seconds, then the interval doubles up to 15 minutes; saving the settings or accepting a changed host key retries immediately. Check the server's sync status under **Manage Servers** and the operational logs; these errors do not require debug mode. A correct file on disk is not proof that Fail2Ban loaded it. Check that the SSH service account may write to `action.d` and run `fail2ban-client -t` and `reload`. The preceding file content is retained in `ui-custom-action.conf.f2bui.bak`, including its callback credential; keep this backup private.
 
 Two values are expected to differ from the global callback URL:
 
-- Servers with **reverse tunnel for events** enabled carry `http://localhost:<tunnel port>`. That is correct, see [Reverse SSH tunnel for callbacks](configuration.md).
+- Servers with **reverse tunnel for events** enabled carry `http://localhost:<tunnel port><BASE_PATH>`. That is correct, see [Reverse SSH tunnel for callbacks](configuration.md#reverse-ssh-tunnel-for-callbacks). Their status also reports callback health through the tunnel, including authentication and routing failures.
 - Servers running the agent have no action file at all. The agent holds its callback configuration itself and refreshes it on every poll.
 
 If the file does not exist or looks wrong, go to **Settings -> Manage Servers** in the UI, select the server, and click **Test connection**.
@@ -236,7 +236,9 @@ tail -f /var/log/fail2ban.log
 #   WARNING ... Command ... failed
 ```
 
-You can also run the exact `curl` command from the action file manually. Extract it and substitute the Fail2Ban variables (`<ip>`, `<name>`, and so on) with real values:
+The callback runs detached from Fail2Ban, so a slow or unreachable UI never delays the next ban. As a consequence, Fail2Ban does not log a failed **delivery**: a missing `jq` or a TLS error only shows up when you run the command manually, as described next.
+
+You can also run the exact `curl` command from the action file manually. Extract it, substitute the Fail2Ban variables (`<ip>`, `<name>`, and so on) with real values, and drop the surrounding `( ... ) </dev/null >/dev/null 2>&1 &` so that errors are printed:
 
 ```bash
 grep -A5 "actionban" /etc/fail2ban/action.d/ui-custom-action.conf
@@ -245,8 +247,8 @@ grep -A5 "actionban" /etc/fail2ban/action.d/ui-custom-action.conf
 Running it in a shell reveals whether `jq` is missing, `curl` has TLS issues, and similar problems. Common causes at this stage:
 
 * **`jq` not installed.** The action file uses `jq` to build the JSON. Install it: `dnf install jq` or `apt install jq`.
-* **TLS certificate issues.** A callback URL with HTTPS and a self-signed certificate needs the `-k` flag. Fail2Ban UI adds it automatically when the callback URL starts with `https://`.
-* **Fail2Ban not restarted.** After the action file is deployed, Fail2Ban must be restarted to pick up the change: `systemctl restart fail2ban`.
+* **TLS certificate issues.** Configure a trusted certificate chain. `CALLBACK_INSECURE_TLS=true` explicitly enables `-k` for HTTPS callbacks when certificate verification must be disabled.
+* **Fail2Ban has not loaded the change.** The UI validates configuration and reloads Fail2Ban after synchronizing it. Check for a pending sync or reload error before attempting a manual reload.
 
 ### Step 7: Check the Fail2Ban UI logs
 
@@ -266,6 +268,8 @@ journalctl -u fail2ban-ui -f
 ```
 
 With debug mode enabled in the UI settings, the raw JSON body of every incoming callback is logged as well.
+
+Configured secrets and callback authentication headers are redacted from application and browser console logs. The browser console stream is restricted to administrators. Debug mode is not required for SSH connection, tunnel health, or config sync failures. Callback retries are bounded; they cannot recover events after a prolonged outage because there is no persistent outbound queue.
 
 ### Step 8: Verify that the serverId resolves
 

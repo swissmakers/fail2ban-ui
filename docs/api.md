@@ -180,7 +180,7 @@ The connection streams real-time events to the frontend:
 | Message type | Description |
 |--------------|-------------|
 | `heartbeat` | Periodic health check, about every 30 seconds |
-| `console_log` | Debug console log lines, when debug mode is enabled |
+| `console_log` | Redacted console log lines, sent only to administrators when console output is enabled; debug mode adds diagnostic detail |
 | `ban_event` | Real-time ban event broadcast |
 | `unban_event` | Real-time unban event broadcast |
 | `ban_event_update` | Enrichment update for an event that was already delivered, sent once the asynchronous Whois/GeoIP lookup completes |
@@ -200,6 +200,8 @@ Callbacks require:
 
 * Header: `X-Callback-Secret: <secret>`
 * JSON body fields (typical): `serverId`, `ip`, `jail`, `hostname`, `failures`, `logs`
+
+Clients may also send `X-Callback-Event-ID` (at most 128 bytes). Reuse the same ID when retrying the same event. IDs are unique per server while their event records are retained: repeated delivery returns success without storing, broadcasting, or alerting twice. Reusing an ID for a different IP, jail, or event type is rejected. Clients without this header retain the original behavior, with each request stored independently. A database write failure returns `500`, so the sender can retry. Generated Fail2Ban actions supply an ID and retry transient delivery failures up to twice.
 
 All IPs in callback payloads are validated before processing. After validation, the callback triggers:
 
