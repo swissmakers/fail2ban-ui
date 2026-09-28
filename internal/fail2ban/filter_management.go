@@ -70,7 +70,7 @@ func SetFilterConfigLocal(jail, newContent, configPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(localPath, []byte(newContent), 0644); err != nil {
+	if err := writeConfigAtomic(localPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to write filter .local file for %s: %w", jail, err)
 	}
 	debugf("Successfully wrote filter config to .local file: %s", localPath)

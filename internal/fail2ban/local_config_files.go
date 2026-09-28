@@ -83,7 +83,7 @@ func ensureLocalConfigFile(k configKind, name, configPath string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read %s .conf file %s: %w", k.noun, confPath, err)
 		}
-		if err := os.WriteFile(localPath, content, 0644); err != nil {
+		if err := writeConfigAtomic(localPath, content, 0644); err != nil {
 			return fmt.Errorf("failed to write %s .local file %s: %w", k.noun, localPath, err)
 		}
 		debugf("Successfully copied %s config to .local file", k.noun)
@@ -91,7 +91,7 @@ func ensureLocalConfigFile(k configKind, name, configPath string) error {
 	}
 
 	debugf("Neither .local nor .conf exists for %s %s, creating .local file", k.noun, name)
-	if err := os.WriteFile(localPath, []byte(k.seed(strings.TrimSpace(name))), 0644); err != nil {
+	if err := writeConfigAtomic(localPath, []byte(k.seed(strings.TrimSpace(name))), 0644); err != nil {
 		return fmt.Errorf("failed to create %s .local file %s: %w", k.noun, localPath, err)
 	}
 	debugf("Successfully created %s .local file: %s", k.noun, localPath)
@@ -107,10 +107,14 @@ func readLocalConfigWithFallback(k configKind, name, configPath string) (content
 	if data, err := os.ReadFile(localPath); err == nil {
 		debugf("Reading %s config from .local: %s", k.noun, localPath)
 		return string(data), localPath, true, nil
+	} else if !os.IsNotExist(err) {
+		return "", localPath, false, err
 	}
 	if data, err := os.ReadFile(confPath); err == nil {
 		debugf("Reading %s config from .conf: %s", k.noun, confPath)
 		return string(data), confPath, true, nil
+	} else if !os.IsNotExist(err) {
+		return "", confPath, false, err
 	}
 	return "", localPath, false, nil
 }
@@ -149,7 +153,7 @@ func createLocalConfigFile(k configKind, name, content, sectionHeader, configPat
 	if sectionHeader != "" && !strings.HasPrefix(strings.TrimSpace(content), sectionHeader) {
 		content = sectionHeader + "\n" + content
 	}
-	if err := os.WriteFile(localPath, []byte(content), 0644); err != nil {
+	if err := writeConfigAtomic(localPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to create %s file %s: %w", k.noun, localPath, err)
 	}
 	debugf("Created %s file: %s", k.noun, localPath)
