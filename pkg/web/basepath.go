@@ -21,6 +21,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 var (
@@ -31,21 +33,7 @@ var (
 // Normalizes a BASE_PATH value for use as an URL path prefix.
 // Unsafe values are rejected (treated as root) to prevent the prefix from being used as an open-redirect target
 func NormalizeBasePath(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "/" {
-		return ""
-	}
-	// We reject control characters, backslashes, and scheme separators.
-	if strings.ContainsAny(s, ":\\\r\n") {
-		return ""
-	}
-	if !strings.HasPrefix(s, "/") {
-		s = "/" + s
-	}
-	if strings.HasPrefix(s, "//") || strings.HasPrefix(s, "/\\") {
-		return ""
-	}
-	return strings.TrimSuffix(s, "/")
+	return shared.NormalizeBasePath(s)
 }
 
 // Reads BASE_PATH and applies NormalizeBasePath.
