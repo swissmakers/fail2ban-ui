@@ -19,6 +19,7 @@ package fail2ban
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -241,7 +242,11 @@ func TestGetJailSummaryReportsActionDrift(t *testing.T) {
 	t.Run("matching action file is not drifted", func(t *testing.T) {
 		sc := testSSHConnector()
 		sc.fail2banPath = DefaultConfigRoot
-		want := strings.TrimSuffix(sc.desiredActionConfig(), "\n")
+		desired, err := sc.desiredActionConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := strings.TrimSuffix(desired, "\n")
 		withFakeSSH(t, "cat >/dev/null 2>&1\ncat <<'OUT'\n"+summaryOutput(want)+"OUT\nexit 0\n")
 
 		got, err := sc.GetJailSummary(context.Background())
@@ -256,7 +261,11 @@ func TestGetJailSummaryReportsActionDrift(t *testing.T) {
 	t.Run("stale callback URL is drifted", func(t *testing.T) {
 		sc := testSSHConnector()
 		sc.fail2banPath = DefaultConfigRoot
-		stale := strings.ReplaceAll(strings.TrimSuffix(sc.desiredActionConfig(), "\n"),
+		desired, err := sc.desiredActionConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		stale := strings.ReplaceAll(strings.TrimSuffix(desired, "\n"),
 			"http://127.0.0.1:8080", "http://old.example.com")
 		withFakeSSH(t, "cat >/dev/null 2>&1\ncat <<'OUT'\n"+summaryOutput(stale)+"OUT\nexit 0\n")
 
@@ -266,6 +275,62 @@ func TestGetJailSummaryReportsActionDrift(t *testing.T) {
 		}
 		if !got.ActionFileDrifted {
 			t.Fatal("an action file with an outdated callback URL must be reported as drifted")
+		}
+	})
+}
+
+// socket path with spaces must reach sudo as one argument, not as extra fail2ban-client options.
+func TestRunFail2banCommandQuotesEveryWord(t *testing.T) {
+	logFile := filepath.Join(t.TempDir(), "cmd")
+	t.Setenv("F2BUI_TEST_SSH_LOG", logFile)
+	withFakeSSH(t, `case "$*" in *"-O check"*) exit 0 ;; esac
+for a in "$@"; do last="$a"; done
+printf '%s' "$last" > "$F2BUI_TEST_SSH_LOG"
+echo pong
+`)
+	sc := testSSHConnector()
+	sc.server.SocketPath = "/run/f2b.sock -c /tmp/evil"
+	if _, err := sc.runFail2banCommand(context.Background(), "ping"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	remote, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Replay exactly what the remote shell receives and see how it splits.
+	out, err := exec.Command("sh", "-c", `eval "set -- $1"; printf '%s\n' "$@"`, "_", string(remote)).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	want := []string{"sudo", "fail2ban-client", "-s", "/run/f2b.sock -c /tmp/evil", "ping"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("remote shell split the command into %q, want %q", got, want)
+	}
+}
+
+func TestGetFail2banPathOnlyTrustsKnownRoots(t *testing.T) {
+	cases := []struct{ name, out, want string }{
+		{"container root", "/config/fail2ban", "/config/fail2ban"},
+		{"default root", "/etc/fail2ban", "/etc/fail2ban"},
+		{"login banner before the answer", "Welcome to host\n/config/fail2ban", "/config/fail2ban"},
+		{"unexpected output", "/tmp/x;id", DefaultConfigRoot},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withFakeSSH(t, "case \"$*\" in *\"-O check\"*) exit 0 ;; esac\nprintf '"+tc.out+"\\n'\n")
+			sc := testSSHConnector()
+			if got := sc.getFail2banPath(context.Background()); got != tc.want {
+				t.Fatalf("getFail2banPath() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	t.Run("unexpected output is not cached", func(t *testing.T) {
+		withFakeSSH(t, "case \"$*\" in *\"-O check\"*) exit 0 ;; esac\nprintf 'garbage\\n'\n")
+		sc := testSSHConnector()
+		sc.getFail2banPath(context.Background())
+		if sc.fail2banPath != "" {
+			t.Fatalf("cached untrusted probe output %q", sc.fail2banPath)
 		}
 	})
 }

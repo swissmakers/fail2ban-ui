@@ -111,7 +111,10 @@ func TestFail2banActionTemplateFlushesInOneCall(t *testing.T) {
 	if !strings.Contains(fail2banActionTemplate, "norestored = 1") {
 		t.Fatal("action template must keep norestored = 1 so restored bans are not re-reported on startup")
 	}
-	content := BuildFail2banActionConfig("http://127.0.0.1:9999", "srv-test", "secret")
+	content, err := BuildFail2banActionConfig("http://127.0.0.1:9999", "srv-test", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(content, "\nactionflush = ") {
 		t.Fatal("rendered action config lost actionflush")
 	}
@@ -125,7 +128,10 @@ func TestFail2banActionTemplateFlushesInOneCall(t *testing.T) {
 func TestFail2banActionConfigEscapesPercent(t *testing.T) {
 	t.Parallel()
 
-	content := BuildFail2banActionConfig("http://127.0.0.1:9999", "srv-test", "secret")
+	content, err := BuildFail2banActionConfig("http://127.0.0.1:9999", "srv-test", "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < len(content); i++ {
 		if content[i] != '%' {
 			continue
@@ -157,6 +163,36 @@ func TestValidateTunnelPort(t *testing.T) {
 	for _, port := range invalid {
 		if err := validateTunnelPort(port); err == nil {
 			t.Fatalf("validateTunnelPort(%d) = nil, want error", port)
+		}
+	}
+}
+
+// Every value substituted into the root-executed action must be refused at render time.
+func TestBuildFail2banActionConfigRefusesInjection(t *testing.T) {
+	cases := []struct{ url, id, secret string }{
+		{"http://10.88.0.1:3080/dev;touch /tmp/pwned;#", "local", "secret"},
+		{"http://h/$(id)", "local", "secret"},
+		{"http://h", "x';touch /tmp/pwned;'", "secret"},
+		{"http://h", "local", "s'; touch /tmp/pwned; '"},
+		{"http://h", "local", "s$(id)"},
+	}
+	for _, tc := range cases {
+		if cfg, err := BuildFail2banActionConfig(tc.url, tc.id, tc.secret); err == nil {
+			t.Errorf("BuildFail2banActionConfig(%q, %q, %q) rendered a config:\n%s", tc.url, tc.id, tc.secret, cfg)
+		}
+	}
+}
+
+func TestFail2banActionTemplateQuotesSubstitutedValues(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"'__CALLBACK_URL__/api/ban'",
+		"'__CALLBACK_URL__/api/unban'",
+		"'X-Callback-Secret: __CALLBACK_SECRET__'",
+		"--arg serverId '__SERVER_ID__'",
+	} {
+		if !strings.Contains(fail2banActionTemplate, want) {
+			t.Errorf("action template must single-quote substituted value: missing %q", want)
 		}
 	}
 }

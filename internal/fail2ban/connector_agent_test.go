@@ -35,9 +35,9 @@ func (testProvider) DebugLog(format string, v ...interface{}) {}
 func (testProvider) CallbackURL() string                      { return "http://127.0.0.1:8080" }
 func (testProvider) CallbackSecret() string                   { return "test-secret" }
 func (testProvider) ServerPort() int                          { return 8080 }
-func (testProvider) BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
+func (testProvider) BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, error) {
 	return fmt.Sprintf("[Definition]\nactionban = curl -X POST %s/api/ban -H 'X-Callback-Secret: %s' --data 'serverId=%s'\n",
-		callbackURL, secret, serverID)
+		callbackURL, secret, serverID), nil
 }
 func (testProvider) BuildJailLocalContent() string {
 	return "[DEFAULT]\nenabled = true\naction_mwlg = %(action_)s\n             ui-custom-action[logpath=\"%(logpath)s\", chain=\"%(chain)s\"]\naction = %(action_mwlg)s\n"
@@ -74,6 +74,8 @@ func TestNormalizeAgentURL(t *testing.T) {
 }
 
 func TestAgentConnectorHeadersAndPathEscape(t *testing.T) {
+	SetProvider(testProvider{})
+	defer SetProvider(noopProvider{})
 	var capturedPath, capturedToken string
 	var callbackConfig map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
