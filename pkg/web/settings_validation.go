@@ -65,6 +65,16 @@ func validateFail2banDurationField(name, value string) error {
 }
 
 func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
+	req.CallbackURL = strings.TrimRight(strings.TrimSpace(req.CallbackURL), "/")
+	if req.CallbackURL != "" {
+		if err := shared.ValidateCallbackURL(req.CallbackURL); err != nil {
+			return err
+		}
+	}
+	req.CallbackSecret = strings.TrimSpace(req.CallbackSecret)
+	if err := shared.ValidateCallbackSecret(req.CallbackSecret); err != nil {
+		return err
+	}
 	req.Bantime = strings.ToLower(strings.TrimSpace(req.Bantime))
 	req.Findtime = strings.ToLower(strings.TrimSpace(req.Findtime))
 	req.BantimeRndtime = strings.ToLower(strings.TrimSpace(req.BantimeRndtime))
