@@ -62,11 +62,13 @@ func main() {
 		log.Fatalf("failed to initialise fail2ban connectors: %v", err)
 	}
 
-	// Sync remote SSH/agent runtime config, then reload so action/callback and jail.local changes become active
+	// Sync local/SSH/agent runtime config and reload so callbacks and defaults become active
+	startupSyncDone := make(chan struct{})
 	go func() {
-		synced, failed := fail2ban.GetManager().SyncRemoteStartupConfig(context.Background(), 30*time.Second)
+		defer close(startupSyncDone)
+		synced, failed := fail2ban.GetManager().SyncRemoteStartupConfig(ctx, 30*time.Second)
 		if synced+failed > 0 {
-			log.Printf("startup remote config sync complete: %d succeeded, %d failed", synced, failed)
+			log.Printf("startup config sync complete: %d succeeded, %d failed", synced, failed)
 		}
 	}()
 
@@ -183,6 +185,7 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("warning: HTTP server shutdown: %v", err)
 	}
+	<-startupSyncDone
 	fail2ban.GetManager().Close()
 	log.Println("Fail2Ban-UI stopped.")
 }
