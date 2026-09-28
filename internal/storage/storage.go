@@ -242,6 +242,7 @@ type ServerRecord struct {
 }
 
 type BanEventRecord struct {
+	CallbackID string    `json:"-"`
 	ID         int64     `json:"id"`
 	ServerID   string    `json:"serverId"`
 	ServerName string    `json:"serverName"`
@@ -744,12 +745,18 @@ INSERT INTO servers (
 
 // Stores a ban/unban event into the database.
 func RecordBanEvent(ctx context.Context, record BanEventRecord) (int64, error) {
+	id, _, err := RecordBanEventOnce(ctx, record)
+	return id, err
+}
+
+// RecordBanEventOnce acknowledges retries only after the original insert committed.
+func RecordBanEventOnce(ctx context.Context, record BanEventRecord) (int64, bool, error) {
 	if db == nil {
-		return 0, errors.New("storage not initialised")
+		return 0, false, errors.New("storage not initialised")
 	}
 
 	if record.ServerID == "" {
-		return 0, errors.New("server id is required")
+		return 0, false, errors.New("server id is required")
 	}
 	now := time.Now().UTC()
 	if record.CreatedAt.IsZero() {
@@ -766,8 +773,9 @@ func RecordBanEvent(ctx context.Context, record BanEventRecord) (int64, error) {
 
 	const query = `
 INSERT INTO ban_events (
-	server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	server_id, server_name, jail, ip, country, hostname, failures, whois, logs, event_type, occurred_at, created_at, callback_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(server_id, callback_id) WHERE callback_id IS NOT NULL AND callback_id != '' DO NOTHING`
 
 	res, err := db.ExecContext(
 		ctx,
@@ -784,12 +792,30 @@ INSERT INTO ban_events (
 		eventType,
 		formatStorageTime(record.OccurredAt),
 		formatStorageTime(record.CreatedAt),
+		record.CallbackID,
 	)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
-	return res.LastInsertId()
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, false, err
+	}
+	if count == 0 {
+		var id int64
+		var ip, jail, kind string
+		err := db.QueryRowContext(ctx, "SELECT id, ip, jail, event_type FROM ban_events WHERE server_id = ? AND callback_id = ?", record.ServerID, record.CallbackID).Scan(&id, &ip, &jail, &kind)
+		if err != nil {
+			return 0, false, err
+		}
+		if ip != record.IP || jail != record.Jail || kind != eventType {
+			return 0, false, errors.New("callback event ID already used for a different event")
+		}
+		return id, false, nil
+	}
+	id, err := res.LastInsertId()
+	return id, true, err
 }
 
 // Fills in whois on an already stored event; used by the asynchronous enrichment after the callback has been answered.
@@ -1632,6 +1658,7 @@ var schemaTables = []tableDef{
 			col("failures", "TEXT"),
 			col("whois", "TEXT"),
 			col("logs", "TEXT"),
+			col("callback_id", "TEXT"),
 			col("event_type", "TEXT NOT NULL DEFAULT 'ban'"),
 			colAlter("occurred_at", "DATETIME NOT NULL", "DATETIME NOT NULL DEFAULT ''"),
 			colAlter("created_at", "DATETIME NOT NULL", "DATETIME NOT NULL DEFAULT ''"),
@@ -1720,6 +1747,7 @@ func ensureSchema(ctx context.Context) error {
 	}
 
 	const createIndexes = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ban_events_callback_id ON ban_events(server_id, callback_id) WHERE callback_id IS NOT NULL AND callback_id != '';
 CREATE INDEX IF NOT EXISTS idx_ban_events_server_id ON ban_events(server_id);
 CREATE INDEX IF NOT EXISTS idx_ban_events_occurred_at ON ban_events(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_ban_events_ip ON ban_events(ip);

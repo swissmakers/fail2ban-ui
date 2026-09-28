@@ -175,7 +175,7 @@ func TestSchemaMatchesExpectedColumns(t *testing.T) {
 		},
 		"ban_events": {
 			"id", "server_id", "server_name", "jail", "ip", "country", "hostname", "failures", "whois",
-			"logs", "event_type", "occurred_at", "created_at",
+			"logs", "callback_id", "event_type", "occurred_at", "created_at",
 		},
 		"permanent_blocks": {
 			"id", "ip", "integration", "status", "details", "message", "server_id", "created_at", "updated_at",
