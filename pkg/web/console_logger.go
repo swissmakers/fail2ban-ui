@@ -54,7 +54,13 @@ func (c *ConsoleLogWriter) SetEnabled(enabled bool) {
 // Write sends bytes to the original writer and, when enabled,
 // broadcasts the trimmed line to WebSocket clients.
 func (c *ConsoleLogWriter) Write(p []byte) (n int, err error) {
-	n, err = c.originalWriter.Write(p)
+	originalLen := len(p)
+	p = []byte(config.RedactLog(string(p)))
+	_, err = c.originalWriter.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	n = originalLen
 
 	c.mu.RLock()
 	enabled := c.enabled
