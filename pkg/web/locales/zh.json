@@ -778,5 +778,6 @@
   "logs.timeline.suggestions_empty": "未找到相似的时段。",
   "logs.timeline.suggestions_title": "相似的历史时段",
   "logs.timeline.title": "封禁与解封活动",
-  "jails.manage.offender_disabled": "您的更改已应用。无关的监狱 '{jail}' 配置有误，已被自动禁用。"
+  "jails.manage.offender_disabled": "您的更改已应用。无关的监狱 '{jail}' 配置有误，已被自动禁用。",
+  "servers.card.sync_pending": "配置待应用；已启用自动重试"
 }

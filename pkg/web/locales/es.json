@@ -778,5 +778,6 @@
   "logs.timeline.suggestions_empty": "No se encontraron períodos similares.",
   "logs.timeline.suggestions_title": "Períodos pasados similares",
   "logs.timeline.title": "Actividad de baneos y desbaneos",
-  "jails.manage.offender_disabled": "Su cambio se ha aplicado. El jail no relacionado '{jail}' tiene una configuración defectuosa y se ha desactivado automáticamente."
+  "jails.manage.offender_disabled": "Su cambio se ha aplicado. El jail no relacionado '{jail}' tiene una configuración defectuosa y se ha desactivado automáticamente.",
+  "servers.card.sync_pending": "Configuración pendiente.. reintento automático activado"
 }

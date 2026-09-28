@@ -778,5 +778,6 @@
   "logs.timeline.suggestions_empty": "No similar periods found.",
   "logs.timeline.suggestions_title": "Similar past periods",
   "logs.timeline.title": "Ban & unban activity",
-  "jails.manage.offender_disabled": "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled."
+  "jails.manage.offender_disabled": "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled.",
+  "servers.card.sync_pending": "Configuration pending.. automatic retry enabled"
 }

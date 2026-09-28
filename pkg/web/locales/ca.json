@@ -778,5 +778,6 @@
   "logs.timeline.suggestions_empty": "No s'han trobat períodes semblants.",
   "logs.timeline.suggestions_title": "Períodes passats semblants",
   "logs.timeline.title": "Activitat de bans i desbans",
-  "jails.manage.offender_disabled": "El vostre canvi s'ha aplicat. El jail no relacionat '{jail}' té una configuració defectuosa i s'ha desactivat automàticament."
+  "jails.manage.offender_disabled": "El vostre canvi s'ha aplicat. El jail no relacionat '{jail}' té una configuració defectuosa i s'ha desactivat automàticament.",
+  "servers.card.sync_pending": "Configuració pendent.. reintent automàtic activat"
 }

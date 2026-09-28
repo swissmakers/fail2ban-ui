@@ -778,5 +778,6 @@
   "logs.timeline.suggestions_empty": "Keine ähnlichen Zeiträume gefunden.",
   "logs.timeline.suggestions_title": "Ähnliche frühere Zeiträume",
   "logs.timeline.title": "Ban- & Unban-Aktivität",
-  "jails.manage.offender_disabled": "Dini Änderig isch übernoh worde. Z unbeteiligte Jail '{jail}' het e fählerhafti Konfiguration und isch automatisch deaktiviert worde."
+  "jails.manage.offender_disabled": "Dini Änderig isch übernoh worde. Z unbeteiligte Jail '{jail}' het e fählerhafti Konfiguration und isch automatisch deaktiviert worde.",
+  "servers.card.sync_pending": "Konfiguration usstehend.. automatischi Wiederholig aktiviert"
 }

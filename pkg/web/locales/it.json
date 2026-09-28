@@ -778,5 +778,6 @@
   "logs.timeline.suggestions_empty": "Nessun periodo simile trovato.",
   "logs.timeline.suggestions_title": "Periodi passati simili",
   "logs.timeline.title": "Attività di ban e unban",
-  "jails.manage.offender_disabled": "La tua modifica è stata applicata. Il jail non correlato '{jail}' ha una configurazione difettosa ed è stato disabilitato automaticamente."
+  "jails.manage.offender_disabled": "La tua modifica è stata applicata. Il jail non correlato '{jail}' ha una configurazione difettosa ed è stato disabilitato automaticamente.",
+  "servers.card.sync_pending": "Configurazione in attesa.. nuovo tentativo automatico attivato"
 }
