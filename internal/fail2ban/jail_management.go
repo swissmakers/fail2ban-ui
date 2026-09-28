@@ -91,78 +91,20 @@ func DiscoverJailsFromFiles(configPath string) ([]JailInfo, error) {
 		return nil, err
 	}
 
-	var allJails []JailInfo
-	processedFiles := make(map[string]bool)
-	jailIndex := make(map[string]int)
-	processedJails := make(map[string]bool)
-
-	// Parse .local files (sorted)
-	// Fail2ban reads jail.d lexically with last-wins semantics, so a jail defined in several .local files takes its
-	// state from the LAST file -> mirror that here or the UI would show a state the daemon does not have.
-	for _, filePath := range files {
-		if !strings.HasSuffix(filePath, ".local") {
-			continue
-		}
-
-		filename := filepath.Base(filePath)
-		baseName := strings.TrimSuffix(filename, ".local")
-		if baseName == "" {
-			continue
-		}
-		if processedFiles[baseName] {
-			continue
-		}
-		processedFiles[baseName] = true
-
-		jails, err := parseJailConfigFile(filePath)
-		if err != nil {
-			debugf("Failed to parse jail file %s: %v", filePath, err)
-			continue
-		}
-
-		for _, jail := range jails {
-			if jail.JailName == "" || jail.JailName == "DEFAULT" {
+	acc := newJailAccumulator()
+	for _, suffix := range []string{".conf", ".local"} {
+		for _, filePath := range files {
+			if !strings.HasSuffix(filePath, suffix) {
 				continue
 			}
-			if idx, seen := jailIndex[jail.JailName]; seen {
-				allJails[idx].Enabled = jail.Enabled
-			} else {
-				jailIndex[jail.JailName] = len(allJails)
-				allJails = append(allJails, jail)
-				processedJails[jail.JailName] = true
+			content, err := os.ReadFile(filePath)
+			if err != nil {
+				return nil, fmt.Errorf("read jail file %s: %w", filePath, err)
 			}
+			acc.add(string(content), strings.TrimPrefix(suffix, "."))
 		}
 	}
-	for _, filePath := range files {
-		if !strings.HasSuffix(filePath, ".conf") {
-			continue
-		}
-
-		filename := filepath.Base(filePath)
-		baseName := strings.TrimSuffix(filename, ".conf")
-		if baseName == "" {
-			continue
-		}
-		if processedFiles[baseName] {
-			continue
-		}
-		processedFiles[baseName] = true
-
-		jails, err := parseJailConfigFile(filePath)
-		if err != nil {
-			debugf("Failed to parse jail file %s: %v", filePath, err)
-			continue
-		}
-
-		for _, jail := range jails {
-			if jail.JailName != "" && jail.JailName != "DEFAULT" && !processedJails[jail.JailName] {
-				allJails = append(allJails, jail)
-				processedJails[jail.JailName] = true
-			}
-		}
-	}
-
-	return allJails, nil
+	return acc.jails, nil
 }
 
 // =========================================================================
@@ -206,14 +148,6 @@ func GetAllJails(configPath string) ([]JailInfo, error) {
 	}
 
 	return jails, nil
-}
-
-func parseJailConfigFile(path string) ([]JailInfo, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return parseJailConfigContent(string(content)), nil
 }
 
 // Parses jail sections out of a jail.d file body. Shared by the local and SSH
@@ -331,7 +265,7 @@ func setJailEnabledInFile(jailFilePath, jailName string, enabled bool) error {
 		return fmt.Errorf("failed to read jail .local file %s: %w", jailFilePath, err)
 	}
 	newContent := rewriteJailEnabled(string(content), jailName, enabled)
-	if err := os.WriteFile(jailFilePath, []byte(newContent), 0644); err != nil {
+	if err := writeConfigAtomic(jailFilePath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to write jail file %s: %w", jailFilePath, err)
 	}
 	return nil
@@ -532,7 +466,7 @@ func SetJailConfig(jailName, content, configPath string) error {
 		return err
 	}
 	debugf("Writing jail config to: %s", jailFilePath)
-	if err := os.WriteFile(jailFilePath, []byte(content), 0644); err != nil {
+	if err := writeConfigAtomic(jailFilePath, []byte(content), 0644); err != nil {
 		debugf("Failed to write jail config: %v", err)
 		return fmt.Errorf("failed to write jail config for %s: %w", jailName, err)
 	}
