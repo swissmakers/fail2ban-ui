@@ -74,6 +74,11 @@ func ValidateAbsolutePath(path, label string) error {
 }
 
 func ValidateServerFields(srv Fail2banServer) error {
+	if srv.ID != "" {
+		if err := ValidateServerID(srv.ID); err != nil {
+			return err
+		}
+	}
 	switch srv.Type {
 	case "", "local":
 		if err := ValidateAbsolutePath(srv.SocketPath, "socketPath"); err != nil {
