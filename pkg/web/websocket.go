@@ -37,9 +37,10 @@ import (
 // =========================================================================
 
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
+	hub            *Hub
+	conn           *websocket.Conn
+	send           chan []byte
+	canReadConsole bool
 }
 
 type Hub struct {
@@ -174,19 +175,33 @@ func (h *Hub) Run() {
 			log.Printf("WebSocket client disconnected. Total clients: %d", len(h.clients))
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
-			}
-			h.mu.RUnlock()
+			h.deliver(message)
 
 		case <-ticker.C:
 			h.sendHeartbeat()
+		}
+	}
+}
+
+// Event readers must not receive admin console traffic on the shared socket.
+func (h *Hub) deliver(message []byte) {
+	var envelope struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(message, &envelope); err != nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for client := range h.clients {
+		if envelope.Type == "console_log" && !client.canReadConsole {
+			continue
+		}
+		select {
+		case client.send <- message:
+		default:
+			close(client.send)
+			delete(h.clients, client)
 		}
 	}
 }
@@ -203,7 +218,7 @@ func (h *Hub) sendHeartbeat() {
 		return
 	}
 
-	h.mu.RLock()
+	h.mu.Lock()
 	for client := range h.clients {
 		select {
 		case client.send <- data:
@@ -212,7 +227,7 @@ func (h *Hub) sendHeartbeat() {
 			delete(h.clients, client)
 		}
 	}
-	h.mu.RUnlock()
+	h.mu.Unlock()
 }
 
 // =========================================================================
@@ -326,9 +341,10 @@ func serveWS(hub *Hub, c *gin.Context) {
 	}
 
 	client := &Client{
-		hub:  hub,
-		conn: conn,
-		send: make(chan []byte, 256),
+		hub:            hub,
+		conn:           conn,
+		send:           make(chan []byte, 256),
+		canReadConsole: userHasAdminAccess(c),
 	}
 
 	client.hub.register <- client
