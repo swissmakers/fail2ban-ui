@@ -20,7 +20,9 @@ package fail2ban
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 )
@@ -122,9 +124,22 @@ func (sc *SSHConnector) readRemoteFile(ctx context.Context, filePath string) (st
 	if err != nil {
 		return "", err
 	}
-	content, err := sc.runRemoteCommand(ctx, []string{"cat " + quoted})
+	parent, err := quoteRemotePath(filepath.Dir(filePath))
+	if err != nil {
+		return "", err
+	}
+	grandparent, err := quoteRemotePath(filepath.Dir(filepath.Dir(filePath)))
+	if err != nil {
+		return "", err
+	}
+	script := fmt.Sprintf("if { [ ! -e %s ] && [ -x %s ]; } || { [ -d %s ] && [ -x %s ] && [ ! -e %s ] && [ ! -L %s ]; }; then printf 'F2BUI_NOT_FOUND'; else cat %s; fi",
+		parent, grandparent, parent, parent, quoted, quoted, quoted)
+	content, err := sc.runRemoteCommand(ctx, []string{script})
 	if err != nil {
 		return "", fmt.Errorf("failed to read remote file %s: %w", filePath, err)
+	}
+	if content == "F2BUI_NOT_FOUND" {
+		return "", fmt.Errorf("%s: %w", filePath, fs.ErrNotExist)
 	}
 	return content, nil
 }
@@ -133,6 +148,8 @@ func (sc *SSHConnector) readRemoteWithLocalFallback(ctx context.Context, dir, na
 	localPath := filepath.Join(dir, name+".local")
 	if content, err := sc.readRemoteFile(ctx, localPath); err == nil {
 		return content, localPath, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", "", err
 	}
 	confPath := filepath.Join(dir, name+".conf")
 	content, err := sc.readRemoteFile(ctx, confPath)
@@ -145,6 +162,10 @@ func (sc *SSHConnector) readRemoteWithLocalFallback(ctx context.Context, dir, na
 const remoteWriteDelimiter = "F2BUI_REMOTE_EOF"
 
 func buildRemoteWriteScript(filePath, content string) (string, error) {
+	return buildRemoteWriteScriptMode(filePath, content, false)
+}
+
+func buildRemoteWriteScriptMode(filePath, content string, private bool) (string, error) {
 	quoted, err := quoteRemotePath(filePath)
 	if err != nil {
 		return "", err
@@ -155,7 +176,37 @@ func buildRemoteWriteScript(filePath, content string) (string, error) {
 		}
 	}
 	body := strings.TrimSuffix(content, "\n")
-	return fmt.Sprintf("cat > %s <<'%s'\n%s\n%s\n", quoted, remoteWriteDelimiter, body, remoteWriteDelimiter), nil
+	// stat -c works on GNU and BusyBox; chmod --reference is GNU-only and would abort under set -e.
+	mode := "mode=644; if [ -f \"$target\" ]; then mode=$(stat -c %a \"$target\" 2>/dev/null) || mode=644; fi; chmod \"$mode\" \"$tmp\""
+	if private {
+		mode = "chmod 600 \"$tmp\""
+	}
+	return fmt.Sprintf(`set -e
+target=%s
+if [ -L "$target" ]; then target=$(readlink -f "$target"); fi
+umask 077
+tmp=$(mktemp "${target}.f2bui.XXXXXX")
+backup=''
+trap 'rm -f "$tmp"; if [ -n "$backup" ]; then rm -f "$backup"; fi' EXIT HUP INT TERM
+cat > "$tmp" <<'%s'
+%s
+%s
+%s
+if [ -f "$target" ] && cmp -s "$target" "$tmp"; then
+  rm -f "$tmp"
+else
+  if [ -f "$target" ]; then
+    backup=$(mktemp "${target}.backup.XXXXXX")
+    cat "$target" > "$backup"
+    chmod 600 "$backup"
+    mv -f "$backup" "${target}.f2bui.bak"
+    backup=''
+  fi
+  mv -f "$tmp" "$target"
+  sync
+fi
+trap - EXIT HUP INT TERM
+`, quoted, remoteWriteDelimiter, body, remoteWriteDelimiter, mode), nil
 }
 
 func buildEnsureActionScript(actionPath, content string) (string, error) {
@@ -167,7 +218,7 @@ func buildEnsureActionScript(actionPath, content string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	write, err := buildRemoteWriteScript(actionPath, content)
+	write, err := buildRemoteWriteScriptMode(actionPath, content, true)
 	if err != nil {
 		return "", err
 	}
@@ -235,8 +286,11 @@ func (sc *SSHConnector) getFail2banPath(ctx context.Context) string {
 		debugf("fail2ban path probe failed for %s, assuming %s (will retry): %v", sc.server.Name, DefaultConfigRoot, err)
 		return DefaultConfigRoot
 	}
-	probed := strings.TrimSpace(out)
-	if probed == "" {
+	// The probe prints one of two constants; take the last line so a login banner cannot poison the cache.
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	probed := strings.TrimSpace(lines[len(lines)-1])
+	if probed != "/config/fail2ban" && probed != DefaultConfigRoot {
+		debugf("unexpected fail2ban path probe output for %s, assuming %s: %q", sc.server.Name, DefaultConfigRoot, out)
 		return DefaultConfigRoot
 	}
 

@@ -21,7 +21,9 @@ package fail2ban
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 )
@@ -68,31 +70,67 @@ func (sc *SSHConnector) SetFilterConfig(ctx context.Context, filterName, content
 
 // Accumulates jails parsed from jail.d file contents, letting .local definitions override .conf ones (and same-type re-definitions win).
 type jailAccumulator struct {
-	jails  []JailInfo
-	index  map[string]int
-	source map[string]string
+	jails          []JailInfo
+	index          map[string]int
+	source         map[string]string
+	defaultEnabled bool
+	defaultSource  string
 }
 
 func newJailAccumulator() *jailAccumulator {
-	return &jailAccumulator{index: make(map[string]int), source: make(map[string]string)}
+	return &jailAccumulator{index: make(map[string]int), source: make(map[string]string), defaultEnabled: true}
 }
 
+// Only explicit enabled values override an earlier layer. A partial .local
+// section must not reset a .conf value or drop other sections from that file.
 func (a *jailAccumulator) add(content, fileType string) {
-	for _, jail := range parseJailConfigContent(content) {
-		if jail.JailName == "" || jail.JailName == "DEFAULT" {
-			continue
+	enabled := jailEnabledOptions(content)
+	if value, ok := enabled["DEFAULT"]; ok && (a.defaultSource != "local" || fileType == "local") {
+		a.defaultEnabled, a.defaultSource = value, fileType
+		for i := range a.jails {
+			if a.source[a.jails[i].JailName] == "" {
+				a.jails[i].Enabled = value
+			}
 		}
+	}
+	for _, jail := range parseJailConfigContent(content) {
 		idx, seen := a.index[jail.JailName]
-		switch {
-		case !seen:
-			a.index[jail.JailName] = len(a.jails)
-			a.source[jail.JailName] = fileType
+		if !seen {
+			idx = len(a.jails)
+			a.index[jail.JailName] = idx
+			jail.Enabled = a.defaultEnabled
 			a.jails = append(a.jails, jail)
-		case fileType == "local" || a.source[jail.JailName] == fileType:
-			a.jails[idx].Enabled = jail.Enabled
+		}
+		if value, ok := enabled[jail.JailName]; ok && (a.source[jail.JailName] != "local" || fileType == "local") {
+			a.jails[idx].Enabled = value
 			a.source[jail.JailName] = fileType
 		}
 	}
+}
+
+func jailEnabledOptions(content string) map[string]bool {
+	values := make(map[string]bool)
+	section := ""
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.TrimSpace(line[1 : len(line)-1])
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(key), "enabled") {
+			continue
+		}
+		value, _, _ = strings.Cut(value, " #")
+		value, _, _ = strings.Cut(value, " ;")
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "true", "yes", "on", "1":
+			values[section] = true
+		case "false", "no", "off", "0":
+			values[section] = false
+		}
+	}
+	return values
 }
 
 func buildJailDirDumpScript(jailDPath string) (string, error) {
@@ -100,18 +138,12 @@ func buildJailDirDumpScript(jailDPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(`for f in %[1]s/*.local; do
+	return fmt.Sprintf(`set -e
+for f in %[1]s/*.conf %[1]s/*.local; do
 	if [ -f "$f" ]; then
-		echo "%[2]s$f"
+		printf '%%s\n' "%[2]s$f"
 		cat "$f"
-		echo "%[3]s"
-	fi
-done
-for f in %[1]s/*.conf; do
-	if [ -f "$f" ] && [ ! -f "${f%%.conf}.local" ]; then
-		echo "%[2]s$f"
-		cat "$f"
-		echo "%[3]s"
+		printf '\n%%s\n' "%[3]s"
 	fi
 done
 `, quotedDir, batchFileBegin, batchFileEnd), nil
@@ -250,7 +282,6 @@ func (sc *SSHConnector) TestFilter(ctx context.Context, filterName string, logLi
 	localPath := filepath.Join(FilterDir(fail2banPath), filterName+".local")
 	confPath := filepath.Join(FilterDir(fail2banPath), filterName+".conf")
 
-	const heredocMarker = "F2B_FILTER_TEST_LOG"
 	logContent := strings.Join(cleaned, "\n")
 	var prologue string
 	if filterContent != "" {
@@ -284,11 +315,9 @@ fi`, localPath, confPath)
 echo "%[2]s$FILTER_PATH"
 TMPFILE=$(mktemp /tmp/fail2ban-test-XXXXXX.log)
 trap 'rm -f "$TMPFILE" ${TMPFILTER:+"$TMPFILTER"}' EXIT
-cat <<'%[3]s' > "$TMPFILE"
-%[4]s
-%[3]s
+printf '%%s' '%[3]s' | base64 -d > "$TMPFILE"
 fail2ban-regex "$TMPFILE" "$FILTER_PATH" || true
-`, prologue, filterPathMarker, heredocMarker, logContent)
+`, prologue, filterPathMarker, base64.StdEncoding.EncodeToString([]byte(logContent)))
 
 	out, err := sc.runRemoteCommand(ctx, []string{script})
 	if err != nil {
@@ -324,10 +353,10 @@ func (sc *SSHConnector) GetJailConfig(ctx context.Context, jail string) (string,
 	fail2banPath := sc.getFail2banPath(ctx)
 	jailDPath := JailDir(fail2banPath)
 	content, path, err := sc.readRemoteWithLocalFallback(ctx, jailDPath, jail)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Sprintf("[%s]\n", jail), filepath.Join(jailDPath, jail+".local"), nil
 	}
-	return content, path, nil
+	return content, path, err
 }
 
 func (sc *SSHConnector) SetJailConfig(ctx context.Context, jail, content string) error {
@@ -437,9 +466,9 @@ func (sc *SSHConnector) TestLogpathWithResolution(ctx context.Context, logpath s
 
 func (sc *SSHConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool, error) {
 	jailLocalPath := JailLocal(sc.getFail2banPath(ctx))
-	output, err := sc.runRemoteCommand(ctx, []string{"cat", jailLocalPath})
+	output, err := sc.readRemoteFile(ctx, jailLocalPath)
 	if err != nil {
-		if strings.Contains(err.Error(), "No such file") || strings.Contains(output, "No such file") {
+		if errors.Is(err, fs.ErrNotExist) {
 			return false, false, nil
 		}
 		return false, false, fmt.Errorf("failed to read jail.local on %s: %w", sc.server.Name, err)
@@ -453,7 +482,7 @@ func (sc *SSHConnector) EnsureJailLocalStructure(ctx context.Context) error {
 
 	exists, hasUI, chkErr := sc.CheckJailLocalIntegrity(ctx)
 	if chkErr != nil {
-		debugf("Warning: could not check jail.local integrity on %s: %v", sc.server.Name, chkErr)
+		return chkErr
 	}
 	if exists && !hasUI {
 		debugf("jail.local on server %s exists but is not managed by Fail2ban-UI - skipping overwrite", sc.server.Name)

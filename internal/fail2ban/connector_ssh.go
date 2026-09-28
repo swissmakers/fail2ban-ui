@@ -41,14 +41,17 @@ type SSHConnector struct {
 	pathMutex       sync.RWMutex
 	tunnelPort      int
 	forwardPort     int
-	tunnelWasUp     bool
 	closed          atomic.Bool
+	reloadPending   atomic.Bool
 	masterMu        sync.Mutex
 	masterUp        atomic.Bool
 	masterFailUntil time.Time
 	sessionSem      chan struct{}
 	actionRepairMu  sync.Mutex
 	actionRepairAt  time.Time
+	tunnelCheckMu   sync.Mutex
+	healthMu        sync.RWMutex
+	health          SSHHealthStatus
 }
 
 // How long to wait before retrying an action file repair on the same host
@@ -111,7 +114,7 @@ func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
 	defer cancel()
 
 	if err := conn.ensureAction(ctx); err != nil {
-		debugf("warning: failed to ensure remote fail2ban action for %s during startup (server may not be ready): %v", server.Name, err)
+		log.Printf("warning: failed to ensure remote fail2ban action for %s during startup (server may not be ready): %v", server.Name, err)
 	}
 	return conn, nil
 }
@@ -152,7 +155,7 @@ func (sc *SSHConnector) GetJailSummary(ctx context.Context) (*JailSummary, error
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", sc.server.Name, err)
 	}
-	drifted := !summary.actionExists ||
+	drifted := sc.reloadPending.Load() || !summary.actionExists ||
 		strings.TrimSpace(summary.actionFile) != strings.TrimSpace(sc.desiredActionConfig())
 	return &JailSummary{
 		Jails:             infos,
@@ -196,9 +199,22 @@ func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
 }
 
 func (sc *SSHConnector) Reload(ctx context.Context) error {
-	out, err := sc.runFail2banCommand(ctx, "reload")
+	// Same tree that ValidateConfiguration checked; the client, not the daemon, reads the files.
+	out, err := sc.runFail2banCommand(ctx, "-c", sc.getFail2banPath(ctx), "reload")
 	if err != nil {
 		return err
+	}
+	if err := checkReloadOutput(out); err != nil {
+		return err
+	}
+	sc.reloadPending.Store(false)
+	return nil
+}
+
+func (sc *SSHConnector) ValidateConfiguration(ctx context.Context) error {
+	out, err := sc.runFail2banCommand(ctx, "-c", sc.getFail2banPath(ctx), "-t")
+	if err != nil {
+		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 	return checkReloadOutput(out)
 }
@@ -219,10 +235,8 @@ func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
 	}
 	// If systemd is not available or if there is an interactive authentication required, we will fall back to fail2ban-client.
 	if sc.isSystemctlUnavailable(out, err) {
-		reloadOut, reloadErr := sc.runFail2banCommand(ctx, "reload")
-		if reloadErr != nil {
-			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w (output: %s)",
-				reloadErr, strings.TrimSpace(reloadOut))
+		if reloadErr := sc.Reload(ctx); reloadErr != nil {
+			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w", reloadErr)
 		}
 		if err := sc.checkFail2banHealthyRemote(ctx); err != nil {
 			return "reload", fmt.Errorf("remote fail2ban health check after reload failed: %w", err)
@@ -240,6 +254,7 @@ func (sc *SSHConnector) desiredActionConfig() string {
 }
 
 func (sc *SSHConnector) ensureAction(ctx context.Context) error {
+	sc.reloadPending.Store(true)
 	actionPath := CustomActionFile(sc.getFail2banPath(ctx))
 	script, err := buildEnsureActionScript(actionPath, sc.desiredActionConfig())
 	if err != nil {
@@ -366,8 +381,12 @@ func splitBannedSummary(out string) (bannedSummary, error) {
 }
 
 func (sc *SSHConnector) runFail2banCommand(ctx context.Context, args ...string) (string, error) {
-	cmdArgs := append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath, args...)...)
-	return sc.runRemoteCommand(ctx, cmdArgs)
+	words := append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath, args...)...)
+	// ssh joins argv with spaces and the remote shell re-splits it, so quote every word under sudo.
+	for i, w := range words {
+		words[i] = shellQuote(w)
+	}
+	return sc.runRemoteCommand(ctx, []string{strings.Join(words, " ")})
 }
 
 // Detects "no systemd" situations on the remote host or if an interactive authentication is required.

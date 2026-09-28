@@ -228,8 +228,8 @@ func TestBuildRemoteWriteScript(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := "cat > '/tmp/f' <<'" + remoteWriteDelimiter + "'\nline1\nline2\n" + remoteWriteDelimiter + "\n"
-		if script != want {
+		want := "cat > \"$tmp\" <<'" + remoteWriteDelimiter + "'\nline1\nline2\n" + remoteWriteDelimiter + "\n"
+		if !strings.Contains(script, want) {
 			t.Fatalf("script = %q, want %q", script, want)
 		}
 	})
@@ -297,7 +297,7 @@ func TestParseRemoteFileDump(t *testing.T) {
 }
 
 func TestBuildJailDirDumpScript(t *testing.T) {
-	t.Run("emits framed local files then conf files without a local sibling", func(t *testing.T) {
+	t.Run("emits all conf files before local overrides", func(t *testing.T) {
 		script, err := buildJailDirDumpScript("/etc/fail2ban/jail.d")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -305,8 +305,8 @@ func TestBuildJailDirDumpScript(t *testing.T) {
 		if !strings.Contains(script, "'/etc/fail2ban/jail.d'/*.local") {
 			t.Fatalf("missing quoted .local glob: %s", script)
 		}
-		if !strings.Contains(script, `[ ! -f "${f%.conf}.local" ]`) {
-			t.Fatalf(".conf files must be skipped when a .local sibling exists: %s", script)
+		if strings.Contains(script, `${f%.conf}.local`) || strings.Index(script, "/*.conf") > strings.Index(script, "/*.local") {
+			t.Fatalf("configuration layers must be merged in order: %s", script)
 		}
 		if !strings.Contains(script, batchFileBegin) || !strings.Contains(script, batchFileEnd) {
 			t.Fatalf("missing framing markers: %s", script)
@@ -501,7 +501,7 @@ func TestSSHTunnelConfigChanged(t *testing.T) {
 		Type: "ssh", Host: "10.0.0.1", Port: 22, SSHUser: "f2b", SSHKeyPath: "/config/.ssh/id",
 		ReverseTunnelEnabled: true, TunnelPort: 9443,
 	}
-	tunneled := &SSHConnector{server: base, tunnelPort: 9443}
+	tunneled := &SSHConnector{server: base, tunnelPort: 9443, forwardPort: 8080}
 
 	cases := []struct {
 		name   string
@@ -538,7 +538,7 @@ func TestBuildEnsureActionScript(t *testing.T) {
 		if !strings.Contains(script, "mkdir -p '/config/fail2ban/action.d'") {
 			t.Fatalf("action.d must be created under the probed root: %q", script)
 		}
-		if !strings.Contains(script, "cat > '"+actionPath+"'") {
+		if !strings.Contains(script, "target='"+actionPath+"'") {
 			t.Fatalf("action file must be written under the probed root: %q", script)
 		}
 		if strings.Contains(script, "/etc/fail2ban") {
