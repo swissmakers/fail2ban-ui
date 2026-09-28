@@ -154,7 +154,6 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Keep sync state of removed servers: an in-flight sync still holds it, so replacing it would allow two concurrent syncs.
 	m.connectors = connectors
 	m.defaultServerID = defaultID
 	m.syncTunnelMonitorLocked()
@@ -177,8 +176,6 @@ func (m *Manager) Close() {
 		m.tunnelMonStop = nil
 	}
 	m.mu.Unlock()
-	// A sync may still be persisting its result. Join the monitor without
-	// holding the registry lock before storage can close.
 	m.monitorWG.Wait()
 	m.mu.Lock()
 	connectors := m.connectors
@@ -392,38 +389,4 @@ func NewConnector(server shared.Fail2banServer) (Connector, error) {
 	default:
 		return nil, fmt.Errorf("unsupported server type %s", server.Type)
 	}
-}
-
-// Updates action files for all active remote connectors (SSH and Agent).
-func (m *Manager) UpdateActionFiles(ctx context.Context) error {
-	m.mu.RLock()
-	connectors := make([]Connector, 0, len(m.connectors))
-	for _, conn := range m.connectors {
-		server := conn.Server()
-		// Only update remote servers (SSH and Agent), not local
-		if server.Type == "ssh" || server.Type == "agent" {
-			connectors = append(connectors, conn)
-		}
-	}
-	m.mu.RUnlock()
-
-	var lastErr error
-	for _, conn := range connectors {
-		if err := updateConnectorAction(ctx, conn); err != nil {
-			log.Printf("warning: failed to update action file for server %s: %v", conn.Server().Name, err)
-			lastErr = err
-		}
-	}
-	return lastErr
-}
-
-// Updates the action file for a single server.
-func (m *Manager) UpdateActionFileForServer(ctx context.Context, serverID string) error {
-	m.mu.RLock()
-	conn, ok := m.connectors[serverID]
-	m.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("connector for server %s not found or not enabled", serverID)
-	}
-	return updateConnectorAction(ctx, conn)
 }

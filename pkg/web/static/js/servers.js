@@ -192,6 +192,17 @@ function renderServerManagerList() {
       descriptor.push(server.hostname);
     }
     var meta = descriptor.join(' - ');
+    var healthDetails = '';
+    if (server.configSync && server.configSync.pending) {
+      healthDetails += '<p class="mt-1 text-xs text-yellow-600">'
+        + escapeHtml(t('servers.card.sync_pending', 'Configuration pending; automatic retry enabled'))
+        + (server.configSync.error ? ': ' + escapeHtml(server.configSync.error) : '') + '</p>';
+    }
+    if (server.sshHealth) {
+      [server.sshHealth.sshError, server.sshHealth.callbackError].forEach(function(error) {
+        if (error) healthDetails += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(error) + '</p>';
+      });
+    }
     var tags = (server.tags || []).length
       ? '<div class="mt-2 text-xs text-gray-500">' + escapeHtml(server.tags.join(', ')) + '</div>'
       : '';
@@ -234,6 +245,7 @@ function renderServerManagerList() {
           + '</p>'
         : '')
       +        localDetails
+      +        healthDetails
       +        tags
       + '    </div>'
       + '    <div class="flex flex-col gap-2">'

@@ -89,26 +89,3 @@ func WriteLocalActionFile(configPath, callbackURL, serverID string) error {
 	debugf("Custom-action file successfully written to %s\n", actionPath)
 	return nil
 }
-
-// Ensures jail.local and the UI action file for a local tree.
-func EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath string) error {
-	debugf("Running EnsureLocalConnectorArtifacts()")
-	jailPath := JailLocal(configPath)
-	if _, err := os.Stat(filepath.Dir(jailPath)); os.IsNotExist(err) {
-		rootDir := NormalizeConfigPath(configPath)
-		return fmt.Errorf("fail2ban configuration directory does not exist at %s  -  install fail2ban or set the correct configuration path for this server", rootDir)
-	}
-	actionDir := ActionDir(configPath)
-	if err := ensureWritableDirectory(actionDir, "fail2ban action.d directory"); err != nil {
-		return err
-	}
-	if err := WriteLocalActionFile(configPath, callbackURL, serverID); err != nil {
-		return err
-	}
-	p := mustProvider()
-	content := []byte(p.BuildJailLocalContent())
-	if err := EnsureManagedJailLocal(configPath, content); err != nil {
-		return err
-	}
-	return nil
-}

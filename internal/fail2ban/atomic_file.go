@@ -34,7 +34,6 @@ func writeConfigAtomic(path string, content []byte, mode os.FileMode) error {
 			if !os.IsNotExist(err) {
 				return err
 			}
-			// A dangling link: create its target so the link itself stays in place.
 			if resolved, err = os.Readlink(path); err != nil {
 				return err
 			}

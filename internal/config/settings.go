@@ -1643,21 +1643,3 @@ func updateConsoleLogState(enabled bool) {
 		updateConsoleLogStateFunc(enabled)
 	}
 }
-
-// Ensures the local Fail2ban action but only when the server is enabled. (local connector only)
-func EnsureLocalFail2banAction(server Fail2banServer) error {
-	if !server.Enabled {
-		return nil
-	}
-	settingsLock.RLock()
-	callbackURL := getCallbackURLLocked()
-	settingsLock.RUnlock()
-	return ensureFail2banActionFiles(callbackURL, server.ID, server.ConfigPath)
-}
-
-// Ensures the local action files exist. (local connector only) -> will be moved to the connector_local.go
-func ensureFail2banActionFiles(callbackURL, serverID, configPath string) error {
-	DebugLog("----------------------------")
-	DebugLog("ensureFail2banActionFiles called (settings.go)")
-	return fail2ban.EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath)
-}

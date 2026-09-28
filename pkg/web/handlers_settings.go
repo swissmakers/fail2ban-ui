@@ -99,6 +99,7 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	}
 
 	oldSettings := config.GetSettings()
+	oldDefaults := config.BuildJailLocalContent()
 	newSettings, err := config.UpdateSettings(req)
 	if err != nil {
 		fmt.Println("Error updating settings:", err)
@@ -123,77 +124,22 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 		warnings = append(warnings, msg)
 	}
 
-	if callbackChanged {
-		config.DebugLog("Callback URL or secret changed, updating action files and reloading fail2ban on all servers")
-
-		if err := fail2ban.GetManager().UpdateActionFiles(c.Request.Context()); err != nil {
-			warn("Failed to update the callback action file on one or more servers: %v", err)
-		}
-
-		connectors := fail2ban.GetManager().Connectors()
-		for _, conn := range connectors {
-			server := conn.Server()
-			if (server.Type == "ssh" || server.Type == "agent") && server.Enabled {
-				config.DebugLog("Reloading fail2ban on %s after callback change", server.Name)
-				if err := conn.Reload(c.Request.Context()); err != nil {
-					warn("Action file updated on %s, but the Fail2Ban reload failed: %v", server.Name, err)
-				} else {
-					config.DebugLog("Successfully reloaded fail2ban on %s", server.Name)
-				}
-			}
-		}
-
-		settings := config.GetSettings()
-		for _, server := range settings.Servers {
-			if server.Type == "local" && server.Enabled {
-				if err := config.EnsureLocalFail2banAction(server); err != nil {
-					warn("Failed to update the local callback action file on %s: %v", server.Name, err)
-				} else {
-					if conn, err := fail2ban.GetManager().Connector(server.ID); err == nil {
-						config.DebugLog("Reloading local fail2ban after callback change")
-						if reloadErr := conn.Reload(c.Request.Context()); reloadErr != nil {
-							warn("Local action file updated, but the Fail2Ban reload failed: %v", reloadErr)
-						} else {
-							config.DebugLog("Successfully reloaded local fail2ban")
-						}
-					}
-				}
-			}
+	defaultSettingsChanged := oldDefaults != config.BuildJailLocalContent()
+	manager := fail2ban.GetManager()
+	connectors := manager.Connectors()
+	for _, conn := range connectors {
+		if callbackChanged || defaultSettingsChanged {
+			manager.RequestConfigSync(conn.Server().ID, callbackChanged, defaultSettingsChanged)
 		}
 	}
-
-	ignoreIPsChanged := !equalStringSlices(oldSettings.IgnoreIPs, newSettings.IgnoreIPs)
-	defaultSettingsChanged := oldSettings.BantimeIncrement != newSettings.BantimeIncrement ||
-		oldSettings.DefaultJailEnable != newSettings.DefaultJailEnable ||
-		ignoreIPsChanged ||
-		oldSettings.Bantime != newSettings.Bantime ||
-		oldSettings.BantimeRndtime != newSettings.BantimeRndtime ||
-		oldSettings.Findtime != newSettings.Findtime ||
-		oldSettings.Maxretry != newSettings.Maxretry ||
-		oldSettings.Banaction != newSettings.Banaction ||
-		oldSettings.BanactionAllports != newSettings.BanactionAllports ||
-		oldSettings.Chain != newSettings.Chain
-
-	restartNeeded := newSettings.RestartNeeded
-	if defaultSettingsChanged {
-		config.DebugLog("Fail2Ban DEFAULT settings changed, pushing to all enabled servers")
-		restartNeeded = false
-		connectors := fail2ban.GetManager().Connectors()
-		for _, conn := range connectors {
-			server := conn.Server()
-			config.DebugLog("Updating DEFAULT settings on server: %s (type: %s)", server.Name, server.Type)
-			// jail.local carries the [DEFAULT] block, so rewriting it is the push.
-			if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
-				warn("Failed to update DEFAULT settings on %s: %v", server.Name, err)
-			} else {
-				config.DebugLog("Successfully updated DEFAULT settings on %s", server.Name)
-				if err := conn.Reload(c.Request.Context()); err != nil {
-					warn("Settings updated on %s, but reload failed: %v", server.Name, err)
-				} else {
-					config.DebugLog("Successfully reloaded fail2ban on %s", server.Name)
-				}
-			}
+	for _, conn := range connectors {
+		if err := manager.SyncServerConfig(c.Request.Context(), conn.Server().ID); err != nil {
+			warn("%v", err)
 		}
+	}
+	restartNeeded := config.GetSettings().RestartNeeded
+	for _, conn := range connectors {
+		restartNeeded = restartNeeded || manager.ConfigSyncStatus(conn.Server().ID).Pending
 	}
 
 	c.JSON(http.StatusOK, settingsUpdateResponse{
