@@ -57,12 +57,14 @@ func EnsureManagedJailLocal(configPath string, content []byte) error {
 	if raw, err := os.ReadFile(jailPath); err == nil {
 		existingContent = string(raw)
 		fileExists = strings.TrimSpace(existingContent) != ""
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("cannot inspect existing jail.local: %w", err)
 	}
 	if fileExists && !strings.Contains(existingContent, managedJailLocalMarker) {
 		debugf("jail.local file exists but is not managed by Fail2ban-UI - skipping overwrite")
 		return nil
 	}
-	if err := os.WriteFile(jailPath, content, 0644); err != nil {
+	if err := writeConfigAtomic(jailPath, content, 0644); err != nil {
 		return fmt.Errorf("failed to write jail.local: %v", err)
 	}
 	debugf("Created/updated jail.local with proper content.")
@@ -74,17 +76,15 @@ func WriteLocalActionFile(configPath, callbackURL, serverID string) error {
 	debugf("Running WriteLocalActionFile()")
 	p := mustProvider()
 	actionPath := CustomActionFile(configPath)
-	actionDir := ActionDir(configPath)
-	if _, err := os.Stat(actionDir); os.IsNotExist(err) {
-		return fmt.Errorf("fail2ban action.d directory does not exist at %s  -  install fail2ban or set the correct configuration path for this server", actionDir)
+	if err := ensureWritableDirectory(ActionDir(configPath), "fail2ban action.d directory"); err != nil {
+		return err
 	}
-	secret := p.CallbackSecret()
-	cfg := p.BuildFail2banActionConfig(callbackURL, serverID, secret)
-	if err := os.WriteFile(actionPath, []byte(cfg), 0600); err != nil {
+	cfg, err := p.BuildFail2banActionConfig(callbackURL, serverID, p.CallbackSecret())
+	if err != nil {
+		return fmt.Errorf("refusing to write the action file: %w", err)
+	}
+	if err := writeConfigAtomic(actionPath, []byte(cfg), 0600); err != nil {
 		return fmt.Errorf("failed to write action file: %w", err)
-	}
-	if err := os.Chmod(actionPath, 0600); err != nil {
-		return fmt.Errorf("failed to restrict action file permissions: %w", err)
 	}
 	debugf("Custom-action file successfully written to %s\n", actionPath)
 	return nil

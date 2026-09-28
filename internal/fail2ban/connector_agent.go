@@ -212,6 +212,16 @@ func (ac *AgentConnector) Server() shared.Fail2banServer {
 
 func (ac *AgentConnector) ensureCallbackConfig(ctx context.Context) error {
 	p := mustProvider()
+	// Same rules as the SSH/local action files, so no host receives a value the others would refuse.
+	if err := shared.ValidateCallbackURL(p.CallbackURL()); err != nil {
+		return err
+	}
+	if err := shared.ValidateCallbackSecret(p.CallbackSecret()); err != nil {
+		return err
+	}
+	if err := shared.ValidateServerID(ac.server.ID); err != nil {
+		return err
+	}
 	payload := map[string]any{
 		"serverId":         ac.server.ID,
 		"callbackUrl":      p.CallbackURL(),

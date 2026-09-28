@@ -239,10 +239,11 @@ const fail2banActionTemplate = `[Definition]
 # Bypasses ban/unban for restored bans
 norestored = 1
 
-# Executes a cURL request to notify our API when an IP is banned.
-actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban \
+# Notifies the UI of a ban; detached so a slow or unreachable UI never delays the next ban.
+actionban = ( event_id="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"; /usr/bin/curl__CURL_INSECURE_FLAG__ --fail --silent --show-error --connect-timeout 3 --max-time 8 --retry 2 --retry-delay 1 --retry-max-time 25 --retry-connrefused -X POST '__CALLBACK_URL__/api/ban' \
      -H "Content-Type: application/json" \
-     -H "X-Callback-Secret: __CALLBACK_SECRET__" \
+     -H 'X-Callback-Secret: __CALLBACK_SECRET__' \
+     -H "X-Callback-Event-ID: $event_id" \
      -d "$(logpath='<logpath>'; \
            logs="$(tac $logpath 2>/dev/null | grep -a <grepopts> -wF '<ip>')"; \
            [ -z "$logs" ] && logs="$(journalctl --no-pager -r -o cat --since '-1 day' 2>/dev/null | grep -a <grepopts> -wF '<ip>')"; \
@@ -253,17 +254,18 @@ actionban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/ban
                  --arg hostname '<fq-hostname>' \
                  --arg failures '<failures>' \
                  --arg logs "$logs" \
-                 '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')"
+                 '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname, failures: $failures, logs: $logs}')" ) </dev/null >/dev/null 2>&1 &
 
-# Executes a cURL request to notify our API when an IP is unbanned.
-actionunban = /usr/bin/curl__CURL_INSECURE_FLAG__ -X POST __CALLBACK_URL__/api/unban \
+# Notifies the UI of an unban; detached for the same reason.
+actionunban = ( event_id="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"; /usr/bin/curl__CURL_INSECURE_FLAG__ --fail --silent --show-error --connect-timeout 3 --max-time 8 --retry 2 --retry-delay 1 --retry-max-time 25 --retry-connrefused -X POST '__CALLBACK_URL__/api/unban' \
      -H "Content-Type: application/json" \
-     -H "X-Callback-Secret: __CALLBACK_SECRET__" \
+     -H 'X-Callback-Secret: __CALLBACK_SECRET__' \
+     -H "X-Callback-Event-ID: $event_id" \
      -d "$(jq -n --arg serverId '__SERVER_ID__' \
                  --arg ip '<ip>' \
                  --arg jail '<name>' \
                  --arg hostname '<fq-hostname>' \
-                 '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname}')"
+                 '{serverId: $serverId, ip: $ip, jail: $jail, hostname: $hostname}')" ) </dev/null >/dev/null 2>&1 &
 
 actionflush = true
 
@@ -301,6 +303,7 @@ var (
 // =========================================================================
 
 func init() {
+	log.SetOutput(redactingLogWriter{log.Writer()})
 	registerFail2banProvider()
 	if err := storage.Init(""); err != nil {
 		panic(fmt.Sprintf("failed to initialise storage: %v", err))
@@ -385,6 +388,7 @@ func persistAllLocked() error {
 }
 
 func persistAppSettingsLocked() error {
+	refreshLogSecretsLocked()
 	rec, err := toAppSettingsRecordLocked()
 	if err != nil {
 		return err
@@ -393,6 +397,7 @@ func persistAppSettingsLocked() error {
 }
 
 func persistServersLocked() error {
+	refreshLogSecretsLocked()
 	records, err := toServerRecordsLocked()
 	if err != nil {
 		return err
@@ -665,6 +670,7 @@ func setDefaults() {
 }
 
 func setDefaultsLocked() {
+	defer refreshLogSecretsLocked()
 	setDebugFlag(currentSettings.Debug)
 	if currentSettings.Language == "" {
 		currentSettings.Language = "en"
@@ -684,16 +690,23 @@ func setDefaultsLocked() {
 	if cbURL := os.Getenv("CALLBACK_URL"); cbURL != "" {
 		currentSettings.CallbackURL = strings.TrimRight(strings.TrimSpace(cbURL), "/")
 	} else if currentSettings.CallbackURL == "" {
-		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
+		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d%s", currentSettings.Port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
 	} else {
-		if loopbackCallbackURLPattern.MatchString(currentSettings.CallbackURL) {
-			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", currentSettings.Port)
+		if isDefaultLoopbackCallbackURL(currentSettings.CallbackURL) {
+			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d%s", currentSettings.Port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
 		}
 	}
 	if cbSecret := os.Getenv("CALLBACK_SECRET"); cbSecret != "" {
 		currentSettings.CallbackSecret = strings.TrimSpace(cbSecret)
 	} else if currentSettings.CallbackSecret == "" {
 		currentSettings.CallbackSecret = generateCallbackSecret()
+	}
+	// Env and BASE_PATH bypass the API validation; action files are refused until these are fixed.
+	if err := shared.ValidateCallbackURL(currentSettings.CallbackURL); err != nil {
+		log.Printf("ERROR: %v (check CALLBACK_URL / BASE_PATH) - callback action files will not be written until it is fixed", err)
+	}
+	if err := shared.ValidateCallbackSecret(currentSettings.CallbackSecret); err != nil {
+		log.Printf("ERROR: %v (check CALLBACK_SECRET) - callback action files will not be written until it is fixed", err)
 	}
 	if currentSettings.AlertCountries == nil {
 		currentSettings.AlertCountries = []string{"ALL"}
@@ -1010,16 +1023,12 @@ func validateServerUniquenessLocked(input Fail2banServer) error {
 //  Fail2ban File Management --> TODO: create a new connector_global.go for functions that are used by all connectors
 // =========================================================================
 
-// Ensures the local action files exist. (local connector only) -> will be moved to the connector_local.go
-func ensureFail2banActionFiles(callbackURL, serverID, configPath string) error {
-	DebugLog("----------------------------")
-	DebugLog("ensureFail2banActionFiles called (settings.go)")
-	return fail2ban.EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath)
-}
-
 // Builds the content of our fail2ban-UI managed jail.local file. (used by all connectors)
 func BuildJailLocalContent() string {
-	settings := GetSettings()
+	return buildJailLocalContent(GetSettings())
+}
+
+func buildJailLocalContent(settings AppSettings) string {
 	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
 	if ignoreIPStr == "" {
 		ignoreIPStr = "127.0.0.1/8 ::1"
@@ -1087,7 +1096,7 @@ func cloneServer(src Fail2banServer) Fail2banServer {
 }
 
 // Builds the content of our fail2ban-UI custom-action file. (used by all connectors)
-func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
+func BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(callbackURL), "/")
 	if trimmed == "" {
 		trimmed = "http://127.0.0.1:8080"
@@ -1102,6 +1111,16 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 			secret = generateCallbackSecret()
 		}
 	}
+	// Last line of defence: these values are substituted into a shell command fail2ban runs as root.
+	if err := shared.ValidateCallbackURL(trimmed); err != nil {
+		return "", err
+	}
+	if err := shared.ValidateServerID(serverID); err != nil {
+		return "", err
+	}
+	if err := shared.ValidateCallbackSecret(secret); err != nil {
+		return "", err
+	}
 	curlInsecureFlag := ""
 	if strings.HasPrefix(strings.ToLower(trimmed), "https://") && callbackInsecureTLSEnabled() {
 		curlInsecureFlag = " -k"
@@ -1110,7 +1129,7 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
 	config = strings.ReplaceAll(config, actionServerIDPlaceholder, serverID)
 	config = strings.ReplaceAll(config, actionSecretPlaceholder, secret)
 	config = strings.ReplaceAll(config, actionCurlInsecureFlag, curlInsecureFlag)
-	return config
+	return config, nil
 }
 
 // Generates a 42-character random secret for the callback secret.
@@ -1138,7 +1157,7 @@ func getCallbackURLLocked() string {
 		if port == 0 {
 			port = 8080
 		}
-		url = fmt.Sprintf("http://127.0.0.1:%d", port)
+		url = fmt.Sprintf("http://127.0.0.1:%d%s", port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
 	}
 	return strings.TrimRight(url, "/")
 }
@@ -1147,17 +1166,6 @@ func GetCallbackURL() string {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
 	return getCallbackURLLocked()
-}
-
-// Ensures the local Fail2ban action but only when the server is enabled. (local connector only)
-func EnsureLocalFail2banAction(server Fail2banServer) error {
-	if !server.Enabled {
-		return nil
-	}
-	settingsLock.RLock()
-	callbackURL := getCallbackURLLocked()
-	settingsLock.RUnlock()
-	return ensureFail2banActionFiles(callbackURL, server.ID, server.ConfigPath)
 }
 
 // =========================================================================
@@ -1550,7 +1558,27 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 func GetSettings() AppSettings {
 	settingsLock.RLock()
 	defer settingsLock.RUnlock()
-	return currentSettings
+	return cloneSettings(currentSettings)
+}
+
+func cloneSettings(s AppSettings) AppSettings {
+	s.Servers = append([]Fail2banServer(nil), s.Servers...)
+	for i := range s.Servers {
+		s.Servers[i] = cloneServer(s.Servers[i])
+	}
+	s.IgnoreIPs = append([]string(nil), s.IgnoreIPs...)
+	s.AlertCountries = append([]string(nil), s.AlertCountries...)
+	headers := make(map[string]string, len(s.Webhook.Headers))
+	for key, value := range s.Webhook.Headers {
+		headers[key] = value
+	}
+	s.Webhook.Headers = headers
+	return s
+}
+
+func isDefaultLoopbackCallbackURL(value string) bool {
+	basePath := shared.NormalizeBasePath(os.Getenv("BASE_PATH"))
+	return loopbackCallbackURLPattern.MatchString(strings.TrimSuffix(value, basePath))
 }
 
 func UpdateSettings(new AppSettings) (AppSettings, error) {
@@ -1558,33 +1586,11 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	defer settingsLock.Unlock()
 	DebugLog("--- Locked settings for update ---")
 	old := currentSettings
-	ignoreIPsChanged := false
-	if len(old.IgnoreIPs) != len(new.IgnoreIPs) {
-		ignoreIPsChanged = true
-	} else {
-		for i := range old.IgnoreIPs {
-			if old.IgnoreIPs[i] != new.IgnoreIPs[i] {
-				ignoreIPsChanged = true
-				break
-			}
-		}
-	}
-	restartTriggered := old.BantimeIncrement != new.BantimeIncrement ||
-		old.DefaultJailEnable != new.DefaultJailEnable ||
-		ignoreIPsChanged ||
-		old.Bantime != new.Bantime ||
-		old.Findtime != new.Findtime ||
-		old.Maxretry != new.Maxretry
-	if restartTriggered {
-		new.RestartNeeded = true
-	} else {
-		new.RestartNeeded = anyServerNeedsRestartLocked()
-	}
 	new.CallbackURL = strings.TrimSpace(new.CallbackURL)
 	oldPort := currentSettings.Port
 	if new.Port != oldPort && new.Port > 0 {
-		if loopbackCallbackURLPattern.MatchString(new.CallbackURL) || new.CallbackURL == "" {
-			new.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d", new.Port)
+		if isDefaultLoopbackCallbackURL(new.CallbackURL) || new.CallbackURL == "" {
+			new.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d%s", new.Port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
 		}
 	}
 	if len(new.Servers) == 0 && len(currentSettings.Servers) > 0 {
@@ -1593,21 +1599,22 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 			new.Servers[i] = cloneServer(srv)
 		}
 	}
-	currentSettings = new
+	currentSettings = cloneSettings(new)
 	setDefaultsLocked()
-	if currentSettings.RestartNeeded && restartTriggered {
+	restartTriggered := buildJailLocalContent(old) != buildJailLocalContent(currentSettings)
+	if restartTriggered {
 		markAllServersRestartLocked()
-		updateGlobalRestartFlagLocked()
 	}
-	DebugLog("New settings applied: %v", currentSettings)
+	updateGlobalRestartFlagLocked()
+	DebugLog("Application settings updated")
 	if old.ConsoleOutput != new.ConsoleOutput {
 		updateConsoleLogState(new.ConsoleOutput)
 	}
 	if err := persistAllLocked(); err != nil {
 		fmt.Println("Error saving settings:", err)
-		return currentSettings, err
+		return cloneSettings(currentSettings), err
 	}
-	return currentSettings, nil
+	return cloneSettings(currentSettings), nil
 }
 
 // Checks if "LOTR" is among the configured alert countries.
@@ -1635,4 +1642,22 @@ func updateConsoleLogState(enabled bool) {
 	if updateConsoleLogStateFunc != nil {
 		updateConsoleLogStateFunc(enabled)
 	}
+}
+
+// Ensures the local Fail2ban action but only when the server is enabled. (local connector only)
+func EnsureLocalFail2banAction(server Fail2banServer) error {
+	if !server.Enabled {
+		return nil
+	}
+	settingsLock.RLock()
+	callbackURL := getCallbackURLLocked()
+	settingsLock.RUnlock()
+	return ensureFail2banActionFiles(callbackURL, server.ID, server.ConfigPath)
+}
+
+// Ensures the local action files exist. (local connector only) -> will be moved to the connector_local.go
+func ensureFail2banActionFiles(callbackURL, serverID, configPath string) error {
+	DebugLog("----------------------------")
+	DebugLog("ensureFail2banActionFiles called (settings.go)")
+	return fail2ban.EnsureLocalConnectorArtifacts(callbackURL, serverID, configPath)
 }

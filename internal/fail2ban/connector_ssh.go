@@ -155,8 +155,9 @@ func (sc *SSHConnector) GetJailSummary(ctx context.Context) (*JailSummary, error
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", sc.server.Name, err)
 	}
+	desired, renderErr := sc.desiredActionConfig()
 	drifted := sc.reloadPending.Load() || !summary.actionExists ||
-		strings.TrimSpace(summary.actionFile) != strings.TrimSpace(sc.desiredActionConfig())
+		(renderErr == nil && strings.TrimSpace(summary.actionFile) != strings.TrimSpace(desired))
 	return &JailSummary{
 		Jails:             infos,
 		JailLocalExists:   summary.jailLocalExists,
@@ -248,7 +249,7 @@ func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
 	return "restart", fmt.Errorf("failed to restart fail2ban via systemd on remote: %w (output: %s)", err, out)
 }
 
-func (sc *SSHConnector) desiredActionConfig() string {
+func (sc *SSHConnector) desiredActionConfig() (string, error) {
 	p := mustProvider()
 	return p.BuildFail2banActionConfig(sc.actionCallbackURL(), sc.server.ID, p.CallbackSecret())
 }
@@ -256,7 +257,11 @@ func (sc *SSHConnector) desiredActionConfig() string {
 func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 	sc.reloadPending.Store(true)
 	actionPath := CustomActionFile(sc.getFail2banPath(ctx))
-	script, err := buildEnsureActionScript(actionPath, sc.desiredActionConfig())
+	desired, err := sc.desiredActionConfig()
+	if err != nil {
+		return fmt.Errorf("refusing to write the action file on %s: %w", sc.server.Name, err)
+	}
+	script, err := buildEnsureActionScript(actionPath, desired)
 	if err != nil {
 		return fmt.Errorf("refusing to write the action file on %s: %w", sc.server.Name, err)
 	}
@@ -382,7 +387,6 @@ func splitBannedSummary(out string) (bannedSummary, error) {
 
 func (sc *SSHConnector) runFail2banCommand(ctx context.Context, args ...string) (string, error) {
 	words := append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath, args...)...)
-	// ssh joins argv with spaces and the remote shell re-splits it, so quote every word under sudo.
 	for i, w := range words {
 		words[i] = shellQuote(w)
 	}

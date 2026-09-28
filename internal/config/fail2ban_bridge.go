@@ -16,7 +16,11 @@
 
 package config
 
-import "github.com/swissmakers/fail2ban-ui/internal/fail2ban"
+import (
+	"log"
+
+	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
+)
 
 // =========================================================================
 //  Bridge between config and fail2ban --> used for both dependency injection and manager reload orchestration.
@@ -44,12 +48,26 @@ func (fail2banRuntime) ServerPort() int {
 	return currentSettings.Port
 }
 
-func (fail2banRuntime) BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
+func (fail2banRuntime) BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, error) {
 	return BuildFail2banActionConfig(callbackURL, serverID, secret)
 }
 
 func (fail2banRuntime) BuildJailLocalContent() string {
 	return BuildJailLocalContent()
+}
+
+func (fail2banRuntime) ConfigApplied(serverID string) {
+	settingsLock.Lock()
+	defer settingsLock.Unlock()
+	for i := range currentSettings.Servers {
+		if currentSettings.Servers[i].ID == serverID {
+			currentSettings.Servers[i].RestartNeeded = false
+		}
+	}
+	updateGlobalRestartFlagLocked()
+	if err := persistAllLocked(); err != nil {
+		log.Printf("warning: failed to persist config status for %s: %v", serverID, err)
+	}
 }
 
 func registerFail2banProvider() {
@@ -58,12 +76,5 @@ func registerFail2banProvider() {
 
 func ReloadFail2banManager() error {
 	s := GetSettings()
-	for _, srv := range s.Servers {
-		if srv.Enabled && srv.Type == "local" {
-			if err := EnsureLocalFail2banAction(srv); err != nil {
-				DebugLog("Warning: failed to ensure local fail2ban action for server %s: %v", srv.Name, err)
-			}
-		}
-	}
 	return fail2ban.GetManager().ReloadFromServers(s.Servers)
 }
