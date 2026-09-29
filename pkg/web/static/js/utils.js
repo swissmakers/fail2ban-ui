@@ -151,28 +151,10 @@ function isSuspiciousLogLine(line, ip) {
   }
   var containsIP = ip && line.indexOf(ip) !== -1;
   var lowered = line.toLowerCase();
-  // Detect HTTP status codes (>= 300 considered problematic)
-
-  // regex_pattern array for easier pattern adding later, if desired
-  var regex_patterns = [
-    /"(?:status|code|statusCode)"\s*:\s*(\d{3})\b/, // 1. JSON format
-    /"[^"]*"\s+(\d{3})\b/,                         // 2. Combined Log format
-    /\s(\d{3})\s+(?:\d+|-)/                         // 3. Standard text format
-  ];
-
-  var combinedRegex = new RegExp(
-    regex_patterns.map(function(r) { return r.source; }).join('|'), 
-    'i'
-  );
-
-  var statusMatchArr = line.match(combinedRegex);
-
-  var [ , p1, p2, p3] = statusMatchArr ?? [];
-  var statusMatch = p1 || p2 || p3 || null;
-
-  var statusCode = statusMatch ? parseInt(statusMatch, 10) : NaN;
-
-  // var statusCode = statusMatch ? parseInt(statusMatch[1], 10) : NaN;
+  var statusMatch = line.match(/"(?:status|code|statusCode)"\s*:\s*(\d{3})\b/i) ||
+    line.match(/"[^"]*"\s+(\d{3})\b/) ||
+    line.match(/\s(\d{3})\s+(?:\d+|-)/);
+  var statusCode = statusMatch ? parseInt(statusMatch[1], 10) : NaN;
   var hasBadStatus = !isNaN(statusCode) && statusCode >= 300;
   // Detect common attack indicators in URLs/payloads
   var indicators = [

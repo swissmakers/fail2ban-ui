@@ -14,6 +14,7 @@ Thanks for contributing. This project is security-adjacent; changes should be de
    gofmt -l .           # must print nothing
    go vet ./...
    go test ./...
+   npm test            # JavaScript regression tests; requires Node.js 18+
    ./build-tailwind.sh  # only if you touched templates or Tailwind classes
    ```
 
