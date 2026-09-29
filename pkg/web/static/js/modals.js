@@ -334,14 +334,18 @@ function openManageJailsModal() {
   fetch(withServerParam('/api/jails/manage'), {
     headers: serverHeaders()
   })
-    .then(res => res.json())
-    .then(data => {
-      if (!data.jails || !data.jails.length) {
-        showToast(t('modal.toast.no_jails', 'No jails found for this server.'), 'info');
-        return;
+    .then(res => res.json().then(data => {
+      if (!res.ok) {
+        throw new Error((data && data.error) || 'Server returned ' + res.status);
       }
-
-      const html = data.jails.map(jail => {
+      return data;
+    }))
+    .then(data => {
+      if (!data || data.error || (data.jails !== null && !Array.isArray(data.jails))) {
+        throw new Error((data && data.error) || 'Invalid jail list response');
+      }
+      const jails = data.jails || [];
+      const html = jails.map(jail => {
         const isEnabled = jail.enabled ? 'checked' : '';
         const escapedJailName = escapeHtml(jail.jailName);
         const jsEscapedJailName = escapeJs(jail.jailName);
@@ -384,7 +388,9 @@ function openManageJailsModal() {
           + '</div>';
       }).join('');
 
-      document.getElementById('jailsList').innerHTML = html;
+      document.getElementById('jailsList').innerHTML = html ||
+        '<p class="p-3 text-gray-500" data-i18n="modal.toast.no_jails">' +
+        escapeHtml(t('modal.toast.no_jails', 'No jails found for this server.')) + '</p>';
 
       let saveTimeout;
       document.querySelectorAll('#jailsList input[type="checkbox"]').forEach(function(checkbox) {
