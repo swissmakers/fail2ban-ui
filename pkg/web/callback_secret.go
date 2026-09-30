@@ -34,7 +34,6 @@ const (
 	callbackSecretMismatch
 )
 
-// Compares the provided secret to the configured callback secret.
 func classifyCallbackSecret(providedSecret, expectedSecret string) callbackSecretClass {
 	if expectedSecret == "" {
 		return callbackSecretNotConfigured
@@ -48,7 +47,7 @@ func classifyCallbackSecret(providedSecret, expectedSecret string) callbackSecre
 	return callbackSecretOK
 }
 
-// Validates X-Callback-Secret. On failure it writes JSON and returns false.
+// Writes the 401 response itself when it returns false.
 func validateCallbackSecret(c *gin.Context) bool {
 	settings := config.GetSettings()
 	switch classifyCallbackSecret(c.GetHeader("X-Callback-Secret"), settings.CallbackSecret) {
@@ -69,7 +68,7 @@ func validateCallbackSecret(c *gin.Context) bool {
 	}
 }
 
-// Validates X-Callback-Secret without side effects (for agent health checks).
+// SSH and agent hosts probe callback reachability with this; it records nothing.
 func HealthcheckCallbackSecret(c *gin.Context) {
 	if !validateCallbackSecret(c) {
 		return

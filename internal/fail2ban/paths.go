@@ -27,7 +27,6 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
-// The standard Fail2ban configuration directory on Linux.
 const DefaultConfigRoot = "/etc/fail2ban"
 
 // Allowlist for jail/filter names that become filesystem path segments.
@@ -46,7 +45,6 @@ func NormalizeConfigPath(path string) string {
 	return cleaned
 }
 
-// Validates a user-supplied jail or filter name used as a single path segment.
 func validateConfigName(name, label string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -61,7 +59,6 @@ func validateConfigName(name, label string) error {
 	return nil
 }
 
-// Validates a jail or filter name for safe use as a single path segment.
 func safeConfigName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if err := validateConfigName(name, "name"); err != nil {
@@ -70,7 +67,6 @@ func safeConfigName(name string) (string, error) {
 	return name, nil
 }
 
-// Validates name, joins dir/name+suffix, and guarantees the cleaned result stays inside dir.
 func resolveWithinDir(dir, name, suffix string) (string, error) {
 	safeName, err := safeConfigName(name)
 	if err != nil {
@@ -84,27 +80,22 @@ func resolveWithinDir(dir, name, suffix string) (string, error) {
 	return candidate, nil
 }
 
-// Returns jail.d under the given config root.
 func JailDir(configPath string) string {
 	return filepath.Join(NormalizeConfigPath(configPath), "jail.d")
 }
 
-// Returns filter.d under the given config root.
 func FilterDir(configPath string) string {
 	return filepath.Join(NormalizeConfigPath(configPath), "filter.d")
 }
 
-// Returns the path to jail.local under the given config root.
 func JailLocal(configPath string) string {
 	return filepath.Join(NormalizeConfigPath(configPath), "jail.local")
 }
 
-// Returns action.d under the given config root.
 func ActionDir(configPath string) string {
 	return filepath.Join(NormalizeConfigPath(configPath), "action.d")
 }
 
-// Returns the UI-managed custom action path.
 func CustomActionFile(configPath string) string {
 	return filepath.Join(ActionDir(configPath), "ui-custom-action.conf")
 }

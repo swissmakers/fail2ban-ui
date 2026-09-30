@@ -24,11 +24,8 @@ import (
 )
 
 var (
-	// A hostname or IP literal
-	hostRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:_-]*$`)
-	// A POSIX-ish user name
+	hostRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:_-]*$`)
 	sshUserRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*$`)
-	// An absolute filesystem path with no shell
 	absPathRe = regexp.MustCompile(`^[A-Za-z0-9 ._/-]+$`)
 )
 
@@ -42,7 +39,7 @@ func ValidateHost(host string) error {
 	return nil
 }
 
-// Checks an SSH login name. The value must already be normalized (trimmed).
+// The value must already be trimmed.
 func ValidateSSHUser(user string) error {
 	if user == "" {
 		return fmt.Errorf("sshUser cannot be empty")
@@ -53,7 +50,6 @@ func ValidateSSHUser(user string) error {
 	return nil
 }
 
-// Checks a filesystem path used for a key, socket or config root.
 func ValidateAbsolutePath(path, label string) error {
 	if path == "" {
 		return nil
@@ -104,7 +100,7 @@ func ValidateServerFields(srv Fail2banServer) error {
 			return err
 		}
 	case "agent":
-		// AgentURL is validated separately via NormalizeAgentURL
+		// AgentURL is validated separately by fail2ban.NormalizeAgentURL.
 	default:
 		return fmt.Errorf("unsupported server type %q", srv.Type)
 	}

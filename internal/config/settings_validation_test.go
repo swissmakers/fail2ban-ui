@@ -72,8 +72,6 @@ func TestValidateServerUniqueness(t *testing.T) {
 func TestFail2banActionTemplateRobustness(t *testing.T) {
 	t.Parallel()
 
-	// Unresolved fail2ban tags must never appear bare in shell position (they get
-	// parsed as redirections/filenames).
 	if strings.Contains(fail2banActionTemplate, "tac <logpath>") {
 		t.Fatal("logpath must not be used directly in shell syntax; unresolved tags are parsed as redirections")
 	}
@@ -167,7 +165,6 @@ func TestValidateTunnelPort(t *testing.T) {
 	}
 }
 
-// Every value substituted into the root-executed action must be refused at render time.
 func TestBuildFail2banActionConfigRefusesInjection(t *testing.T) {
 	cases := []struct{ url, id, secret string }{
 		{"http://10.88.0.1:3080/dev;touch /tmp/pwned;#", "local", "secret"},

@@ -32,7 +32,8 @@ func TestAtomicConfigPreservesBackupOnRetry(t *testing.T) {
 			if err := os.WriteFile(path, []byte(old), 0640); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Chmod(path, 0640); err != nil { // independent of the test runner's umask
+			// WriteFile's mode is subject to the runner's umask.
+			if err := os.Chmod(path, 0640); err != nil {
 				t.Fatal(err)
 			}
 			for i := 0; i < 2; i++ {
@@ -86,7 +87,6 @@ func TestFailedStagingLeavesRemoteConfigUntouched(t *testing.T) {
 	}
 }
 
-// A dangling symlink must be followed and its target created, leaving the link intact.
 func TestWriteConfigAtomicCreatesDanglingSymlinkTarget(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "managed", "jail.local")

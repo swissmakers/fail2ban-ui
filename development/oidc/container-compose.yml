@@ -29,7 +29,8 @@ services:
       - --http-port=8080
     ports:
       - "0.0.0.0:3000:8080"
-      - "0.0.0.0:9000:9000"  # Management port for health checks
+      # Management port for health checks
+      - "0.0.0.0:9000:9000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,7 +97,7 @@ services:
 
   # Authentik: OIDC Provider (Alternative 2) - Not fully tested
   # Uncomment to use Authentik instead of Keycloak
-  # Note: Authentik requires additional setup (migrations, initial admin user)
+  # Authentik requires additional setup (migrations, initial admin user)
   # authentik-server:
   #   image: ghcr.io/goauthentik/server:latest
   #   container_name: DEV_authentik-server
@@ -196,7 +197,8 @@ services:
     command: ["/bin/sh", "-c", "apk add --no-cache jq 2>/dev/null && /bin/sh /init-keycloak.sh 2>&1"]
     networks:
       - oidc-network
-    restart: "no"  # Only run once
+    # Only run once
+    restart: "no"
 
   # Fail2ban-UI: Main application with OIDC authentication
   fail2ban-ui:
@@ -264,9 +266,9 @@ services:
 
     restart: unless-stopped
     # Wait for Keycloak to be healthy before starting
-    # Note: keycloak-init runs as a one-time job, so we only wait for Keycloak
+    # keycloak-init runs as a one-time job, so we only wait for Keycloak
     # The application will retry connecting to Keycloak if needed
-    # Note: With host network mode, depends_on still works but network isolation is bypassed
+    # With host network mode, depends_on still works but network isolation is bypassed
     depends_on:
       - keycloak
 
@@ -282,7 +284,8 @@ services:
       # Required for fail2ban container: Allows to run as root (needed to manage network interfaces and raw sockets)
       - SYS_ADMIN
     #privileged: true
-    network_mode: host # needed to add iptables rules to the host network
+    # Needed to add iptables rules to the host network
+    network_mode: host
     environment:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv

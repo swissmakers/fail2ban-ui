@@ -25,10 +25,6 @@ import (
 	"github.com/likexian/whois"
 )
 
-// =========================================================================
-//  Types and Constants
-// =========================================================================
-
 type cachedWhois struct {
 	data      string
 	timestamp time.Time
@@ -39,10 +35,6 @@ var (
 	whoisCacheMutex sync.RWMutex
 	cacheExpiry     = 24 * time.Hour
 )
-
-// =========================================================================
-//  Lookup Whois Data
-// =========================================================================
 
 func lookupWhois(ip string) (string, error) {
 	whoisCacheMutex.RLock()
@@ -92,10 +84,6 @@ func lookupWhois(ip string) (string, error) {
 
 	return whoisData, nil
 }
-
-// =========================================================================
-//  Extract Country from Whois Data
-// =========================================================================
 
 func extractCountryFromWhois(whoisData string) string {
 	lines := strings.Split(whoisData, "\n")

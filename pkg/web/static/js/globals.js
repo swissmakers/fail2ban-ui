@@ -1,4 +1,3 @@
-// Global variables for Fail2ban UI
 "use strict";
 
 var currentJailForConfig = null;

@@ -1,6 +1,5 @@
 #!/bin/bash
-# Automatic Keycloak OIDC client configuration script
-# This script creates the fail2ban-ui OIDC client in Keycloak automatically
+# Creates or updates the fail2ban-ui OIDC client in the dev Keycloak and saves its secret for the UI.
 
 set -e
 
@@ -10,29 +9,24 @@ KEYCLOAK_PASSWORD="${KEYCLOAK_PASSWORD:-admin}"
 REALM="${REALM:-master}"
 CLIENT_ID="${CLIENT_ID:-fail2ban-ui}"
 CLIENT_SECRET="${CLIENT_SECRET:-}"
-# Use PUBLIC_FRONTEND_URL if provided, otherwise default to localhost
 PUBLIC_FRONTEND_URL="${PUBLIC_FRONTEND_URL:-http://localhost:3080}"
 REDIRECT_URI="${REDIRECT_URI:-${PUBLIC_FRONTEND_URL}/auth/callback}"
 POST_LOGOUT_REDIRECT_URI="${POST_LOGOUT_REDIRECT_URI:-${PUBLIC_FRONTEND_URL}/auth/login}"
 WEB_ORIGIN="${WEB_ORIGIN:-${PUBLIC_FRONTEND_URL}}"
 
-# Extract host and port from KEYCLOAK_URL for health check
-# KEYCLOAK_URL is the internal URL (e.g., http://keycloak:8080)
-# Health endpoint is on management port 9000
+# Keycloak serves /health on the management port 9000, not on the KEYCLOAK_URL port.
 KEYCLOAK_HOST=$(echo "${KEYCLOAK_URL}" | sed -E 's|https?://([^:/]+).*|\1|')
 KEYCLOAK_HEALTH_URL="http://${KEYCLOAK_HOST}:9000/health/ready"
 
 echo "Waiting for Keycloak to be ready..."
 echo "Checking health endpoint: ${KEYCLOAK_HEALTH_URL}"
-max_attempts=120  # Increased timeout since Keycloak can take a while
+max_attempts=120
 attempt=0
 while [ $attempt -lt $max_attempts ]; do
-    # Check health endpoint on management port 9000
     if curl -s -f "${KEYCLOAK_HEALTH_URL}" > /dev/null 2>&1; then
         echo "Keycloak is ready!"
         break
     fi
-    # Also try the main port as fallback
     if curl -s -f "${KEYCLOAK_URL}/health/ready" > /dev/null 2>&1; then
         echo "Keycloak is ready (via main port)!"
         break
@@ -74,7 +68,6 @@ if [ -n "$EXISTING_CLIENT" ]; then
     echo "Client '${CLIENT_ID}' already exists, updating..."
     CLIENT_UUID="$EXISTING_CLIENT"
     
-    # Update client configuration
     curl -s -X PUT "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${CLIENT_UUID}" \
         -H "Authorization: Bearer ${ADMIN_TOKEN}" \
         -H "Content-Type: application/json" \
@@ -97,7 +90,6 @@ if [ -n "$EXISTING_CLIENT" ]; then
 else
     echo "Creating new client '${CLIENT_ID}'..."
     
-    # Create client
     CLIENT_RESPONSE=$(curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" \
         -H "Authorization: Bearer ${ADMIN_TOKEN}" \
         -H "Content-Type: application/json" \
@@ -121,7 +113,6 @@ else
         exit 1
     fi
     
-    # Get the client UUID
     CLIENT_UUID=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${REALM}/clients?clientId=${CLIENT_ID}" \
         -H "Authorization: Bearer ${ADMIN_TOKEN}" \
         -H "Content-Type: application/json" | jq -r '.[0].id')
@@ -129,7 +120,6 @@ else
     echo "Client created successfully with UUID: ${CLIENT_UUID}"
 fi
 
-# Get or regenerate client secret
 echo "Getting client secret..."
 CLIENT_SECRET=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${CLIENT_UUID}/client-secret" \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
@@ -158,11 +148,8 @@ echo "Redirect URI: ${REDIRECT_URI}"
 echo "Post Logout Redirect URI: ${POST_LOGOUT_REDIRECT_URI}"
 echo "=========================================="
 
-# Save secret to shared volume for fail2ban-ui to read
 SECRET_FILE="${SECRET_FILE:-/config/keycloak-client-secret}"
-# Create directory if it doesn't exist
 mkdir -p "$(dirname "${SECRET_FILE}")" 2>/dev/null || true
-# Write secret file (running as root, so should have permissions)
 if echo "${CLIENT_SECRET}" > "${SECRET_FILE}" 2>/dev/null; then
     chmod 644 "${SECRET_FILE}" 2>/dev/null || true
     echo "Client secret saved to ${SECRET_FILE} for fail2ban-ui"

@@ -16,8 +16,6 @@
 
 package web
 
-// smtpTLSMode decides how to secure an SMTP connection.
-// Port 465 uses implicit TLS (SMTPS); all other ports use plain SMTP with optional STARTTLS.
 func smtpTLSMode(port int, useTLS bool) (implicitTLS, startTLS bool) {
 	implicitTLS = port == 465
 	startTLS = useTLS && !implicitTLS

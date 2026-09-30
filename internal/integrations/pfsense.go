@@ -32,10 +32,6 @@ import (
 
 type pfSenseIntegration struct{}
 
-// =========================================================================
-//  Types
-// =========================================================================
-
 type FirewallAliasResponse struct {
 	Data FirewallAlias `json:"data"`
 }
@@ -48,10 +44,6 @@ type FirewallAlias struct {
 	Address []string `json:"address"`
 	Detail  []string `json:"detail"`
 }
-
-// =========================================================================
-//  Interface Implementation
-// =========================================================================
 
 func init() {
 	Register(&pfSenseIntegration{})
@@ -74,10 +66,6 @@ func (p *pfSenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	return nil
 }
 
-// =========================================================================
-//  Block/Unblock
-// =========================================================================
-
 func (p *pfSenseIntegration) BlockIP(req Request) error {
 	if err := p.Validate(req.Config); err != nil {
 		return err
@@ -98,10 +86,6 @@ func (p *pfSenseIntegration) UnblockIP(req Request) error {
 	return p.modifyAliasIP(req, req.IP, "", false)
 }
 
-// =========================================================================
-//  pfSense API
-// =========================================================================
-
 func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, add bool) error {
 	cfg := req.Config.PfSense
 	if err := ValidateOutboundURL(cfg.BaseURL, "pfSense base URL"); err != nil {
@@ -111,10 +95,8 @@ func (p *pfSenseIntegration) modifyAliasIP(req Request, ip, description string, 
 
 	httpClient := httpx.Client(10*time.Second, cfg.SkipTLSVerify)
 
-	// GET the alias by name
 	alias, err := p.getAliasByName(httpClient, baseURL, cfg.APIToken, cfg.Alias, req.Logger)
 	if err != nil {
-		// If alias doesn't exist, create it automatically
 		if strings.Contains(err.Error(), "not found") {
 			if req.Logger != nil {
 				req.Logger("Alias %s not found, creating it automatically", cfg.Alias)
@@ -379,7 +361,6 @@ func (p *pfSenseIntegration) updateAlias(client *http.Client, baseURL, apiToken 
 	return nil
 }
 
-// Applies firewall changes
 func (p *pfSenseIntegration) applyFirewallChanges(client *http.Client, baseURL, apiToken string, logger func(string, ...interface{})) error {
 	apiURL := baseURL + "/api/v2/firewall/apply"
 

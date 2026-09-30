@@ -33,7 +33,6 @@ var (
 	provider   Provider
 )
 
-// Registers the application bridge (typically from internal/config at init).
 func SetProvider(p Provider) {
 	providerMu.Lock()
 	provider = p

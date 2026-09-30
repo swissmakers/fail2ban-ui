@@ -24,7 +24,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// A route that becomes public by accident is an auth bypass.
 func TestIsPublicRoute(t *testing.T) {
 	cases := []struct {
 		name string
@@ -56,7 +55,6 @@ func TestIsPublicRoute(t *testing.T) {
 	}
 }
 
-// A protected route must not inherit public access from a shared prefix.
 func TestIsPublicRoutePrefixDoesNotLeak(t *testing.T) {
 	leaky := []string{
 		"/api/bannedips",
@@ -102,7 +100,6 @@ func TestIsAPIRequest(t *testing.T) {
 	}
 }
 
-// checkWSOrigin is the only guard against cross-origin WebSocket hijacking.
 func TestCheckWSOrigin(t *testing.T) {
 	cases := []struct {
 		name   string

@@ -58,7 +58,6 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// Endpoints that bypass authentication, matched exactly.
 var publicExactRoutes = map[string]struct{}{
 	"/auth/login":               {},
 	"/auth/callback":            {},
@@ -69,7 +68,6 @@ var publicExactRoutes = map[string]struct{}{
 	"/api/healthcheck/callback": {},
 }
 
-// Public asset trees, matched by prefix.
 var publicRoutePrefixes = []string{
 	"/static/",
 	"/locales/",

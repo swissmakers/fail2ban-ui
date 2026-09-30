@@ -16,5 +16,4 @@
 
 package version
 
-// Application version
 const Version = "1.5.4"

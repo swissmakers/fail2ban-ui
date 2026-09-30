@@ -41,8 +41,7 @@ func TestResolveLogpathVariablesAtPath_customRoot(t *testing.T) {
 	}
 }
 
-// Regression: values containing regex replacement metacharacters ($1, ${x})
-// must be substituted verbatim, not $-expanded.
+// Regression: values with regex replacement syntax ($1, ${x}) must be substituted verbatim.
 func TestResolveLogpathVariablesDollarValues(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

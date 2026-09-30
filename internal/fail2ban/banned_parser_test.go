@@ -32,7 +32,6 @@ func TestParseBannedJails(t *testing.T) {
 		if len(infos) != 10 {
 			t.Fatalf("expected 10 jails, got %d: %+v", len(infos), infos)
 		}
-		// Results must be sorted by jail name
 		for i := 1; i < len(infos); i++ {
 			if infos[i-1].JailName > infos[i].JailName {
 				t.Fatalf("jails must be sorted, got %s before %s", infos[i-1].JailName, infos[i].JailName)
@@ -51,7 +50,6 @@ func TestParseBannedJails(t *testing.T) {
 		if got := byName["swissmakers-apache-scanner"]; got.TotalBanned != 3 {
 			t.Fatalf("scanner count wrong: %+v", got)
 		}
-		// Every jail reported by banned is running
 		for _, j := range infos {
 			if !j.Enabled {
 				t.Fatalf("jail %s should be marked enabled: %+v", j.JailName, j)
@@ -127,8 +125,7 @@ func TestParseBannedJails(t *testing.T) {
 		}
 	})
 
-	// Malformed input must fail visible -> silently returning zero jails would
-	// render a dashboard claiming nothing is banned
+	// Returning zero jails instead would render a dashboard claiming nothing is banned.
 	t.Run("malformed input is an error, never an empty result", func(t *testing.T) {
 		cases := map[string]string{
 			"empty":                   "",
@@ -151,7 +148,7 @@ func TestParseBannedJails(t *testing.T) {
 		}
 	})
 
-	// A fail2ban.conf with 'logtarget = STDOUT' makes the client print its log lines to stdout ahead of the payload -> the parser must skip them.
+	// With 'logtarget = STDOUT' in fail2ban.conf the client prints its log lines ahead of the payload.
 	t.Run("log noise ahead of the payload is skipped", func(t *testing.T) {
 		in := "2026-07-26 18:20:56,221 fail2ban.configreader   [18]: ERROR   Found no accessible config files for 'fail2ban' under /etc/fail2ban\n" +
 			"2026-07-26 18:20:56,221 fail2ban.configreader   [18]: ERROR   No section: 'Definition'\n" +

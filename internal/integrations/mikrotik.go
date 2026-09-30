@@ -37,10 +37,6 @@ func init() {
 	Register(&mikrotikIntegration{})
 }
 
-// =========================================================================
-//  Interface Implementation
-// =========================================================================
-
 func (m *mikrotikIntegration) ID() string {
 	return "mikrotik"
 }
@@ -60,10 +56,6 @@ func (m *mikrotikIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	}
 	return nil
 }
-
-// =========================================================================
-//  Block/Unblock
-// =========================================================================
 
 func safeMikrotikArgs(ip, addressList string) (string, string, error) {
 	if err := shared.ValidateIP(ip); err != nil {
@@ -102,10 +94,6 @@ func (m *mikrotikIntegration) UnblockIP(req Request) error {
 	cmd := fmt.Sprintf(`/ip firewall address-list remove [/ip firewall address-list find address=%s list=%s]`, ip, list)
 	return m.runCommand(req, cmd)
 }
-
-// =========================================================================
-//  SSH Communication
-// =========================================================================
 
 func (m *mikrotikIntegration) runCommand(req Request, command string) error {
 	cfg := req.Config.Mikrotik
@@ -186,14 +174,13 @@ func (m *mikrotikIntegration) runCommand(req Request, command string) error {
 	return nil
 }
 
-// When fingerprint is empty, host-key verification is skipped. When set, it accepts either an SSH SHA256 fingerprint ("SHA256:...") or full public-key line and verifies the presented key against it.
+// An empty fingerprint skips host-key verification; otherwise it takes a SHA256 fingerprint or a full public-key line.
 func mikrotikHostKeyCallback(fingerprint string) (ssh.HostKeyCallback, error) {
 	trimmed := strings.TrimSpace(fingerprint)
 	if trimmed == "" {
 		return ssh.InsecureIgnoreHostKey(), nil
 	}
 
-	// Full authorized-keys / known_hosts public-key line.
 	if pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(trimmed)); err == nil {
 		want := pubKey.Marshal()
 		return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
@@ -204,7 +191,6 @@ func mikrotikHostKeyCallback(fingerprint string) (ssh.HostKeyCallback, error) {
 		}, nil
 	}
 
-	// SHA256 fingerprint form, with or without the "SHA256:" prefix.
 	wantFP := strings.TrimPrefix(trimmed, "SHA256:")
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		gotFP := strings.TrimPrefix(ssh.FingerprintSHA256(key), "SHA256:")

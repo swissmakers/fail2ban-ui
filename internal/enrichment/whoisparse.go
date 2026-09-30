@@ -21,12 +21,8 @@ import (
 	"strings"
 )
 
-// =========================================================================
-//  Types / Variables
-// =========================================================================
-
-// Maps raw whois keys (both ARIN and RIPE formats) to the normalised ECS-style output fields.
-// When the same output field appears more than once the LAST match wins, which naturally prefers the more specific RIPE/regional record over the ARIN referral header.
+// If a field appears more than once the last match wins, so the regional (RIPE etc.) record
+// overrides the ARIN referral header.
 var whoisKeyMap = map[string]string{
 	// ARIN
 	"netrange":      "whois.net_range",
@@ -54,20 +50,10 @@ var whoisKeyMap = map[string]string{
 	"route6":        "whois.cidr",
 }
 
-// Extracts the abuse contact email from the RIPE comment line:
-// % Abuse contact for '...' is 'abuse@example.com'
 var ripeAbuseRe = regexp.MustCompile(`(?i)abuse contact for .+ is '([^']+)'`)
 
-// Matches "Key:  value" lines in whois output (supports both CamelCase ARIN keys and lower-case-hyphenated RIPE keys).
 var kvLineRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*):\s+(.+)$`)
 
-// =========================================================================
-//  Functions
-// =========================================================================
-
-// Parses WHOIS text into structured fields.
-// Handles ARIN, RIPE, APNIC, LACNIC and AfriNIC formats.
-// Fields that cannot be extracted are omitted.
 func ParseWhois(whois string) map[string]interface{} {
 	if strings.TrimSpace(whois) == "" {
 		return nil
@@ -82,7 +68,6 @@ func ParseWhois(whois string) map[string]interface{} {
 			continue
 		}
 
-		// Checks for RIPE-style abuse contact comment
 		if strings.HasPrefix(line, "%") || strings.HasPrefix(line, "#") {
 			if m := ripeAbuseRe.FindStringSubmatch(line); len(m) == 2 {
 				result["whois.abuse_email"] = strings.TrimSpace(m[1])
@@ -111,7 +96,6 @@ func ParseWhois(whois string) map[string]interface{} {
 		seenKeys[outField] = true
 	}
 
-	// Normalises the ASN: strips "AS" prefix if present (e.g. "AS200373" -> "200373")
 	if asn, ok := result["whois.asn"].(string); ok {
 		asn = strings.TrimSpace(asn)
 		if strings.HasPrefix(strings.ToUpper(asn), "AS") {

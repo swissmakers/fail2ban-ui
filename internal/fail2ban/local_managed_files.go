@@ -44,7 +44,6 @@ func ensureWritableDirectory(path, purpose string) error {
 	return nil
 }
 
-// Writes jail.local when missing or already UI-managed.
 func EnsureManagedJailLocal(configPath string, content []byte) error {
 	debugf("Running EnsureManagedJailLocal()")
 	jailPath := JailLocal(configPath)
@@ -71,7 +70,6 @@ func EnsureManagedJailLocal(configPath string, content []byte) error {
 	return nil
 }
 
-// Writes ui-custom-action.conf next to the given config root.
 func WriteLocalActionFile(configPath, callbackURL, serverID string) error {
 	debugf("Running WriteLocalActionFile()")
 	p := mustProvider()
