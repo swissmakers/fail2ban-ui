@@ -115,7 +115,6 @@ func TestParseLogLinesSSH(t *testing.T) {
 	if got["source.port"] != 54321 {
 		t.Errorf("source.port = %v (%T), want int 54321", got["source.port"], got["source.port"])
 	}
-	// log.original is deliberately not promoted to the top level.
 	if _, present := got["log.original"]; present {
 		t.Errorf("log.original must not be promoted to the top level, got %v", got["log.original"])
 	}
@@ -157,6 +156,23 @@ func TestParseLogLinesHTTP(t *testing.T) {
 	}
 }
 
+func TestParseLogLinesVhost(t *testing.T) {
+	tests := []struct {
+		name, line, server string
+	}{
+		{"vhost with port", `code.example.com:443 203.0.113.7 - - [30/Sep/2026:12:00:01 +0200] "GET /wp-login.php HTTP/1.1" 301 230 "-" "curl/8.0"`, "code.example.com"},
+		{"vhost without port", `code.example.com 203.0.113.7 - - [30/Sep/2026:12:00:01 +0200] "GET /wp-login.php HTTP/1.1" 301 230 "-" "curl/8.0"`, "code.example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseLogLines(tt.line, "apache-badbots")
+			if got["server.address"] != tt.server || got["source.address"] != "203.0.113.7" {
+				t.Errorf("server.address = %v, source.address = %v", got["server.address"], got["source.address"])
+			}
+		})
+	}
+}
+
 func TestParseLogLinesEdgeCases(t *testing.T) {
 	t.Run("empty input", func(t *testing.T) {
 		if got := ParseLogLines("", "sshd"); got != nil {
@@ -173,7 +189,6 @@ func TestParseLogLinesEdgeCases(t *testing.T) {
 			t.Fatalf("want nil for unparseable input, got %#v", got)
 		}
 	})
-	// Stripped from the top level, but must survive per entry.
 	t.Run("parsed_logs keeps the original line of every match", func(t *testing.T) {
 		first := "Feb 23 14:37:29 myhost sshd[12345]: Failed password for root from 203.0.113.77 port 54321 ssh2"
 		second := "Feb 23 14:37:30 myhost sshd[12346]: Invalid user admin from 203.0.113.78 port 54322"
