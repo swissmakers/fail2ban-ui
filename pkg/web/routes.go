@@ -16,9 +16,7 @@
 
 package web
 
-import (
-	"github.com/gin-gonic/gin"
-)
+import "github.com/gin-gonic/gin"
 
 // =========================================================================
 //  Route Registration
@@ -116,6 +114,17 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 
 		// WebSocket endpoint
 		api.GET("/ws", RequirePermission(PermissionRead), WebSocketHandler(hub))
+
+		// Jail Allowed IP Management (per-jail ignoreip)
+		if jailAllowedIPManagementEnabled() {
+			ignoreIPWritePerm := PermissionBan
+			if jailAllowedIPManagementMinAccess() == "admin" {
+				ignoreIPWritePerm = PermissionAdmin
+			}
+			api.GET("/jails/:jail/ignoreips", RequirePermission(PermissionRead), ListJailAllowedIPsHandler)
+			api.POST("/jails/:jail/ignoreips", RequirePermission(ignoreIPWritePerm), AddJailAllowedIPHandler)
+			api.DELETE("/jails/:jail/ignoreips", RequirePermission(ignoreIPWritePerm), DeleteJailAllowedIPHandler)
+		}
 
 		// API to healthchecks (mainly used by agent)
 		api.GET("/healthcheck/callback", HealthcheckCallbackSecret)
