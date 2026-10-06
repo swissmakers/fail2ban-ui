@@ -19,49 +19,39 @@ package fail2ban
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
-	"time"
+
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
-type SSHHealthStatus struct {
-	SSHError          string    `json:"sshError,omitempty"`
-	CallbackHealthy   bool      `json:"callbackHealthy"`
-	CallbackError     string    `json:"callbackError,omitempty"`
-	CallbackCheckedAt time.Time `json:"callbackCheckedAt,omitempty"`
-}
-
-func (sc *SSHConnector) HealthStatus() SSHHealthStatus {
-	sc.healthMu.RLock()
-	defer sc.healthMu.RUnlock()
-	return sc.health
-}
-
-func (sc *SSHConnector) recordSSHResult(err error) {
-	sc.healthMu.Lock()
-	defer sc.healthMu.Unlock()
-	message := ""
+// Pings fail2ban, then checks that the remote host can reach this UI's callback endpoint.
+func (sc *SSHConnector) ProbeHealth(ctx context.Context) ServerHealth {
+	if err := pingFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban"); err != nil {
+		return ServerHealth{Error: err.Error()}
+	}
+	h := ServerHealth{Fail2banOK: true}
+	err := sc.checkCallback(ctx)
+	ok := err == nil
+	h.CallbackOK = &ok
 	if err != nil {
-		message = err.Error()
+		h.Error = err.Error()
 	}
-	if message != "" && sc.health.SSHError != message {
-		log.Printf("warning: SSH command on %s failed: %s", sc.server.Name, message)
-	}
-	sc.health.SSHError = message
+	return h
 }
 
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-// Probe from the remote host, through the reverse listener, to the actual UI.
+// Probe from the remote host, through the reverse listener on tunnel servers, to the actual UI.
 // Feed the secret on stdin so it cannot appear in SSH arguments or debug logs.
 func (sc *SSHConnector) probeCallback(ctx context.Context) (string, error) {
 	if err := sc.acquireSession(ctx); err != nil {
 		return "", err
 	}
 	defer sc.releaseSession()
-	command := "curl --silent --show-error --connect-timeout 3 --max-time 5 --output /dev/null --write-out '%{http_code}' --header @- " + shellQuote(sc.actionCallbackURL()+"/api/healthcheck/callback")
+	target := sc.actionCallbackURL() + "/api/healthcheck/callback"
+	insecure := ""
+	if strings.HasPrefix(strings.ToLower(target), "https://") && shared.CallbackInsecureTLS() {
+		insecure = "--insecure "
+	}
+	command := "curl --silent --show-error " + insecure + "--connect-timeout 3 --max-time 5 --output /dev/null --write-out '%{http_code}' --header @- " + shellQuote(target)
 	header := "X-Callback-Secret: " + mustProvider().CallbackSecret() + "\n"
 	out, _, err := sc.execSSH(ctx, sc.buildSSHArgs([]string{command}), strings.NewReader(header))
 	code := strings.TrimSpace(out)
@@ -72,21 +62,4 @@ func (sc *SSHConnector) probeCallback(ctx context.Context) (string, error) {
 		return code, fmt.Errorf("callback health endpoint returned HTTP %s", code)
 	}
 	return code, nil
-}
-
-func (sc *SSHConnector) recordCallbackResult(err error) {
-	sc.healthMu.Lock()
-	defer sc.healthMu.Unlock()
-	message := ""
-	if err != nil {
-		message = err.Error()
-	}
-	if message != "" && message != sc.health.CallbackError {
-		log.Printf("warning: reverse tunnel callback for %s is unhealthy: %s", sc.server.Name, message)
-	} else if err == nil && !sc.health.CallbackHealthy {
-		log.Printf("reverse tunnel callback for %s is healthy (port %d)", sc.server.Name, sc.tunnelPort)
-	}
-	sc.health.CallbackError = message
-	sc.health.CallbackHealthy = err == nil
-	sc.health.CallbackCheckedAt = time.Now().UTC()
 }

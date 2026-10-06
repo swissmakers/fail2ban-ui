@@ -59,7 +59,7 @@ func resolveTunnelPort(server shared.Fail2banServer) int {
 const sshMaxConcurrentSessions = 4
 const masterRetryBackoff = 30 * time.Second
 
-// Establishes the ControlMaster (which owns the -R reverse forward) unless the connector has been closed
+// Establishes the ControlMaster (which owns the -R reverse forward on tunnel servers) unless the connector has been closed
 // Serialized so concurrent commands cannot race to remove and re-create the same control socket
 func (sc *SSHConnector) ensureMaster(ctx context.Context) {
 	sc.masterMu.Lock()
@@ -92,7 +92,7 @@ func (sc *SSHConnector) ensureMaster(ctx context.Context) {
 	sc.masterUp.Store(true)
 }
 
-// Only tunnel servers need a dedicated master (it owns the -R forward)
+// Re-establishes the master only when it is down or its socket is gone (on tunnel servers it owns the -R forward)
 func (sc *SSHConnector) ensureMasterLazy(ctx context.Context) {
 	if sc.masterUp.Load() {
 		if _, err := os.Stat(sc.controlPath()); err == nil {
@@ -108,10 +108,11 @@ func (sc *SSHConnector) checkMaster(ctx context.Context) bool {
 	return check.Run() == nil
 }
 
-// Verifies the SSH ControlMaster (and thus the reverse tunnel) and re-establishes it when it is down.
-func (sc *SSHConnector) CheckTunnelHealth(ctx context.Context) {
-	if sc.tunnelPort == 0 || sc.closed.Load() {
-		return
+// Checks the callback path; tunnel servers also get their ControlMaster (which owns the -R forward) repaired.
+func (sc *SSHConnector) checkCallback(ctx context.Context) error {
+	if sc.tunnelPort == 0 {
+		_, err := sc.probeCallback(ctx)
+		return err
 	}
 	sc.tunnelCheckMu.Lock()
 	defer sc.tunnelCheckMu.Unlock()
@@ -119,11 +120,10 @@ func (sc *SSHConnector) CheckTunnelHealth(ctx context.Context) {
 		sc.ensureMaster(ctx)
 	}
 	if sc.closed.Load() {
-		return
+		return fmt.Errorf("connector closed")
 	}
 	if !sc.checkMaster(ctx) {
-		sc.recordCallbackResult(fmt.Errorf("SSH control master is unavailable"))
-		return
+		return fmt.Errorf("SSH control master is unavailable")
 	}
 	code, err := sc.probeCallback(ctx)
 	if err != nil && code == "000" && ctx.Err() == nil {
@@ -137,7 +137,7 @@ func (sc *SSHConnector) CheckTunnelHealth(ctx context.Context) {
 			_, err = sc.probeCallback(ctx)
 		}
 	}
-	sc.recordCallbackResult(err)
+	return err
 }
 
 // Terminates the SSH ControlMaster via its local control socket
@@ -356,10 +356,8 @@ func (sc *SSHConnector) runRemoteCommandOnce(ctx context.Context, command []stri
 			RecordHostKeyIssue(hk)
 			err = hk
 		}
-		sc.recordSSHResult(err)
 		return output, stderr, err
 	}
-	sc.recordSSHResult(nil)
 	ClearHostKeyIssue(sc.server.ID)
 	if s := strings.TrimSpace(stderr); s != "" {
 		debugf("SSH stderr ignored [%s]: %s", sc.server.Name, truncateForLog(s, maxLoggedOutputBytes))
@@ -370,7 +368,7 @@ func (sc *SSHConnector) runRemoteCommandOnce(ctx context.Context, command []stri
 
 func (sc *SSHConnector) actionCallbackURL() string {
 	if sc.tunnelPort > 0 {
-		return fmt.Sprintf("http://localhost:%d%s", sc.tunnelPort, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
+		return fmt.Sprintf("http://localhost:%d%s", sc.tunnelPort, shared.BasePath())
 	}
 	return mustProvider().CallbackURL()
 }
@@ -379,11 +377,8 @@ func (sc *SSHConnector) knownHostsPath() string {
 	if keyDir := sc.sshKeyDir(); keyDir != "" {
 		return filepath.Join(keyDir, "known_hosts")
 	}
-	if _, container := os.LookupEnv("CONTAINER"); container {
-		return "/config/.ssh/known_hosts"
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".ssh", "known_hosts")
+	if dir, err := shared.SSHDir(); err == nil {
+		return filepath.Join(dir, "known_hosts")
 	}
 	return ""
 }

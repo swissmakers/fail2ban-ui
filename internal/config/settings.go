@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -51,13 +52,12 @@ type AppSettings struct {
 	Language             string                `json:"language"`
 	Port                 int                   `json:"port"`
 	Debug                bool                  `json:"debug"`
-	RestartNeeded        bool                  `json:"restartNeeded"`
 	AlertCountries       []string              `json:"alertCountries"`
 	SMTP                 SMTPSettings          `json:"smtp"`
 	CallbackURL          string                `json:"callbackUrl"`
 	CallbackSecret       string                `json:"callbackSecret"`
 	AdvancedActions      AdvancedActionsConfig `json:"advancedActions"`
-	Servers              []Fail2banServer      `json:"servers"`
+	Servers              []Fail2banServer      `json:"servers,omitempty"`
 	BantimeIncrement     bool                  `json:"bantimeIncrement"`
 	DefaultJailEnable    bool                  `json:"defaultJailEnable"`
 	IgnoreIPs            []string              `json:"ignoreips"`
@@ -119,7 +119,6 @@ type MikrotikIntegrationSettings struct {
 type PfSenseIntegrationSettings struct {
 	BaseURL       string `json:"baseUrl"`
 	APIToken      string `json:"apiToken"`
-	APISecret     string `json:"apiSecret"`
 	Alias         string `json:"alias"`
 	SkipTLSVerify bool   `json:"skipTLSVerify"`
 }
@@ -145,6 +144,18 @@ type WebhookSettings struct {
 	Method        string            `json:"method"`
 	Headers       map[string]string `json:"headers"`
 	SkipTLSVerify bool              `json:"skipTLSVerify"`
+}
+
+// Default alert target; the built-in logs-*-* template makes it a data stream.
+const DefaultElasticsearchDataStream = "logs-fail2ban_ui.events-default"
+
+// Maps an empty or pre-data-stream default index to the default data stream.
+func ElasticsearchDataStream(index string) string {
+	index = strings.TrimSpace(index)
+	if index == "" || index == "fail2ban-events" {
+		return DefaultElasticsearchDataStream
+	}
+	return index
 }
 
 type ElasticsearchSettings struct {
@@ -295,42 +306,45 @@ var (
 // Package-level compiled patterns
 var (
 	loopbackCallbackURLPattern = regexp.MustCompile(`^http://127\.0\.0\.1:\d+$`)
-	jailFileKeyValuePattern    = regexp.MustCompile(`^\s*([a-zA-Z0-9_]+)\s*=\s*(.+)$`)
+	jailFileKeyValuePattern    = regexp.MustCompile(`^([a-zA-Z0-9_.]+)\s*=\s*(.*)$`)
 )
 
 // =========================================================================
 //  Initialization
 // =========================================================================
 
+const DefaultGeoIPDatabasePath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
+
 func init() {
 	log.SetOutput(redactingLogWriter{log.Writer()})
 	registerFail2banProvider()
-	if err := storage.Init(""); err != nil {
-		panic(fmt.Sprintf("failed to initialise storage: %v", err))
+}
+
+// Opens the database (empty path: ./fail2ban-ui.db) and loads the settings; call it once before reading settings.
+func Init(dbPath string) error {
+	if err := storage.Init(dbPath); err != nil {
+		return fmt.Errorf("failed to initialise storage: %w", err)
 	}
 	if err := loadSettingsFromStorage(); err != nil {
 		if !errors.Is(err, errSettingsNotFound) {
-			fmt.Println("Error loading settings from storage:", err)
+			log.Printf("ERROR: loading settings from storage: %v", err)
 		}
 		if err := migrateLegacySettings(); err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
-				fmt.Println("Error migrating legacy settings:", err)
+				log.Printf("ERROR: migrating legacy settings: %v", err)
 			}
-			fmt.Println("App settings not found, initializing from jail.local (if exist)")
+			log.Printf("App settings not found, initializing from jail.local (if it exists)")
 			if err := initializeFromJailFile(); err != nil {
-				fmt.Println("Error reading jail.local:", err)
+				log.Printf("ERROR: reading jail.local: %v", err)
 			}
 			setDefaults()
-			fmt.Println("Initialized with defaults.")
-		}
-		if err := persistAll(); err != nil {
-			fmt.Println("Failed to persist settings:", err)
-		}
-	} else {
-		if err := persistAll(); err != nil {
-			fmt.Println("Failed to persist settings:", err)
+			log.Printf("Initialized settings with defaults")
 		}
 	}
+	if err := persistAll(); err != nil {
+		log.Printf("ERROR: persisting settings: %v", err)
+	}
+	return nil
 }
 
 func loadSettingsFromStorage() error {
@@ -411,7 +425,6 @@ func applyAppSettingsRecordLocked(rec storage.AppSettingsRecord) {
 	currentSettings.Debug = rec.Debug
 	setDebugFlag(rec.Debug)
 	currentSettings.CallbackURL = rec.CallbackURL
-	currentSettings.RestartNeeded = rec.RestartNeeded
 	currentSettings.BantimeIncrement = rec.BantimeIncrement
 	currentSettings.DefaultJailEnable = rec.DefaultJailEnable
 	if rec.IgnoreIP != "" {
@@ -529,7 +542,6 @@ func applyServerRecordsLocked(records []storage.ServerRecord) {
 			Enabled:              rec.Enabled,
 			ReverseTunnelEnabled: rec.ReverseTunnelEnabled,
 			TunnelPort:           rec.TunnelPort,
-			RestartNeeded:        rec.NeedsRestart,
 			CreatedAt:            rec.CreatedAt,
 			UpdatedAt:            rec.UpdatedAt,
 			EnabledSet:           true,
@@ -577,7 +589,6 @@ func toAppSettingsRecordLocked() (storage.AppSettingsRecord, error) {
 		Language:               currentSettings.Language,
 		Port:                   currentSettings.Port,
 		Debug:                  currentSettings.Debug,
-		RestartNeeded:          currentSettings.RestartNeeded,
 		CallbackURL:            currentSettings.CallbackURL,
 		CallbackSecret:         currentSettings.CallbackSecret,
 		AlertCountriesJSON:     string(countryBytes),
@@ -655,7 +666,6 @@ func toServerRecordsLocked() ([]storage.ServerRecord, error) {
 			Enabled:              srv.Enabled,
 			ReverseTunnelEnabled: srv.ReverseTunnelEnabled,
 			TunnelPort:           srv.TunnelPort,
-			NeedsRestart:         srv.RestartNeeded,
 			CreatedAt:            createdAt,
 			UpdatedAt:            updatedAt,
 		})
@@ -675,13 +685,6 @@ func setDefaultsLocked() {
 	if currentSettings.Language == "" {
 		currentSettings.Language = "en"
 	}
-	// Set email alert defaults only when uninitialized.
-	if !currentSettings.EmailAlertsForBans && !currentSettings.EmailAlertsForUnbans {
-		if currentSettings.CallbackSecret == "" && currentSettings.Port == 0 {
-			currentSettings.EmailAlertsForBans = true
-			currentSettings.EmailAlertsForUnbans = false
-		}
-	}
 	if port, ok := GetPortFromEnv(); ok {
 		currentSettings.Port = port
 	} else if currentSettings.Port == 0 {
@@ -690,11 +693,9 @@ func setDefaultsLocked() {
 	if cbURL := os.Getenv("CALLBACK_URL"); cbURL != "" {
 		currentSettings.CallbackURL = strings.TrimRight(strings.TrimSpace(cbURL), "/")
 	} else if currentSettings.CallbackURL == "" {
-		currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d%s", currentSettings.Port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
-	} else {
-		if isDefaultLoopbackCallbackURL(currentSettings.CallbackURL) {
-			currentSettings.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d%s", currentSettings.Port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
-		}
+		currentSettings.CallbackURL = defaultCallbackURL(currentSettings.Port)
+	} else if isDefaultLoopbackCallbackURL(currentSettings.CallbackURL) {
+		currentSettings.CallbackURL = defaultCallbackURL(currentSettings.Port)
 	}
 	if cbSecret := os.Getenv("CALLBACK_SECRET"); cbSecret != "" {
 		currentSettings.CallbackSecret = strings.TrimSpace(cbSecret)
@@ -720,31 +721,20 @@ func setDefaultsLocked() {
 	if currentSettings.Maxretry == 0 {
 		currentSettings.Maxretry = 3
 	}
-	if currentSettings.Destemail == "" {
-		currentSettings.Destemail = "alerts@example.com"
-	}
-	if currentSettings.SMTP.Host == "" {
-		currentSettings.SMTP.Host = "smtp.office365.com"
-	}
+	scrubLegacySMTPPlaceholders(&currentSettings)
+	currentSettings.Elasticsearch.Index = ElasticsearchDataStream(currentSettings.Elasticsearch.Index)
 	if currentSettings.SMTP.Port == 0 {
 		currentSettings.SMTP.Port = 587
 	}
 	if currentSettings.SMTP.AuthMethod == "none" {
 		currentSettings.SMTP.Username = ""
 		currentSettings.SMTP.Password = ""
-	} else {
-		if currentSettings.SMTP.Username == "" {
-			currentSettings.SMTP.Username = "noreply@swissmakers.ch"
-		}
-		if currentSettings.SMTP.Password == "" {
-			currentSettings.SMTP.Password = "password"
-		}
-	}
-	if currentSettings.SMTP.From == "" {
-		currentSettings.SMTP.From = "noreply@swissmakers.ch"
 	}
 	if currentSettings.SMTP.AuthMethod == "" {
 		currentSettings.SMTP.AuthMethod = "auto"
+	}
+	for _, warning := range sanitizeJailDefaults(&currentSettings) {
+		log.Printf("WARNING: %s", warning)
 	}
 	if len(currentSettings.IgnoreIPs) == 0 {
 		currentSettings.IgnoreIPs = []string{"127.0.0.1/8", "::1"}
@@ -762,7 +752,7 @@ func setDefaultsLocked() {
 		currentSettings.GeoIPProvider = "builtin"
 	}
 	if currentSettings.GeoIPDatabasePath == "" {
-		currentSettings.GeoIPDatabasePath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
+		currentSettings.GeoIPDatabasePath = DefaultGeoIPDatabasePath
 	}
 	if currentSettings.MaxLogLines == 0 {
 		currentSettings.MaxLogLines = 50
@@ -788,18 +778,8 @@ func initializeFromJailFile() error {
 		return err
 	}
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	re := jailFileKeyValuePattern
-	settings := map[string]string{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if matches := re.FindStringSubmatch(line); matches != nil {
-			key := strings.ToLower(matches[1])
-			value := matches[2]
-			settings[key] = value
-		}
-	}
-	if err := scanner.Err(); err != nil {
+	settings, err := parseJailDefaults(file)
+	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", jailFile, err)
 	}
 	settingsLock.Lock()
@@ -846,6 +826,27 @@ func initializeFromJailFile() error {
 	return nil
 }
 
+// Jail sections override these per jail, so only [DEFAULT] feeds the global settings.
+func parseJailDefaults(r io.Reader) (map[string]string, error) {
+	settings := map[string]string{}
+	inDefault := false
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			inDefault = strings.EqualFold(strings.TrimSpace(line[1:len(line)-1]), "DEFAULT")
+			continue
+		}
+		if !inDefault {
+			continue
+		}
+		if m := jailFileKeyValuePattern.FindStringSubmatch(line); m != nil {
+			settings[strings.ToLower(m[1])] = m[2]
+		}
+	}
+	return settings, scanner.Err()
+}
+
 func normalizeServersLocked() {
 	now := time.Now().UTC()
 	if len(currentSettings.Servers) == 0 {
@@ -881,7 +882,7 @@ func normalizeServersLocked() {
 		server.Host = strings.TrimSpace(server.Host)
 		server.SSHUser = strings.TrimSpace(server.SSHUser)
 		server.SSHKeyPath = normalizePathValue(server.SSHKeyPath)
-		server.Name = normalizeServerName(server.Name)
+		server.Name = strings.TrimSpace(server.Name)
 		if server.CreatedAt.IsZero() {
 			server.CreatedAt = now
 		}
@@ -890,7 +891,7 @@ func normalizeServersLocked() {
 		}
 		if server.Type == "local" {
 			server.SocketPath = normalizeLocalSocketPath(server.SocketPath)
-			server.ConfigPath = normalizeLocalConfigPath(server.ConfigPath)
+			server.ConfigPath = fail2ban.NormalizeConfigPath(server.ConfigPath)
 		} else {
 			server.SocketPath = normalizePathValue(server.SocketPath)
 		}
@@ -920,9 +921,6 @@ func normalizeServersLocked() {
 				}
 			}
 		}
-		if !server.Enabled {
-			server.RestartNeeded = false
-		}
 		if server.IsDefault && !server.Enabled {
 			server.IsDefault = false
 		}
@@ -942,23 +940,17 @@ func normalizeServersLocked() {
 	sort.SliceStable(currentSettings.Servers, func(i, j int) bool {
 		return currentSettings.Servers[i].CreatedAt.Before(currentSettings.Servers[j].CreatedAt)
 	})
-	updateGlobalRestartFlagLocked()
 }
 
+// crypto/rand.Read cannot fail since Go 1.24.
 func generateServerID() string {
 	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("srv-%d", time.Now().UnixNano())
-	}
+	rand.Read(b[:])
 	return "srv-" + hex.EncodeToString(b[:])
 }
 
-func normalizeServerName(name string) string {
-	return strings.TrimSpace(name)
-}
-
 func normalizeServerNameKey(name string) string {
-	return strings.ToLower(normalizeServerName(name))
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 func normalizePathValue(path string) string {
@@ -977,10 +969,6 @@ func normalizeLocalSocketPath(path string) string {
 	return normalized
 }
 
-func normalizeLocalConfigPath(path string) string {
-	return fail2ban.NormalizeConfigPath(path)
-}
-
 // Validates name and local connector socket/config path collisions.
 func validateServerUniqueness(input Fail2banServer, existing []Fail2banServer) error {
 	nameKey := normalizeServerNameKey(input.Name)
@@ -988,7 +976,7 @@ func validateServerUniqueness(input Fail2banServer, existing []Fail2banServer) e
 	configKey := ""
 	if input.Type == "local" {
 		socketKey = normalizeLocalSocketPath(input.SocketPath)
-		configKey = normalizeLocalConfigPath(input.ConfigPath)
+		configKey = fail2ban.NormalizeConfigPath(input.ConfigPath)
 	}
 
 	for _, e := range existing {
@@ -1007,7 +995,7 @@ func validateServerUniqueness(input Fail2banServer, existing []Fail2banServer) e
 		if normalizeLocalSocketPath(e.SocketPath) == socketKey {
 			return fmt.Errorf("a local connector with the same socket path already exists")
 		}
-		if normalizeLocalConfigPath(e.ConfigPath) == configKey {
+		if fail2ban.NormalizeConfigPath(e.ConfigPath) == configKey {
 			return fmt.Errorf("a local connector with the same configuration path already exists")
 		}
 	}
@@ -1098,18 +1086,8 @@ func cloneServer(src Fail2banServer) Fail2banServer {
 // Builds the content of our fail2ban-UI custom-action file. (used by all connectors)
 func BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(callbackURL), "/")
-	if trimmed == "" {
-		trimmed = "http://127.0.0.1:8080"
-	}
-	if serverID == "" {
-		serverID = "local"
-	}
-	if secret == "" {
-		settings := GetSettings()
-		secret = settings.CallbackSecret
-		if secret == "" {
-			secret = generateCallbackSecret()
-		}
+	if trimmed == "" || serverID == "" || secret == "" {
+		return "", errors.New("callback URL, server ID and secret are required to render the action file")
 	}
 	// Last line of defence: these values are substituted into a shell command fail2ban runs as root.
 	if err := shared.ValidateCallbackURL(trimmed); err != nil {
@@ -1122,7 +1100,7 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, er
 		return "", err
 	}
 	curlInsecureFlag := ""
-	if strings.HasPrefix(strings.ToLower(trimmed), "https://") && callbackInsecureTLSEnabled() {
+	if strings.HasPrefix(strings.ToLower(trimmed), "https://") && shared.CallbackInsecureTLS() {
 		curlInsecureFlag = " -k"
 	}
 	config := strings.ReplaceAll(fail2banActionTemplate, actionCallbackPlaceholder, trimmed)
@@ -1135,29 +1113,15 @@ func BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, er
 // Generates a 42-character random secret for the callback secret.
 func generateCallbackSecret() string {
 	// Generate first 32 random bytes (256 bits of entropy)
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		fallbackBytes := make([]byte, 21)
-		if _, err := rand.Read(fallbackBytes); err != nil {
-			return fmt.Sprintf("%042x", time.Now().UnixNano())
-		}
-		return hex.EncodeToString(fallbackBytes)
-	}
-	encoded := base64.URLEncoding.EncodeToString(bytes)
-	if len(encoded) >= 42 {
-		return encoded[:42]
-	}
-	return encoded + hex.EncodeToString(bytes)[:42-len(encoded)]
+	b := make([]byte, 32)
+	rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)[:42]
 }
 
 func getCallbackURLLocked() string {
 	url := strings.TrimSpace(currentSettings.CallbackURL)
 	if url == "" {
-		port := currentSettings.Port
-		if port == 0 {
-			port = 8080
-		}
-		url = fmt.Sprintf("http://127.0.0.1:%d%s", port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
+		url = defaultCallbackURL(currentSettings.Port)
 	}
 	return strings.TrimRight(url, "/")
 }
@@ -1266,7 +1230,7 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	if input.Type == "" {
 		input.Type = "local"
 	}
-	input.Name = normalizeServerName(input.Name)
+	input.Name = strings.TrimSpace(input.Name)
 	if !input.EnabledSet {
 		if input.Type == "local" {
 			input.Enabled = false
@@ -1277,7 +1241,7 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 	}
 	if input.Type == "local" {
 		input.SocketPath = normalizeLocalSocketPath(input.SocketPath)
-		input.ConfigPath = normalizeLocalConfigPath(input.ConfigPath)
+		input.ConfigPath = fail2ban.NormalizeConfigPath(input.ConfigPath)
 	} else {
 		input.SocketPath = normalizePathValue(input.SocketPath)
 		input.ConfigPath = ""
@@ -1341,25 +1305,6 @@ func UpsertServer(input Fail2banServer) (Fail2banServer, error) {
 func clearDefaultLocked() {
 	for idx := range currentSettings.Servers {
 		currentSettings.Servers[idx].IsDefault = false
-	}
-}
-
-func anyServerNeedsRestartLocked() bool {
-	for _, srv := range currentSettings.Servers {
-		if srv.RestartNeeded {
-			return true
-		}
-	}
-	return false
-}
-
-func updateGlobalRestartFlagLocked() {
-	currentSettings.RestartNeeded = anyServerNeedsRestartLocked()
-}
-
-func markAllServersRestartLocked() {
-	for idx := range currentSettings.Servers {
-		currentSettings.Servers[idx].RestartNeeded = true
 	}
 }
 
@@ -1436,15 +1381,6 @@ func GetCallbackURLFromEnv() (string, bool) {
 		return "", false
 	}
 	return strings.TrimRight(v, "/"), true
-}
-
-func callbackInsecureTLSEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("CALLBACK_INSECURE_TLS"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 func GetBindAddressFromEnv() (string, bool) {
@@ -1525,20 +1461,16 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 		}
 	}
 
-	skipLoginPageEnv := os.Getenv("OIDC_SKIP_LOGINPAGE")
-	config.SkipLoginPage = skipLoginPageEnv == "true" || skipLoginPageEnv == "1"
+	config.SkipLoginPage = shared.EnvBool("OIDC_SKIP_LOGINPAGE")
 	config.SessionSecret = os.Getenv("OIDC_SESSION_SECRET")
 
 	if config.SessionSecret == "" {
 		secretBytes := make([]byte, 32)
-		if _, err := rand.Read(secretBytes); err != nil {
-			return nil, fmt.Errorf("failed to generate session secret: %w", err)
-		}
+		rand.Read(secretBytes)
 		config.SessionSecret = base64.URLEncoding.EncodeToString(secretBytes)
 	}
 
-	skipVerifyEnv := os.Getenv("OIDC_SKIP_VERIFY")
-	config.SkipVerify = (skipVerifyEnv == "true" || skipVerifyEnv == "1")
+	config.SkipVerify = shared.EnvBool("OIDC_SKIP_VERIFY")
 	config.UsernameClaim = os.Getenv("OIDC_USERNAME_CLAIM")
 	if config.UsernameClaim == "" {
 		config.UsernameClaim = "preferred_username"
@@ -1577,8 +1509,15 @@ func cloneSettings(s AppSettings) AppSettings {
 }
 
 func isDefaultLoopbackCallbackURL(value string) bool {
-	basePath := shared.NormalizeBasePath(os.Getenv("BASE_PATH"))
-	return loopbackCallbackURLPattern.MatchString(strings.TrimSuffix(value, basePath))
+	return loopbackCallbackURLPattern.MatchString(strings.TrimSuffix(value, shared.BasePath()))
+}
+
+// Loopback URL the local fail2ban action uses to reach this UI.
+func defaultCallbackURL(port int) string {
+	if port == 0 {
+		port = 8080
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d%s", port, shared.BasePath())
 }
 
 func UpdateSettings(new AppSettings) (AppSettings, error) {
@@ -1590,28 +1529,22 @@ func UpdateSettings(new AppSettings) (AppSettings, error) {
 	oldPort := currentSettings.Port
 	if new.Port != oldPort && new.Port > 0 {
 		if isDefaultLoopbackCallbackURL(new.CallbackURL) || new.CallbackURL == "" {
-			new.CallbackURL = fmt.Sprintf("http://127.0.0.1:%d%s", new.Port, shared.NormalizeBasePath(os.Getenv("BASE_PATH")))
+			new.CallbackURL = defaultCallbackURL(new.Port)
 		}
 	}
-	if len(new.Servers) == 0 && len(currentSettings.Servers) > 0 {
-		new.Servers = make([]Fail2banServer, len(currentSettings.Servers))
-		for i, srv := range currentSettings.Servers {
-			new.Servers[i] = cloneServer(srv)
-		}
+	// Servers change only through UpsertServer/DeleteServer, which validate them.
+	new.Servers = make([]Fail2banServer, len(currentSettings.Servers))
+	for i, srv := range currentSettings.Servers {
+		new.Servers[i] = cloneServer(srv)
 	}
 	currentSettings = cloneSettings(new)
 	setDefaultsLocked()
-	restartTriggered := buildJailLocalContent(old) != buildJailLocalContent(currentSettings)
-	if restartTriggered {
-		markAllServersRestartLocked()
-	}
-	updateGlobalRestartFlagLocked()
 	DebugLog("Application settings updated")
 	if old.ConsoleOutput != new.ConsoleOutput {
 		updateConsoleLogState(new.ConsoleOutput)
 	}
 	if err := persistAllLocked(); err != nil {
-		fmt.Println("Error saving settings:", err)
+		log.Printf("ERROR: saving settings: %v", err)
 		return cloneSettings(currentSettings), err
 	}
 	return cloneSettings(currentSettings), nil
@@ -1642,4 +1575,47 @@ func updateConsoleLogState(enabled bool) {
 	if updateConsoleLogStateFunc != nil {
 		updateConsoleLogStateFunc(enabled)
 	}
+}
+
+// Clears the placeholder SMTP values older releases stored as if they were real configuration.
+func scrubLegacySMTPPlaceholders(s *AppSettings) {
+	if strings.EqualFold(strings.TrimSpace(s.Destemail), "alerts@example.com") {
+		s.Destemail = ""
+	}
+	if s.SMTP.Username != "noreply@swissmakers.ch" || s.SMTP.Password != "password" {
+		return
+	}
+	s.SMTP.Username = ""
+	s.SMTP.Password = ""
+	if s.SMTP.Host == "smtp.office365.com" {
+		s.SMTP.Host = ""
+	}
+	if s.SMTP.From == "noreply@swissmakers.ch" {
+		s.SMTP.From = ""
+	}
+}
+
+// Drops stored jail.local defaults that would corrupt the generated [DEFAULT] section.
+func sanitizeJailDefaults(s *AppSettings) []string {
+	var warnings []string
+	kept := make([]string, 0, len(s.IgnoreIPs))
+	for _, entry := range s.IgnoreIPs {
+		if err := shared.ValidateIgnoreIPEntry(entry); err != nil {
+			warnings = append(warnings, fmt.Sprintf("dropping stored ignoreip entry: %v", err))
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	s.IgnoreIPs = kept
+	for _, field := range []*string{&s.Banaction, &s.BanactionAllports} {
+		if *field != "" && shared.ValidateBanactionName(*field) != nil {
+			warnings = append(warnings, fmt.Sprintf("resetting invalid stored banaction %q to default", *field))
+			*field = ""
+		}
+	}
+	if s.Chain != "" && shared.ValidateChainName(s.Chain) != nil {
+		warnings = append(warnings, fmt.Sprintf("resetting invalid stored chain %q to default", s.Chain))
+		s.Chain = ""
+	}
+	return warnings
 }

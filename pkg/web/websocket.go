@@ -29,6 +29,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
@@ -101,7 +102,7 @@ func checkWSOrigin(r *http.Request) bool {
 //  Fail2ban-UI WebSocket Hub
 // =========================================================================
 
-// Broadcasts the console log message to all connected clients.
+// Broadcasts the console log message to all connected admin clients.
 func (h *Hub) BroadcastConsoleLog(message string) {
 	logMsg := map[string]interface{}{
 		"type":    "console_log",
@@ -139,6 +140,23 @@ func (h *Hub) BroadcastToast(level, message string) {
 	case h.broadcast <- data:
 	default:
 		log.Printf("Broadcast channel full, dropping toast")
+	}
+}
+
+// Pushes health state transition -> carries no error text because every viewer receives it
+func (h *Hub) BroadcastServerHealth(serverID string, health fail2ban.ServerHealth) {
+	data, err := json.Marshal(map[string]any{
+		"type": "server_health",
+		"data": map[string]any{"serverId": serverID, "state": health.State, "checkedAt": health.CheckedAt},
+	})
+	if err != nil {
+		log.Printf("Error marshaling server health: %v", err)
+		return
+	}
+	select {
+	case h.broadcast <- data:
+	default:
+		log.Printf("Broadcast channel full, dropping server health")
 	}
 }
 
@@ -332,30 +350,22 @@ func (c *Client) writePump() {
 	}
 }
 
-// Serves the WebSocket connection.
-func serveWS(hub *Hub, c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
-		return
-	}
-
-	client := &Client{
-		hub:            hub,
-		conn:           conn,
-		send:           make(chan []byte, 256),
-		canReadConsole: userHasAdminAccess(c),
-	}
-
-	client.hub.register <- client
-
-	go client.writePump()
-	go client.readPump()
-}
-
-// This is called from routes.go and returns the Gin handler for WebSocket connections.
+// Returns the Gin handler that upgrades a request to a WebSocket client of hub
 func WebSocketHandler(hub *Hub) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		serveWS(hub, c)
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Printf("WebSocket upgrade error: %v", err)
+			return
+		}
+		client := &Client{
+			hub:            hub,
+			conn:           conn,
+			send:           make(chan []byte, 256),
+			canReadConsole: userHasAdminAccess(c),
+		}
+		client.hub.register <- client
+		go client.writePump()
+		go client.readPump()
 	}
 }

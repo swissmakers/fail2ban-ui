@@ -16,7 +16,40 @@
 
 package shared
 
-import "strings"
+import (
+	"os"
+	"strings"
+	"sync"
+)
+
+var (
+	basePathMu    sync.RWMutex
+	basePath      string
+	basePathKnown bool
+)
+
+// Returns the normalized BASE_PATH prefix ("" for root), read from the environment on first use.
+func BasePath() string {
+	basePathMu.RLock()
+	if basePathKnown {
+		defer basePathMu.RUnlock()
+		return basePath
+	}
+	basePathMu.RUnlock()
+	basePathMu.Lock()
+	defer basePathMu.Unlock()
+	if !basePathKnown {
+		basePath, basePathKnown = NormalizeBasePath(os.Getenv("BASE_PATH")), true
+	}
+	return basePath
+}
+
+// Overrides the prefix -> tests use it instead of BASE_PATH, which is read only once.
+func SetBasePath(raw string) {
+	basePathMu.Lock()
+	defer basePathMu.Unlock()
+	basePath, basePathKnown = NormalizeBasePath(raw), true
+}
 
 // NormalizeBasePath returns a safe URL prefix, without a trailing slash.
 func NormalizeBasePath(s string) string {

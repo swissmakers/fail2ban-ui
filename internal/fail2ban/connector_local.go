@@ -19,8 +19,8 @@ package fail2ban
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -48,15 +48,6 @@ func (lc *LocalConnector) Server() shared.Fail2banServer {
 
 func (lc *LocalConnector) configPath() string {
 	return NormalizeConfigPath(lc.server.ConfigPath)
-}
-
-// Collects jail status for every active local jail.
-func (lc *LocalConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
-	summary, err := lc.GetJailSummary(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return summary.Jails, nil
 }
 
 func (lc *LocalConnector) GetJailSummary(ctx context.Context) (*JailSummary, error) {
@@ -93,10 +84,7 @@ func (lc *LocalConnector) GetBannedIPs(ctx context.Context, jail string) ([]stri
 
 // Unban an IP from a given jail.
 func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := shared.ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	args := []string{"set", jail, "unbanip", ip}
@@ -108,10 +96,7 @@ func (lc *LocalConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 
 // Ban an IP in a given jail.
 func (lc *LocalConnector) BanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := shared.ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	args := []string{"set", jail, "banip", ip}
@@ -134,23 +119,18 @@ func (lc *LocalConnector) Reload(ctx context.Context) error {
 }
 
 func (lc *LocalConnector) ValidateConfiguration(ctx context.Context) error {
-	out, err := lc.runFail2banClient(ctx, "-c", lc.configPath(), "-t")
-	if err != nil {
-		return fmt.Errorf("configuration validation failed: %w", err)
-	}
-	return checkReloadOutput(out)
+	return validateConfig(ctx, lc.runFail2banClient, lc.configPath())
 }
 
 // Restart or reload the local Fail2ban instance; returns "restart" or "reload".
-func (lc *LocalConnector) RestartWithMode(ctx context.Context) (string, error) {
+func (lc *LocalConnector) Restart(ctx context.Context) (string, error) {
 	if _, err := exec.LookPath("systemctl"); err == nil {
-		cmd := "systemctl restart fail2ban"
-		out, err := executeShellCommand(ctx, cmd)
+		out, err := exec.CommandContext(ctx, "systemctl", "restart", "fail2ban").CombinedOutput()
 		if err != nil {
 			return "restart", fmt.Errorf("failed to restart fail2ban via systemd: %w - output: %s",
-				err, strings.TrimSpace(out))
+				err, strings.TrimSpace(string(out)))
 		}
-		if err := lc.checkFail2banHealthy(ctx); err != nil {
+		if err := pingFail2ban(ctx, lc.runFail2banClient, "fail2ban"); err != nil {
 			return "restart", fmt.Errorf("fail2ban health check after systemd restart failed: %w", err)
 		}
 		return "restart", nil
@@ -158,15 +138,18 @@ func (lc *LocalConnector) RestartWithMode(ctx context.Context) (string, error) {
 	if err := lc.Reload(ctx); err != nil {
 		return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client (systemctl not available): %w", err)
 	}
-	if err := lc.checkFail2banHealthy(ctx); err != nil {
+	if err := pingFail2ban(ctx, lc.runFail2banClient, "fail2ban"); err != nil {
 		return "reload", fmt.Errorf("fail2ban health check after reload failed: %w", err)
 	}
 	return "reload", nil
 }
 
-func (lc *LocalConnector) Restart(ctx context.Context) error {
-	_, err := lc.RestartWithMode(ctx)
-	return err
+// Local servers deliver callbacks in-process, so only fail2ban itself is checked.
+func (lc *LocalConnector) ProbeHealth(ctx context.Context) ServerHealth {
+	if err := pingFail2ban(ctx, lc.runFail2banClient, "fail2ban"); err != nil {
+		return ServerHealth{Error: err.Error()}
+	}
+	return ServerHealth{Fail2banOK: true}
 }
 
 func (lc *LocalConnector) GetFilterConfig(ctx context.Context, jail string) (string, string, error) {
@@ -194,11 +177,6 @@ func (lc *LocalConnector) runFail2banClient(ctx context.Context, args ...string)
 		}
 	}
 	return output, err
-}
-
-func (lc *LocalConnector) checkFail2banHealthy(ctx context.Context) error {
-	out, err := lc.runFail2banClient(ctx, "ping")
-	return checkPingOutput(out, err, "fail2ban")
 }
 
 // =========================================================================
@@ -234,9 +212,17 @@ func (lc *LocalConnector) TestLogpathWithResolution(ctx context.Context, logpath
 }
 
 func (lc *LocalConnector) EnsureJailLocalStructure(ctx context.Context) error {
-	_ = ctx
-	content := []byte(mustProvider().BuildJailLocalContent())
-	return EnsureManagedJailLocal(lc.configPath(), content)
+	root := lc.configPath()
+	// Run migration once if enabled (experimental, off by default)
+	if isJailAutoMigrationEnabled() {
+		if _, done := migratedRoots.LoadOrStore(root, true); !done {
+			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local -> jail.d/ migration for %s", root)
+			if err := MigrateJailsFromJailLocal(root); err != nil {
+				log.Printf("warning: jail.local migration for %s failed: %v", lc.server.Name, err)
+			}
+		}
+	}
+	return EnsureManagedJailLocal(root, []byte(mustProvider().BuildJailLocalContent()))
 }
 
 func (lc *LocalConnector) CreateJail(ctx context.Context, jailName, content string) error {
@@ -268,18 +254,4 @@ func (lc *LocalConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 	}
 	hasUIAction := strings.Contains(string(content), managedJailLocalMarker)
 	return true, hasUIAction, nil
-}
-
-// =========================================================================
-//  Shell Execution
-// =========================================================================
-
-func executeShellCommand(ctx context.Context, command string) (string, error) {
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return "", errors.New("no command provided")
-	}
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
 }

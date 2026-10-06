@@ -36,15 +36,8 @@ func RequirePermission(permission string) gin.HandlerFunc {
 			return
 		}
 
-		sessionValue, exists := c.Get("session")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-			c.Abort()
-			return
-		}
-
-		session, ok := sessionValue.(*auth.Session)
-		if !ok || session == nil {
+		session := sessionFromContext(c)
+		if session == nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
 			c.Abort()
 			return
@@ -64,10 +57,13 @@ func userHasAdminAccess(c *gin.Context) bool {
 	if !auth.IsEnabled() || !auth.AuthorizationEnabled() {
 		return true
 	}
-	sessionValue, exists := c.Get("session")
-	if !exists {
-		return false
-	}
-	session, ok := sessionValue.(*auth.Session)
-	return ok && auth.SessionHasPermission(session, PermissionAdmin)
+	session := sessionFromContext(c)
+	return session != nil && auth.SessionHasPermission(session, PermissionAdmin)
+}
+
+// Returns the session AuthMiddleware stored on the request, or nil.
+func sessionFromContext(c *gin.Context) *auth.Session {
+	value, _ := c.Get("session")
+	session, _ := value.(*auth.Session)
+	return session
 }

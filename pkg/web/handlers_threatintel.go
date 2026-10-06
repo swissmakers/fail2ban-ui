@@ -40,7 +40,6 @@ var (
 
 type threatIntelCacheEntry struct {
 	Body      []byte
-	CachedAt  time.Time
 	ExpiresAt time.Time
 }
 
@@ -71,20 +70,22 @@ func pruneThreatIntelCachesLocked(now time.Time) {
 
 // Queries threat-intel providers. -> We do it through the backend to avoid browser CORS issues.
 func ThreatIntelHandler(c *gin.Context) {
-	ip := strings.TrimSpace(c.Param("ip"))
 	// Must stay strict net.ParseIP (no CIDR): shared.ValidateIP accepts CIDR
 	// and this value is interpolated into the provider request URL.
-	if net.ParseIP(ip) == nil {
+	parsed := net.ParseIP(strings.TrimSpace(c.Param("ip")))
+	if parsed == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid IP address"})
 		return
 	}
+	ip := parsed.String()
 	settings := config.GetSettings()
 	provider := strings.ToLower(strings.TrimSpace(settings.ThreatIntel.Provider))
 	if provider == "none" {
 		c.JSON(http.StatusConflict, gin.H{"error": "Threat intelligence is disabled"})
 		return
 	}
-	if provider != "alienvault" && provider != "abuseipdb" {
+	requestURL, ok := threatIntelURL(provider, parsed)
+	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid threat-intel provider configuration"})
 		return
 	}
@@ -120,25 +121,7 @@ func ThreatIntelHandler(c *gin.Context) {
 			c.Data(http.StatusOK, "application/json", cached.Body)
 			return
 		}
-		secondsLeft := int(retryUntil.Sub(now).Seconds())
-		if secondsLeft < 1 {
-			secondsLeft = 1
-		}
-		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error":        fmt.Sprintf("Threat-intel provider rate limit reached. Please retry in %d seconds.", secondsLeft),
-			"retryAfter":   secondsLeft,
-			"fromUpstream": true,
-		})
-		return
-	}
-	requestURL := ""
-	switch provider {
-	case "alienvault":
-		requestURL = "https://otx.alienvault.com/api/v1/indicators/IPv4/" + url.PathEscape(ip) + "/general"
-	case "abuseipdb":
-		requestURL = "https://api.abuseipdb.com/api/v2/check?ipAddress=" + url.QueryEscape(ip) + "&maxAgeInDays=90&verbose=true"
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported threat-intel provider"})
+		respondRateLimited(c, retryUntil.Sub(now))
 		return
 	}
 
@@ -193,7 +176,6 @@ func ThreatIntelHandler(c *gin.Context) {
 		pruneThreatIntelCachesLocked(now)
 		threatIntelCache[cacheKey] = threatIntelCacheEntry{
 			Body:      append([]byte(nil), responseBody...),
-			CachedAt:  now,
 			ExpiresAt: now.Add(30 * time.Minute),
 		}
 		delete(threatIntelRetry, cacheKey)
@@ -215,19 +197,34 @@ func ThreatIntelHandler(c *gin.Context) {
 			return
 		}
 
-		secondsLeft := int(retryUntil.Sub(now).Seconds())
-		if secondsLeft < 1 {
-			secondsLeft = 1
-		}
-		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error":        fmt.Sprintf("Threat-intel provider rate limit reached. Please retry in %d seconds.", secondsLeft),
-			"retryAfter":   secondsLeft,
-			"fromUpstream": true,
-		})
+		respondRateLimited(c, retryUntil.Sub(now))
 		return
 	}
 
 	c.Data(resp.StatusCode, "application/json", responseBody)
+}
+
+func threatIntelURL(provider string, ip net.IP) (string, bool) {
+	switch provider {
+	case "alienvault":
+		family := "IPv6"
+		if ip.To4() != nil {
+			family = "IPv4"
+		}
+		return "https://otx.alienvault.com/api/v1/indicators/" + family + "/" + url.PathEscape(ip.String()) + "/general", true
+	case "abuseipdb":
+		return "https://api.abuseipdb.com/api/v2/check?ipAddress=" + url.QueryEscape(ip.String()) + "&maxAgeInDays=90&verbose=true", true
+	}
+	return "", false
+}
+
+func respondRateLimited(c *gin.Context, wait time.Duration) {
+	secondsLeft := max(int(wait.Seconds()), 1)
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"error":        fmt.Sprintf("Threat-intel provider rate limit reached. Please retry in %d seconds.", secondsLeft),
+		"retryAfter":   secondsLeft,
+		"fromUpstream": true,
+	})
 }
 
 func parseRetryAfter(value string, fallback time.Duration) time.Duration {

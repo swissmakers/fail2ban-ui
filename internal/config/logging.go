@@ -53,9 +53,9 @@ func refreshLogSecretsLocked() {
 	current := []string{s.CallbackSecret, s.SMTP.Password, s.ThreatIntel.AlienVaultAPIKey,
 		s.ThreatIntel.AbuseIPDBAPIKey, s.Elasticsearch.APIKey, s.Elasticsearch.Password,
 		s.AdvancedActions.Mikrotik.Password, s.AdvancedActions.PfSense.APIToken,
-		s.AdvancedActions.PfSense.APISecret, s.AdvancedActions.OPNsense.APIKey,
+		s.AdvancedActions.OPNsense.APIKey,
 		s.AdvancedActions.OPNsense.APISecret, s.AdvancedActions.UniFi.APIKey,
-		s.Webhook.URL} // chat webhooks carry their token in the path
+		s.Webhook.URL}
 	if u, err := url.Parse(s.Elasticsearch.URL); err == nil && u.User != nil {
 		current = append(current, s.Elasticsearch.URL)
 	}
@@ -65,7 +65,6 @@ func refreshLogSecretsLocked() {
 	for _, value := range s.Webhook.Headers {
 		current = append(current, value)
 	}
-	// Match longer secrets first so a shared prefix cannot leave a suffix exposed.
 	seen := make(map[string]bool)
 	var values []string
 	add := func(value string) {
@@ -86,6 +85,7 @@ func refreshLogSecretsLocked() {
 			add(value)
 		}
 	}
+	// Match longer secrets first so a shared prefix cannot leave a suffix exposed.
 	ordered := append([]string(nil), values...)
 	sort.Slice(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
 	var pairs []string

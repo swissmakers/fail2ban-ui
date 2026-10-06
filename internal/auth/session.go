@@ -63,11 +63,9 @@ func SetSessionCookiePath(p string) {
 	sessionCookiePath = p
 }
 
-func sessionPath() string {
-	if sessionCookiePath == "" {
-		return "/"
-	}
-	return sessionCookiePath
+// Reports whether the browser reached the UI over HTTPS, directly or through a TLS-terminating proxy.
+func RequestIsSecure(r *http.Request) bool {
+	return r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
 }
 
 // =========================================================================
@@ -119,15 +117,13 @@ func CreateSession(w http.ResponseWriter, r *http.Request, userInfo *UserInfo, m
 		return fmt.Errorf("failed to encrypt session: %w", err)
 	}
 
-	isSecure := r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
-
 	cookie := &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    encrypted,
-		Path:     sessionPath(),
+		Path:     sessionCookiePath,
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   isSecure,
+		Secure:   RequestIsSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	}
 
@@ -161,15 +157,14 @@ func GetSession(r *http.Request) (*Session, error) {
 
 // Clears the session cookie.
 func DeleteSession(w http.ResponseWriter, r *http.Request) {
-	isSecure := r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
 
 	cookie := &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
-		Path:     sessionPath(),
+		Path:     sessionCookiePath,
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   isSecure,
+		Secure:   RequestIsSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)

@@ -208,21 +208,7 @@ func getEmailStyle() string {
 func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	recipients := shared.SplitCommaList(to)
 	if len(recipients) == 0 {
-		log.Printf("WARNING: sendEmail skipped: no recipients provided.")
-		return nil
-	}
-
-	// Skips sending if every recipient is still the default placeholder
-	allPlaceholder := true
-	for _, r := range recipients {
-		if !strings.EqualFold(r, "alerts@example.com") {
-			allPlaceholder = false
-			break
-		}
-	}
-	if allPlaceholder {
-		log.Printf("WARNING: sendEmail skipped: all recipients are still the default placeholder (alerts@example.com). Please update the 'Destination Email' in Settings -> Alert Settings.")
-		return nil
+		return errors.New("no recipients configured")
 	}
 
 	needsAuth := settings.SMTP.AuthMethod != "none"
@@ -275,6 +261,9 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 
 	// Port 465 uses implicit TLS (SMTPS); all other ports use plain SMTP with optional STARTTLS.
 	useImplicitTLS, useSTARTTLS := smtpTLSMode(smtpPort, settings.SMTP.UseTLS)
+	if smtpPlaintextAuth(settings.SMTP) {
+		log.Printf("WARNING: sendEmail: SMTP credentials for %s are sent over an unencrypted connection; enable TLS", smtpHost)
+	}
 
 	var client *smtp.Client
 
@@ -308,11 +297,7 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 		}
 	}
 
-	defer func() {
-		if client != nil {
-			client.Quit()
-		}
-	}()
+	defer client.Close()
 
 	if auth != nil {
 		if err := client.Auth(auth); err != nil {
@@ -326,6 +311,9 @@ func sendEmail(to, subject, body string, settings config.AppSettings) error {
 	if err != nil {
 		log.Printf("ERROR: sendEmail: Failed to send message: %v", err)
 		return err
+	}
+	if err := client.Quit(); err != nil {
+		log.Printf("WARNING: sendEmail: QUIT after accepted message failed: %v", err)
 	}
 	log.Printf("sendEmail: Successfully sent email to %s", strings.Join(recipients, ", "))
 	return nil
@@ -346,29 +334,44 @@ func sendSMTPMessage(client *smtp.Client, from string, recipients []string, msg 
 	if err != nil {
 		return fmt.Errorf("failed to start data command: %w", err)
 	}
-	defer wc.Close()
 	if _, err = wc.Write(msg); err != nil {
+		wc.Close()
 		return fmt.Errorf("failed to write email content: %w", err)
 	}
-	client.Quit()
+	// Close sends the final dot and returns the server's verdict on the message.
+	if err := wc.Close(); err != nil {
+		return fmt.Errorf("server rejected message: %w", err)
+	}
 	return nil
+}
+
+// Reports whether configured credentials would travel over an unencrypted connection to a remote relay.
+func smtpPlaintextAuth(s config.SMTPSettings) bool {
+	method := strings.ToLower(strings.TrimSpace(s.AuthMethod))
+	// CRAM-MD5 sends only a keyed digest, never the password.
+	if method == "none" || method == "cram-md5" || s.Username == "" || s.Password == "" {
+		return false
+	}
+	implicitTLS, startTLS := smtpTLSMode(s.Port, s.UseTLS)
+	if implicitTLS || startTLS {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(s.Host))
+	if host == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
+}
+
+// Reports whether the email provider has the fields needed to deliver a message.
+func emailConfigured(s config.AppSettings) bool {
+	return strings.TrimSpace(s.Destemail) != "" && strings.TrimSpace(s.SMTP.Host) != "" && strings.TrimSpace(s.SMTP.From) != ""
 }
 
 // Builds paragraph-based details for the classic email template.
 func renderClassicEmailDetails(details []emailDetail) string {
-	if len(details) == 0 {
-		return `<p>No metadata available.</p>`
-	}
-	var b strings.Builder
-	for _, d := range details {
-		b.WriteString(`<p><span class="label">`)
-		b.WriteString(html.EscapeString(d.Label))
-		b.WriteString(`:</span> `)
-		b.WriteString(html.EscapeString(d.Value))
-		b.WriteString(`</p>`)
-		b.WriteString("\n")
-	}
-	return b.String()
+	return renderDetailRows(details, "label", `<p>No metadata available.</p>`)
 }
 
 // Renders the original email template layout.
@@ -440,7 +443,7 @@ func buildClassicEmailBody(title, intro string, details []emailDetail, whoisHTML
 }
 
 // Renders the LOTR-themed email template.
-func buildLOTREmailBody(title, intro string, details []emailDetail, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText string) string {
+func buildLOTREmailBody(title, headline, intro string, details []emailDetail, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText string) string {
 	detailRows := renderEmailDetails(details)
 	year := strconv.Itoa(time.Now().Year())
 	return fmt.Sprintf(`<!DOCTYPE html>
@@ -509,7 +512,7 @@ func buildLOTREmailBody(title, intro string, details []emailDetail, whoisHTML, l
     <div class="email-container">
       <div class="email-header">
         <p class="email-header-brand">Middle-earth Security</p>
-        <h1 class="email-header-title">YOU SHALL NOT PASS</h1>
+        <h1 class="email-header-title">%s</h1>
         <div class="ring-divider">
           <div class="ring-divider-line"></div>
         </div>
@@ -535,7 +538,7 @@ func buildLOTREmailBody(title, intro string, details []emailDetail, whoisHTML, l
     </div>
   </div>
 </body>
-</html>`, html.EscapeString(title), html.EscapeString(intro), detailRows, html.EscapeString(whoisTitle), whoisHTML, html.EscapeString(logsTitle), logsHTML, html.EscapeString(footerText), year)
+</html>`, html.EscapeString(title), html.EscapeString(headline), html.EscapeString(intro), detailRows, html.EscapeString(whoisTitle), whoisHTML, html.EscapeString(logsTitle), logsHTML, html.EscapeString(footerText), year)
 }
 
 // Renders the default responsive email template.
@@ -639,19 +642,23 @@ func buildModernEmailBody(title, intro string, details []emailDetail, whoisHTML,
 
 // Builds table rows for the modern/LOTR email templates.
 func renderEmailDetails(details []emailDetail) string {
+	return renderDetailRows(details, "email-detail-label", `<p class="email-muted">No metadata available.</p>`)
+}
+
+func renderDetailRows(details []emailDetail, labelClass, empty string) string {
 	if len(details) == 0 {
-		return `<p class="email-muted">No metadata available.</p>`
+		return empty
 	}
 	var b strings.Builder
 	for _, d := range details {
-		b.WriteString(`<p><span class="email-detail-label">`)
-		b.WriteString(html.EscapeString(d.Label))
-		b.WriteString(`:</span> `)
-		b.WriteString(html.EscapeString(d.Value))
-		b.WriteString(`</p>`)
-		b.WriteString("\n")
+		fmt.Fprintf(&b, "<p><span class=\"%s\">%s:</span> %s</p>\n", labelClass, html.EscapeString(d.Label), html.EscapeString(d.Value))
 	}
 	return b.String()
+}
+
+// Escaped text in the dark monospace block of the classic template.
+func classicPre(text string) string {
+	return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(text) + `</pre>`
 }
 
 // Wraps raw WHOIS text in a styled <pre> block for email.
@@ -661,12 +668,12 @@ func formatWhoisForEmail(whois string, lang string, isModern bool) string {
 		if isModern {
 			return `<p class="email-muted">` + html.EscapeString(noDataMsg) + `</p>`
 		}
-		return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(noDataMsg) + `</pre>`
+		return classicPre(noDataMsg)
 	}
 	if isModern {
 		return `<pre class="email-terminal">` + html.EscapeString(whois) + `</pre>`
 	}
-	return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(whois) + `</pre>`
+	return classicPre(whois)
 }
 
 // Highlights suspicious lines and HTTP status codes in email logs.
@@ -676,7 +683,7 @@ func formatLogsForEmail(ip, logs string, lang string, isModern bool) string {
 		if isModern {
 			return `<p class="email-muted">` + html.EscapeString(noLogsMsg) + `</p>`
 		}
-		return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(noLogsMsg) + `</pre>`
+		return classicPre(noLogsMsg)
 	}
 	if isModern {
 		var b strings.Builder
@@ -700,7 +707,7 @@ func formatLogsForEmail(ip, logs string, lang string, isModern bool) string {
 		b.WriteString(`</div>`)
 		return b.String()
 	}
-	return `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(logs) + `</pre>`
+	return classicPre(logs)
 }
 
 // Checks if the line contains known attack indicators.
@@ -818,7 +825,7 @@ func sendBanAlert(ip, jail, hostname, failures, whois, logs, country string, set
 
 	var body string
 	if isLOTRMode {
-		body = buildLOTREmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
+		body = buildLOTREmailBody(title, getEmailTranslation(lang, "lotr.email.you_shall_not_pass"), intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
 	} else if isModern {
 		body = buildModernEmailBody(title, intro, details, whoisHTML, logsHTML, whoisTitle, logsTitle, footerText)
 	} else {
@@ -888,7 +895,7 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 
 	var body string
 	if isLOTRMode {
-		body = buildLOTREmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText)
+		body = buildLOTREmailBody(title, getEmailTranslation(lang, "lotr.email.you_shall_not_pass"), intro, details, whoisHTML, "", whoisTitle, "", footerText)
 	} else if isModern {
 		body = buildModernEmailBody(title, intro, details, whoisHTML, "", whoisTitle, "", footerText)
 	} else {
@@ -900,6 +907,10 @@ func sendUnbanAlert(ip, jail, hostname, whois, country string, settings config.A
 // Sends a test email to verify the SMTP configuration.
 func TestEmailHandler(c *gin.Context) {
 	settings := config.GetSettings()
+	if !emailConfigured(settings) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "destination email, SMTP host and sender address are required", "messageKey": "settings.errors.smtp_not_configured"})
+		return
+	}
 
 	lang := settings.Language
 	if lang == "" {
@@ -921,7 +932,7 @@ func TestEmailHandler(c *gin.Context) {
 	emailStyle := getEmailStyle()
 	isModern := emailStyle == "modern"
 
-	whoisHTML := `<pre style="background: #222; color: #ddd; font-family: 'Courier New', Courier, monospace; font-size: 12px; padding: 10px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">` + html.EscapeString(whoisNoData) + `</pre>`
+	whoisHTML := classicPre(whoisNoData)
 	if isModern {
 		whoisHTML = `<p class="email-muted">` + html.EscapeString(whoisNoData) + `</p>`
 	}
@@ -950,10 +961,15 @@ func TestEmailHandler(c *gin.Context) {
 		return
 	}
 	log.Println("Test email sent successfully!")
-	c.JSON(http.StatusOK, gin.H{"message": "Test email sent successfully!"})
+	resp := gin.H{"message": "Test email sent successfully!"}
+	if smtpPlaintextAuth(settings.SMTP) {
+		resp["warning"] = "SMTP credentials were sent over an unencrypted connection"
+		resp["warningKey"] = "settings.email.warning_plaintext_auth"
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
-// Returns the SMTP auth mechanism based on authMethod ("auto", "login", "plain", "cram-md5").
+// Returns the SMTP auth mechanism based on authMethod ("none", "auto", "login", "plain", "cram-md5").
 func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error) {
 	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
 	if authMethod == "none" {
@@ -963,7 +979,7 @@ func getSMTPAuth(username, password, authMethod, host string) (smtp.Auth, error)
 		return nil, nil
 	}
 	if authMethod == "" || authMethod == "auto" {
-		// Auto-detect: prefers LOGIN for Office365/Gmail, falls back to PLAIN (default)
+		// Auto-detect: prefers LOGIN for Office365/Gmail
 		authMethod = "login"
 	}
 	switch authMethod {

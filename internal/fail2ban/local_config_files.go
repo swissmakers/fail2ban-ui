@@ -142,16 +142,13 @@ func listConfigFiles(k configKind, directory string) ([]string, error) {
 	return files, nil
 }
 
-func createLocalConfigFile(k configKind, name, content, sectionHeader, configPath string) error {
+func createLocalConfigFile(k configKind, name, content, configPath string) error {
 	dir, localPath, _, err := k.paths(name, configPath)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create %s directory: %w", dir, err)
-	}
-	if sectionHeader != "" && !strings.HasPrefix(strings.TrimSpace(content), sectionHeader) {
-		content = sectionHeader + "\n" + content
 	}
 	if err := writeConfigAtomic(localPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to create %s file %s: %w", k.noun, localPath, err)
@@ -176,6 +173,7 @@ func deleteLocalConfigFiles(k configKind, name, configPath string) error {
 			continue
 		}
 		deleted++
+		_ = os.Remove(path + backupSuffix)
 		debugf("Deleted %s file: %s", k.noun, path)
 	}
 

@@ -84,9 +84,23 @@ func parseRemoteFileDump(out string) []remoteFile {
 //  Remote File Operations
 // =========================================================================
 
+// Quotes one word for the remote POSIX shell.
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+// Builds a remote command line with every word quoted.
+func shellJoin(words ...string) string {
+	quoted := make([]string, len(words))
+	for i, w := range words {
+		quoted[i] = shellQuote(w)
+	}
+	return strings.Join(quoted, " ")
+}
+
 // List files in a remote directory using find.
 func (sc *SSHConnector) listRemoteFiles(ctx context.Context, directory, pattern string) ([]string, error) {
-	cmd := fmt.Sprintf(`find "%s" -maxdepth 1 -type f -name "*%s" ! -name ".*" 2>/dev/null | sort`, directory, pattern)
+	cmd := fmt.Sprintf(`find %s -maxdepth 1 -type f -name %s ! -name '.*' 2>/dev/null | sort`, shellQuote(directory), shellQuote("*"+pattern))
 
 	out, err := sc.runRemoteCommand(ctx, []string{cmd})
 	if err != nil {
@@ -112,26 +126,10 @@ func (sc *SSHConnector) listRemoteFiles(ctx context.Context, directory, pattern 
 	return files, nil
 }
 
-func quoteRemotePath(filePath string) (string, error) {
-	if strings.ContainsAny(filePath, "'\n") {
-		return "", fmt.Errorf("unsupported character in remote path %q", filePath)
-	}
-	return "'" + filePath + "'", nil
-}
-
 func (sc *SSHConnector) readRemoteFile(ctx context.Context, filePath string) (string, error) {
-	quoted, err := quoteRemotePath(filePath)
-	if err != nil {
-		return "", err
-	}
-	parent, err := quoteRemotePath(filepath.Dir(filePath))
-	if err != nil {
-		return "", err
-	}
-	grandparent, err := quoteRemotePath(filepath.Dir(filepath.Dir(filePath)))
-	if err != nil {
-		return "", err
-	}
+	quoted := shellQuote(filePath)
+	parent := shellQuote(filepath.Dir(filePath))
+	grandparent := shellQuote(filepath.Dir(filepath.Dir(filePath)))
 	script := fmt.Sprintf("if { [ ! -e %s ] && [ -x %s ]; } || { [ -d %s ] && [ -x %s ] && [ ! -e %s ] && [ ! -L %s ]; }; then printf 'F2BUI_NOT_FOUND'; else cat %s; fi",
 		parent, grandparent, parent, parent, quoted, quoted, quoted)
 	content, err := sc.runRemoteCommand(ctx, []string{script})
@@ -166,10 +164,7 @@ func buildRemoteWriteScript(filePath, content string) (string, error) {
 }
 
 func buildRemoteWriteScriptMode(filePath, content string, private bool) (string, error) {
-	quoted, err := quoteRemotePath(filePath)
-	if err != nil {
-		return "", err
-	}
+	quoted := shellQuote(filePath)
 	for _, line := range strings.Split(content, "\n") {
 		if strings.TrimSpace(line) == remoteWriteDelimiter {
 			return "", fmt.Errorf("content contains the heredoc delimiter %q", remoteWriteDelimiter)
@@ -210,14 +205,8 @@ trap - EXIT HUP INT TERM
 }
 
 func buildEnsureActionScript(actionPath, content string) (string, error) {
-	quotedDir, err := quoteRemotePath(filepath.Dir(actionPath))
-	if err != nil {
-		return "", err
-	}
-	quotedFile, err := quoteRemotePath(actionPath)
-	if err != nil {
-		return "", err
-	}
+	quotedDir := shellQuote(filepath.Dir(actionPath))
+	quotedFile := shellQuote(actionPath)
 	write, err := buildRemoteWriteScriptMode(actionPath, content, true)
 	if err != nil {
 		return "", err
@@ -242,32 +231,6 @@ func (sc *SSHConnector) writeRemoteFile(ctx context.Context, filePath, content s
 	}
 	if _, err := sc.runRemoteCommand(ctx, []string{script}); err != nil {
 		return fmt.Errorf("failed to write remote file %s: %w", filePath, err)
-	}
-	return nil
-}
-
-func (sc *SSHConnector) ensureRemoteLocalFile(ctx context.Context, basePath, name string) error {
-	localPath := fmt.Sprintf("%s/%s.local", basePath, name)
-	confPath := fmt.Sprintf("%s/%s.conf", basePath, name)
-
-	if err := ValidateFilterName(name); err != nil {
-		return fmt.Errorf("invalid config name %q: %w", name, err)
-	}
-
-	script := fmt.Sprintf(`
-		if [ ! -f "%s" ]; then
-			if [ -f "%s" ]; then
-				cp "%s" "%s"
-			else
-				# Create empty .local file if neither exists
-				touch "%s"
-			fi
-		fi
-	`, localPath, confPath, confPath, localPath, localPath)
-
-	_, err := sc.runRemoteCommand(ctx, []string{script})
-	if err != nil {
-		return fmt.Errorf("failed to ensure remote .local file %s: %w", localPath, err)
 	}
 	return nil
 }
@@ -302,26 +265,18 @@ func (sc *SSHConnector) getFail2banPath(ctx context.Context) string {
 	return sc.fail2banPath
 }
 
-func buildConfigTreeDumpScript(configRoot string) (string, error) {
-	quotedRoot, err := quoteRemotePath(configRoot)
-	if err != nil {
-		return "", err
-	}
+func buildConfigTreeDumpScript(configRoot string) string {
 	return fmt.Sprintf(`find %[1]s -type f \( -name '*.conf' -o -name '*.local' \) | sort | while IFS= read -r f; do
 	echo "%[2]s$f"
 	cat "$f"
 	echo "%[3]s"
 done
-`, quotedRoot, batchFileBegin, batchFileEnd), nil
+`, shellQuote(configRoot), batchFileBegin, batchFileEnd)
 }
 
 func (sc *SSHConnector) dumpConfigTree(ctx context.Context) ([]remoteFile, error) {
 	configRoot := sc.getFail2banPath(ctx)
-	script, err := buildConfigTreeDumpScript(configRoot)
-	if err != nil {
-		return nil, err
-	}
-	out, err := sc.runRemoteCommand(ctx, []string{script})
+	out, err := sc.runRemoteCommand(ctx, []string{buildConfigTreeDumpScript(configRoot)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config tree from %s on %s: %w", configRoot, sc.server.Name, err)
 	}

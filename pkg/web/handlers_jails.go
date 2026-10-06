@@ -37,7 +37,7 @@ import (
 // Returns the filter and jail config for a given jail.
 func GetJailFilterConfigHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("GetJailFilterConfigHandler called (handlers.go)")
+	config.DebugLog("GetJailFilterConfigHandler called")
 	jail := c.Param("jail")
 	config.DebugLog("Jail name: %s", jail)
 
@@ -72,14 +72,7 @@ func GetJailFilterConfigHandler(c *gin.Context) {
 	config.DebugLog("Jail config loaded, length: %d, file: %s", len(jailCfg), jailFilePath)
 
 	// Extracts the filter name from the jail config, or uses the jail name as fallback
-	filterName := fail2ban.ExtractFilterFromJailConfig(jailCfg)
-	if filterName == "" {
-		// No filter directive found, uses the jail name as filter name
-		filterName = jail
-		config.DebugLog("No filter directive found in jail config, using jail name as filter name: %s", filterName)
-	} else {
-		config.DebugLog("Found filter directive in jail config: %s", filterName)
-	}
+	filterName := fail2ban.FilterNameForJail(jail, jailCfg)
 
 	// Loads the filter config using the filter name determined from the jail config
 	config.DebugLog("Loading filter config for filter: %s", filterName)
@@ -104,14 +97,8 @@ func GetJailFilterConfigHandler(c *gin.Context) {
 
 // Saves updated filter/jail config and reloads Fail2ban.
 func SetJailFilterConfigHandler(c *gin.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			config.DebugLog("PANIC in SetJailFilterConfigHandler: %v", r)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Internal server error: %v", r)})
-		}
-	}()
 	config.DebugLog("----------------------------")
-	config.DebugLog("SetJailFilterConfigHandler called (handlers.go)")
+	config.DebugLog("SetJailFilterConfigHandler called")
 	jail := c.Param("jail")
 	config.DebugLog("Jail name: %s", jail)
 
@@ -152,28 +139,8 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 			originalJailCfg = req.Jail
 		}
 
-		// Extracts the original filter name (the one that was loaded when the modal opened)
-		originalFilterName := fail2ban.ExtractFilterFromJailConfig(originalJailCfg)
-		if originalFilterName == "" {
-			// No filter directive found in original config, uses the jail name as filter name
-			originalFilterName = jail
-			config.DebugLog("No filter directive found in original jail config, using jail name as filter name: %s", originalFilterName)
-		} else {
-			config.DebugLog("Found original filter directive in jail config: %s", originalFilterName)
-		}
-
-		newFilterName := fail2ban.ExtractFilterFromJailConfig(req.Jail)
-		if newFilterName == "" {
-			newFilterName = jail
-		}
-
-		// If the filter name changed, saves to the original filter name
-		// This prevents overwriting a different filter with the old filter's content
-		if originalFilterName != newFilterName {
-			config.DebugLog("Filter name changed from %s to %s, saving filter to original name: %s", originalFilterName, newFilterName, originalFilterName)
-		} else {
-			config.DebugLog("Filter name unchanged: %s", originalFilterName)
-		}
+		// The filter shown in the modal is the one the saved jail referenced, even if the edit renames it.
+		originalFilterName := fail2ban.FilterNameForJail(jail, originalJailCfg)
 
 		config.DebugLog("Saving filter config for filter: %s", originalFilterName)
 		if err := conn.SetFilterConfig(c.Request.Context(), originalFilterName, req.Filter); err != nil {
@@ -188,7 +155,7 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 
 	if req.Jail != "" {
 		config.DebugLog("Saving jail config for jail: %s", jail)
-		if err := conn.SetJailConfig(c.Request.Context(), jail, req.Jail); err != nil {
+		if err := conn.SetJailConfig(c.Request.Context(), jail, fail2ban.NormalizeJailSection(jail, req.Jail)); err != nil {
 			config.DebugLog("Failed to save jail config: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save jail config: " + err.Error()})
 			return
@@ -226,22 +193,10 @@ func SetJailFilterConfigHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Filter and jail config updated and fail2ban reloaded"})
 }
 
-func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // Validates that a jail's log path resolves to real files.
 func TestLogpathHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("TestLogpathHandler called (handlers.go)")
+	config.DebugLog("TestLogpathHandler called")
 	jail := c.Param("jail")
 	if err := fail2ban.ValidateJailName(jail); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -289,18 +244,8 @@ func TestLogpathHandler(c *gin.Context) {
 
 	server := conn.Server()
 	isLocalServer := server.Type == "local"
-
-	// Splits the logpath by newlines and spaces (Fail2ban supports multiple logpaths separated by spaces or newlines)
-	// First splits by newlines, then splits each line by spaces
-	var logpaths []string
-	for _, line := range strings.Split(originalLogpath, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		paths := strings.Fields(line)
-		logpaths = append(logpaths, paths...)
-	}
+	// Fail2ban accepts several logpaths separated by spaces or newlines.
+	logpaths := strings.Fields(originalLogpath)
 
 	var allResults []map[string]interface{}
 
@@ -354,7 +299,7 @@ func TestLogpathHandler(c *gin.Context) {
 // Returns all jails (enabled and disabled) for the manage-jails modal.
 func ManageJailsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("ManageJailsHandler called (handlers.go)")
+	config.DebugLog("ManageJailsHandler called")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -375,19 +320,6 @@ func getJailNames(jails map[string]bool) []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func splitLogpaths(raw string) []string {
-	var out []string
-	for line := range strings.SplitSeq(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		out = append(out, parts...)
-	}
-	return out
 }
 
 var jailErrorPatterns = []*regexp.Regexp{
@@ -422,7 +354,7 @@ func parseJailErrorsFromReloadOutput(output string) []string {
 // Enables/disables jails and reloads Fail2ban.
 func UpdateJailManagementHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("UpdateJailManagementHandler called (handlers.go)")
+	config.DebugLog("UpdateJailManagementHandler called")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		config.DebugLog("Error resolving connector: %v", err)
@@ -471,7 +403,7 @@ func UpdateJailManagementHandler(c *gin.Context) {
 
 		// No logpath is legitimate -> journal backend, or a jail defined in jail.conf
 		rawLogpath := strings.TrimSpace(fail2ban.ExtractLogpathFromJailConfig(jailCfg))
-		paths := splitLogpaths(rawLogpath)
+		paths := strings.Fields(rawLogpath)
 		if len(paths) == 0 {
 			log.Printf("WARNING: no logpath resolvable for jail %s on server %s; enabling anyway and relying on fail2ban to validate it",
 				jailName, conn.Server().Name)
@@ -649,7 +581,7 @@ func UpdateJailManagementHandler(c *gin.Context) {
 // Creates a new jail with the given name and optional config.
 func CreateJailHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("CreateJailHandler called (handlers.go)")
+	config.DebugLog("CreateJailHandler called")
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -671,11 +603,25 @@ func CreateJailHandler(c *gin.Context) {
 		return
 	}
 
-	if req.Content == "" {
-		req.Content = fmt.Sprintf("[%s]\nenabled = false\n", req.JailName)
+	defined, err := conn.GetAllJails(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing jails: " + err.Error()})
+		return
+	}
+	var active []fail2ban.JailInfo
+	if summary, err := conn.GetJailSummary(c.Request.Context()); err == nil {
+		active = summary.Jails
+	}
+	if jailNameTaken(req.JailName, defined, active) {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("jail '%s' already exists", req.JailName), "messageKey": "jails.errors.already_exists", "jail": req.JailName})
+		return
 	}
 
-	if err := conn.CreateJail(c.Request.Context(), req.JailName, req.Content); err != nil {
+	if strings.TrimSpace(req.Content) == "" {
+		req.Content = "enabled = false\n"
+	}
+
+	if err := conn.CreateJail(c.Request.Context(), req.JailName, fail2ban.NormalizeJailSection(req.JailName, req.Content)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create jail: " + err.Error()})
 		return
 	}
@@ -695,7 +641,7 @@ func CreateJailHandler(c *gin.Context) {
 // Removes a jail and its config file.
 func DeleteJailHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("DeleteJailHandler called (handlers.go)")
+	config.DebugLog("DeleteJailHandler called")
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -729,4 +675,16 @@ func DeleteJailHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' deleted and applied successfully", jailName)})
+}
+
+// Active jails count too a jail defined only in jail.conf (such as sshd for example) has no jail.d file
+func jailNameTaken(name string, defined, active []fail2ban.JailInfo) bool {
+	for _, list := range [][]fail2ban.JailInfo{defined, active} {
+		for _, j := range list {
+			if j.JailName == name {
+				return true
+			}
+		}
+	}
+	return false
 }

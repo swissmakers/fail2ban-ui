@@ -25,6 +25,8 @@ import (
 	"syscall"
 )
 
+const backupSuffix = ".f2bui.bak"
+
 // Replace a complete file only after the staged data has reached disk. Keep
 // the previous content in a private backup, without replacing it on a retry.
 func writeConfigAtomic(path string, content []byte, mode os.FileMode) error {
@@ -58,7 +60,7 @@ func writeConfigAtomic(path string, content []byte, mode os.FileMode) error {
 		if bytes.Equal(old, content) {
 			return os.Chmod(path, mode)
 		}
-		if err := replaceFileAtomic(path+".f2bui.bak", old, 0600); err != nil {
+		if err := replaceFileAtomic(path+backupSuffix, old, 0600); err != nil {
 			return fmt.Errorf("back up %s: %w", path, err)
 		}
 	}

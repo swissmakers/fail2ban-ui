@@ -18,27 +18,51 @@ package fail2ban
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 )
 
+// Sync phases: pending = not yet written, written = on disk but not active, applied = active.
+const (
+	SyncPending = "pending"
+	SyncWritten = "written"
+	SyncApplied = "applied"
+)
+
+// Returned when a restart is refused because the host's configuration is not in a loadable state.
+var ErrConfigNotApplied = errors.New("configuration is not applied")
+
 type ConfigSyncStatus struct {
 	Pending     bool      `json:"pending"`
+	Phase       string    `json:"phase"`
 	Error       string    `json:"error,omitempty"`
-	LastAttempt time.Time `json:"lastAttempt,omitempty"`
-	LastWritten time.Time `json:"lastWritten,omitempty"`
-	LastApplied time.Time `json:"lastApplied,omitempty"`
+	LastAttempt time.Time `json:"lastAttempt,omitzero"`
+	LastWritten time.Time `json:"lastWritten,omitzero"`
+	LastApplied time.Time `json:"lastApplied,omitzero"`
 }
 
 type configSyncState struct {
 	mu               sync.Mutex
 	run              chan struct{}
 	generation       uint64
+	writtenGen       uint64
 	action, defaults bool
 	failures         int
 	status           ConfigSyncStatus
+}
+
+func syncPhase(pending bool, writtenGen, generation uint64) string {
+	switch {
+	case !pending:
+		return SyncApplied
+	case writtenGen == generation:
+		return SyncWritten
+	default:
+		return SyncPending
+	}
 }
 
 const maxConfigRetryDelay = 15 * time.Minute
@@ -51,7 +75,7 @@ func configRetryDelay(failures int) time.Duration {
 	if failures > 6 {
 		return maxConfigRetryDelay
 	}
-	return min(tunnelCheckInterval<<(failures-1), maxConfigRetryDelay)
+	return min(monitorInterval<<(failures-1), maxConfigRetryDelay)
 }
 
 func (m *Manager) syncState(id string) *configSyncState {
@@ -84,11 +108,13 @@ func (m *Manager) ConfigSyncStatus(id string) ConfigSyncStatus {
 	state := m.configSync[id]
 	m.mu.RUnlock()
 	if state == nil {
-		return ConfigSyncStatus{}
+		return ConfigSyncStatus{Phase: SyncApplied}
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	return state.status
+	status := state.status
+	status.Phase = syncPhase(status.Pending, state.writtenGen, state.generation)
+	return status
 }
 
 func (m *Manager) configRetryDue(id string) bool {
@@ -139,11 +165,9 @@ func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
 	if err == nil {
 		state.mu.Lock()
 		state.status.LastWritten = time.Now().UTC()
+		state.writtenGen = generation
 		state.mu.Unlock()
-		if validator, ok := conn.(interface{ ValidateConfiguration(context.Context) error }); ok {
-			err = validator.ValidateConfiguration(ctx)
-		}
-		if err == nil {
+		if err = conn.ValidateConfiguration(ctx); err == nil {
 			err = conn.Reload(ctx)
 		}
 	}
@@ -156,24 +180,53 @@ func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
 		}
 		state.status.Error = message
 		state.mu.Unlock()
-		return fmt.Errorf("%s", message)
+		return fmt.Errorf("config sync for %s failed: %w", conn.Server().Name, err)
 	}
+	state.markAppliedLocked(generation)
+	state.mu.Unlock()
+	log.Printf("applied Fail2Ban configuration on %s", conn.Server().Name)
+	return nil
+}
+
+func (state *configSyncState) markAppliedLocked(generation uint64) {
 	state.failures = 0
 	state.status.LastApplied = time.Now().UTC()
 	state.status.Error = ""
-	applied := state.generation == generation
-	if applied {
+	if state.generation == generation {
 		state.action, state.defaults = false, false
 		state.status.Pending = false
 	}
-	state.mu.Unlock()
-	if applied {
-		if p, ok := mustProvider().(interface{ ConfigApplied(string) }); ok {
-			p.ConfigApplied(id)
+}
+
+// Applies pending config, then restarts fail2ban; refuses when the files on the host would not load.
+func (m *Manager) ApplyAndRestart(ctx context.Context, id string) (string, error) {
+	conn, err := m.Connector(id)
+	if err != nil {
+		return "", err
+	}
+	if m.ConfigSyncStatus(id).Pending {
+		// A failed reload is fine here as long as the files were written; the restart loads them.
+		if syncErr := m.SyncServerConfig(ctx, id); syncErr != nil && m.ConfigSyncStatus(id).Phase == SyncPending {
+			return "", fmt.Errorf("%w: %v", ErrConfigNotApplied, syncErr)
 		}
 	}
-	log.Printf("applied Fail2Ban configuration on %s", conn.Server().Name)
-	return nil
+	if err := conn.ValidateConfiguration(ctx); err != nil {
+		return "", fmt.Errorf("%w: %v", ErrConfigNotApplied, err)
+	}
+	state := m.syncState(id)
+	state.mu.Lock()
+	generation, written := state.generation, state.writtenGen == state.generation
+	state.mu.Unlock()
+	mode, err := conn.Restart(ctx)
+	if err != nil {
+		return mode, err
+	}
+	if written {
+		state.mu.Lock()
+		state.markAppliedLocked(generation)
+		state.mu.Unlock()
+	}
+	return mode, nil
 }
 
 // Retry without requiring an open dashboard or another settings change.

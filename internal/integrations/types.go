@@ -35,9 +35,7 @@ type Request struct {
 	Context context.Context
 	IP      string
 	Config  config.AdvancedActionsConfig
-	Server  config.Fail2banServer
-
-	Logger func(format string, args ...interface{})
+	Logger  func(format string, args ...interface{})
 }
 
 // =========================================================================
@@ -46,17 +44,17 @@ type Request struct {
 
 // Matches only alphanumeric characters, hyphens, underscores and dots
 var safeIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
-var safeESIndex = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,254}$`)
+var safeESDataStream = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,254}$`)
 
-func ValidateElasticsearchIndex(index string) error {
-	if index == "" {
-		return fmt.Errorf("elasticsearch index is required")
+func ValidateElasticsearchDataStream(name string) error {
+	if name == "" {
+		return fmt.Errorf("elasticsearch data stream is required")
 	}
-	if !safeESIndex.MatchString(index) {
-		return fmt.Errorf("invalid elasticsearch index %q: use lowercase letters, digits, '.', '-' and '_'", index)
+	if !safeESDataStream.MatchString(name) {
+		return fmt.Errorf("invalid elasticsearch data stream %q: use lowercase letters, digits, '.', '-' and '_'", name)
 	}
-	if strings.Contains(index, "..") {
-		return fmt.Errorf("elasticsearch index must not contain '..': %q", index)
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("elasticsearch data stream must not contain '..': %q", name)
 	}
 	return nil
 }

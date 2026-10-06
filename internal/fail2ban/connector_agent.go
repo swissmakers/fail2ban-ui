@@ -19,6 +19,9 @@ package fail2ban
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,16 +30,21 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"path"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/httpx"
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
-// Whole-request budget for a single agent call.
-const agentRequestTimeout = 15 * time.Second
+const (
+	// Budget for ordinary agent calls; reload, restart and validation get agentServiceTimeout.
+	agentRequestTimeout = 15 * time.Second
+	agentServiceTimeout = 60 * time.Second
+	agentDeregisterWait = 5 * time.Second
+)
 
 // =========================================================================
 //  Types
@@ -44,9 +52,11 @@ const agentRequestTimeout = 15 * time.Second
 
 // Connector for a remote Fail2ban-Agent via HTTP API.
 type AgentConnector struct {
-	server shared.Fail2banServer
-	base   *url.URL
-	client *http.Client
+	server  shared.Fail2banServer
+	base    *url.URL
+	client  *http.Client
+	driftMu sync.Mutex
+	drifted bool
 }
 
 type AgentConfigErrorKind string
@@ -90,7 +100,20 @@ type AgentHTTPError struct {
 	Status     string
 	Body       string
 	Code       string
-	Message    string
+}
+
+// Reports whether err is an agent HTTP error with one of the given status codes.
+func agentStatusIs(err error, codes ...int) bool {
+	var httpErr *AgentHTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	return slices.Contains(codes, httpErr.StatusCode)
+}
+
+// Older agents answer unknown endpoints with 404, or 405 when the path exists for another method.
+func agentUnsupported(err error) bool {
+	return agentStatusIs(err, http.StatusNotFound, http.StatusMethodNotAllowed)
 }
 
 func (e *AgentHTTPError) Error() string {
@@ -159,16 +182,11 @@ func NewAgentConnector(server shared.Fail2banServer) (Connector, error) {
 	if err != nil {
 		return nil, &AgentConfigError{Kind: AgentConfigErrorInvalidURL, Err: err}
 	}
-	client := httpx.Client(agentRequestTimeout, false)
-	conn := &AgentConnector{
+	return &AgentConnector{
 		server: server,
 		base:   parsed,
-		client: client,
-	}
-	if err := conn.ensureCallbackConfig(context.Background()); err != nil {
-		log.Printf("warning: failed to configure agent callback for %s: %v", server.Name, err)
-	}
-	return conn, nil
+		client: httpx.Client(agentServiceTimeout, false),
+	}, nil
 }
 
 // Trims input and validates the agent URL. A bare host without scheme gets http and the agent's native port 9700 as default
@@ -228,29 +246,47 @@ func (ac *AgentConnector) ensureCallbackConfig(ctx context.Context) error {
 		"callbackSecret":   p.CallbackSecret(),
 		"callbackHostname": strings.TrimSpace(ac.server.Hostname),
 	}
-	return ac.put(ctx, "/v1/callback/config", payload, nil)
+	if err := ac.put(ctx, "/v1/callback/config", payload, nil); err != nil {
+		return err
+	}
+	ac.setDrifted(false)
+	return nil
 }
 
-func (ac *AgentConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
+// Tells the agent to stop posting callbacks for this server entry; older agents lack the endpoint.
+func (ac *AgentConnector) deregister() {
+	ctx, cancel := context.WithTimeout(context.Background(), agentDeregisterWait)
+	defer cancel()
+	err := ac.call(ctx, http.MethodDelete, "/v1/callback/config?serverId="+url.QueryEscape(ac.server.ID), agentDeregisterWait, nil, nil)
+	if err != nil && !agentUnsupported(err) {
+		log.Printf("warning: failed to deregister callbacks on agent %s: %v", ac.server.Name, err)
+	}
+}
+
+func (ac *AgentConnector) setDrifted(v bool) {
+	ac.driftMu.Lock()
+	ac.drifted = v
+	ac.driftMu.Unlock()
+}
+
+func (ac *AgentConnector) actionDrifted() bool {
+	ac.driftMu.Lock()
+	defer ac.driftMu.Unlock()
+	return ac.drifted
+}
+
+func (ac *AgentConnector) GetJailSummary(ctx context.Context) (*JailSummary, error) {
 	var resp struct {
 		Jails []JailInfo `json:"jails"`
 	}
 	if err := ac.get(ctx, "/v1/jails", &resp); err != nil {
 		return nil, err
 	}
-	return resp.Jails, nil
-}
-
-func (ac *AgentConnector) GetJailSummary(ctx context.Context) (*JailSummary, error) {
-	infos, err := ac.GetJailInfos(ctx)
-	if err != nil {
-		return nil, err
-	}
 	exists, managed, err := ac.CheckJailLocalIntegrity(ctx)
 	if err != nil {
 		debugf("Warning: could not check jail.local integrity on %s: %v", ac.server.Name, err)
 	}
-	return &JailSummary{Jails: infos, JailLocalExists: exists, JailLocalManaged: managed}, nil
+	return &JailSummary{Jails: resp.Jails, JailLocalExists: exists, JailLocalManaged: managed, ActionFileDrifted: ac.actionDrifted()}, nil
 }
 
 func (ac *AgentConnector) GetBannedIPs(ctx context.Context, jail string) ([]string, error) {
@@ -262,7 +298,7 @@ func (ac *AgentConnector) GetBannedIPs(ctx context.Context, jail string) ([]stri
 		BannedIPs   []string `json:"bannedIPs"`
 		TotalBanned int      `json:"totalBanned"`
 	}
-	if err := ac.get(ctx, fmt.Sprintf("/v1/jails/%s", url.PathEscape(jail)), &resp); err != nil {
+	if err := ac.get(ctx, "/v1/jails/"+url.PathEscape(jail), &resp); err != nil {
 		return nil, err
 	}
 	if len(resp.BannedIPs) > 0 {
@@ -272,111 +308,254 @@ func (ac *AgentConnector) GetBannedIPs(ctx context.Context, jail string) ([]stri
 }
 
 func (ac *AgentConnector) UnbanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := shared.ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	payload := map[string]string{"ip": ip}
-	return ac.post(ctx, fmt.Sprintf("/v1/jails/%s/unban", url.PathEscape(jail)), payload, nil)
+	return ac.post(ctx, "/v1/jails/"+url.PathEscape(jail)+"/unban", payload, nil)
 }
 
 func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := shared.ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	payload := map[string]string{"ip": ip}
-	return ac.post(ctx, fmt.Sprintf("/v1/jails/%s/ban", url.PathEscape(jail)), payload, nil)
+	return ac.post(ctx, "/v1/jails/"+url.PathEscape(jail)+"/ban", payload, nil)
 }
 
 func (ac *AgentConnector) Reload(ctx context.Context) error {
 	var resp struct {
 		Output string `json:"output"`
 	}
-	if err := ac.post(ctx, "/v1/actions/reload", nil, &resp); err != nil {
+	if err := ac.call(ctx, http.MethodPost, "/v1/actions/reload", agentServiceTimeout, nil, &resp); err != nil {
 		return err
 	}
 	return checkReloadOutput(resp.Output)
 }
 
-func (ac *AgentConnector) Restart(ctx context.Context) error {
-	return ac.post(ctx, "/v1/actions/restart", nil, nil)
+// Returns the agent-reported mode; agents before 0.2 do not report one.
+func (ac *AgentConnector) Restart(ctx context.Context) (string, error) {
+	var resp struct {
+		Mode string `json:"mode"`
+	}
+	err := ac.call(ctx, http.MethodPost, "/v1/actions/restart", agentServiceTimeout, nil, &resp)
+	if resp.Mode == "" {
+		resp.Mode = "restart"
+	}
+	return resp.Mode, err
 }
 
-func (ac *AgentConnector) RestartWithMode(ctx context.Context) (string, error) {
-	if err := ac.Restart(ctx); err != nil {
-		return "restart", err
+func (ac *AgentConnector) ValidateConfiguration(ctx context.Context) error {
+	var resp struct {
+		Output string `json:"output"`
 	}
-	return "restart", nil
+	err := ac.call(ctx, http.MethodPost, "/v1/actions/validate", agentServiceTimeout, nil, &resp)
+	switch {
+	case agentUnsupported(err):
+		debugf("agent %s cannot validate configuration (agent before 0.2); skipping", ac.server.Name)
+		return nil
+	case err != nil:
+		var httpErr *AgentHTTPError
+		if errors.As(err, &httpErr) && httpErr.Code == "config_invalid" {
+			var body struct {
+				Error  string `json:"error"`
+				Output string `json:"output"`
+			}
+			_ = json.Unmarshal([]byte(httpErr.Body), &body)
+			return fmt.Errorf("configuration validation failed: %s", firstNonEmpty(body.Output, body.Error, httpErr.Status))
+		}
+		return err
+	}
+	return checkReloadOutput(resp.Output)
+}
+
+// Checks agent readiness and whether its callback registration still matches this server entry.
+func (ac *AgentConnector) ProbeHealth(ctx context.Context) ServerHealth {
+	var detail agentHealthDetail
+	err := ac.get(ctx, "/v1/health", &detail)
+	if agentUnsupported(err) {
+		return ac.probeLegacyReadiness(ctx)
+	}
+	if err != nil {
+		return ServerHealth{Error: err.Error()}
+	}
+	p := mustProvider()
+	fingerprint := agentCallbackFingerprint(ac.server.AgentSecret, ac.server.ID, p.CallbackURL(), p.CallbackSecret())
+	h, drifted := healthFromDetail(detail, ac.server.ID, fingerprint)
+	ac.setDrifted(drifted)
+	return h
+}
+
+func (ac *AgentConnector) probeLegacyReadiness(ctx context.Context) ServerHealth {
+	ctx, cancel := context.WithTimeout(ctx, agentRequestTimeout)
+	defer cancel()
+	req, err := ac.newRequest(ctx, http.MethodGet, "/readyz", nil)
+	if err != nil {
+		return ServerHealth{Error: err.Error()}
+	}
+	resp, err := ac.client.Do(req)
+	if err != nil {
+		return ServerHealth{Error: (&AgentTransportError{Err: err}).Error()}
+	}
+	defer resp.Body.Close()
+	body, err := httpx.ReadLimited(resp.Body)
+	if err != nil {
+		return ServerHealth{Error: err.Error()}
+	}
+	return healthFromLegacyReadyz(resp.StatusCode, body)
+}
+
+type agentHealthDetail struct {
+	Ready      bool            `json:"ready"`
+	Checks     map[string]bool `json:"checks"`
+	Supervisor struct {
+		LastError string `json:"lastError"`
+	} `json:"supervisor"`
+	Callback struct {
+		Configured  bool   `json:"configured"`
+		ServerID    string `json:"serverId"`
+		Fingerprint string `json:"fingerprint"`
+		LastError   string `json:"lastError"`
+	} `json:"callback"`
+}
+
+// Maps agent health detail to ServerHealth; drifted means the UI should push its callback config again.
+func healthFromDetail(d agentHealthDetail, serverID, fingerprint string) (ServerHealth, bool) {
+	h := ServerHealth{Fail2banOK: d.Ready}
+	if !d.Ready {
+		var failed []string
+		for name, ok := range d.Checks {
+			if !ok {
+				failed = append(failed, name)
+			}
+		}
+		slices.Sort(failed)
+		h.Error = firstNonEmpty(d.Supervisor.LastError, "agent is not ready")
+		if len(failed) > 0 {
+			h.Error += " (failed checks: " + strings.Join(failed, ", ") + ")"
+		}
+		return h, false
+	}
+	callbackOK := false
+	h.CallbackOK = &callbackOK
+	switch {
+	case !d.Callback.Configured || d.Callback.ServerID == "":
+		h.Error = "agent has no callback configuration"
+		return h, true
+	case d.Callback.ServerID != serverID:
+		h.Error = fmt.Sprintf("agent callbacks are registered to server entry %q", d.Callback.ServerID)
+		return h, false
+	case d.Callback.Fingerprint != fingerprint:
+		h.Error = "agent callback configuration is outdated"
+		return h, true
+	case d.Callback.LastError != "":
+		h.Error = "callback delivery failed: " + d.Callback.LastError
+		return h, false
+	}
+	callbackOK = true
+	return h, false
+}
+
+// Agents before 0.2 only expose /readyz; it reports fail2ban state but nothing about callbacks.
+func healthFromLegacyReadyz(status int, body []byte) ServerHealth {
+	var payload struct {
+		Ready bool `json:"ready"`
+		State struct {
+			LastError string `json:"lastError"`
+		} `json:"state"`
+	}
+	_ = json.Unmarshal(body, &payload)
+	if status == http.StatusOK && payload.Ready {
+		return ServerHealth{Fail2banOK: true}
+	}
+	return ServerHealth{Error: firstNonEmpty(payload.State.LastError, fmt.Sprintf("agent is not ready (HTTP %d)", status))}
+}
+
+// Identifies a callback registration without revealing the secret; the agent computes the same value.
+func agentCallbackFingerprint(agentSecret, serverID, callbackURL, callbackSecret string) string {
+	mac := hmac.New(sha256.New, []byte(agentSecret))
+	mac.Write([]byte(serverID + "\n" + strings.TrimRight(callbackURL, "/") + "\n" + callbackSecret))
+	return hex.EncodeToString(mac.Sum(nil))[:32]
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // =========================================================================
 //  Filter Operations
 // =========================================================================
 
-func (ac *AgentConnector) GetFilterConfig(ctx context.Context, jail string) (string, string, error) {
+func (ac *AgentConnector) GetFilterConfig(ctx context.Context, filter string) (string, string, error) {
+	if err := ValidateFilterName(filter); err != nil {
+		return "", "", err
+	}
 	var resp struct {
 		Config   string `json:"config"`
 		FilePath string `json:"filePath"`
 	}
-	if err := ac.get(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(jail)), &resp); err != nil {
+	if err := ac.get(ctx, "/v1/filters/"+url.PathEscape(filter), &resp); err != nil {
 		return "", "", err
 	}
-	filePath := resp.FilePath
-	if filePath == "" {
-		filePath = fmt.Sprintf("/etc/fail2ban/filter.d/%s.local", jail)
-	}
-	return resp.Config, filePath, nil
+	return resp.Config, firstNonEmpty(resp.FilePath, agentDefaultPath("filter.d", filter)), nil
 }
 
-func (ac *AgentConnector) SetFilterConfig(ctx context.Context, jail, content string) error {
+func (ac *AgentConnector) SetFilterConfig(ctx context.Context, filter, content string) error {
+	if err := ValidateFilterName(filter); err != nil {
+		return err
+	}
 	payload := map[string]string{"config": content}
-	return ac.put(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(jail)), payload, nil)
+	return ac.put(ctx, "/v1/filters/"+url.PathEscape(filter), payload, nil)
+}
+
+// Path shown when an older agent does not report one.
+func agentDefaultPath(dir, name string) string {
+	return "/etc/fail2ban/" + dir + "/" + name + ".local"
 }
 
 // =========================================================================
 //  HTTP Helpers
 // =========================================================================
 
-func (ac *AgentConnector) get(ctx context.Context, endpoint string, out any) error {
-	req, err := ac.newRequest(ctx, http.MethodGet, endpoint, nil)
+func (ac *AgentConnector) call(ctx context.Context, method, endpoint string, timeout time.Duration, payload, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := ac.newRequest(ctx, method, endpoint, payload)
 	if err != nil {
 		return err
 	}
 	return ac.do(req, out)
+}
+
+func (ac *AgentConnector) get(ctx context.Context, endpoint string, out any) error {
+	return ac.call(ctx, http.MethodGet, endpoint, agentRequestTimeout, nil, out)
 }
 
 func (ac *AgentConnector) post(ctx context.Context, endpoint string, payload any, out any) error {
-	req, err := ac.newRequest(ctx, http.MethodPost, endpoint, payload)
-	if err != nil {
-		return err
-	}
-	return ac.do(req, out)
+	return ac.call(ctx, http.MethodPost, endpoint, agentRequestTimeout, payload, out)
 }
 
 func (ac *AgentConnector) put(ctx context.Context, endpoint string, payload any, out any) error {
-	req, err := ac.newRequest(ctx, http.MethodPut, endpoint, payload)
-	if err != nil {
-		return err
-	}
-	return ac.do(req, out)
+	return ac.call(ctx, http.MethodPut, endpoint, agentRequestTimeout, payload, out)
 }
 
 func (ac *AgentConnector) delete(ctx context.Context, endpoint string, out any) error {
-	req, err := ac.newRequest(ctx, http.MethodDelete, endpoint, nil)
-	if err != nil {
-		return err
-	}
-	return ac.do(req, out)
+	return ac.call(ctx, http.MethodDelete, endpoint, agentRequestTimeout, nil, out)
 }
 
+// Endpoints arrive already path-escaped; JoinPath keeps that escaping and the base path prefix.
 func (ac *AgentConnector) newRequest(ctx context.Context, method, endpoint string, payload any) (*http.Request, error) {
-	u := *ac.base
-	u.Path = path.Join(ac.base.Path, strings.TrimPrefix(endpoint, "/"))
+	rel, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	u := ac.base.JoinPath(rel.EscapedPath())
+	u.RawQuery = rel.RawQuery
 
 	var body io.Reader
 	if payload != nil {
@@ -421,10 +600,10 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 	}
 	debugf("Agent response [%s]: %s | %s", ac.server.Name, resp.Status, preview)
 
-	if resp.StatusCode >= 400 {
+	// Redirects are not followed, so a 3xx from a proxy must not count as success.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var payload struct {
-			Error string `json:"error"`
-			Code  string `json:"code"`
+			Code string `json:"code"`
 		}
 		_ = json.Unmarshal([]byte(trimmed), &payload)
 		return &AgentHTTPError{
@@ -432,7 +611,6 @@ func (ac *AgentConnector) do(req *http.Request, out any) error {
 			Status:     resp.Status,
 			Body:       trimmed,
 			Code:       strings.TrimSpace(payload.Code),
-			Message:    strings.TrimSpace(payload.Error),
 		}
 	}
 
@@ -461,6 +639,11 @@ func (ac *AgentConnector) GetAllJails(ctx context.Context) ([]JailInfo, error) {
 }
 
 func (ac *AgentConnector) UpdateJailEnabledStates(ctx context.Context, updates map[string]bool) error {
+	for jail := range updates {
+		if err := ValidateJailName(jail); err != nil {
+			return err
+		}
+	}
 	return ac.post(ctx, "/v1/jails/update-enabled", updates, nil)
 }
 
@@ -475,9 +658,16 @@ func (ac *AgentConnector) GetFilters(ctx context.Context) ([]string, error) {
 }
 
 func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, logLines []string, filterContent string) (string, string, error) {
+	if err := ValidateFilterName(filterName); err != nil {
+		return "", "", err
+	}
+	cleaned := normalizeLogLines(logLines)
+	if len(cleaned) == 0 {
+		return "No log lines provided.\n", "", nil
+	}
 	payload := map[string]any{
 		"filterName": filterName,
-		"logLines":   logLines,
+		"logLines":   cleaned,
 	}
 	if filterContent != "" {
 		payload["filterContent"] = filterContent
@@ -495,10 +685,7 @@ func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, log
 				FilterPath string `json:"filterPath"`
 			}
 			if json.Unmarshal([]byte(httpErr.Body), &fail) == nil {
-				filterPath := fail.FilterPath
-				if filterPath == "" {
-					filterPath = fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
-				}
+				filterPath := firstNonEmpty(fail.FilterPath, agentDefaultPath("filter.d", filterName))
 				if strings.TrimSpace(fail.Error) != "" || strings.TrimSpace(fail.Output) != "" || strings.TrimSpace(fail.FilterPath) != "" {
 					errMsg := fail.Error
 					if strings.TrimSpace(errMsg) == "" {
@@ -510,46 +697,65 @@ func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, log
 		}
 		return "", "", err
 	}
-	filterPath := resp.FilterPath
-	if filterPath == "" {
-		filterPath = fmt.Sprintf("/etc/fail2ban/filter.d/%s.conf", filterName)
-	}
-	return resp.Output, filterPath, nil
+	return resp.Output, firstNonEmpty(resp.FilterPath, agentDefaultPath("filter.d", filterName)), nil
 }
 
 func (ac *AgentConnector) GetJailConfig(ctx context.Context, jail string) (string, string, error) {
+	if err := ValidateJailName(jail); err != nil {
+		return "", "", err
+	}
 	var resp struct {
 		Config   string `json:"config"`
 		FilePath string `json:"filePath"`
 	}
-	if err := ac.get(ctx, fmt.Sprintf("/v1/jails/%s/config", url.PathEscape(jail)), &resp); err != nil {
+	if err := ac.get(ctx, "/v1/jails/"+url.PathEscape(jail)+"/config", &resp); err != nil {
 		return "", "", err
 	}
-	filePath := resp.FilePath
-	if filePath == "" {
-		filePath = fmt.Sprintf("/etc/fail2ban/jail.d/%s.local", jail)
-	}
-	return resp.Config, filePath, nil
+	return resp.Config, firstNonEmpty(resp.FilePath, agentDefaultPath("jail.d", jail)), nil
 }
 
 func (ac *AgentConnector) SetJailConfig(ctx context.Context, jail, content string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
 	payload := map[string]string{"config": content}
-	return ac.put(ctx, fmt.Sprintf("/v1/jails/%s/config", url.PathEscape(jail)), payload, nil)
+	return ac.put(ctx, "/v1/jails/"+url.PathEscape(jail)+"/config", payload, nil)
 }
 
 // =========================================================================
 //  Logpath Operations
 // =========================================================================
 
-func (ac *AgentConnector) TestLogpath(ctx context.Context, logpath string) ([]string, error) {
+func (ac *AgentConnector) testLogpathLegacy(ctx context.Context, logpath string) ([]string, error) {
 	payload := map[string]string{"logpath": logpath}
 	var resp struct {
 		Files []string `json:"files"`
 	}
 	if err := ac.post(ctx, "/v1/jails/test-logpath", payload, &resp); err != nil {
-		return nil, err
+		return nil, agentLogpathHTTPError(err)
 	}
 	return resp.Files, nil
+}
+
+// Turns a coded agent logpath rejection into agentLogpathError; other errors pass through.
+func agentLogpathHTTPError(err error) error {
+	var httpErr *AgentHTTPError
+	if !errors.As(err, &httpErr) || httpErr.Code == "" {
+		return err
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal([]byte(httpErr.Body), &body)
+	return agentLogpathError(httpErr.Code, firstNonEmpty(body.Error, httpErr.Status))
+}
+
+// Maps an agent logpath error code so handlers can tell an unreadable directory from a bad path.
+func agentLogpathError(code, message string) error {
+	if code == "logpath_inaccessible" {
+		return fmt.Errorf("%w: %s", ErrLogpathInaccessible, message)
+	}
+	return fmt.Errorf("agent error: %s", message)
 }
 
 func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath string) (originalPath, resolvedPath string, files []string, err error) {
@@ -564,12 +770,17 @@ func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath
 		ResolvedLogpath string   `json:"resolved_logpath"`
 		Files           []string `json:"files"`
 		Error           string   `json:"error,omitempty"`
+		Code            string   `json:"code,omitempty"`
 	}
 
 	// Try new endpoint first, fallback to old endpoint
 	if err := ac.post(ctx, "/v1/jails/test-logpath-with-resolution", payload, &resp); err != nil {
-		// Fallback; use old endpoint if new endpoint fails and assume no resolution
-		files, err2 := ac.TestLogpath(ctx, originalPath)
+		if !agentUnsupported(err) {
+			return originalPath, "", nil, fmt.Errorf("failed to test logpath: %w", agentLogpathHTTPError(err))
+		}
+		// Fallback; use old endpoint if the agent lacks the new endpoint and assume no resolution
+		// Agents without variable resolution only glob the literal path.
+		files, err2 := ac.testLogpathLegacy(ctx, originalPath)
 		if err2 != nil {
 			return originalPath, "", nil, fmt.Errorf("failed to test logpath: %w", err2)
 		}
@@ -577,7 +788,7 @@ func (ac *AgentConnector) TestLogpathWithResolution(ctx context.Context, logpath
 	}
 
 	if resp.Error != "" {
-		return originalPath, "", nil, fmt.Errorf("agent error: %s", resp.Error)
+		return originalPath, "", nil, agentLogpathError(resp.Code, resp.Error)
 	}
 
 	if resp.ResolvedLogpath == "" {
@@ -601,10 +812,10 @@ func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 		Managed     bool `json:"managed"`
 	}
 	if err := ac.get(ctx, "/v1/jails/check-integrity", &result); err != nil {
-		var httpErr *AgentHTTPError
 		// If the agent does not implement this endpoint, assume OK.
-		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-			return false, false, nil
+		// Unknown on agents without the endpoint: report managed so nothing tries to recreate it.
+		if agentStatusIs(err, http.StatusNotFound) {
+			return true, true, nil
 		}
 		return false, false, fmt.Errorf("failed to check jail.local integrity on %s: %w", ac.server.Name, err)
 	}
@@ -612,17 +823,23 @@ func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 }
 
 func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
-	// If jail.local exists but is not managed by Fail2ban-UI, it belongs to the user, we do not overwrite it.
-	if exists, hasUI, err := ac.CheckJailLocalIntegrity(ctx); err == nil && exists && !hasUI {
-		debugf("jail.local on agent server %s exists but is not managed by Fail2ban-UI -- skipping overwrite", ac.server.Name)
-		return nil
-	}
 	content := mustProvider().BuildJailLocalContent()
 	payload := map[string]any{}
 	if strings.TrimSpace(content) != "" {
 		payload["content"] = content
 	}
-	return ac.post(ctx, "/v1/jails/ensure-structure", payload, nil)
+	var resp struct {
+		Skipped bool   `json:"skipped"`
+		Reason  string `json:"reason"`
+	}
+	if err := ac.post(ctx, "/v1/jails/ensure-structure", payload, &resp); err != nil {
+		return err
+	}
+	// If jail.local exists but is not managed by Fail2ban-UI, it belongs to the user; the agent does not overwrite it and reports it as skipped.
+	if resp.Skipped {
+		debugf("jail.local on agent server %s left untouched: %s", ac.server.Name, resp.Reason)
+	}
+	return nil
 }
 
 // =========================================================================
@@ -630,6 +847,9 @@ func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
 // =========================================================================
 
 func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content string) error {
+	if err := ValidateJailName(jailName); err != nil {
+		return err
+	}
 	payload := map[string]interface{}{
 		"name":    jailName,
 		"content": content,
@@ -638,10 +858,16 @@ func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content stri
 }
 
 func (ac *AgentConnector) DeleteJail(ctx context.Context, jailName string) error {
-	return ac.delete(ctx, fmt.Sprintf("/v1/jails/%s", url.PathEscape(jailName)), nil)
+	if err := ValidateJailName(jailName); err != nil {
+		return err
+	}
+	return ac.delete(ctx, "/v1/jails/"+url.PathEscape(jailName), nil)
 }
 
 func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content string) error {
+	if err := ValidateFilterName(filterName); err != nil {
+		return err
+	}
 	payload := map[string]interface{}{
 		"name":    filterName,
 		"content": content,
@@ -650,7 +876,10 @@ func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content 
 }
 
 func (ac *AgentConnector) DeleteFilter(ctx context.Context, filterName string) error {
-	return ac.delete(ctx, fmt.Sprintf("/v1/filters/%s", url.PathEscape(filterName)), nil)
+	if err := ValidateFilterName(filterName); err != nil {
+		return err
+	}
+	return ac.delete(ctx, "/v1/filters/"+url.PathEscape(filterName), nil)
 }
 
 func (ac *AgentConnector) Close() error {

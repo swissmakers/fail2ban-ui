@@ -47,25 +47,7 @@ type SSHConnector struct {
 	masterUp        atomic.Bool
 	masterFailUntil time.Time
 	sessionSem      chan struct{}
-	actionRepairMu  sync.Mutex
-	actionRepairAt  time.Time
 	tunnelCheckMu   sync.Mutex
-	healthMu        sync.RWMutex
-	health          SSHHealthStatus
-}
-
-// How long to wait before retrying an action file repair on the same host
-const actionRepairDebounce = 5 * time.Minute
-
-// Report whether repair may be attempted now, and claims the slot if so.
-func (sc *SSHConnector) beginActionRepair() bool {
-	sc.actionRepairMu.Lock()
-	defer sc.actionRepairMu.Unlock()
-	if !sc.actionRepairAt.IsZero() && time.Since(sc.actionRepairAt) < actionRepairDebounce {
-		return false
-	}
-	sc.actionRepairAt = time.Now()
-	return true
 }
 
 // =========================================================================
@@ -73,7 +55,7 @@ func (sc *SSHConnector) beginActionRepair() bool {
 // =========================================================================
 
 // Builds a validated SSHConnector without contacting the remote host.
-func newBareSSHConnector(server shared.Fail2banServer) (*SSHConnector, error) {
+func newSSHConnector(server shared.Fail2banServer) (*SSHConnector, error) {
 	if server.Host == "" {
 		return nil, fmt.Errorf("host is required for ssh connector")
 	}
@@ -93,28 +75,10 @@ func newBareSSHConnector(server shared.Fail2banServer) (*SSHConnector, error) {
 		conn.forwardPort = uiServerPort()
 		debugf("Reverse tunnel enabled for server %s, will use -R %d:localhost:%d", server.Name, conn.tunnelPort, conn.forwardPort)
 	}
-	return conn, nil
-}
-
-// Create a new SSHConnector for the given server config.
-func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
-	conn, err := newBareSSHConnector(server)
-	if err != nil {
-		return nil, err
-	}
-
 	if kh := conn.knownHostsPath(); kh != "" {
 		if err := os.MkdirAll(filepath.Dir(kh), 0o700); err != nil {
 			debugf("failed to create known_hosts directory for %s: %v", server.Name, err)
 		}
-	}
-
-	// Use a timeout context to prevent hanging if SSH server isn't ready yet
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := conn.ensureAction(ctx); err != nil {
-		log.Printf("warning: failed to ensure remote fail2ban action for %s during startup (server may not be ready): %v", server.Name, err)
 	}
 	return conn, nil
 }
@@ -127,21 +91,9 @@ func (sc *SSHConnector) Server() shared.Fail2banServer {
 	return sc.server
 }
 
-// Collects jail status for every active remote jail.
-func (sc *SSHConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
-	summary, err := sc.GetJailSummary(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return summary.Jails, nil
-}
-
 func (sc *SSHConnector) GetJailSummary(ctx context.Context) (*JailSummary, error) {
 	root := sc.getFail2banPath(ctx)
-	script, err := buildBannedSummaryScript(sc.server.SocketPath, JailLocal(root), CustomActionFile(root))
-	if err != nil {
-		return nil, err
-	}
+	script := buildBannedSummaryScript(sc.server.SocketPath, JailLocal(root), CustomActionFile(root))
 	out, err := sc.runRemoteCommand(ctx, []string{script})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read jail status from %s: %w", sc.server.Name, err)
@@ -178,10 +130,7 @@ func (sc *SSHConnector) GetBannedIPs(ctx context.Context, jail string) ([]string
 }
 
 func (sc *SSHConnector) UnbanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := shared.ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "unbanip", ip)
@@ -189,10 +138,7 @@ func (sc *SSHConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 }
 
 func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := shared.ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "banip", ip)
@@ -213,23 +159,14 @@ func (sc *SSHConnector) Reload(ctx context.Context) error {
 }
 
 func (sc *SSHConnector) ValidateConfiguration(ctx context.Context) error {
-	out, err := sc.runFail2banCommand(ctx, "-c", sc.getFail2banPath(ctx), "-t")
-	if err != nil {
-		return fmt.Errorf("configuration validation failed: %w", err)
-	}
-	return checkReloadOutput(out)
+	return validateConfig(ctx, sc.runFail2banCommand, sc.getFail2banPath(ctx))
 }
 
-func (sc *SSHConnector) Restart(ctx context.Context) error {
-	_, err := sc.RestartWithMode(ctx)
-	return err
-}
-
-func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
+func (sc *SSHConnector) Restart(ctx context.Context) (string, error) {
 	// Try systemd restart on the remote host first.
-	out, err := sc.runRemoteCommand(ctx, []string{"sudo", "-n", "systemctl", "restart", "fail2ban"})
+	out, err := sc.runRemoteCommand(ctx, []string{shellJoin("sudo", "-n", "systemctl", "restart", "fail2ban")})
 	if err == nil {
-		if err := sc.checkFail2banHealthyRemote(ctx); err != nil {
+		if err := pingFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban"); err != nil {
 			return "restart", fmt.Errorf("remote fail2ban health check after systemd restart failed: %w", err)
 		}
 		return "restart", nil
@@ -239,7 +176,7 @@ func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
 		if reloadErr := sc.Reload(ctx); reloadErr != nil {
 			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w", reloadErr)
 		}
-		if err := sc.checkFail2banHealthyRemote(ctx); err != nil {
+		if err := pingFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban"); err != nil {
 			return "reload", fmt.Errorf("remote fail2ban health check after reload failed: %w", err)
 		}
 		return "reload", nil
@@ -296,22 +233,11 @@ func extractMarkerValue(output, marker string) string {
 //  SSH Helpers
 // =========================================================================
 
-func buildBannedSummaryScript(socketPath, jailLocalPath, actionPath string) (string, error) {
-	quotedJailLocal, err := quoteRemotePath(jailLocalPath)
-	if err != nil {
-		return "", err
-	}
-	quotedAction, err := quoteRemotePath(actionPath)
-	if err != nil {
-		return "", err
-	}
+func buildBannedSummaryScript(socketPath, jailLocalPath, actionPath string) string {
+	quotedJailLocal, quotedAction := shellQuote(jailLocalPath), shellQuote(actionPath)
 	sockArg := ""
 	if socketPath != "" {
-		quotedSock, err := quoteRemotePath(socketPath)
-		if err != nil {
-			return "", err
-		}
-		sockArg = "-s " + quotedSock + " "
+		sockArg = "-s " + shellQuote(socketPath) + " "
 	}
 	return fmt.Sprintf(`sudo fail2ban-client %sbanned
 echo %s
@@ -322,7 +248,7 @@ echo %s
 		bannedSectionEnd,
 		quotedJailLocal, batchJailLocalBegin, quotedJailLocal, batchJailLocalMissing,
 		quotedAction, batchActionBegin, quotedAction, batchActionMissing,
-		batchEnd), nil
+		batchEnd)
 }
 
 type bannedSummary struct {
@@ -387,10 +313,7 @@ func splitBannedSummary(out string) (bannedSummary, error) {
 
 func (sc *SSHConnector) runFail2banCommand(ctx context.Context, args ...string) (string, error) {
 	words := append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath, args...)...)
-	for i, w := range words {
-		words[i] = shellQuote(w)
-	}
-	return sc.runRemoteCommand(ctx, []string{strings.Join(words, " ")})
+	return sc.runRemoteCommand(ctx, []string{shellJoin(words...)})
 }
 
 // Detects "no systemd" situations on the remote host or if an interactive authentication is required.
@@ -407,9 +330,4 @@ func (sc *SSHConnector) isSystemctlUnavailable(output string, err error) bool {
 		strings.Contains(msg, "sudo: a password is required") ||
 		strings.Contains(msg, "sudo: a password is needed") ||
 		strings.Contains(msg, "sorry, you must have a tty")
-}
-
-func (sc *SSHConnector) checkFail2banHealthyRemote(ctx context.Context) error {
-	out, err := sc.runFail2banCommand(ctx, "ping")
-	return checkPingOutput(out, err, "remote fail2ban")
 }

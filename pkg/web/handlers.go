@@ -36,6 +36,16 @@ func SetWebSocketHub(hub *Hub) {
 	wsHub = hub
 }
 
+type keyedError struct {
+	key string
+	err error
+}
+
+func (e keyedError) Error() string { return e.err.Error() }
+func (e keyedError) Unwrap() error { return e.err }
+
+func withKey(err error, key string) error { return keyedError{key: key, err: err} }
+
 // =========================================================================
 //  Request Helpers
 // =========================================================================
@@ -85,6 +95,11 @@ func resolveServerForNotification(serverID, hostname string) (config.Fail2banSer
 
 func buildErrorResponse(err error, fallbackKey string) gin.H {
 	resp := gin.H{"error": err.Error()}
+	var keyed keyedError
+	if errors.As(err, &keyed) {
+		resp["messageKey"] = keyed.key
+		return resp
+	}
 	if key := fail2ban.AgentErrorMessageKey(err); key != "" {
 		resp["messageKey"] = key
 		return resp

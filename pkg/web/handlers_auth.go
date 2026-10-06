@@ -40,7 +40,7 @@ func redirectToOIDCProvider(c *gin.Context, oidcClient *auth.OIDCClient) {
 		return
 	}
 	state := base64.URLEncoding.EncodeToString(stateBytes)
-	isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+	isSecure := auth.RequestIsSecure(c.Request)
 
 	// Stores the state in a session cookie for validation
 	http.SetCookie(c.Writer, &http.Cookie{
@@ -88,7 +88,7 @@ func CallbackHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing state parameter", "details": err.Error()})
 		return
 	}
-	isSecure := c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https"
+	isSecure := auth.RequestIsSecure(c.Request)
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "oidc_state",
 		Value:    "",
@@ -209,33 +209,6 @@ func AuthStatusHandler(c *gin.Context) {
 		"enabled":              true,
 		"authenticated":        true,
 		"skipLoginPage":        skipLoginPage,
-		"authorizationEnabled": auth.AuthorizationEnabled(),
-		"user": gin.H{
-			"id":          session.UserID,
-			"email":       session.Email,
-			"name":        session.Name,
-			"username":    session.Username,
-			"roles":       session.Roles,
-			"accessLevel": session.AccessLevel,
-		},
-	})
-}
-
-// Returns the authenticated user's profile information.
-func UserInfoHandler(c *gin.Context) {
-	if !auth.IsEnabled() {
-		c.JSON(http.StatusOK, gin.H{"authenticated": false})
-		return
-	}
-
-	session, err := auth.GetSession(c.Request)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"authenticated":        true,
 		"authorizationEnabled": auth.AuthorizationEnabled(),
 		"user": gin.H{
 			"id":          session.UserID,

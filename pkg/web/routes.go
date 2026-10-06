@@ -17,7 +17,11 @@
 package web
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
+
+	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 )
 
 // =========================================================================
@@ -26,6 +30,7 @@ import (
 
 func RegisterRoutes(r *gin.Engine, hub *Hub) {
 	SetWebSocketHub(hub)
+	fail2ban.GetManager().SetHealthListener(hub.BroadcastServerHealth)
 
 	// Public routes; do not require authentication
 	authRoutes := r.Group("/auth")
@@ -34,8 +39,10 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		authRoutes.GET("/callback", CallbackHandler)
 		authRoutes.GET("/logout", LogoutHandler)
 		authRoutes.GET("/status", AuthStatusHandler)
-		authRoutes.GET("/user", UserInfoHandler)
 	}
+
+	// Container liveness probe
+	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	// Initialize authentication middleware; all routes below here require authentication
 	r.Use(AuthMiddleware())
@@ -88,7 +95,7 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 		api.GET("/advanced-actions/blocks", RequirePermission(PermissionAdmin), ListPermanentBlocksHandler)
 		api.POST("/advanced-actions/blocks", RequirePermission(PermissionAdmin), BulkPermanentBlockHandler)
 		api.DELETE("/advanced-actions/blocks", RequirePermission(PermissionAdmin), ClearPermanentBlocksHandler)
-		api.POST("/advanced-actions/test", RequirePermission(PermissionAdmin), AdvancedActionsTestHandler)
+		api.POST("/advanced-actions/manual", RequirePermission(PermissionAdmin), ManualAdvancedActionHandler)
 
 		// Internal API calls for Fail2ban-UI server management
 		api.GET("/servers", RequirePermission(PermissionRead), ListServersHandler)

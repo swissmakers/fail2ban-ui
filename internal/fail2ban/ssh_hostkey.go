@@ -45,14 +45,10 @@ import (
 // =========================================================================
 
 type SSHHostKeyError struct {
-	ServerID       string
-	ServerName     string
-	Host           string
-	Port           int
-	Fingerprint    string
-	KeyType        string
-	KnownHostsPath string
-	Err            error
+	ServerID    string
+	Host        string
+	Fingerprint string
+	Err         error
 }
 
 func (e *SSHHostKeyError) Error() string {
@@ -90,7 +86,6 @@ func SSHErrorMessageKey(err error) string {
 var (
 	hostKeyBannerRe      = regexp.MustCompile(`(?i)REMOTE HOST IDENTIFICATION HAS CHANGED|POSSIBLE DNS SPOOFING DETECTED|host key verification failed`)
 	hostKeyFingerprintRe = regexp.MustCompile(`SHA256:[A-Za-z0-9+/]{43}`)
-	hostKeyTypeRe        = regexp.MustCompile(`fingerprint for the ([A-Za-z0-9-]+) key sent by the remote host`)
 )
 
 // Classifies ssh stderr as a host-key failure; nil when it is something else.
@@ -98,19 +93,12 @@ func (sc *SSHConnector) parseHostKeyError(stderr string, cause error) *SSHHostKe
 	if !hostKeyBannerRe.MatchString(stderr) {
 		return nil
 	}
-	hk := &SSHHostKeyError{
-		ServerID:       sc.server.ID,
-		ServerName:     sc.server.Name,
-		Host:           sc.server.Host,
-		Port:           sc.server.Port,
-		Fingerprint:    hostKeyFingerprintRe.FindString(stderr),
-		KnownHostsPath: sc.knownHostsPath(),
-		Err:            cause,
+	return &SSHHostKeyError{
+		ServerID:    sc.server.ID,
+		Host:        sc.server.Host,
+		Fingerprint: hostKeyFingerprintRe.FindString(stderr),
+		Err:         cause,
 	}
-	if m := hostKeyTypeRe.FindStringSubmatch(stderr); m != nil {
-		hk.KeyType = m[1]
-	}
-	return hk
 }
 
 // =========================================================================
@@ -179,7 +167,7 @@ func AcceptHostKey(ctx context.Context, server shared.Fail2banServer, approvedFP
 	if approvedFP == "" {
 		return "", fmt.Errorf("approved fingerprint is required")
 	}
-	sc, err := newBareSSHConnector(server)
+	sc, err := newSSHConnector(server)
 	if err != nil {
 		return "", err
 	}
@@ -194,15 +182,7 @@ func AcceptHostKey(ctx context.Context, server shared.Fail2banServer, approvedFP
 	}
 	presentedFP := ssh.FingerprintSHA256(key)
 	if subtle.ConstantTimeCompare([]byte(presentedFP), []byte(approvedFP)) != 1 {
-		RecordHostKeyIssue(&SSHHostKeyError{
-			ServerID:       server.ID,
-			ServerName:     server.Name,
-			Host:           server.Host,
-			Port:           server.Port,
-			Fingerprint:    presentedFP,
-			KeyType:        key.Type(),
-			KnownHostsPath: khPath,
-		})
+		RecordHostKeyIssue(&SSHHostKeyError{ServerID: server.ID, Host: server.Host, Fingerprint: presentedFP})
 		return "", &HostKeyMismatchError{Approved: approvedFP, Presented: presentedFP}
 	}
 

@@ -18,46 +18,14 @@ package web
 
 import (
 	"net/http"
-	"os"
 	"strings"
-	"sync"
 
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
-var (
-	basePathMu   sync.RWMutex
-	httpBasePath string
-)
-
-// Normalizes a BASE_PATH value for use as an URL path prefix.
-// Unsafe values are rejected (treated as root) to prevent the prefix from being used as an open-redirect target
-func NormalizeBasePath(s string) string {
-	return shared.NormalizeBasePath(s)
-}
-
-// Reads BASE_PATH and applies NormalizeBasePath.
-func SetBasePathFromEnv() {
-	SetBasePath(os.Getenv("BASE_PATH"))
-}
-
-// Sets the external URL prefix (normalized). Pass "" for root.
-func SetBasePath(p string) {
-	basePathMu.Lock()
-	defer basePathMu.Unlock()
-	httpBasePath = NormalizeBasePath(p)
-}
-
-// Returns the normalized prefix without trailing slash, or "" for root.
-func BasePath() string {
-	basePathMu.RLock()
-	defer basePathMu.RUnlock()
-	return httpBasePath
-}
-
 // Returns the Path attribute for session and OIDC cookies.
 func CookiePath() string {
-	if b := BasePath(); b != "" {
+	if b := shared.BasePath(); b != "" {
 		return b
 	}
 	return "/"
@@ -65,7 +33,7 @@ func CookiePath() string {
 
 // Maps an internal route (e.g. "/auth/login") to the browser URL including BasePath.
 func ExternalPath(internal string) string {
-	base := BasePath()
+	base := shared.BasePath()
 	internal = strings.TrimSpace(internal)
 	if internal == "" {
 		internal = "/"
@@ -85,7 +53,7 @@ func ExternalPath(internal string) string {
 // Wraps an HTTP handler and strips BasePath before route matching.
 func StripBasePathHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		base := BasePath()
+		base := shared.BasePath()
 		if base == "" {
 			next.ServeHTTP(w, r)
 			return
@@ -100,6 +68,9 @@ func StripBasePathHandler(next http.Handler) http.Handler {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/"
 			next.ServeHTTP(w, r2)
+			return
+		case p == "/healthz":
+			next.ServeHTTP(w, r)
 			return
 		case strings.HasPrefix(p, base+"/"):
 			r2 := r.Clone(r.Context())

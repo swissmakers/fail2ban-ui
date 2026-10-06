@@ -19,14 +19,17 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/integrations"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
@@ -59,7 +62,7 @@ func evaluateAdvancedActions(ctx context.Context, settings config.AppSettings, s
 	}
 
 	// Only if everything above is ok, we execute the configured "advanced actions" integration.
-	if err := runAdvancedIntegrationAction(ctx, "block", ip, settings, server, map[string]any{
+	if err := runAdvancedIntegrationAction(ctx, "block", ip, settings, server.ID, map[string]any{
 		"reason":    "automatic_threshold",
 		"count":     count,
 		"threshold": cfg.Threshold,
@@ -72,7 +75,27 @@ func evaluateAdvancedActions(ctx context.Context, settings config.AppSettings, s
 //  Integration Execution
 // =========================================================================
 
-func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settings config.AppSettings, server config.Fail2banServer, details map[string]any, skipLoggingIfAlreadyBlocked bool) error {
+var (
+	errCIDRNotSupported = errors.New("only single IP addresses can be blocked permanently")
+	errReservedIP       = errors.New("private or reserved addresses cannot be blocked permanently")
+)
+
+// Validates a permanent block target; unblock accepts any single IP so stale entries can be removed.
+func permanentBlockTargetError(action, ip string) error {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		if _, _, err := net.ParseCIDR(ip); err == nil {
+			return withKey(errCIDRNotSupported, "settings.advanced.errors.cidr_not_supported")
+		}
+		return fmt.Errorf("invalid IP address %q", ip)
+	}
+	if action == "block" && shared.IsReservedIP(parsed) {
+		return withKey(errReservedIP, "settings.advanced.errors.reserved_ip")
+	}
+	return nil
+}
+
+func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settings config.AppSettings, serverID string, details map[string]any, skipLoggingIfAlreadyBlocked bool) error {
 	cfg := settings.AdvancedActions
 	if cfg.Integration == "" {
 		return fmt.Errorf("no integration configured")
@@ -80,6 +103,12 @@ func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settin
 	integration, ok := integrations.Get(cfg.Integration)
 	if !ok {
 		return fmt.Errorf("integration %s not registered", cfg.Integration)
+	}
+	if err := permanentBlockTargetError(action, ip); err != nil {
+		return err
+	}
+	if err := integration.Validate(cfg); err != nil {
+		return fmt.Errorf("integration configuration is invalid: %w", err)
 	}
 
 	logger := func(format string, args ...interface{}) {
@@ -92,7 +121,6 @@ func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settin
 		Context: ctx,
 		IP:      ip,
 		Config:  cfg,
-		Server:  server,
 		Logger:  logger,
 	}
 
@@ -128,7 +156,7 @@ func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settin
 			Integration: cfg.Integration,
 			Status:      status,
 			Message:     message,
-			ServerID:    server.ID,
+			ServerID:    serverID,
 			Details:     string(detailsBytes),
 		}
 		if err2 := storage.UpsertPermanentBlock(ctx, rec); err2 != nil {

@@ -20,6 +20,7 @@ package fail2ban
 import (
 	"context"
 	"fmt"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -280,27 +281,24 @@ type JailSummary struct {
 //  Service Control
 // =========================================================================
 
-func RestartFail2ban(serverID string) (string, error) {
-	manager := GetManager()
-	var (
-		conn Connector
-		err  error
-	)
-	if serverID != "" {
-		conn, err = manager.Connector(serverID)
-	} else {
-		conn, err = manager.DefaultConnector()
+func validateBanTarget(jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
 	}
+	return shared.ValidateIP(ip)
+}
+
+type fail2banRunner func(ctx context.Context, args ...string) (string, error)
+
+func pingFail2ban(ctx context.Context, run fail2banRunner, label string) error {
+	out, err := run(ctx, "ping")
+	return checkPingOutput(out, err, label)
+}
+
+func validateConfig(ctx context.Context, run fail2banRunner, root string) error {
+	out, err := run(ctx, "-c", root, "-t")
 	if err != nil {
-		return "", err
+		return fmt.Errorf("configuration validation failed: %w", err)
 	}
-	if withMode, ok := conn.(interface {
-		RestartWithMode(ctx context.Context) (string, error)
-	}); ok {
-		return withMode.RestartWithMode(context.Background())
-	}
-	if err := conn.Restart(context.Background()); err != nil {
-		return "", err
-	}
-	return "restart", nil
+	return checkReloadOutput(out)
 }

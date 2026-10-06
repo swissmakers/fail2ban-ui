@@ -32,6 +32,7 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 	"github.com/swissmakers/fail2ban-ui/pkg/web"
 )
@@ -44,9 +45,11 @@ const shutdownTimeout = 10 * time.Second
 // =========================================================================
 
 func main() {
+	if err := config.Init(""); err != nil {
+		log.Fatalf("failed to load settings: %v", err)
+	}
 	settings := config.GetSettings()
 
-	web.SetBasePathFromEnv()
 	auth.SetSessionCookiePath(web.CookiePath())
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -66,9 +69,9 @@ func main() {
 	startupSyncDone := make(chan struct{})
 	go func() {
 		defer close(startupSyncDone)
-		synced, failed := fail2ban.GetManager().SyncRemoteStartupConfig(ctx, 30*time.Second)
-		if synced+failed > 0 {
-			log.Printf("startup config sync complete: %d succeeded, %d failed", synced, failed)
+		manager := fail2ban.GetManager()
+		if failed, total := manager.SyncAll(ctx, 30*time.Second), len(manager.Connectors()); total > 0 {
+			log.Printf("startup config sync complete: %d succeeded, %d failed", total-len(failed), len(failed))
 		}
 	}()
 
@@ -127,7 +130,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{SkipPaths: []string{"/healthz"}}), gin.Recovery())
 	serverPort := strconv.Itoa(int(settings.Port))
 	bindAddress, _ := config.GetBindAddressFromEnv()
 	serverAddr := net.JoinHostPort(bindAddress, serverPort)
@@ -141,9 +145,7 @@ func main() {
 	go wsHub.Run()
 	web.SetupConsoleLogWriter(wsHub)
 	web.UpdateConsoleLogEnabled()
-	config.SetUpdateConsoleLogStateFunc(func(enabled bool) {
-		web.SetConsoleLogEnabled(enabled)
-	})
+	config.SetUpdateConsoleLogStateFunc(web.SetConsoleLogEnabled)
 
 	web.RegisterRoutes(router, wsHub)
 	isLOTRMode := config.IsLOTRModeActive(settings.AlertCountries)
@@ -154,7 +156,7 @@ func main() {
 	} else {
 		log.Println("--- Fail2Ban-UI started in", gin.Mode(), "mode ---")
 	}
-	if bp := web.BasePath(); bp != "" {
+	if bp := shared.BasePath(); bp != "" {
 		log.Printf("HTTP base path: %s (from BASE_PATH)\n", bp)
 	}
 	log.Printf("Server listening on %s:%s.\n", bindAddress, serverPort)

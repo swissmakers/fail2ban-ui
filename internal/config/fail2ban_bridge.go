@@ -16,11 +16,7 @@
 
 package config
 
-import (
-	"log"
-
-	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
-)
+import "github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 
 // =========================================================================
 //  Bridge between config and fail2ban --> used for both dependency injection and manager reload orchestration.
@@ -54,20 +50,6 @@ func (fail2banRuntime) BuildFail2banActionConfig(callbackURL, serverID, secret s
 
 func (fail2banRuntime) BuildJailLocalContent() string {
 	return BuildJailLocalContent()
-}
-
-func (fail2banRuntime) ConfigApplied(serverID string) {
-	settingsLock.Lock()
-	defer settingsLock.Unlock()
-	for i := range currentSettings.Servers {
-		if currentSettings.Servers[i].ID == serverID {
-			currentSettings.Servers[i].RestartNeeded = false
-		}
-	}
-	updateGlobalRestartFlagLocked()
-	if err := persistAllLocked(); err != nil {
-		log.Printf("warning: failed to persist config status for %s: %v", serverID, err)
-	}
 }
 
 func registerFail2banProvider() {

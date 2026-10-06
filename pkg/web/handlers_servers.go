@@ -29,6 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 // =========================================================================
@@ -51,28 +52,41 @@ func ListServersHandler(c *gin.Context) {
 	}
 	type serverStatus struct {
 		config.Fail2banServer
-		ConfigSync *fail2ban.ConfigSyncStatus `json:"configSync,omitempty"`
-		SSHHealth  *fail2ban.SSHHealthStatus  `json:"sshHealth,omitempty"`
+		RestartNeeded bool                       `json:"restartNeeded"`
+		ConfigSync    *fail2ban.ConfigSyncStatus `json:"configSync,omitempty"`
+		Health        any                        `json:"health,omitempty"`
 	}
+	isAdmin := userHasAdminAccess(c)
+	manager := fail2ban.GetManager()
 	response := make([]serverStatus, 0, len(masked))
 	for _, server := range masked {
 		item := serverStatus{Fail2banServer: server}
-		if userHasAdminAccess(c) && server.Enabled {
-			status := fail2ban.GetManager().ConfigSyncStatus(server.ID)
-			status.Error = config.RedactLog(status.Error)
-			item.ConfigSync = &status
-			if conn, err := fail2ban.GetManager().Connector(server.ID); err == nil {
-				if ssh, ok := conn.(*fail2ban.SSHConnector); ok {
-					health := ssh.HealthStatus()
-					health.SSHError = config.RedactLog(health.SSHError)
-					health.CallbackError = config.RedactLog(health.CallbackError)
-					item.SSHHealth = &health
-				}
+		if server.Enabled {
+			status := manager.ConfigSyncStatus(server.ID)
+			item.RestartNeeded = status.Phase == fail2ban.SyncWritten
+			item.Health = healthForRole(manager.Health(server.ID), isAdmin)
+			if isAdmin {
+				status.Error = config.RedactLog(status.Error)
+				item.ConfigSync = &status
 			}
 		}
 		response = append(response, item)
 	}
 	c.JSON(http.StatusOK, gin.H{"servers": response})
+}
+
+// Health as read-only users see it; probe details can name hosts and paths.
+type healthSummary struct {
+	State     fail2ban.HealthState `json:"state"`
+	CheckedAt time.Time            `json:"checkedAt,omitzero"`
+}
+
+func healthForRole(h fail2ban.ServerHealth, isAdmin bool) any {
+	if !isAdmin {
+		return healthSummary{State: h.State, CheckedAt: h.CheckedAt}
+	}
+	h.Error = config.RedactLog(h.Error)
+	return h
 }
 
 // Creates or updates a Fail2ban server configuration.
@@ -117,12 +131,6 @@ func UpsertServerHandler(c *gin.Context) {
 		return
 	}
 
-	// Field-level validation happens in config.UpsertServer after normalization.
-
-	// Check if server exists and was previously disabled
-	oldServer, wasEnabled := config.GetServerByID(req.ID)
-	wasDisabled := !wasEnabled || !oldServer.Enabled
-
 	server, err := config.UpsertServer(req)
 	if err != nil {
 		resp := gin.H{"error": err.Error()}
@@ -133,11 +141,6 @@ func UpsertServerHandler(c *gin.Context) {
 		return
 	}
 
-	// Check if server was just enabled (transition from disabled to enabled)
-	justEnabled := wasDisabled && server.Enabled
-	tunnelChanged := wasEnabled && oldServer.Enabled && server.Enabled &&
-		(oldServer.ReverseTunnelEnabled != server.ReverseTunnelEnabled || oldServer.TunnelPort != server.TunnelPort)
-
 	if err := config.ReloadFail2banManager(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -147,9 +150,8 @@ func UpsertServerHandler(c *gin.Context) {
 	var jailLocalWarning bool
 	manager := fail2ban.GetManager()
 	if server.Enabled {
-		if justEnabled || tunnelChanged {
-			manager.RequestConfigSync(server.ID, true, true)
-		}
+		// Saving is the manual way to re-deploy the action file and jail.local.
+		manager.RequestConfigSync(server.ID, true, true)
 		if err := manager.SyncServerConfig(c.Request.Context(), server.ID); err != nil {
 			actionFileWarning = err.Error()
 		}
@@ -167,8 +169,7 @@ func UpsertServerHandler(c *gin.Context) {
 	if actionFileWarning != "" {
 		resp["actionFileWarning"] = actionFileWarning
 	}
-	// ReloadFail2banManager above already probed the host, so a host-key
-	// problem is known here; let the UI warn right after save.
+	// SyncServerConfig above already probed the host, so a host-key problem is known here -> let the UI warn right after save
 	if hk := fail2ban.HostKeyIssue(server.ID); hk != nil {
 		resp["hostKeyError"] = hk.Error()
 		if hk.Fingerprint != "" {
@@ -217,18 +218,10 @@ func SetDefaultServerHandler(c *gin.Context) {
 
 // Returns available SSH private keys from the host or container.
 func ListSSHKeysHandler(c *gin.Context) {
-	var dir string
-	if _, container := os.LookupEnv("CONTAINER"); container {
-		// In container, we look for SSH keys in the /config/.ssh directory
-		dir = "/config/.ssh"
-	} else {
-		// On host, we look for SSH keys in the user's home directory
-		home, err := os.UserHomeDir()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		dir = filepath.Join(home, ".ssh")
+	dir, err := shared.SSHDir()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -291,24 +284,17 @@ func TestServerHandler(c *gin.Context) {
 		}()
 	}
 
-	if _, err := conn.GetJailInfos(ctx); err != nil {
+	// Read-only: a test must not write files or register callbacks on the host.
+	summary, err := conn.GetJailSummary(ctx)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "servers.actions.test_failure"))
 		return
 	}
 
 	// Checks the jail.local integrity: if it exists but is not managed by Fail2ban-UI, we warn the user.
-	// If the file was removed (e.g. after finished migration or just deleted), we initialize a fresh managed file.
 	resp := gin.H{"messageKey": "servers.actions.test_success"}
-	if exists, hasUI, err := conn.CheckJailLocalIntegrity(ctx); err == nil {
-		if exists && !hasUI {
-			resp["jailLocalWarning"] = true
-		} else if !exists {
-			if err := conn.EnsureJailLocalStructure(ctx); err != nil {
-				config.DebugLog("Warning: failed to initialize jail.local on test request: %v", err)
-			} else {
-				config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
-			}
-		}
+	if summary.JailLocalExists && !summary.JailLocalManaged {
+		resp["jailLocalWarning"] = true
 	}
 	c.JSON(http.StatusOK, resp)
 }
@@ -319,8 +305,7 @@ func TestServerHandler(c *gin.Context) {
 
 var sshFingerprintRe = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`)
 
-// Replaces the pinned SSH host key of a server with the fingerprint the admin
-// reviewed and approved in the UI.
+// Replaces the pinned SSH host key of a server with the fingerprint the admin reviewed and approved in the UI.
 func AcceptHostKeyHandler(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -350,8 +335,7 @@ func AcceptHostKeyHandler(c *gin.Context) {
 		return
 	}
 
-	// An accept is only valid against a recorded, displayed issue - no blind
-	// re-pinning of servers that have no pending host-key change.
+	// An accept is only valid against a recorded, displayed issue -> no blind re-pinning of servers that have no pending host-key change.
 	issue := fail2ban.HostKeyIssue(id)
 	if issue == nil {
 		c.JSON(http.StatusConflict, gin.H{
@@ -386,7 +370,7 @@ func AcceptHostKeyHandler(c *gin.Context) {
 		c.JSON(status, buildErrorResponse(err, "servers.actions.accept_hostkey_failed"))
 		return
 	}
-	// The pinned key unblocks any config sync that failed on the mismatch; apply it now, not on the next tick.
+	// The pinned key unblocks any config sync that failed on the mismatch
 	manager := fail2ban.GetManager()
 	manager.RequestConfigSync(server.ID, true, true)
 	go func() {

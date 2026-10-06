@@ -100,6 +100,10 @@ func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
 		return fmt.Errorf("bantime.factor must be a number, got %q", req.BantimeFactor)
 	}
 
+	if err := normalizeJailDefaults(req); err != nil {
+		return err
+	}
+
 	req.AlertProvider = strings.ToLower(strings.TrimSpace(req.AlertProvider))
 	if req.AlertProvider == "" {
 		req.AlertProvider = "email"
@@ -131,7 +135,7 @@ func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
 	req.Elasticsearch.APIKey = strings.TrimSpace(req.Elasticsearch.APIKey)
 	req.Elasticsearch.Username = strings.TrimSpace(req.Elasticsearch.Username)
 	req.Elasticsearch.Password = strings.TrimSpace(req.Elasticsearch.Password)
-	req.Elasticsearch.Index = strings.TrimSpace(req.Elasticsearch.Index)
+	req.Elasticsearch.Index = config.ElasticsearchDataStream(req.Elasticsearch.Index)
 
 	method, ok := normalizeWebhookMethod(req.Webhook.Method)
 	if !ok {
@@ -174,13 +178,44 @@ func normalizeAndValidateSettingsRequest(req *config.AppSettings) error {
 			return err
 		}
 	}
-	if req.Elasticsearch.Index != "" {
-		if err := integrations.ValidateElasticsearchIndex(req.Elasticsearch.Index); err != nil {
-			return err
-		}
+	if err := integrations.ValidateElasticsearchDataStream(req.Elasticsearch.Index); err != nil {
+		return err
 	}
 
 	return validateAdvancedActionsSettings(&req.AdvancedActions)
+}
+
+// Trims and validates the values written into every server's jail.local [DEFAULT] section
+func normalizeJailDefaults(req *config.AppSettings) error {
+	ignore := make([]string, 0, len(req.IgnoreIPs))
+	for _, entry := range req.IgnoreIPs {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if err := shared.ValidateIgnoreIPEntry(entry); err != nil {
+			return withKey(err, "settings.errors.invalid_ignoreip")
+		}
+		ignore = append(ignore, entry)
+	}
+	req.IgnoreIPs = ignore
+	req.Banaction = strings.TrimSpace(req.Banaction)
+	req.BanactionAllports = strings.TrimSpace(req.BanactionAllports)
+	for _, name := range []string{req.Banaction, req.BanactionAllports} {
+		if name == "" {
+			continue
+		}
+		if err := shared.ValidateBanactionName(name); err != nil {
+			return withKey(err, "settings.errors.invalid_banaction")
+		}
+	}
+	req.Chain = strings.TrimSpace(req.Chain)
+	if req.Chain != "" {
+		if err := shared.ValidateChainName(req.Chain); err != nil {
+			return withKey(err, "settings.errors.invalid_chain")
+		}
+	}
+	return nil
 }
 
 func validateAdvancedActionsSettings(cfg *config.AdvancedActionsConfig) error {

@@ -101,7 +101,7 @@ func HandleBanNotification(ctx context.Context, server config.Fail2banServer, ip
 	return nil
 }
 
-// Records an unban event, broadcasts it via WebSocket, and sends an email alert if enabled.
+// Records an unban event, broadcasts it via WebSocket, and sends an alert if enabled.
 func HandleUnbanNotification(ctx context.Context, server config.Fail2banServer, ip, jail, hostname, whois, country string, callbackID ...string) error {
 	jail = sanitizeHeaderValue(jail)
 	hostname = sanitizeHeaderValue(hostname)
@@ -239,6 +239,10 @@ func dispatchAlert(alertType, ip, jail, hostname, failures, whois, logs, country
 	case "elasticsearch":
 		return sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs, country, settings)
 	default:
+		if !emailConfigured(settings) {
+			log.Printf("WARNING: %s alert for %s skipped: email alerts are not configured (destination, SMTP host, sender)", alertType, ip)
+			return nil
+		}
 		if alertType == "ban" {
 			return sendBanAlert(ip, jail, hostname, failures, whois, logs, country, settings)
 		}
@@ -300,22 +304,17 @@ func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, coun
 	return nil
 }
 
-// Sends a document to the configured Elasticsearch index.
+// Sends a document to the configured Elasticsearch data stream.
 func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs, country string, settings config.AppSettings) error {
 	cfg := settings.Elasticsearch
 	if err := integrations.ValidateOutboundURL(cfg.URL, "elasticsearch URL"); err != nil {
 		return err
 	}
 
-	index := cfg.Index
-	if index == "" {
-		index = "fail2ban-events"
-	}
-	if err := integrations.ValidateElasticsearchIndex(index); err != nil {
+	target := config.ElasticsearchDataStream(cfg.Index)
+	if err := integrations.ValidateElasticsearchDataStream(target); err != nil {
 		return err
 	}
-	dateSuffix := time.Now().UTC().Format("2006.01.02")
-	indexName := index + "-" + dateSuffix
 
 	doc := map[string]interface{}{
 		"@timestamp":                  time.Now().UTC().Format(time.RFC3339),
@@ -343,6 +342,9 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 			doc[k] = v
 		}
 	}
+	for k, v := range dataStreamFields(target) {
+		doc[k] = v
+	}
 
 	data, err := json.Marshal(doc)
 	if err != nil {
@@ -353,9 +355,10 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 	if err != nil {
 		return fmt.Errorf("invalid elasticsearch URL: %w", err)
 	}
-	// JoinPath percent-escapes each segment, so the index name cannot alter the
-	// request path or query even if it slipped past validation.
-	reqURL := base.JoinPath(indexName, "_doc").String()
+	// JoinPath escapes the name so it cannot alter the path; the flag stops ES from creating a plain index.
+	endpoint := base.JoinPath(target, "_doc")
+	endpoint.RawQuery = "require_data_stream=true"
+	reqURL := endpoint.String()
 
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
 	if err != nil {
@@ -371,13 +374,49 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 
 	client := httpx.Client(15*time.Second, cfg.SkipTLSVerify)
 
-	_, status, err := httpx.DoChecked(client, req, "elasticsearch")
+	body, status, err := httpx.DoChecked(client, req, "elasticsearch")
+	if status >= 400 {
+		return elasticsearchWriteError(target, status, body)
+	}
 	if err != nil {
 		return err
 	}
 
 	log.Printf("Elasticsearch alert indexed: %s -> %d", reqURL, status)
 	return nil
+}
+
+// Returns the data_stream.* fields for a logs-<dataset>-<namespace> target, nil for other names.
+func dataStreamFields(target string) map[string]string {
+	parts := strings.Split(target, "-")
+	if len(parts) != 3 || parts[0] != "logs" || parts[1] == "" || parts[2] == "" {
+		return nil
+	}
+	return map[string]string{
+		"data_stream.type":      parts[0],
+		"data_stream.dataset":   parts[1],
+		"data_stream.namespace": parts[2],
+	}
+}
+
+// Shortens an Elasticsearch error response to its reason and adds a setup hint for the common cases.
+func elasticsearchWriteError(target string, status int, body []byte) error {
+	reason := strings.TrimSpace(string(body))
+	var parsed struct {
+		Error struct {
+			Reason string `json:"reason"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &parsed) == nil && parsed.Error.Reason != "" {
+		reason = parsed.Error.Reason
+	}
+	switch {
+	case status == http.StatusNotFound && strings.Contains(reason, "data stream"):
+		return fmt.Errorf("elasticsearch target %q is not a data stream; use %s or add an index template with data streams enabled: %s", target, config.DefaultElasticsearchDataStream, reason)
+	case status == http.StatusForbidden:
+		return fmt.Errorf("elasticsearch denied writing to %q; the API key or user needs the create_doc and auto_configure privileges on it: %s", target, reason)
+	}
+	return fmt.Errorf("elasticsearch returned status %d: %s", status, reason)
 }
 
 // Sends a test payload to the configured webhook URL.
@@ -418,22 +457,17 @@ func TestElasticsearchHandler(c *gin.Context) {
 
 // Resolves the ISO country code for an IP using the configured GeoIP provider.
 func lookupCountry(ip, provider, dbPath string) (string, error) {
-	switch provider {
-	case "builtin":
+	if provider == "builtin" {
 		return lookupCountryBuiltin(ip)
-	case "maxmind", "":
-		if dbPath == "" {
-			dbPath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
-		}
-		return lookupCountryMaxMind(ip, dbPath)
-	default:
+	}
+	if provider != "maxmind" && provider != "" {
 		// Unknown GeoIP provider, falls back to MaxMind
 		log.Printf("Unknown GeoIP provider '%s', falling back to MaxMind", provider)
-		if dbPath == "" {
-			dbPath = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
-		}
-		return lookupCountryMaxMind(ip, dbPath)
 	}
+	if dbPath == "" {
+		dbPath = config.DefaultGeoIPDatabasePath
+	}
+	return lookupCountryMaxMind(ip, dbPath)
 }
 
 var (
@@ -538,13 +572,16 @@ func lookupCountryBuiltin(ip string) (string, error) {
 
 // Checks if an IP's country is in the allowed alert list.
 func shouldAlertForCountry(country string, alertCountries []string) bool {
-	if len(alertCountries) == 0 || strings.Contains(strings.Join(alertCountries, ","), "ALL") {
-		return true
-	}
+	effective := 0
 	for _, c := range alertCountries {
-		if strings.EqualFold(country, c) {
+		c = strings.TrimSpace(c)
+		if c == "" || strings.EqualFold(c, "LOTR") {
+			continue
+		}
+		if strings.EqualFold(c, "ALL") || strings.EqualFold(country, c) {
 			return true
 		}
+		effective++
 	}
-	return false
+	return effective == 0
 }

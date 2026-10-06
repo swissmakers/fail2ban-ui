@@ -35,13 +35,17 @@ import (
 type Connector interface {
 	Server() shared.Fail2banServer
 
-	GetJailInfos(ctx context.Context) ([]JailInfo, error)
 	GetJailSummary(ctx context.Context) (*JailSummary, error)
 	GetBannedIPs(ctx context.Context, jail string) ([]string, error)
 	UnbanIP(ctx context.Context, jail, ip string) error
 	BanIP(ctx context.Context, jail, ip string) error
 	Reload(ctx context.Context) error
-	Restart(ctx context.Context) error
+	// Restart restarts fail2ban, or reloads it where no service manager is usable; returns "restart" or "reload".
+	Restart(ctx context.Context) (mode string, err error)
+	// ValidateConfiguration checks the on-disk configuration without applying it.
+	ValidateConfiguration(ctx context.Context) error
+	// ProbeHealth checks fail2ban and the callback path without side effects.
+	ProbeHealth(ctx context.Context) ServerHealth
 	GetFilterConfig(ctx context.Context, jail string) (string, string, error)
 	SetFilterConfig(ctx context.Context, jail, content string) error
 
@@ -84,12 +88,16 @@ type Manager struct {
 	mu              sync.RWMutex
 	connectors      map[string]Connector
 	defaultServerID string
-	tunnelMonStop   chan struct{}
+	monitorStop     chan struct{}
+	monitorKick     chan struct{}
 	monitorWG       sync.WaitGroup
 	configSync      map[string]*configSyncState
+	health          map[string]ServerHealth
+	healthListener  func(string, ServerHealth)
+	repairAt        map[string]time.Time
 }
 
-const tunnelCheckInterval = 45 * time.Second
+const monitorInterval = 45 * time.Second
 
 var (
 	managerOnce sync.Once
@@ -99,7 +107,8 @@ var (
 func GetManager() *Manager {
 	managerOnce.Do(func() {
 		managerInst = &Manager{
-			connectors: make(map[string]Connector),
+			connectors:  make(map[string]Connector),
+			monitorKick: make(chan struct{}, 1),
 		}
 	})
 	return managerInst
@@ -121,6 +130,7 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 	}
 	pruneHostKeyIssues(keep)
 
+	var added []string
 	for _, srv := range servers {
 		if !srv.Enabled {
 			continue
@@ -131,38 +141,74 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 				continue
 			}
 		}
-		if oldSSH, ok := old[srv.ID].(*SSHConnector); ok && sshTunnelConfigChanged(oldSSH, srv) {
-			_ = oldSSH.Close()
-		}
 		conn, err := NewConnector(srv)
 		if err != nil {
 			return fmt.Errorf("failed to initialise connector for %s (%s): %w", srv.Name, srv.ID, err)
 		}
 		connectors[srv.ID] = conn
-		m.RequestConfigSync(srv.ID, true, true)
-	}
-
-	// Tear down the SSH master of the server that were removed or disabled
-	for id, conn := range old {
-		if _, still := connectors[id]; still {
-			continue
-		}
-		if oldSSH, ok := conn.(*SSHConnector); ok {
-			_ = oldSSH.Close()
-		}
+		added = append(added, srv.ID)
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.connectors = connectors
 	m.defaultServerID = defaultID
-	m.syncTunnelMonitorLocked()
+	for id := range m.configSync {
+		if _, live := connectors[id]; !live {
+			delete(m.configSync, id)
+		}
+	}
+	for id := range m.health {
+		if connectors[id] != old[id] {
+			delete(m.health, id)
+		}
+	}
+	for id := range m.repairAt {
+		if _, live := connectors[id]; !live {
+			delete(m.repairAt, id)
+		}
+	}
+	m.syncMonitorLocked()
+	m.mu.Unlock()
+
+	// Requested only after the swap, so an in-flight retry cannot apply this generation to the old connector.
+	for _, id := range added {
+		m.RequestConfigSync(id, true, true)
+	}
+	// Tear down the connectors of the servers that were removed, disabled or replaced
+	for id, conn := range old {
+		if next := connectors[id]; next != conn {
+			releaseConnector(conn, next)
+		}
+	}
+	if len(added) > 0 {
+		select {
+		case m.monitorKick <- struct{}{}:
+		default:
+		}
+	}
 	return nil
+}
+
+// Closes a connector that left the registry; an agent no longer addressed by this entry stops posting callbacks.
+func releaseConnector(old, next Connector) {
+	switch prev := old.(type) {
+	case *AgentConnector:
+		if replacement, same := next.(*AgentConnector); !same || replacement.base.String() != prev.base.String() {
+			go prev.deregister()
+		}
+	case *SSHConnector:
+		// An unchanged transport shares the ControlMaster socket with the replacement.
+		if replacement, same := next.(*SSHConnector); same && !sshTunnelConfigChanged(prev, replacement.server) {
+			return
+		}
+	}
+	if err := old.Close(); err != nil {
+		debugf("failed to close connector %s: %v", old.Server().ID, err)
+	}
 }
 
 func sameConnectorConfig(a, b shared.Fail2banServer) bool {
 	a.UpdatedAt, b.UpdatedAt = time.Time{}, time.Time{}
-	a.RestartNeeded, b.RestartNeeded = false, false
 	a.IsDefault, b.IsDefault = false, false
 	return reflect.DeepEqual(a, b)
 }
@@ -171,9 +217,9 @@ func (m *Manager) Close() {
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
 	m.mu.Lock()
-	if m.tunnelMonStop != nil {
-		close(m.tunnelMonStop)
-		m.tunnelMonStop = nil
+	if m.monitorStop != nil {
+		close(m.monitorStop)
+		m.monitorStop = nil
 	}
 	m.mu.Unlock()
 	m.monitorWG.Wait()
@@ -188,24 +234,24 @@ func (m *Manager) Close() {
 	}
 }
 
-// Starts or stops the connector health and config retry monitor
-func (m *Manager) syncTunnelMonitorLocked() {
+// Starts or stops the server health and config retry monitor.
+func (m *Manager) syncMonitorLocked() {
 	hasConnectors := len(m.connectors) > 0
 	switch {
-	case hasConnectors && m.tunnelMonStop == nil:
-		m.tunnelMonStop = make(chan struct{})
+	case hasConnectors && m.monitorStop == nil:
+		m.monitorStop = make(chan struct{})
 		m.monitorWG.Add(1)
-		go m.tunnelMonitorLoop(m.tunnelMonStop)
-		log.Printf("connector health and config sync monitor started (interval %s)", tunnelCheckInterval)
-	case !hasConnectors && m.tunnelMonStop != nil:
-		close(m.tunnelMonStop)
-		m.tunnelMonStop = nil
-		log.Printf("connector monitor stopped (no enabled servers)")
+		go m.serverMonitorLoop(m.monitorStop)
+		log.Printf("server health and config sync monitor started (interval %s)", monitorInterval)
+	case !hasConnectors && m.monitorStop != nil:
+		close(m.monitorStop)
+		m.monitorStop = nil
+		log.Printf("server monitor stopped (no enabled servers)")
 	}
 }
 
-// Periodically verifies reverse-tunnel SSH masters and re-establishes dead ones.
-func (m *Manager) tunnelMonitorLoop(stop <-chan struct{}) {
+// Probes server health and retries pending config pushes, immediately and then every interval.
+func (m *Manager) serverMonitorLoop(stop <-chan struct{}) {
 	defer m.monitorWG.Done()
 	monitorCtx, stopMonitor := context.WithCancel(context.Background())
 	defer stopMonitor()
@@ -216,43 +262,27 @@ func (m *Manager) tunnelMonitorLoop(stop <-chan struct{}) {
 		case <-monitorCtx.Done():
 		}
 	}()
-	ticker := time.NewTicker(tunnelCheckInterval)
+	run := func() {
+		ctx, cancel := context.WithTimeout(monitorCtx, 40*time.Second)
+		defer cancel()
+		var wg sync.WaitGroup
+		wg.Go(func() { m.RetryPendingConfig(ctx) })
+		wg.Go(func() { m.ProbeAll(ctx) })
+		wg.Wait()
+	}
+	ticker := time.NewTicker(monitorInterval)
 	defer ticker.Stop()
+	run()
 	for {
 		select {
 		case <-stop:
 			return
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(monitorCtx, 40*time.Second)
-			m.RetryPendingConfig(ctx)
-			m.CheckTunnels(ctx)
-			cancel()
+			run()
+		case <-m.monitorKick:
+			run()
 		}
 	}
-}
-
-// Runs the reverse-tunnel health check for every SSH connector with an active tunnel
-func (m *Manager) CheckTunnels(ctx context.Context) {
-	m.mu.RLock()
-	var tunneled []*SSHConnector
-	for _, conn := range m.connectors {
-		if sc, ok := conn.(*SSHConnector); ok && sc.tunnelPort > 0 {
-			tunneled = append(tunneled, sc)
-		}
-	}
-	m.mu.RUnlock()
-
-	var wg sync.WaitGroup
-	for _, sc := range tunneled {
-		wg.Add(1)
-		go func(sc *SSHConnector) {
-			defer wg.Done()
-			checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			defer cancel()
-			sc.CheckTunnelHealth(checkCtx)
-		}(sc)
-	}
-	wg.Wait()
 }
 
 func pickDefaultServerID(servers []shared.Fail2banServer) string {
@@ -312,19 +342,6 @@ func (m *Manager) Connectors() []Connector {
 //  Action File Management
 // =========================================================================
 
-func (m *Manager) RepairActionFile(ctx context.Context, serverID string) {
-	m.mu.RLock()
-	conn := m.connectors[serverID]
-	m.mu.RUnlock()
-
-	sc, ok := conn.(*SSHConnector)
-	if !ok || !sc.beginActionRepair() {
-		return
-	}
-	m.RequestConfigSync(serverID, true, false)
-	_ = m.SyncServerConfig(ctx, serverID)
-}
-
 func updateConnectorAction(ctx context.Context, conn Connector) error {
 	switch c := conn.(type) {
 	case *SSHConnector:
@@ -338,34 +355,28 @@ func updateConnectorAction(ctx context.Context, conn Connector) error {
 	}
 }
 
-// Pushes runtime config to all enabled connectors, including local ones, then reloads Fail2Ban.
-// Is intended to run once at startup after the connector registry was rebuilt.
-func (m *Manager) SyncRemoteStartupConfig(ctx context.Context, perHostTimeout time.Duration) (synced int, failed int) {
-	if perHostTimeout <= 0 {
-		perHostTimeout = 30 * time.Second
-	}
+// Applies pending config on every enabled server concurrently; returns the failures by server ID.
+func (m *Manager) SyncAll(ctx context.Context, perHostTimeout time.Duration) map[string]error {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	failed := make(map[string]error)
 	for _, conn := range m.Connectors() {
 		id := conn.Server().ID
-		m.RequestConfigSync(id, true, true)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		if !m.ConfigSyncStatus(id).Pending {
+			continue
+		}
+		wg.Go(func() {
 			hostCtx, cancel := context.WithTimeout(ctx, perHostTimeout)
 			defer cancel()
-			err := m.SyncServerConfig(hostCtx, id)
-			mu.Lock()
-			defer mu.Unlock()
-			if err == nil {
-				synced++
-			} else {
-				failed++
+			if err := m.SyncServerConfig(hostCtx, id); err != nil {
+				mu.Lock()
+				failed[id] = err
+				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
-	return synced, failed
+	return failed
 }
 
 // =========================================================================
@@ -375,15 +386,9 @@ func (m *Manager) SyncRemoteStartupConfig(ctx context.Context, perHostTimeout ti
 func NewConnector(server shared.Fail2banServer) (Connector, error) {
 	switch server.Type {
 	case "local":
-		if isJailAutoMigrationEnabled() {
-			debugf("JAIL_AUTOMIGRATION=true: running experimental jail.local -> jail.d/ migration for local server %s", server.Name)
-			if err := MigrateJailsFromJailLocal(server.ConfigPath); err != nil {
-				return nil, fmt.Errorf("failed to initialise local fail2ban connector for %s: %w", server.Name, err)
-			}
-		}
 		return NewLocalConnector(server), nil
 	case "ssh":
-		return NewSSHConnector(server)
+		return newSSHConnector(server)
 	case "agent":
 		return NewAgentConnector(server)
 	default:

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -82,27 +83,20 @@ func SummaryHandler(c *gin.Context) {
 	}
 
 	// jail.local integrity comes back with the summary itself.
-	switch {
-	case summary.JailLocalExists && !summary.JailLocalManaged:
-		resp.JailLocalWarning = true
-	case !summary.JailLocalExists:
-		// The user finished a migration and removed it -> recreate a managed one.
-		if err := conn.EnsureJailLocalStructure(c.Request.Context()); err != nil {
-			config.DebugLog("Warning: failed to initialize jail.local on summary request: %v", err)
-		} else {
-			config.DebugLog("Initialized fresh jail.local for server %s (file was missing)", conn.Server().Name)
-		}
-	}
-
-	if summary.ActionFileDrifted {
-		fail2ban.GetManager().RepairActionFile(c.Request.Context(), serverID)
+	resp.JailLocalWarning = summary.JailLocalExists && !summary.JailLocalManaged
+	// A removed jail.local (finished migration) or a drifted action file is re-pushed in the background.
+	if missing := !summary.JailLocalExists; missing || summary.ActionFileDrifted {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			fail2ban.GetManager().Repair(ctx, serverID, summary.ActionFileDrifted, missing)
+		}()
 	}
 
 	c.JSON(http.StatusOK, resp)
 }
 
-// Searches all servers and jails for a live ban of the given IP via
-// fail2ban-client, unlike the dashboard which only searches stored ban events.
+// Searches all servers and jails for a live ban of the given IP via fail2ban-client, unlike the dashboard which only searches stored ban events.
 func SearchBannedIPHandler(c *gin.Context) {
 	ip := c.Param("ip")
 	if err := shared.ValidateIP(ip); err != nil {
@@ -137,14 +131,14 @@ func SearchBannedIPHandler(c *gin.Context) {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 			defer cancel()
 
-			infos, err := conn.GetJailInfos(ctx)
+			summary, err := conn.GetJailSummary(ctx)
 			if err != nil {
 				mu.Lock()
 				errs = append(errs, serverError{ServerID: server.ID, ServerName: server.Name, Error: err.Error()})
 				mu.Unlock()
 				return
 			}
-			for _, info := range infos {
+			for _, info := range summary.Jails {
 				if info.TotalBanned == 0 {
 					continue
 				}
@@ -200,27 +194,8 @@ func ListJailBannedIPsHandler(c *gin.Context) {
 		maxOffset    = 100000
 	)
 
-	limit := defaultLimit
-	if limitStr := c.DefaultQuery("limit", strconv.Itoa(defaultLimit)); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			if parsed <= maxLimit {
-				limit = parsed
-			} else {
-				limit = maxLimit
-			}
-		}
-	}
-
-	offset := 0
-	if offsetStr := c.DefaultQuery("offset", "0"); offsetStr != "" {
-		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
-			if parsed <= maxOffset {
-				offset = parsed
-			} else {
-				offset = maxOffset
-			}
-		}
-	}
+	limit := clampInt(c.Query("limit"), defaultLimit, 1, maxLimit)
+	offset := clampInt(c.Query("offset"), 0, 0, maxOffset)
 
 	query := strings.TrimSpace(c.Query("q"))
 	allIPs, err := conn.GetBannedIPs(c.Request.Context(), jail)
@@ -265,7 +240,7 @@ func ListJailBannedIPsHandler(c *gin.Context) {
 // Bans a given IP in a specific jail.
 func BanIPHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("BanIPHandler called (handlers.go)")
+	config.DebugLog("BanIPHandler called")
 	jail := c.Param("jail")
 	ip := c.Param("ip")
 
@@ -288,7 +263,7 @@ func BanIPHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "dashboard.manual_block.error"))
 		return
 	}
-	fmt.Println(ip + " in jail " + jail + " banned successfully.")
+	log.Printf("%s banned in jail %s", ip, jail)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "IP banned successfully",
 	})
@@ -297,7 +272,7 @@ func BanIPHandler(c *gin.Context) {
 // Unbans a given IP from a specific jail.
 func UnbanIPHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("UnbanIPHandler called (handlers.go)")
+	config.DebugLog("UnbanIPHandler called")
 	jail := c.Param("jail")
 	ip := c.Param("ip")
 
@@ -320,7 +295,7 @@ func UnbanIPHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, ""))
 		return
 	}
-	fmt.Println(ip + " from jail " + jail + " unbanned successfully.")
+	log.Printf("%s unbanned from jail %s", ip, jail)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "IP unbanned successfully",
 	})
@@ -362,7 +337,7 @@ func BanNotificationHandler(c *gin.Context) {
 		} else {
 			log.Printf("ERROR: JSON parsing error -> Action will not be recorded! Details: %v", err)
 		}
-		config.DebugLog("Raw JSON that failed to parse: %s", string(body))
+		config.DebugLog("Raw JSON that failed to parse: %q", string(body))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
 		return
 	}
@@ -428,7 +403,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 		} else {
 			log.Printf("ERROR: JSON parsing error -> Action will not be recorded! Details: %v", err)
 		}
-		log.Printf("Raw JSON: %s", string(body))
+		log.Printf("Raw JSON that failed to parse: %q", string(body))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
 		return
 	}
@@ -467,22 +442,8 @@ func UnbanNotificationHandler(c *gin.Context) {
 // Returns paginated, filterable ban/unban events.
 func ListBanEventsHandler(c *gin.Context) {
 	serverID := c.Query("serverId")
-	limit := storage.MaxBanEventsLimit
-	if limitStr := c.DefaultQuery("limit", strconv.Itoa(storage.MaxBanEventsLimit)); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			if parsed <= storage.MaxBanEventsLimit {
-				limit = parsed
-			}
-		}
-	}
-	offset := 0
-	if offsetStr := c.DefaultQuery("offset", "0"); offsetStr != "" {
-		if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
-			if parsed <= storage.MaxBanEventsOffset {
-				offset = parsed
-			}
-		}
-	}
+	limit := clampInt(c.Query("limit"), storage.MaxBanEventsLimit, 1, storage.MaxBanEventsLimit)
+	offset := clampInt(c.Query("offset"), 0, 0, math.MaxInt32)
 
 	var since, until time.Time
 	if sinceStr := c.Query("since"); sinceStr != "" {
@@ -611,19 +572,8 @@ func BanInsightsHandler(c *gin.Context) {
 	}
 	serverID := c.Query("serverId")
 
-	minCount := 3
-	if minCountStr := c.DefaultQuery("minCount", "3"); minCountStr != "" {
-		if parsed, err := strconv.Atoi(minCountStr); err == nil && parsed > 0 {
-			minCount = parsed
-		}
-	}
-
-	limit := 50
-	if limitStr := c.DefaultQuery("limit", "50"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
+	minCount := clampInt(c.Query("minCount"), 3, 1, math.MaxInt32)
+	limit := clampInt(c.Query("limit"), 50, 1, 1000)
 
 	ctx := c.Request.Context()
 	now := time.Now().UTC()
@@ -800,12 +750,7 @@ func ListBanEventIPsHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
-	limit := 2000
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 10000 {
-			limit = parsed
-		}
-	}
+	limit := clampInt(c.Query("limit"), 2000, 1, 10000)
 
 	ips, total, err := storage.ListBanEventIPs(c.Request.Context(), eventFilterFromQuery(c, since, until), limit)
 	if err != nil {
@@ -829,12 +774,7 @@ func BanEventIPActivityHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
-	minOverlap := 3
-	if minOverlapStr := c.Query("minOverlap"); minOverlapStr != "" {
-		if parsed, err := strconv.Atoi(minOverlapStr); err == nil && parsed >= 1 {
-			minOverlap = parsed
-		}
-	}
+	minOverlap := clampInt(c.Query("minOverlap"), 3, 1, math.MaxInt32)
 
 	periods, err := storage.ListBanEventIPActivity(c.Request.Context(), eventFilterFromQuery(c, since, until), minOverlap)
 	if err != nil {
@@ -855,4 +795,13 @@ func ClearBanEventsHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": deleted})
+}
+
+// Parses an integer query value: unparseable or below lo gives def, above hi is clamped to hi.
+func clampInt(raw string, def, lo, hi int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < lo {
+		return def
+	}
+	return min(n, hi)
 }

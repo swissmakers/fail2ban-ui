@@ -17,10 +17,13 @@
 package web
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"slices"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
@@ -37,6 +40,7 @@ type appSettingsResponse struct {
 
 type settingsUpdateResponse struct {
 	Message       string   `json:"message,omitempty"`
+	SyncPending   bool     `json:"syncPending"`
 	RestartNeeded bool     `json:"restartNeeded"`
 	Warnings      []string `json:"warnings,omitempty"`
 }
@@ -48,8 +52,9 @@ type settingsUpdateResponse struct {
 // Returns the current AppSettings as JSON.
 func GetSettingsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("GetSettingsHandler called (handlers.go)")
+	config.DebugLog("GetSettingsHandler called")
 	s := config.GetSettings()
+	s.Servers = nil
 	isAdmin := userHasAdminAccess(c)
 	if !isAdmin {
 		s = config.AppSettings{
@@ -94,7 +99,7 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	applyEnvLockedSettings(&req)
 	restoreMaskedSecrets(&req, config.GetSettings())
 	if err := normalizeAndValidateSettingsRequest(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, buildErrorResponse(err, ""))
 		return
 	}
 
@@ -102,11 +107,11 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	oldDefaults := config.BuildJailLocalContent()
 	newSettings, err := config.UpdateSettings(req)
 	if err != nil {
-		fmt.Println("Error updating settings:", err)
+		log.Printf("ERROR: updating settings: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	config.DebugLog("Settings updated successfully (handlers.go)")
+	config.DebugLog("Settings updated successfully")
 
 	callbackURLChanged := oldSettings.CallbackURL != newSettings.CallbackURL
 	callbackSecretChanged := oldSettings.CallbackSecret != newSettings.CallbackSecret
@@ -127,42 +132,56 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	defaultSettingsChanged := oldDefaults != config.BuildJailLocalContent()
 	manager := fail2ban.GetManager()
 	connectors := manager.Connectors()
-	for _, conn := range connectors {
-		if callbackChanged || defaultSettingsChanged {
+	if callbackChanged || defaultSettingsChanged {
+		for _, conn := range connectors {
 			manager.RequestConfigSync(conn.Server().ID, callbackChanged, defaultSettingsChanged)
 		}
 	}
-	for _, conn := range connectors {
-		if err := manager.SyncServerConfig(c.Request.Context(), conn.Server().ID); err != nil {
-			warn("%v", err)
-		}
+	for _, err := range manager.SyncAll(c.Request.Context(), 20*time.Second) {
+		warn("%v", err)
 	}
-	restartNeeded := config.GetSettings().RestartNeeded
+	statuses := make([]fail2ban.ConfigSyncStatus, 0, len(connectors))
 	for _, conn := range connectors {
-		restartNeeded = restartNeeded || manager.ConfigSyncStatus(conn.Server().ID).Pending
+		statuses = append(statuses, manager.ConfigSyncStatus(conn.Server().ID))
 	}
+	syncPending, restartNeeded := settingsSyncFlags(statuses)
 
 	c.JSON(http.StatusOK, settingsUpdateResponse{
 		Message:       "Settings updated",
+		SyncPending:   syncPending,
 		RestartNeeded: restartNeeded,
 		Warnings:      warnings,
 	})
 }
 
+// syncPending -> some host has not received the files yet
+// restartNeeded -> files are written but not active.
+func settingsSyncFlags(statuses []fail2ban.ConfigSyncStatus) (syncPending, restartNeeded bool) {
+	for _, st := range statuses {
+		switch st.Phase {
+		case fail2ban.SyncPending:
+			syncPending = true
+		case fail2ban.SyncWritten:
+			restartNeeded = true
+		}
+	}
+	return syncPending, restartNeeded
+}
+
 // Saves new settings, pushes defaults to servers, and reloads.
 func UpdateSettingsHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("UpdateSettingsHandler called (handlers.go)")
+	config.DebugLog("UpdateSettingsHandler called")
 	var req config.AppSettings
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fmt.Println("JSON binding error:", err)
+		config.DebugLog("settings JSON binding error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "invalid JSON",
 			"details": err.Error(),
 		})
 		return
 	}
-	config.DebugLog("JSON binding successful, updating settings (handlers.go)")
+	config.DebugLog("JSON binding successful, updating settings")
 	applySettingsUpdate(c, req)
 }
 
@@ -173,26 +192,17 @@ func UpdateSettingsHandler(c *gin.Context) {
 // Returns all available filter names for the selected server.
 func ListFiltersHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("ListFiltersHandler called (handlers.go)")
+	config.DebugLog("ListFiltersHandler called")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	server := conn.Server()
-	if server.Type == "local" {
-		dir := "/etc/fail2ban/filter.d"
-		if _, statErr := os.Stat(dir); statErr != nil {
-			if os.IsNotExist(statErr) {
-				c.JSON(http.StatusOK, gin.H{"filters": []string{}, "messageKey": "filter_debug.local_missing"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read filter directory: " + statErr.Error()})
-			return
-		}
-	}
-
 	filters, err := conn.GetFilters(c.Request.Context())
+	if errors.Is(err, fail2ban.ErrFilterDirMissing) {
+		c.JSON(http.StatusOK, gin.H{"filters": []string{}, "messageKey": "filter_debug.local_missing"})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list filters: " + err.Error()})
 		return
@@ -203,7 +213,7 @@ func ListFiltersHandler(c *gin.Context) {
 // Returns the content of a specific filter file.
 func GetFilterContentHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("GetFilterContentHandler called (handlers.go)")
+	config.DebugLog("GetFilterContentHandler called")
 	filterName := c.Param("filter")
 	if err := fail2ban.ValidateFilterName(filterName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -232,7 +242,7 @@ func GetFilterContentHandler(c *gin.Context) {
 // Runs fail2ban-regex against provided log lines and filter content.
 func TestFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("TestFilterHandler called (handlers.go)")
+	config.DebugLog("TestFilterHandler called")
 	conn, err := resolveConnector(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -266,7 +276,7 @@ func TestFilterHandler(c *gin.Context) {
 // Creates a new filter definition file.
 func CreateFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("CreateFilterHandler called (handlers.go)")
+	config.DebugLog("CreateFilterHandler called")
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -286,6 +296,15 @@ func CreateFilterHandler(c *gin.Context) {
 	// Validate filter name
 	if err := fail2ban.ValidateFilterName(req.FilterName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing, err := conn.GetFilters(c.Request.Context())
+	if err != nil && !errors.Is(err, fail2ban.ErrFilterDirMissing) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing filters: " + err.Error()})
+		return
+	}
+	if slices.Contains(existing, req.FilterName) {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("filter '%s' already exists", req.FilterName), "messageKey": "filters.errors.already_exists", "filter": req.FilterName})
 		return
 	}
 
@@ -313,7 +332,7 @@ func CreateFilterHandler(c *gin.Context) {
 // Removes a filter definition file.
 func DeleteFilterHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("DeleteFilterHandler called (handlers.go)")
+	config.DebugLog("DeleteFilterHandler called")
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -356,7 +375,7 @@ func DeleteFilterHandler(c *gin.Context) {
 // Restarts (or reloads) the Fail2ban service on the selected server.
 func RestartFail2banHandler(c *gin.Context) {
 	config.DebugLog("----------------------------")
-	config.DebugLog("RestartFail2banHandler called (handlers.go)")
+	config.DebugLog("RestartFail2banHandler called")
 
 	conn, err := resolveConnector(c)
 	if err != nil {
@@ -366,8 +385,15 @@ func RestartFail2banHandler(c *gin.Context) {
 
 	server := conn.Server()
 
+	// browser disconnect must not abort a restart halfway
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 2*time.Minute)
+	defer cancel()
 	// Attempts to restart the fail2ban service via the connector.
-	mode, err := fail2ban.RestartFail2ban(server.ID)
+	mode, err := fail2ban.GetManager().ApplyAndRestart(ctx, server.ID)
+	if errors.Is(err, fail2ban.ErrConfigNotApplied) {
+		c.JSON(http.StatusConflict, buildErrorResponse(err, "servers.errors.config_not_applied"))
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, ""))
 		return

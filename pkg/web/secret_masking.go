@@ -48,7 +48,6 @@ func maskAppSettingsSecrets(s config.AppSettings) config.AppSettings {
 	s.Elasticsearch.Password = maskSecret(s.Elasticsearch.Password)
 	s.AdvancedActions.Mikrotik.Password = maskSecret(s.AdvancedActions.Mikrotik.Password)
 	s.AdvancedActions.PfSense.APIToken = maskSecret(s.AdvancedActions.PfSense.APIToken)
-	s.AdvancedActions.PfSense.APISecret = maskSecret(s.AdvancedActions.PfSense.APISecret)
 	s.AdvancedActions.OPNsense.APIKey = maskSecret(s.AdvancedActions.OPNsense.APIKey)
 	s.AdvancedActions.OPNsense.APISecret = maskSecret(s.AdvancedActions.OPNsense.APISecret)
 	s.AdvancedActions.UniFi.APIKey = maskSecret(s.AdvancedActions.UniFi.APIKey)
@@ -59,10 +58,6 @@ func maskAppSettingsSecrets(s config.AppSettings) config.AppSettings {
 			masked[k] = maskSecret(v)
 		}
 		s.Webhook.Headers = masked
-	}
-
-	if len(s.Servers) > 0 {
-		s.Servers = maskServerSecrets(s.Servers)
 	}
 	return s
 }
@@ -76,7 +71,6 @@ func restoreMaskedSecrets(req *config.AppSettings, stored config.AppSettings) {
 	req.Elasticsearch.Password = restoreSecret(req.Elasticsearch.Password, stored.Elasticsearch.Password)
 	req.AdvancedActions.Mikrotik.Password = restoreSecret(req.AdvancedActions.Mikrotik.Password, stored.AdvancedActions.Mikrotik.Password)
 	req.AdvancedActions.PfSense.APIToken = restoreSecret(req.AdvancedActions.PfSense.APIToken, stored.AdvancedActions.PfSense.APIToken)
-	req.AdvancedActions.PfSense.APISecret = restoreSecret(req.AdvancedActions.PfSense.APISecret, stored.AdvancedActions.PfSense.APISecret)
 	req.AdvancedActions.OPNsense.APIKey = restoreSecret(req.AdvancedActions.OPNsense.APIKey, stored.AdvancedActions.OPNsense.APIKey)
 	req.AdvancedActions.OPNsense.APISecret = restoreSecret(req.AdvancedActions.OPNsense.APISecret, stored.AdvancedActions.OPNsense.APISecret)
 	req.AdvancedActions.UniFi.APIKey = restoreSecret(req.AdvancedActions.UniFi.APIKey, stored.AdvancedActions.UniFi.APIKey)
@@ -84,16 +78,6 @@ func restoreMaskedSecrets(req *config.AppSettings, stored config.AppSettings) {
 	for k, v := range req.Webhook.Headers {
 		if v == secretMaskSentinel {
 			req.Webhook.Headers[k] = stored.Webhook.Headers[k]
-		}
-	}
-
-	if len(req.Servers) > 0 {
-		storedByID := make(map[string]string, len(stored.Servers))
-		for _, srv := range stored.Servers {
-			storedByID[srv.ID] = srv.AgentSecret
-		}
-		for i := range req.Servers {
-			req.Servers[i].AgentSecret = restoreSecret(req.Servers[i].AgentSecret, storedByID[req.Servers[i].ID])
 		}
 	}
 }
