@@ -2,6 +2,7 @@
 "use strict";
 
 let callbackUrlSyncHandler = null;
+const SMTP_REQUIRED_FIELDS = ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpFrom'];
 
 // =========================================================================
 //  Load Settings
@@ -9,8 +10,7 @@ let callbackUrlSyncHandler = null;
 
 function loadSettings() {
   showLoading(true);
-  fetch(appPath('/api/settings'))
-    .then(res => res.json())
+  getSettings()
     .then(data => {
       document.getElementById('languageSelect').value = data.language || 'en';
       
@@ -38,9 +38,7 @@ function loadSettings() {
       const consoleOutputEl = document.getElementById('consoleOutput');
       if (consoleOutputEl) {
         consoleOutputEl.checked = data.consoleOutput || false;
-        if (typeof wasConsoleEnabledOnLoad !== 'undefined') {
-          wasConsoleEnabledOnLoad = consoleOutputEl.checked;
-        }
+        wasConsoleEnabledOnLoad = consoleOutputEl.checked;
         toggleConsoleOutput(false);
       }
       
@@ -72,7 +70,7 @@ function loadSettings() {
           callbackSecretInput.type = 'password';
         }
         if (toggleLink) {
-          toggleLink.textContent = t('settings.callback_secret.show', 'show secret');
+          setI18nText(toggleLink, 'settings.callback_secret.show', 'show secret');
         }
       }
       
@@ -157,7 +155,7 @@ function loadSettings() {
       loadPermanentBlockLog();
     })
     .catch(err => {
-      showToast(t('settings.toast.load_error', 'Error loading settings') + ': ' + err, 'error');
+      showToast(t('settings.toast.load_error', 'Error loading settings') + ': ' + err.message, 'error');
     })
     .finally(() => showLoading(false));
 }
@@ -248,33 +246,26 @@ function saveSettings(event) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(settingsData),
   })
-    .then(res => res.json())
+    .then(readJsonResponse)
     .then(data => {
-      if (data.error) {
-        showToast(t('settings.toast.save_error', 'Error saving settings') + ': ' + (data.error + (data.details || '')), 'error');
-      } else {
-        var selectedLang = $('#languageSelect').val();
-        loadTranslations(selectedLang);
-        console.log("Settings saved successfully. Restart needed? " + (data.restartNeeded || false));
-        const selectedCountries = Array.from(document.getElementById('alertCountries').selectedOptions).map(opt => opt.value);
-        checkAndApplyLOTRTheme(selectedCountries.length > 0 ? selectedCountries : ["ALL"]);
-        
-        if (Array.isArray(data.warnings) && data.warnings.length > 0) {
-          const warningPreview = data.warnings.slice(0, 2).join(' | ');
-          showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'info');
-          console.warn('Settings warnings:', data.warnings);
-        }
-        if (data.restartNeeded) {
-          showToast(t('settings.save_success_restart_required', 'Settings saved. Fail2ban restart required.'), 'info');
-          loadServers().then(function() {
-            updateRestartBanner();
-          });
-        } else {
-          showToast(t('settings.save_success_reloaded', 'Settings saved and fail2ban reloaded'), 'success');
-        }
+      data = data || {};
+      loadTranslations($('#languageSelect').val());
+      checkAndApplyLOTRTheme(settingsData.alertCountries);
+      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+        const warningPreview = data.warnings.slice(0, 2).join(' | ');
+        showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'info');
+        console.warn('Settings warnings:', data.warnings);
       }
+      if (data.restartNeeded) {
+        showToast(t('settings.save_success_restart_required', 'Settings saved. Fail2ban restart required.'), 'info');
+      } else if (data.syncPending) {
+        showToast(t('settings.save_success_sync_pending', 'Settings saved, but not every server could be updated yet. Fail2ban UI keeps retrying.'), 'warning', 12000);
+      } else {
+        showToast(t('settings.save_success_reloaded', 'Settings saved and fail2ban reloaded'), 'success');
+      }
+      return loadServers();
     })
-    .catch(err => showToast(t('settings.toast.save_error', 'Error saving settings') + ': ' + err, 'error'))
+    .catch(err => showToast(t('settings.toast.save_error', 'Error saving settings') + ': ' + err.message, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -290,18 +281,12 @@ function updateAlertProviderFields() {
   if (emailDiv) emailDiv.classList.toggle('hidden', selected !== 'email');
   if (webhookDiv) webhookDiv.classList.toggle('hidden', selected !== 'webhook');
   if (esDiv) esDiv.classList.toggle('hidden', selected !== 'elasticsearch');
+  // Hidden SMTP fields must not block the form submit.
+  SMTP_REQUIRED_FIELDS.forEach(function(id) {
+    const field = document.getElementById(id);
+    if (field) field.required = selected === 'email';
+  });
 }
-
-function updateSmtpAuthOnChange() {
-  updateSmtpAuthFields();
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-  const authSelect = document.getElementById('smtpAuthMethod');
-  if (authSelect) {
-    authSelect.addEventListener('change', updateSmtpAuthOnChange);
-  }
-});
 
 function updateSmtpAuthFields() {
   const authMethod = document.getElementById('smtpAuthMethod').value;
@@ -342,10 +327,6 @@ function updateAlertFieldsState() {
   if (providerSelect) providerSelect.disabled = !alertsEnabled;
 }
 
-function updateEmailFieldsState() {
-  updateAlertFieldsState();
-}
-
 // =========================================================================
 //  Email Alert
 // =========================================================================
@@ -356,15 +337,14 @@ function sendTestEmail() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
-    .then(res => res.json())
+    .then(readJsonResponse)
     .then(data => {
-      if (data.error) {
-        showToast(t('settings.toast.test_email_error', 'Error sending test email') + ': ' + data.error, 'error');
-      } else {
-        showToast(t('settings.toast.test_email_success', 'Test email sent successfully!'), 'success');
+      showToast(t('settings.toast.test_email_success', 'Test email sent successfully!'), 'success');
+      if (data && (data.warningKey || data.warning)) {
+        showToast(t(data.warningKey, data.warning), 'warning', 12000);
       }
     })
-    .catch(error => showToast(t('settings.toast.test_email_error', 'Error sending test email') + ': ' + error, 'error'))
+    .catch(err => showToast(t('settings.toast.test_email_error', 'Error sending test email') + ': ' + err.message, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -410,15 +390,9 @@ function sendTestWebhook() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        showToast(t('settings.toast.webhook_test_failed', 'Webhook test failed') + ': ' + data.error, 'error');
-      } else {
-        showToast(t('settings.toast.webhook_test_success', 'Test webhook sent successfully!'), 'success');
-      }
-    })
-    .catch(error => showToast(t('settings.toast.webhook_test_failed', 'Webhook test failed') + ': ' + error, 'error'))
+    .then(readJsonResponse)
+    .then(() => showToast(t('settings.toast.webhook_test_success', 'Test webhook sent successfully!'), 'success'))
+    .catch(err => showToast(t('settings.toast.webhook_test_failed', 'Webhook test failed') + ': ' + err.message, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -429,7 +403,7 @@ function sendTestWebhook() {
 function applyElasticsearchSettings(cfg) {
   cfg = cfg || {};
   document.getElementById('elasticsearchUrl').value = cfg.url || '';
-  document.getElementById('elasticsearchIndex').value = cfg.index || 'fail2ban-events';
+  document.getElementById('elasticsearchIndex').value = cfg.index || 'logs-fail2ban_ui.events-default';
   document.getElementById('elasticsearchApiKey').value = cfg.apiKey || '';
   document.getElementById('elasticsearchUsername').value = cfg.username || '';
   document.getElementById('elasticsearchPassword').value = cfg.password || '';
@@ -439,7 +413,7 @@ function applyElasticsearchSettings(cfg) {
 function collectElasticsearchSettings() {
   return {
     url: document.getElementById('elasticsearchUrl').value.trim(),
-    index: document.getElementById('elasticsearchIndex').value.trim() || 'fail2ban-events',
+    index: document.getElementById('elasticsearchIndex').value.trim() || 'logs-fail2ban_ui.events-default',
     apiKey: document.getElementById('elasticsearchApiKey').value.trim(),
     username: document.getElementById('elasticsearchUsername').value.trim(),
     password: document.getElementById('elasticsearchPassword').value.trim(),
@@ -453,15 +427,9 @@ function sendTestElasticsearch() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        showToast(t('settings.toast.es_test_failed', 'Elasticsearch test failed') + ': ' + data.error, 'error');
-      } else {
-        showToast(t('settings.toast.es_test_success', 'Test document indexed successfully!'), 'success');
-      }
-    })
-    .catch(error => showToast(t('settings.toast.es_test_failed', 'Elasticsearch test failed') + ': ' + error, 'error'))
+    .then(readJsonResponse)
+    .then(() => showToast(t('settings.toast.es_test_success', 'Test document indexed successfully!'), 'success'))
+    .catch(err => showToast(t('settings.toast.es_test_failed', 'Elasticsearch test failed') + ': ' + err.message, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -511,8 +479,8 @@ function copyElasticsearchTemplate(btn) {
   navigator.clipboard.writeText(pre.textContent).then(() => {
     const label = btn.querySelector('span');
     if (label) {
-      label.textContent = t('common.copied', 'Copied!');
-      setTimeout(() => { label.textContent = t('common.copy', 'Copy'); }, 2000);
+      setI18nText(label, 'common.copied', 'Copied!');
+      setTimeout(() => setI18nText(label, 'common.copy', 'Copy'), 2000);
     }
   }).catch(() => {
     showToast(t('settings.toast.copy_failed', 'Failed to copy to clipboard'), 'error');
@@ -638,16 +606,10 @@ function updateAdvancedIntegrationFields() {
 
 function loadPermanentBlockLog() {
   fetch(appPath('/api/advanced-actions/blocks'))
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        showToast(t('settings.toast.block_log_error', 'Error loading permanent block log') + ': ' + data.error, 'error');
-        return;
-      }
-      renderPermanentBlockLog(data.blocks || []);
-    })
+    .then(readJsonResponse)
+    .then(data => renderPermanentBlockLog((data && data.blocks) || []))
     .catch(err => {
-      showToast(t('settings.toast.block_log_error', 'Error loading permanent block log') + ': ' + err, 'error');
+      showToast(t('settings.toast.block_log_error', 'Error loading permanent block log') + ': ' + err.message, 'error');
     });
 }
 
@@ -663,7 +625,7 @@ function renderPermanentBlockLogRow(block) {
     + '  <td class="px-3 py-2 text-sm ' + statusClass + '">' + escapeHtml(block.status) + '</td>'
     + '  <td class="px-3 py-2 text-sm">' + (message || '&nbsp;') + '</td>'
     + '  <td class="px-3 py-2 text-xs text-gray-500">' + escapeHtml(block.serverId || '') + '</td>'
-    + '  <td class="px-3 py-2 text-xs text-gray-500">' + (block.updatedAt ? new Date(block.updatedAt).toLocaleString() : '') + '</td>'
+    + '  <td class="px-3 py-2 text-xs text-gray-500">' + escapeHtml(formatDateTime(block.updatedAt)) + '</td>'
     + '  <td class="px-3 py-2 text-right">'
     + '    <button type="button" class="text-sm text-blue-600 hover:text-blue-800" onclick="advancedUnblockIP(\'' + escapeHtml(block.ip) + '\', event)" data-i18n="settings.advanced.unblock_btn">Remove</button>'
     + '  </td>'
@@ -675,7 +637,7 @@ function renderPermanentBlockLog(blocks) {
   if (!container) return;
   if (!blocks.length) {
     container.innerHTML = '<p class="text-sm text-gray-500 p-4" data-i18n="settings.advanced.log_empty">No permanent blocks recorded yet.</p>';
-    if (typeof updateTranslations === 'function') updateTranslations();
+    updateTranslations();
     return;
   }
   const maxVisible = 10;
@@ -703,8 +665,8 @@ function renderPermanentBlockLog(blocks) {
   if (hidden.length > 0) {
     const hiddenId = 'permanentBlockLog-hidden';
     const toggleId = 'permanentBlockLog-toggle';
-    const moreLabel = (typeof t === 'function' ? t('dashboard.banned.show_more', 'Show more') : 'Show more') + ' +' + hidden.length;
-    const lessLabel = typeof t === 'function' ? t('dashboard.banned.show_less', 'Hide extra') : 'Hide extra';
+    const moreLabel = t('dashboard.banned.show_more', 'Show more') + ' +' + hidden.length;
+    const lessLabel = t('dashboard.banned.show_less', 'Hide extra');
     html += ''
       + '  <tbody id="' + hiddenId + '" class="hidden" data-initially-hidden="true">' + hiddenRows + '</tbody>'
       + '</table>'
@@ -714,7 +676,7 @@ function renderPermanentBlockLog(blocks) {
       + ' data-more-label="' + escapeHtml(moreLabel) + '"'
       + ' data-less-label="' + escapeHtml(lessLabel) + '"'
       + ' data-expanded="false"'
-      + ' onclick="toggleBannedList(\'' + hiddenId + '\', \'' + toggleId + '\')">'
+      + ' onclick="toggleHiddenList(\'' + hiddenId + '\', \'' + toggleId + '\')">'
       + escapeHtml(moreLabel)
       + '</button>';
   } else {
@@ -722,28 +684,20 @@ function renderPermanentBlockLog(blocks) {
   }
 
   container.innerHTML = html;
-  if (typeof updateTranslations === 'function') updateTranslations();
-}
-
-function refreshPermanentBlockLog() {
-  loadPermanentBlockLog();
+  updateTranslations();
 }
 
 function clearPermanentBlockLog() {
   var msg = t('settings.advanced.clear_log_confirm',
     'This will permanently delete the entire block log. Fail2ban UI will assume that no IPs are currently blocked on the external firewall.\n\nThis action cannot be undone. Continue?');
   if (!confirm(msg)) return;
-  fetch(appPath('/api/advanced-actions/blocks'), { method: 'DELETE', headers: serverHeaders() })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (data.error) {
-        showToast(data.error, 'error');
-        return;
-      }
+  fetch(appPath('/api/advanced-actions/blocks'), { method: 'DELETE' })
+    .then(readJsonResponse)
+    .then(function() {
       showToast(t('settings.advanced.clear_log_success', 'Permanent block log cleared.'), 'success');
       loadPermanentBlockLog();
     })
-    .catch(function(err) { showToast(String(err), 'error'); });
+    .catch(function(err) { showToast(err.message, 'error'); });
 }
 
 // =========================================================================
@@ -755,28 +709,30 @@ function openAdvancedTestModal() {
   openModal('advancedTestModal');
 }
 
-function submitAdvancedTest(action) {
+// Runs a block or unblock on the configured integration and refreshes the block log.
+function postAdvancedAction(action, ip) {
+  return fetch(appPath('/api/advanced-actions/manual'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: action, ip: ip })
+  })
+    .then(readJsonResponse)
+    .then(function(data) {
+      loadPermanentBlockLog();
+      return data || {};
+    });
+}
+
+function submitAdvancedTest() {
   const ipValue = document.getElementById('advancedTestIP').value.trim();
   if (!ipValue) {
     showToast(t('settings.toast.enter_ip', 'Please enter an IP address.'), 'info');
     return;
   }
   showLoading(true);
-  fetch(appPath('/api/advanced-actions/test'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: action, ip: ipValue })
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        showToast(t('settings.toast.advanced_action_failed', 'Advanced action failed') + ': ' + data.error, 'error');
-      } else {
-        showToast(data.message || t('settings.toast.action_completed', 'Action completed'), data.info ? 'info' : 'success');
-        loadPermanentBlockLog();
-      }
-    })
-    .catch(err => showToast(t('settings.toast.advanced_action_failed', 'Advanced action failed') + ': ' + err, 'error'))
+  postAdvancedAction('block', ipValue)
+    .then(data => showToast(apiMessage(data, 'settings.toast.action_completed', 'Action completed'), data.info ? 'info' : 'success'))
+    .catch(err => showToast(t('settings.toast.advanced_action_failed', 'Advanced action failed') + ': ' + err.message, 'error'))
     .finally(() => {
       showLoading(false);
       closeModal('advancedTestModal');
@@ -789,21 +745,9 @@ function advancedUnblockIP(ip, event) {
     event.stopPropagation();
   }
   if (!ip) return;
-  fetch(appPath('/api/advanced-actions/test'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'unblock', ip: ip })
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) {
-        showToast(t('settings.toast.remove_ip_failed', 'Failed to remove IP') + ': ' + data.error, 'error');
-      } else {
-        showToast(data.message || t('settings.toast.ip_removed', 'IP removed'), 'success');
-        loadPermanentBlockLog();
-      }
-    })
-    .catch(err => showToast(t('settings.toast.remove_ip_failed', 'Failed to remove IP') + ': ' + err, 'error'));
+  postAdvancedAction('unblock', ip)
+    .then(data => showToast(apiMessage(data, 'settings.toast.ip_removed', 'IP removed'), 'success'))
+    .catch(err => showToast(t('settings.toast.remove_ip_failed', 'Failed to remove IP') + ': ' + err.message, 'error'));
 }
 
 // =========================================================================
@@ -823,6 +767,10 @@ const threatIntelProviderSelect = document.getElementById('threatIntelProvider')
 if (threatIntelProviderSelect) {
   threatIntelProviderSelect.addEventListener('change', updateThreatIntelProviderFields);
 }
+const smtpAuthMethodSelect = document.getElementById('smtpAuthMethod');
+if (smtpAuthMethodSelect) {
+  smtpAuthMethodSelect.addEventListener('change', updateSmtpAuthFields);
+}
 
 function toggleCallbackSecretVisibility() {
   const input = document.getElementById('callbackSecret');
@@ -833,15 +781,17 @@ function toggleCallbackSecretVisibility() {
   // The backend masks stored secrets with a sentinel; revealing it would only
   // show the placeholder string, so explain instead of "revealing".
   if (input.value === '__f2bui_secret_unchanged__') {
-    link.textContent = t('settings.callback_secret.hidden', 'secret is stored on the server and never displayed');
+    setI18nText(link, 'settings.callback_secret.hidden', 'secret is stored on the server and never displayed');
     return;
   }
 
   const isPassword = input.type === 'password';
   input.type = isPassword ? 'text' : 'password';
-  link.textContent = isPassword
-    ? t('settings.callback_secret.hide', 'hide secret')
-    : t('settings.callback_secret.show', 'show secret');
+  if (isPassword) {
+    setI18nText(link, 'settings.callback_secret.hide', 'hide secret');
+  } else {
+    setI18nText(link, 'settings.callback_secret.show', 'show secret');
+  }
 }
 
 function onGeoIPProviderChange(provider) {

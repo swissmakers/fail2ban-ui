@@ -22,21 +22,10 @@ function createJail() {
       content: content
     })
   })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data.error) {
-        showToast(t('jails.toast.create_error', 'Error creating jail') + ': ' + data.error, 'error');
-        return;
-      }
       closeModal('createJailModal');
-      showToast(data.message || t('jails.toast.create_success', 'Jail created successfully'), 'success');
+      showToast(apiMessage(data, 'jails.toast.create_success', 'Jail created successfully'), 'success');
       openManageJailsModal();
     })
     .catch(function(err) {
@@ -64,24 +53,14 @@ function saveJailConfig() {
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ filter: filterConfig, jail: jailConfig }),
   })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data.error) {
-        showToast(t('jails.toast.save_config_error', 'Error saving config') + ': ' + data.error, 'error');
-        return;
-      }
+      data = data || {};
       closeModal('jailConfigModal');
       if (data.warning) {
         var warnMsg = t('filter_debug.save_reload_warning', 'Config saved, but fail2ban reload failed') + ': ' + data.warning;
         if (data.jailAutoDisabled && data.jailName) {
-          warnMsg = (typeof t === 'function' ? t('filter_debug.jail_auto_disabled', "Jail '%s' was automatically disabled.").replace('%s', data.jailName) : "Jail '" + data.jailName + "' was automatically disabled.") + ' ' + warnMsg;
+          warnMsg = t('filter_debug.jail_auto_disabled', "Jail '%s' was automatically disabled.").replace('%s', data.jailName) + ' ' + warnMsg;
           var toggleId = 'toggle-' + data.jailName.replace(/[^a-zA-Z0-9]/g, '_');
           var cb = document.getElementById(toggleId);
           if (cb) cb.checked = false;
@@ -95,7 +74,7 @@ function saveJailConfig() {
       }
     })
     .catch(function(err) {
-      console.error("Error saving config:", err);
+      console.error('Error saving config:', err);
       showToast(t('jails.toast.save_config_error', 'Error saving config') + ': ' + err.message, 'error');
     })
     .finally(function() {
@@ -157,22 +136,14 @@ function saveManageJailsSingle(checkbox) {
   const updatedJails = {};
   updatedJails[jailName] = isEnabled;
 
-  console.log('Saving jail state:', jailName, 'enabled:', isEnabled, 'payload:', updatedJails);
-
   fetch(withServerParam('/api/jails/manage'), {
     method: 'POST',
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(updatedJails),
   })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
+      data = data || {};
       if (data.error) {
         var errorMsg = data.error;
         var toastType = 'error';
@@ -200,7 +171,6 @@ function saveManageJailsSingle(checkbox) {
             }
           }
           loadServers().then(function() {
-            updateRestartBanner();
             return refreshData({ silent: true, summaryOnly: true });
           });
         });
@@ -210,14 +180,13 @@ function saveManageJailsSingle(checkbox) {
         showToast(data.warning, 'warning');
       }
 
-      console.log('Jail state saved successfully:', data);
       var disabledJails = (data.disabledJails && Array.isArray(data.disabledJails)) ? data.disabledJails : [];
       if (disabledJails.length) {
         var offenderMsg = t('jails.manage.offender_disabled', "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled.")
           .replace('{jail}', disabledJails.join("', '"));
         showToast(offenderMsg, 'warning', 15000);
       } else {
-        showToast(data.message || t(isEnabled ? 'jails.toast.enabled_success' : 'jails.toast.disabled_success', 'Jail {jail} ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully').replace('{jail}', jailName), 'success');
+        showToast(apiMessage(data, isEnabled ? 'jails.toast.enabled_success' : 'jails.toast.disabled_success', 'Jail {jail} ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully').replace('{jail}', jailName), 'success');
       }
       checkbox.checked = disabledJails.indexOf(jailName) !== -1 ? false : isEnabled;
       disabledJails.forEach(function(name) {
@@ -227,7 +196,6 @@ function saveManageJailsSingle(checkbox) {
         }
       });
       return loadServers().then(function() {
-        updateRestartBanner();
         return refreshData({ silent: true, summaryOnly: true });
       });
     })
@@ -251,20 +219,9 @@ function deleteJail(jailName) {
     method: 'DELETE',
     headers: serverHeaders()
   })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data.error) {
-        showToast(t('jails.toast.delete_error', 'Error deleting jail') + ': ' + data.error, 'error');
-        return;
-      }
-      showToast(data.message || t('jails.toast.delete_success', 'Jail deleted successfully'), 'success');
+      showToast(apiMessage(data, 'jails.toast.delete_success', 'Jail deleted successfully'), 'success');
       openManageJailsModal();
       refreshData({ silent: true, summaryOnly: true });
     })
@@ -374,18 +331,10 @@ function testLogpath() {
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ logpath: logpath })
   })
-    .then(function(res) { return res.json(); })
+    .then(readJsonResponse)
     .then(function(data) {
       showLoading(false);
-      if (data.error) {
-        resultsDiv.textContent = t('common.error', 'Error') + ': ' + data.error;
-        resultsDiv.classList.add('text-red-600');
-        setTimeout(function() {
-          resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 100);
-        return;
-      }
-      var originalLogpath = data.original_logpath || '';
+      data = data || {};
       var results = data.results || [];
       var isLocalServer = data.is_local_server || false;
       var output = '';
@@ -436,7 +385,7 @@ function testLogpath() {
         } else if (inaccessible) {
           output += '<span class="text-yellow-600 font-bold">&#9888;</span>';
           output += '<span class="text-yellow-600 text-sm">'
-            + escapeHtml(message || t('jails.logpath_test.inaccessible', 'Cannot verify: the log directory is not readable by the connectors SSH user. Fail2Ban runs as root and will read it, so the jail can still be enabled.'))
+            + escapeHtml(message || t('jails.logpath_test.inaccessible', 'Cannot verify: the log directory is not readable by the connector\'s SSH user. Fail2Ban runs as root and will read it, so the jail can still be enabled.'))
             + '</span>';
         } else {
           output += '<span class="text-red-600 font-bold">&#10007;</span>';
@@ -482,7 +431,7 @@ function testLogpath() {
     })
     .catch(function(err) {
       showLoading(false);
-      resultsDiv.textContent = 'Error: ' + err;
+      resultsDiv.textContent = t('common.error', 'Error') + ': ' + err.message;
       resultsDiv.classList.add('text-red-600');
       setTimeout(function() {
         resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

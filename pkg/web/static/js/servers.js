@@ -39,9 +39,9 @@ function clearStoredServerId() {
 
 function loadServers() {
   return fetch(appPath('/api/servers'))
-    .then(function(res) { return res.json(); })
+    .then(readJsonResponse)
     .then(function(data) {
-      serversCache = data.servers || [];
+      serversCache = (data && data.servers) || [];
       var enabledServers = serversCache.filter(function(s) { return s.enabled; });
       if (!enabledServers.length) {
         currentServerId = null;
@@ -66,19 +66,133 @@ function loadServers() {
         currentServer = selected;
         currentServerId = selected ? selected.id : null;
       }
-      renderServerSelector();
-      renderServerSubtitle();
-      updateRestartBanner();
+      renderServerState();
     })
     .catch(function(err) {
       console.error('Error loading servers:', err);
-      serversCache = [];
+      // A failed background refresh keeps the last known servers and selection.
+      if (serversCache.length) {
+        return;
+      }
       currentServerId = null;
       currentServer = null;
-      renderServerSelector();
-      renderServerSubtitle();
-      updateRestartBanner();
+      renderServerState();
     });
+}
+
+// Reloads the server list and every view that depends on it.
+function reloadServerViews() {
+  return loadServers().then(function() {
+    renderServerManagerList();
+    return refreshData({ silent: true });
+  });
+}
+
+function renderServerState() {
+  renderServerSelector();
+  renderServerSubtitle();
+  updateRestartBanner();
+  updateStatusIndicator();
+}
+
+function isServerManagerOpen() {
+  var modal = document.getElementById('serverManagerModal');
+  return !!modal && !modal.classList.contains('hidden');
+}
+
+// =========================================================================
+//  Server health
+// =========================================================================
+
+var SERVER_HEALTH_STYLES = {
+  ok: { dotClass: 'bg-green-500', textClass: 'text-green-600', key: 'servers.health.state.ok', fallback: 'Healthy' },
+  degraded: { dotClass: 'bg-yellow-500', textClass: 'text-yellow-600', key: 'servers.health.state.degraded', fallback: 'Degraded' },
+  down: { dotClass: 'bg-red-500', textClass: 'text-red-600', key: 'servers.health.state.down', fallback: 'Down' },
+  unknown: { dotClass: 'bg-gray-400', textClass: 'text-gray-500', key: 'servers.health.state.unknown', fallback: 'Unknown' }
+};
+var SERVER_HEALTH_REFRESH_DELAY_MS = 2000;
+var serverHealthRefreshTimer = null;
+
+// Display attributes for a health object; null when the server reports none (disabled).
+function serverHealthBadge(health) {
+  if (!health) {
+    return null;
+  }
+  var state = Object.prototype.hasOwnProperty.call(SERVER_HEALTH_STYLES, health.state) ? health.state : 'unknown';
+  var style = SERVER_HEALTH_STYLES[state];
+  return { state: state, dotClass: style.dotClass, textClass: style.textClass, label: t(style.key, style.fallback) };
+}
+
+// Worst state over enabled servers; unknown only when none has been checked yet.
+function aggregateServerHealth(servers) {
+  var result = { state: 'unknown', down: 0, degraded: 0 };
+  var checked = 0;
+  (servers || []).forEach(function(server) {
+    if (!server || !server.enabled || !server.health) {
+      return;
+    }
+    var state = server.health.state;
+    if (state === 'down') {
+      result.down++;
+    } else if (state === 'degraded') {
+      result.degraded++;
+    } else if (state !== 'ok') {
+      return;
+    }
+    checked++;
+  });
+  if (result.down) {
+    result.state = 'down';
+  } else if (result.degraded) {
+    result.state = 'degraded';
+  } else if (checked) {
+    result.state = 'ok';
+  }
+  return result;
+}
+
+// Patches a server_health WS message into the cached list; returns the server or null.
+function applyServerHealthUpdate(servers, msg) {
+  if (!msg || !msg.serverId) {
+    return null;
+  }
+  var server = (servers || []).find(function(s) { return s && s.id === msg.serverId; });
+  if (!server) {
+    return null;
+  }
+  server.health = Object.assign({}, server.health, { state: msg.state, checkedAt: msg.checkedAt });
+  return server;
+}
+
+function serverHealthDot(badge) {
+  if (!badge) {
+    return '';
+  }
+  return '<span class="inline-block w-2 h-2 rounded-full flex-shrink-0 ' + badge.dotClass + '"'
+    + ' title="' + escapeHtml(badge.label) + '" aria-label="' + escapeHtml(badge.label) + '"></span>';
+}
+
+function handleServerHealthMessage(msg) {
+  if (!applyServerHealthUpdate(serversCache, msg)) {
+    return;
+  }
+  renderServerState();
+  if (isServerManagerOpen()) {
+    renderServerManagerList();
+  }
+  // Only admins get the detail fields (errors, sync state) the message does not carry.
+  if (hasAccess('admin')) {
+    clearTimeout(serverHealthRefreshTimer);
+    serverHealthRefreshTimer = setTimeout(refreshServerHealth, SERVER_HEALTH_REFRESH_DELAY_MS);
+  }
+}
+
+function refreshServerHealth() {
+  return loadServers().then(function() {
+    if (isServerManagerOpen()) {
+      renderServerManagerList();
+    }
+  });
 }
 
 // =========================================================================
@@ -89,33 +203,33 @@ function renderServerSelector() {
   var container = document.getElementById('serverSelectorContainer');
   if (!container) return;
   var enabledServers = sortServersForDisplay(serversCache.filter(function(s) { return s.enabled; }));
-  if (!serversCache.length) {
-    container.innerHTML = '<div class="text-sm text-red-500" data-i18n="servers.selector.empty">No servers configured</div>';
-    if (typeof updateTranslations === 'function') {
-      updateTranslations();
-    }
-    return;
-  }
   if (!enabledServers.length) {
     container.innerHTML = '<div class="text-sm text-red-500" data-i18n="servers.selector.empty">No servers configured</div>';
-    if (typeof updateTranslations === 'function') {
-      updateTranslations();
-    }
+    updateTranslations();
     return;
   }
 
   var options = enabledServers.map(function(server) {
-    var label = escapeHtml(server.name || server.id);
-    var type = server.type ? (' (' + server.type.toUpperCase() + ')') : '';
-    return '<option value="' + escapeHtml(server.id) + '">' + label + type + '</option>';
+    var label = server.name || server.id;
+    if (server.type) {
+      label += ' (' + server.type.toUpperCase() + ')';
+    }
+    var badge = serverHealthBadge(server.health);
+    if (badge && (badge.state === 'down' || badge.state === 'degraded')) {
+      label += ' - ' + badge.label;
+    }
+    return '<option value="' + escapeHtml(server.id) + '">' + escapeHtml(label) + '</option>';
   }).join('');
 
   container.innerHTML = ''
     + '<div class="flex flex-col">'
     + '  <label for="serverSelect" class="text-xs text-gray-500 mb-1" data-i18n="servers.selector.label">Active Server</label>'
-    + '  <select id="serverSelect" class="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">'
+    + '  <div class="flex items-center gap-2">'
+    + '    <select id="serverSelect" class="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">'
     +        options
-    + '  </select>'
+    + '    </select>'
+    +      serverHealthDot(currentServer && serverHealthBadge(currentServer.health))
+    + '  </div>'
     + '</div>';
 
   var select = document.getElementById('serverSelect');
@@ -125,9 +239,7 @@ function renderServerSelector() {
       setCurrentServer(e.target.value);
     });
   }
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-  }
+  updateTranslations();
 }
 
 function renderServerSubtitle() {
@@ -151,7 +263,46 @@ function renderServerSubtitle() {
   } else if (currentServer.hostname) {
     parts.push(currentServer.hostname);
   }
-  subtitle.textContent = parts.join(' - ');
+  var badge = serverHealthBadge(currentServer.health);
+  if (badge && badge.state !== 'ok') {
+    parts.push(badge.label);
+  }
+  subtitle.innerHTML = '<span class="inline-flex items-center gap-2">' + serverHealthDot(badge)
+    + '<span>' + escapeHtml(parts.join(' - ')) + '</span></span>';
+}
+
+// Health lines for the server manager card; empty for disabled servers.
+function renderServerHealthDetails(server) {
+  var html = '';
+  var health = server.health;
+  var badge = serverHealthBadge(health);
+  if (badge) {
+    var checked = formatDateTime(health.checkedAt);
+    html += '<p class="mt-1 text-xs flex items-center gap-2">' + serverHealthDot(badge)
+      + '<span class="font-semibold ' + badge.textClass + '">' + escapeHtml(badge.label) + '</span>'
+      + (checked ? '<span class="text-gray-500">' + escapeHtml(t('servers.health.checked_at', 'Last checked')) + ': ' + escapeHtml(checked) + '</span>' : '')
+      + '</p>';
+    if (health.error) {
+      html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(health.error) + '</p>';
+    }
+    if (health.fail2banOk === false) {
+      html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(t('servers.health.fail2ban_down', 'Fail2ban is not responding on this server.')) + '</p>';
+    }
+    if (health.callbackOk === false) {
+      html += '<p class="mt-1 text-xs text-yellow-600">' + escapeHtml(t('servers.health.callback_down', 'The server cannot reach the callback URL; ban events are not recorded.')) + '</p>';
+    }
+  }
+  var sync = server.configSync;
+  if (sync && sync.pending) {
+    html += '<p class="mt-1 text-xs text-yellow-600">'
+      + escapeHtml(t('servers.card.sync_pending', 'Configuration pending; automatic retry enabled'))
+      + (sync.error ? ': ' + escapeHtml(sync.error) : '') + '</p>';
+  }
+  var applied = sync ? formatDateTime(sync.lastApplied) : '';
+  if (applied) {
+    html += '<p class="mt-1 text-xs text-gray-500">' + escapeHtml(t('servers.health.last_applied', 'Configuration last applied')) + ': ' + escapeHtml(applied) + '</p>';
+  }
+  return html;
 }
 
 function renderServerManagerList() {
@@ -162,7 +313,7 @@ function renderServerManagerList() {
   if (!serversCache.length) {
     list.innerHTML = '';
     emptyState.classList.remove('hidden');
-    if (typeof updateTranslations === 'function') updateTranslations();
+    updateTranslations();
     return;
   }
 
@@ -192,17 +343,6 @@ function renderServerManagerList() {
       descriptor.push(server.hostname);
     }
     var meta = descriptor.join(' - ');
-    var healthDetails = '';
-    if (server.configSync && server.configSync.pending) {
-      healthDetails += '<p class="mt-1 text-xs text-yellow-600">'
-        + escapeHtml(t('servers.card.sync_pending', 'Configuration pending; automatic retry enabled'))
-        + (server.configSync.error ? ': ' + escapeHtml(server.configSync.error) : '') + '</p>';
-    }
-    if (server.sshHealth) {
-      [server.sshHealth.sshError, server.sshHealth.callbackError].forEach(function(error) {
-        if (error) healthDetails += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(error) + '</p>';
-      });
-    }
     var tags = (server.tags || []).length
       ? '<div class="mt-2 text-xs text-gray-500">' + escapeHtml(server.tags.join(', ')) + '</div>'
       : '';
@@ -245,7 +385,7 @@ function renderServerManagerList() {
           + '</p>'
         : '')
       +        localDetails
-      +        healthDetails
+      +        renderServerHealthDetails(server)
       +        tags
       + '    </div>'
       + '    <div class="flex flex-col gap-2">'
@@ -253,7 +393,7 @@ function renderServerManagerList() {
       + (server.isDefault ? '' : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="makeDefaultServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.set_default">Set default</button>')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="setServerEnabled(\'' + escapeHtml(server.id) + '\',' + (server.enabled ? 'false' : 'true') + ')" data-i18n="' + (server.enabled ? 'servers.actions.disable' : 'servers.actions.enable') + '">' + (server.enabled ? 'Disable' : 'Enable') + '</button>'
       + (server.enabled ? (server.type === 'local'
-        ? '<button class="text-sm text-blue-600 hover:text-blue-800 relative group" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" title="">Reload Fail2ban</button>'
+        ? '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" data-i18n-title="servers.actions.reload_tooltip" title="' + escapeHtml(t('servers.actions.reload_tooltip', 'For local connectors, only a configuration reload is possible via the socket connection. The container cannot restart the Fail2ban service using systemctl. To perform a full restart, run \'systemctl restart fail2ban\' directly on the host system.')) + '">Reload Fail2ban</button>'
         : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.restart">Restart Fail2ban</button>') : '')
       + (server.hostKeyError && server.hostKeyFingerprint
         ? '<button class="text-sm font-semibold text-red-600 hover:text-red-800" onclick="acceptHostKey(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.accept_hostkey">Accept new host key</button>'
@@ -266,20 +406,7 @@ function renderServerManagerList() {
   }).join('');
 
   list.innerHTML = html;
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-    setTimeout(function() {
-      serversCache.forEach(function(server) {
-        if (server.enabled && server.type === 'local') {
-          var buttons = list.querySelectorAll('button[data-i18n="servers.actions.reload"]');
-          buttons.forEach(function(btn) {
-            var tooltipText = t('servers.actions.reload_tooltip', 'For local connectors, only a configuration reload is possible via the socket connection. The container cannot restart the Fail2ban service using systemctl. To perform a full restart, run \'systemctl restart fail2ban\' directly on the host system.');
-            btn.setAttribute('title', tooltipText);
-          });
-        }
-      });
-    }, 100);
-  }
+  updateTranslations();
 }
 
 function showServerManagerInfoView() {
@@ -315,9 +442,7 @@ function setCurrentServer(serverId) {
   latestSummary = null;
   latestSummaryServerId = null;
   latestServerInsights = null;
-  renderServerSelector();
-  renderServerSubtitle();
-  updateRestartBanner();
+  renderServerState();
   refreshData();
 }
 
@@ -588,39 +713,31 @@ function submitServerForm(event) {
         return;
       }
       showToast(t('servers.form.success', 'Server saved successfully.'), 'success');
-      if (data.jailLocalWarning) {
-        showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
-      }
-      if (data.restartWarning) {
-        showToast(data.restartWarning, 'warning', 12000);
-      }
-      if (data.actionFileWarning) {
-        showToast(data.actionFileWarning, 'warning', 12000);
-      }
-      if (data.hostKeyError) {
-        showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.')
-          + (data.hostKeyFingerprint ? ' ' + data.hostKeyFingerprint : ''), 'warning', 12000);
-      }
+      showServerResponseWarnings(data);
       var saved = data.server || {};
       currentServerId = saved.id || currentServerId;
-      return loadServers().then(function() {
-        renderServerManagerList();
-        renderServerSelector();
-        renderServerSubtitle();
-        if (currentServerId) {
-          currentServer = serversCache.find(function(s) { return s.id === currentServerId; }) || currentServer;
-        }
-        return refreshData({ silent: true });
-      }).then(function() {
-        showServerManagerInfoView();
-      });
+      return reloadServerViews().then(showServerManagerInfoView);
     })
     .catch(function(err) {
-      showToast(t('servers.toast.save_error', 'Error saving server') + ': ' + err, 'error');
+      showToast(t('servers.toast.save_error', 'Error saving server') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
     });
+}
+
+// Shows the optional warnings a server save/test response may carry.
+function showServerResponseWarnings(data) {
+  if (data.jailLocalWarning) {
+    showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it (hit once save on the settings page to write the file). See docs for permissions.'), 'warning', 12000);
+  }
+  if (data.actionFileWarning) {
+    showToast(data.actionFileWarning, 'warning', 12000);
+  }
+  if (data.hostKeyError) {
+    showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.')
+      + (data.hostKeyFingerprint ? ' ' + data.hostKeyFingerprint : ''), 'warning', 12000);
+  }
 }
 
 function populateSSHKeySelect(keys, selected) {
@@ -649,9 +766,7 @@ function populateSSHKeySelect(keys, selected) {
   } else {
     select.value = '';
   }
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-  }
+  updateTranslations();
   syncSSHKeyPathReadonly();
   initSSHKeySelectHandler();
 }
@@ -737,28 +852,11 @@ function setServerEnabled(serverId, enabled) {
           currentServer = null;
         }
       }
-      if (data.jailLocalWarning) {
-        showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
-      }
-      if (data.restartWarning) {
-        showToast(data.restartWarning, 'warning', 12000);
-      }
-      if (data.actionFileWarning) {
-        showToast(data.actionFileWarning, 'warning', 12000);
-      }
-      if (data.hostKeyError) {
-        showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.')
-          + (data.hostKeyFingerprint ? ' ' + data.hostKeyFingerprint : ''), 'warning', 12000);
-      }
-      return loadServers().then(function() {
-        renderServerManagerList();
-        renderServerSelector();
-        renderServerSubtitle();
-        return refreshData({ silent: true });
-      });
+      showServerResponseWarnings(data);
+      return reloadServerViews();
     })
     .catch(function(err) {
-      showToast(t('servers.toast.save_error', 'Error saving server') + ': ' + err, 'error');
+      showToast(t('servers.toast.save_error', 'Error saving server') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -777,13 +875,11 @@ function testServerConnection(serverId) {
         showToast(formatApiError(data, 'servers.actions.test_failure', 'Connection failed'), 'error');
         return;
       }
-      showToast(t(data.messageKey || 'servers.actions.test_success', data.message || 'Connection successful'), 'success');
-      if (data.jailLocalWarning) {
-        showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it. See docs for permissions.'), 'warning', 12000);
-      }
+      showToast(apiMessage(data, 'servers.actions.test_success', 'Connection successful'), 'success');
+      showServerResponseWarnings(data);
     })
     .catch(function(err) {
-      showToast(t('servers.actions.test_failure', 'Connection failed') + ': ' + err, 'error');
+      showToast(t('servers.actions.test_failure', 'Connection failed') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -811,17 +907,12 @@ function acceptHostKey(serverId) {
         showToast(formatApiError(data, 'servers.actions.accept_hostkey_failed', 'Failed to accept the new host key'), 'error');
         return loadServers().then(function() { renderServerManagerList(); });
       }
-      return loadServers().then(function() {
-        renderServerManagerList();
-        renderServerSelector();
-        renderServerSubtitle();
-        return refreshData({ silent: true });
-      }).then(function() {
+      return reloadServerViews().then(function() {
         showToast(t('servers.actions.accept_hostkey_success', 'New host key accepted and stored'), 'success');
       });
     })
     .catch(function(err) {
-      showToast(t('servers.actions.accept_hostkey_failed', 'Failed to accept the new host key') + ': ' + err, 'error');
+      showToast(t('servers.actions.accept_hostkey_failed', 'Failed to accept the new host key') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -845,17 +936,12 @@ function deleteServer(serverId) {
         currentServerId = null;
         currentServer = null;
       }
-      return loadServers().then(function() {
-        renderServerManagerList();
-        renderServerSelector();
-        renderServerSubtitle();
-        return refreshData({ silent: true });
-      }).then(function() {
+      return reloadServerViews().then(function() {
         showToast(t('servers.actions.delete_success', 'Server removed'), 'success');
       });
     })
     .catch(function(err) {
-      showToast(t('servers.toast.delete_error', 'Error deleting server') + ': ' + err, 'error');
+      showToast(t('servers.toast.delete_error', 'Error deleting server') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -872,17 +958,12 @@ function makeDefaultServer(serverId) {
         return;
       }
       currentServerId = data.server ? data.server.id : serverId;
-      return loadServers().then(function() {
-        renderServerManagerList();
-        renderServerSelector();
-        renderServerSubtitle();
-        return refreshData({ silent: true });
-      }).then(function() {
+      return reloadServerViews().then(function() {
         showToast(t('servers.actions.set_default_success', 'Server set as default'), 'success');
       });
     })
     .catch(function(err) {
-      showToast(t('servers.toast.set_default_error', 'Error setting default server') + ': ' + err, 'error');
+      showToast(t('servers.toast.set_default_error', 'Error setting default server') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -921,20 +1002,14 @@ function restartFail2banServer(serverId) {
         fallback = 'Fail2ban service restarted and passed health check';
       }
       return loadServers().then(function() {
-        updateRestartBanner();
         showToast(t(key, fallback), 'success');
         return refreshData({ silent: true });
       });
     })
     .catch(function(err) {
-      showToast(t('servers.toast.restart_failed', 'Failed to restart Fail2ban') + ': ' + err, 'error');
+      showToast(t('servers.toast.restart_failed', 'Failed to restart Fail2ban') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
     });
-}
-
-function restartFail2ban() {
-  if (!confirm(t('servers.confirm.restart', 'Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban now? This will take some time.'))) return;
-  restartFail2banServer(currentServerId);
 }

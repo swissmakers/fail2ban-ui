@@ -9,6 +9,7 @@ let authEnabled = false;
 let isAuthenticated = false;
 let currentUser = null;
 let authorizationEnabled = false;
+let sessionExpiredHandled = false;
 
 // =========================================================================
 //  Check Authentication Status
@@ -39,9 +40,7 @@ async function checkAuthStatus() {
   }
 
   try {
-    const response = await fetch(appPath('/auth/status'), {
-      headers: serverHeaders()
-    });
+    const response = await fetch(appPath('/auth/status'));
 
     if (!response.ok) {
       throw new Error('Failed to check auth status');
@@ -120,6 +119,52 @@ function handleLogout() {
   isAuthenticated = false;
   currentUser = null;
   window.location.href = appPath('/auth/logout');
+}
+
+// =========================================================================
+//  Session Expiry
+// =========================================================================
+
+// Stops live updates, closes modals and sends the user back to the login.
+function handleSessionExpired() {
+  if (!authEnabled || sessionExpiredHandled) {
+    return;
+  }
+  sessionExpiredHandled = true;
+  isAuthenticated = false;
+  if (wsManager) {
+    wsManager.disconnect();
+  }
+  showLoading(false);
+  document.querySelectorAll('[id$="Modal"]:not(.hidden)').forEach(function(modal) {
+    closeModal(modal.id);
+  });
+  if (document.body.getAttribute('data-skip-login-page') === 'true') {
+    window.location.href = appPath('/auth/login');
+    return;
+  }
+  showLoginPage();
+  const loginError = document.getElementById('loginError');
+  const loginErrorText = document.getElementById('loginErrorText');
+  if (loginError && loginErrorText) {
+    loginErrorText.textContent = t('auth.session_expired', 'Your session has expired. Please log in again.');
+    loginError.classList.remove('hidden');
+  }
+}
+
+// Dropped WebSocket may mean the session ended -> the WS handshake cannot tell us.
+function probeSession() {
+  if (!authEnabled || sessionExpiredHandled) {
+    return;
+  }
+  fetch(appPath('/auth/status'))
+    .then(readJsonResponse)
+    .then(function(data) {
+      if (data && data.enabled && !data.authenticated) {
+        handleSessionExpired();
+      }
+    })
+    .catch(function() {});
 }
 
 // =========================================================================

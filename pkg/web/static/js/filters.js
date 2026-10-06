@@ -23,26 +23,15 @@ function createFilter() {
       content: content
     })
   })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data.error) {
-        showToast(t('filters.toast.create_error', 'Error creating filter') + ': ' + data.error, 'error');
-        return;
-      }
       closeModal('createFilterModal');
-      showToast(data.message || t('filters.toast.create_success', 'Filter created successfully'), 'success');
+      showToast(apiMessage(data, 'filters.toast.create_success', 'Filter created successfully'), 'success');
       loadFilters();
     })
     .catch(function(err) {
       console.error('Error creating filter:', err);
-      showToast(t('filters.toast.create_error', 'Error creating filter') + ': ' + (err.message || err), 'error');
+      showToast(t('filters.toast.create_error', 'Error creating filter') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -58,12 +47,9 @@ function loadFilters() {
   fetch(withServerParam('/api/filters'), {
     headers: serverHeaders()
   })
-    .then(res => res.json())
+    .then(readJsonResponse)
     .then(data => {
-      if (data.error) {
-        showToast(t('filters.toast.load_error', 'Error loading filters') + ': ' + data.error, 'error');
-        return;
-      }
+      data = data || {};
       const select = document.getElementById('filterSelect');
       const notice = document.getElementById('filterNotice');
       if (notice) {
@@ -80,7 +66,7 @@ function loadFilters() {
       if (!data.filters || data.filters.length === 0) {
         const opt = document.createElement('option');
         opt.value = '';
-        opt.textContent = 'No Filters Found';
+        opt.textContent = t('filter_debug.no_filters', 'No filters found');
         select.appendChild(opt);
         if (deleteBtn) deleteBtn.disabled = true;
       } else {
@@ -90,26 +76,6 @@ function loadFilters() {
           opt.textContent = f;
           select.appendChild(opt);
         });
-        if (!select.hasAttribute('data-listener-added')) {
-          select.setAttribute('data-listener-added', 'true');
-          select.addEventListener('change', function() {
-            if (deleteBtn) deleteBtn.disabled = !select.value;
-            if (select.value) {
-              loadFilterContent(select.value);
-            } else {
-              const filterContentTextarea = document.getElementById('filterContentTextarea');
-              const editBtn = document.getElementById('editFilterContentBtn');
-              if (filterContentTextarea) {
-                filterContentTextarea.value = '';
-                filterContentTextarea.readOnly = true;
-                filterContentTextarea.classList.add('bg-gray-50');
-                filterContentTextarea.classList.remove('bg-white');
-              }
-              if (editBtn) editBtn.classList.add('hidden');
-              updateFilterContentHints(false);
-            }
-          });
-        }
         if (deleteBtn) deleteBtn.disabled = !select.value;
         if (select.value) {
           loadFilterContent(select.value);
@@ -117,7 +83,7 @@ function loadFilters() {
       }
     })
     .catch(err => {
-      showToast(t('filters.toast.load_error', 'Error loading filters') + ': ' + err, 'error');
+      showToast(t('filters.toast.load_error', 'Error loading filters') + ': ' + err.message, 'error');
     })
     .finally(() => showLoading(false));
 }
@@ -131,78 +97,69 @@ function loadFilterContent(filterName) {
   fetch(withServerParam('/api/filters/' + encodeURIComponent(filterName) + '/content'), {
     headers: serverHeaders()
   })
-    .then(res => res.json())
+    .then(readJsonResponse)
     .then(data => {
-      if (data.error) {
-        showToast(t('filters.toast.load_content_error', 'Error loading filter content') + ': ' + data.error, 'error');
-        filterContentTextarea.value = '';
-        filterContentTextarea.readOnly = true;
-        if (editBtn) editBtn.classList.add('hidden');
-        updateFilterContentHints(false);
-        return;
-      }
-      filterContentTextarea.value = data.content || '';
-      filterContentTextarea.readOnly = true;
-      filterContentTextarea.classList.add('bg-gray-50');
-      filterContentTextarea.classList.remove('bg-white');
+      filterContentTextarea.value = (data && data.content) || '';
+      setFilterEditMode(false);
       if (editBtn) editBtn.classList.remove('hidden');
-      updateFilterContentHints(false);
     })
     .catch(err => {
-      showToast(t('filters.toast.load_content_error', 'Error loading filter content') + ': ' + err, 'error');
-      filterContentTextarea.value = '';
-      filterContentTextarea.readOnly = true;
-      if (editBtn) editBtn.classList.add('hidden');
-      updateFilterContentHints(false);
+      showToast(t('filters.toast.load_content_error', 'Error loading filter content') + ': ' + err.message, 'error');
+      resetFilterContentView();
     })
     .finally(() => showLoading(false));
+}
+
+// Empty, read-only filter editor without the edit button.
+function resetFilterContentView() {
+  const filterContentTextarea = document.getElementById('filterContentTextarea');
+  const editBtn = document.getElementById('editFilterContentBtn');
+  if (filterContentTextarea) {
+    filterContentTextarea.value = '';
+  }
+  setFilterEditMode(false);
+  if (editBtn) editBtn.classList.add('hidden');
 }
 
 // =========================================================================
 //  Filter Editing (on the filter section)
 // =========================================================================
 
-function toggleFilterContentEdit() {
+// Edits in the filter section are only used for the test run, never saved.
+function setFilterEditMode(editable) {
   const filterContentTextarea = document.getElementById('filterContentTextarea');
   const editBtn = document.getElementById('editFilterContentBtn');
-  if (!filterContentTextarea) return;
-  if (filterContentTextarea.readOnly) {
-    filterContentTextarea.readOnly = false;
-    filterContentTextarea.classList.remove('bg-gray-50');
-    filterContentTextarea.classList.add('bg-white');
-    if (editBtn) {
-      editBtn.textContent = t('filter_debug.cancel_edit', 'Cancel');
-      editBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-      editBtn.classList.add('bg-gray-600', 'hover:bg-gray-700');
+  if (filterContentTextarea) {
+    filterContentTextarea.readOnly = !editable;
+    filterContentTextarea.classList.toggle('bg-gray-50', !editable);
+    filterContentTextarea.classList.toggle('bg-white', editable);
+  }
+  if (editBtn) {
+    if (editable) {
+      setI18nText(editBtn, 'filter_debug.cancel_edit', 'Cancel');
+    } else {
+      setI18nText(editBtn, 'filter_debug.edit_filter', 'Edit');
     }
-    updateFilterContentHints(true);
-  } else {
-    filterContentTextarea.readOnly = true;
-    filterContentTextarea.classList.add('bg-gray-50');
-    filterContentTextarea.classList.remove('bg-white');
-    if (editBtn) {
-      editBtn.textContent = t('filter_debug.edit_filter', 'Edit');
-      editBtn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
-      editBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
-    }
-    updateFilterContentHints(false);
+    editBtn.classList.toggle('bg-gray-600', editable);
+    editBtn.classList.toggle('hover:bg-gray-700', editable);
+    editBtn.classList.toggle('bg-blue-600', !editable);
+    editBtn.classList.toggle('hover:bg-blue-700', !editable);
+  }
+  updateFilterContentHints(editable);
+}
+
+function toggleFilterContentEdit() {
+  const filterContentTextarea = document.getElementById('filterContentTextarea');
+  if (filterContentTextarea) {
+    setFilterEditMode(filterContentTextarea.readOnly);
   }
 }
 
 function updateFilterContentHints(isEditable) {
   const readonlyHint = document.querySelector('p[data-i18n="filter_debug.filter_content_hint_readonly"]');
   const editableHint = document.getElementById('filterContentHintEditable');
-
-  if (isEditable) {
-    if (readonlyHint) readonlyHint.classList.add('hidden');
-    if (editableHint) editableHint.classList.remove('hidden');
-  } else {
-    if (readonlyHint) readonlyHint.classList.remove('hidden');
-    if (editableHint) editableHint.classList.add('hidden');
-  }
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-  }
+  if (readonlyHint) readonlyHint.classList.toggle('hidden', isEditable);
+  if (editableHint) editableHint.classList.toggle('hidden', !isEditable);
 }
 
 // =========================================================================
@@ -224,38 +181,18 @@ function deleteFilter() {
     method: 'DELETE',
     headers: serverHeaders()
   })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data.error) {
-        showToast(t('filters.toast.delete_error', 'Error deleting filter') + ': ' + data.error, 'error');
-        return;
-      }
-      showToast(data.message || t('filters.toast.delete_success', 'Filter deleted successfully'), 'success');
+      showToast(apiMessage(data, 'filters.toast.delete_success', 'Filter deleted successfully'), 'success');
       loadFilters();
       document.getElementById('testResults').innerHTML = '';
       document.getElementById('testResults').classList.add('hidden');
       document.getElementById('logLinesTextarea').value = '';
-      const filterContentTextarea = document.getElementById('filterContentTextarea');
-      const editBtn = document.getElementById('editFilterContentBtn');
-      if (filterContentTextarea) {
-        filterContentTextarea.value = '';
-        filterContentTextarea.readOnly = true;
-        filterContentTextarea.classList.add('bg-gray-50');
-        filterContentTextarea.classList.remove('bg-white');
-      }
-      if (editBtn) editBtn.classList.add('hidden');
-      updateFilterContentHints(false);
+      resetFilterContentView();
     })
     .catch(function(err) {
       console.error('Error deleting filter:', err);
-      showToast(t('filters.toast.delete_error', 'Error deleting filter') + ': ' + (err.message || err), 'error');
+      showToast(t('filters.toast.delete_error', 'Error deleting filter') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
@@ -298,16 +235,13 @@ function testSelectedFilter() {
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(requestBody)
   })
-    .then(res => res.json())
+    .then(readJsonResponse)
     .then(data => {
-      if (data.error) {
-        showToast(t('filters.toast.test_error', 'Error testing filter') + ': ' + data.error, 'error');
-        return;
-      }
+      data = data || {};
       renderTestResults(data.output || '', data.filterPath || '');
     })
     .catch(err => {
-      showToast(t('filters.toast.test_error', 'Error testing filter') + ': ' + err, 'error');
+      showToast(t('filters.toast.test_error', 'Error testing filter') + ': ' + err.message, 'error');
     })
     .finally(() => showLoading(false));
 }
@@ -318,7 +252,7 @@ function renderTestResults(output, filterPath) {
 
   if (filterPath) {
     html += '<div class="mb-3 p-2 bg-gray-800 rounded text-sm">';
-    html += '<span class="text-gray-400">' + t('filter_debug.used_filter', 'Used Filter:') + '</span> ';
+    html += '<span class="text-gray-400">' + escapeHtml(t('filter_debug.used_filter', 'Used Filter:')) + '</span> ';
     html += '<span class="text-yellow-300 font-mono">' + escapeHtml(filterPath) + '</span>';
     html += '</div>';
   }
@@ -329,9 +263,7 @@ function renderTestResults(output, filterPath) {
   }
   testResultsEl.innerHTML = html;
   testResultsEl.classList.remove('hidden');
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-  }
+  updateTranslations();
 }
 
 // =========================================================================
@@ -340,7 +272,10 @@ function renderTestResults(output, filterPath) {
 
 function showFilterSection() {
   const testResultsEl = document.getElementById('testResults');
-  const filterContentTextarea = document.getElementById('filterContentTextarea');
+  testResultsEl.innerHTML = '';
+  testResultsEl.classList.add('hidden');
+  document.getElementById('logLinesTextarea').value = '';
+  resetFilterContentView();
   if (!currentServerId) {
     var notice = document.getElementById('filterNotice');
     if (notice) {
@@ -348,48 +283,20 @@ function showFilterSection() {
       notice.textContent = t('filter_debug.not_available', 'Filter debug is only available when a Fail2ban server is selected.');
     }
     document.getElementById('filterSelect').innerHTML = '';
-    document.getElementById('logLinesTextarea').value = '';
-    if (filterContentTextarea) {
-      filterContentTextarea.value = '';
-      filterContentTextarea.readOnly = true;
-    }
-    testResultsEl.innerHTML = '';
-    testResultsEl.classList.add('hidden');
     document.getElementById('deleteFilterBtn').disabled = true;
     return;
   }
   loadFilters();
-  testResultsEl.innerHTML = '';
-  testResultsEl.classList.add('hidden');
-  document.getElementById('logLinesTextarea').value = '';
-  const editBtn = document.getElementById('editFilterContentBtn');
-  if (filterContentTextarea) {
-    filterContentTextarea.value = '';
-    filterContentTextarea.readOnly = true;
-    filterContentTextarea.classList.add('bg-gray-50');
-    filterContentTextarea.classList.remove('bg-white');
-  }
-  if (editBtn) editBtn.classList.add('hidden');
-  updateFilterContentHints(false);
-  const filterSelect = document.getElementById('filterSelect');
-  const deleteBtn = document.getElementById('deleteFilterBtn');
-  if (!filterSelect.hasAttribute('data-listener-added')) {
-    filterSelect.setAttribute('data-listener-added', 'true');
-    filterSelect.addEventListener('change', function() {
-      deleteBtn.disabled = !filterSelect.value;
-      if (filterSelect.value) {
-        loadFilterContent(filterSelect.value);
-      } else {
-        const editBtn = document.getElementById('editFilterContentBtn');
-        if (filterContentTextarea) {
-          filterContentTextarea.value = '';
-          filterContentTextarea.readOnly = true;
-          filterContentTextarea.classList.add('bg-gray-50');
-          filterContentTextarea.classList.remove('bg-white');
-        }
-        if (editBtn) editBtn.classList.add('hidden');
-        updateFilterContentHints(false);
-      }
-    });
-  }
+}
+
+const filterSelectElement = document.getElementById('filterSelect');
+if (filterSelectElement) {
+  filterSelectElement.addEventListener('change', function() {
+    document.getElementById('deleteFilterBtn').disabled = !filterSelectElement.value;
+    if (filterSelectElement.value) {
+      loadFilterContent(filterSelectElement.value);
+    } else {
+      resetFilterContentView();
+    }
+  });
 }

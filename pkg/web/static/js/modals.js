@@ -63,10 +63,8 @@ function ensureBanEventDetail(event) {
     event._detailLoaded = true;
     return Promise.resolve(event);
   }
-  return fetch(appPath('/api/events/bans/' + encodeURIComponent(event.id)), {
-    headers: serverHeaders()
-  })
-    .then(function(res) { return res.json(); })
+  return fetch(appPath('/api/events/bans/' + encodeURIComponent(event.id)))
+    .then(readJsonResponse)
     .then(function(data) {
       if (data && data.event) {
         event.whois = data.event.whois || '';
@@ -83,7 +81,7 @@ function openWhoisModal(eventIndex) {
     return;
   }
   var event = latestBanEvents[eventIndex];
-  document.getElementById('whoisModalIP').textContent = event.ip || 'N/A';
+  document.getElementById('whoisModalIP').textContent = event.ip || t('common.not_available', 'N/A');
   var contentEl = document.getElementById('whoisModalContent');
   contentEl.textContent = t('loading', 'Loading...');
   openModal('whoisModal');
@@ -98,13 +96,11 @@ function openWhoisModal(eventIndex) {
     })
     .catch(function(err) {
       closeModal('whoisModal');
-      showToast(t('modal.toast.whois_error', 'Error loading whois data') + ': ' + err, 'error');
+      showToast(t('modal.toast.whois_error', 'Error loading whois data') + ': ' + err.message, 'error');
     });
 }
 
 function renderLogsModalContent(event) {
-  document.getElementById('logsModalIP').textContent = event.ip || 'N/A';
-  document.getElementById('logsModalJail').textContent = event.jail || 'N/A';
   var logs = event.logs;
   var ip = event.ip || '';
   var contentEl = document.getElementById('logsModalContent');
@@ -122,8 +118,8 @@ function openLogsModal(eventIndex) {
     return;
   }
   var event = latestBanEvents[eventIndex];
-  document.getElementById('logsModalIP').textContent = event.ip || 'N/A';
-  document.getElementById('logsModalJail').textContent = event.jail || 'N/A';
+  document.getElementById('logsModalIP').textContent = event.ip || t('common.not_available', 'N/A');
+  document.getElementById('logsModalJail').textContent = event.jail || t('common.not_available', 'N/A');
   var contentEl = document.getElementById('logsModalContent');
   contentEl.textContent = t('loading', 'Loading...');
   openModal('logsModal');
@@ -138,7 +134,7 @@ function openLogsModal(eventIndex) {
     })
     .catch(function(err) {
       closeModal('logsModal');
-      showToast(t('modal.toast.logs_error', 'Error loading logs data') + ': ' + err, 'error');
+      showToast(t('modal.toast.logs_error', 'Error loading logs data') + ': ' + err.message, 'error');
     });
 }
 
@@ -288,31 +284,36 @@ function openBanInsightsModal() {
     }).join('');
     recurringContainer.innerHTML = recurringHTML;
   }
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-  }
+  updateTranslations();
   openModal('banInsightsModal');
-  if (typeof renderInsightsGlobe === 'function') {
-    setTimeout(renderInsightsGlobe, 150);
-  }
-  if (typeof initInsightsTimeline === 'function') {
-    setTimeout(initInsightsTimeline, 150);
-  }
+  var modal = document.getElementById('banInsightsModal');
+  // The chart libraries are ~3 MB, so they load only when insights are opened.
+  Promise.all([
+    loadScriptOnce(assetUrl('/static/vendor/globe/globe.gl.min.js')),
+    loadScriptOnce(assetUrl('/static/vendor/echarts/echarts.min.js'))
+  ])
+    .then(function() {
+      if (modal.classList.contains('hidden')) {
+        return;
+      }
+      renderInsightsGlobe();
+      initInsightsTimeline();
+    })
+    .catch(function(err) {
+      console.error('Error loading chart libraries:', err);
+      showToast(t('logs.modal.charts_load_error', 'Could not load the charts. Check the connection and open Ban Insights again.'), 'error');
+    });
 }
 
 // =========================================================================
 //  Server Manager Modal
 // =========================================================================
 
-function openServerManager(serverId) {
+function openServerManager() {
   showLoading(true);
   loadServers()
     .then(function() {
-      if (serverId) {
-        editServer(serverId);
-      } else {
-        showServerManagerInfoView();
-      }
+      showServerManagerInfoView();
       renderServerManagerList();
       openModal('serverManagerModal');
     })
@@ -334,15 +335,10 @@ function openManageJailsModal() {
   fetch(withServerParam('/api/jails/manage'), {
     headers: serverHeaders()
   })
-    .then(res => res.json().then(data => {
-      if (!res.ok) {
-        throw new Error((data && data.error) || 'Server returned ' + res.status);
-      }
-      return data;
-    }))
+    .then(readJsonResponse)
     .then(data => {
       if (!data || data.error || (data.jails !== null && !Array.isArray(data.jails))) {
-        throw new Error((data && data.error) || 'Invalid jail list response');
+        throw new Error((data && data.error) || t('common.invalid_response', 'Unexpected response from the server'));
       }
       const jails = data.jails || [];
       const html = jails.map(jail => {
@@ -406,7 +402,7 @@ function openManageJailsModal() {
 
       openModal('manageJailsModal');
     })
-    .catch(err => showToast(t('modal.toast.fetch_jails_error', 'Error fetching jails') + ': ' + err, 'error'))
+    .catch(err => showToast(t('modal.toast.fetch_jails_error', 'Error fetching jails') + ': ' + err.message, 'error'))
     .finally(() => showLoading(false));
 }
 
@@ -425,11 +421,11 @@ function openCreateJailModal() {
   fetch(withServerParam('/api/filters'), {
     headers: serverHeaders()
   })
-    .then(res => res.json())
+    .then(readJsonResponse)
     .then(data => {
       if (filterSelect) {
-        filterSelect.innerHTML = '<option value="">-- Select a filter --</option>';
-        if (data.filters && data.filters.length > 0) {
+        filterSelect.innerHTML = '<option value="" data-i18n="modal.jail_filter_placeholder">' + escapeHtml(t('modal.jail_filter_placeholder', '-- Select a filter --')) + '</option>';
+        if (data && data.filters && data.filters.length > 0) {
           data.filters.forEach(filter => {
             const opt = document.createElement('option');
             opt.value = filter;
@@ -481,12 +477,9 @@ function openJailConfigModal(jailName) {
   fetch(withServerParam(url), {
     headers: serverHeaders()
   })
-    .then(function(res) { return res.json(); })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data.error) {
-        showToast(t('modal.toast.load_config_error', 'Error loading config') + ': ' + data.error, 'error');
-        return;
-      }
+      data = data || {};
       filterTextArea.value = data.filter || '';
       jailTextArea.value = data.jailConfig || '';
 
@@ -529,7 +522,7 @@ function openJailConfigModal(jailName) {
       }, 200);
     })
     .catch(function(err) {
-      showToast(t('common.error', 'Error') + ': ' + err, 'error');
+      showToast(t('modal.toast.load_config_error', 'Error loading config') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);

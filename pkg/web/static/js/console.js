@@ -5,9 +5,8 @@
 //  Global Variables
 // =========================================================================
 
-let consoleOutputContainer = null;
 let consoleOutputElement = null;
-let maxConsoleLines = 1000;
+const maxConsoleLines = 1000;
 let wasConsoleEnabledOnLoad = false;
 
 // =========================================================================
@@ -16,30 +15,16 @@ let wasConsoleEnabledOnLoad = false;
 
 // Initialize the console output container and connect to the websocket
 function initConsoleOutput() {
-  consoleOutputContainer = document.getElementById('consoleOutputContainer');
   consoleOutputElement = document.getElementById('consoleOutputWindow');
+  wsManager.on('console_log', function(message) {
+    appendConsoleLog(message.message, message.time);
+  });
+}
 
-  if (!consoleOutputContainer || !consoleOutputElement) {
-    return;
-  }
-  if (typeof wsManager !== 'undefined' && wsManager) {
-    wsManager.onConsoleLog(function(message, timestamp) {
-      appendConsoleLog(message, timestamp);
-    });
-  } else {
-    // Wait for websocket manager to be available
-    const wsCheckInterval = setInterval(function() {
-      if (typeof wsManager !== 'undefined' && wsManager) {
-        wsManager.onConsoleLog(function(message, timestamp) {
-          appendConsoleLog(message, timestamp);
-        });
-        clearInterval(wsCheckInterval);
-      }
-    }, 100);
-    // Timeout after 5 seconds if websocket manager is not available
-    setTimeout(function() {
-      clearInterval(wsCheckInterval);
-    }, 5000);
+function removeConsolePlaceholder() {
+  const placeholder = document.getElementById('consolePlaceholder');
+  if (placeholder) {
+    placeholder.remove();
   }
 }
 
@@ -51,76 +36,19 @@ function toggleConsoleOutput(userClicked) {
   if (!checkbox || !container) {
     return;
   }
-
-  if (checkbox.checked) {
-    // Show the console output container
-    container.classList.remove('hidden');
-    if (!consoleOutputElement) {
-      initConsoleOutput();
-    } else {
-      if (typeof wsManager !== 'undefined' && wsManager) {
-        if (!wsManager.consoleLogCallbacks) {
-          wsManager.consoleLogCallbacks = [];
-        }
-        let callbackExists = false;
-        for (let i = 0; i < wsManager.consoleLogCallbacks.length; i++) {
-          if (wsManager.consoleLogCallbacks[i].toString().includes('appendConsoleLog')) {
-            callbackExists = true;
-            break;
-          }
-        }
-        if (!callbackExists) {
-          wsManager.onConsoleLog(function(message, timestamp) {
-            appendConsoleLog(message, timestamp);
-          });
-        }
-      }
-    }
-
-    const consoleEl = document.getElementById('consoleOutputWindow');
-   // Show save hint only if user just clicked to enable (not on page load)
-    if (consoleEl && userClicked && !wasConsoleEnabledOnLoad) {
-      const placeholder = consoleEl.querySelector('.text-gray-500');
-      if (placeholder && placeholder.textContent === 'Console output will appear here...') {
-        placeholder.remove();
-      }
-      const hintDiv = document.createElement('div');
-      hintDiv.className = 'text-yellow-400 italic text-center py-4';
-      hintDiv.id = 'consoleSaveHint';
-      const hintText = typeof t !== 'undefined' ? t('settings.console.save_hint', 'Please save your settings first before logs will be displayed here.') : 'Please save your settings first before logs will be displayed here.';
-      hintDiv.textContent = hintText;
-      consoleEl.appendChild(hintDiv);
-    } else if (consoleEl) {
-      const placeholder = consoleEl.querySelector('.text-gray-500');
-      // Remove placeholder if it exists
-      if (placeholder && placeholder.textContent === 'Console output will appear here...') {
-        placeholder.remove();
-      }
-    }
-  } else {
-    // Hide the console output container
-    container.classList.add('hidden');
+  container.classList.toggle('hidden', !checkbox.checked);
+  if (!checkbox.checked || !consoleOutputElement) {
+    return;
   }
-}
-
-// Auto-start console if enabled on load
-if (typeof window !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      const checkbox = document.getElementById('consoleOutput');
-      if (checkbox && checkbox.checked) {
-        wasConsoleEnabledOnLoad = true;
-        toggleConsoleOutput(false);
-      }
-      initConsoleOutput();
-    });
-  } else {
-    const checkbox = document.getElementById('consoleOutput');
-    if (checkbox && checkbox.checked) {
-      wasConsoleEnabledOnLoad = true;
-      toggleConsoleOutput(false);
-    }
-    initConsoleOutput();
+  // Remove placeholder if it exists
+  removeConsolePlaceholder();
+  // Logs only stream after the setting is saved, so say so when it was just switched on.
+  if (userClicked && !wasConsoleEnabledOnLoad && !document.getElementById('consoleSaveHint')) {
+    const hintDiv = document.createElement('div');
+    hintDiv.className = 'text-yellow-400 italic text-center py-4';
+    hintDiv.id = 'consoleSaveHint';
+    hintDiv.textContent = t('settings.console.save_hint', 'Please save your settings first before logs will be displayed here.');
+    consoleOutputElement.appendChild(hintDiv);
   }
 }
 
@@ -130,16 +58,10 @@ if (typeof window !== 'undefined') {
 
 function appendConsoleLog(message, timestamp) {
   if (!consoleOutputElement) {
-    consoleOutputElement = document.getElementById('consoleOutputWindow');
-  }
-  if (!consoleOutputElement) {
     return;
   }
   // Remove placeholder if it exists
-  const placeholder = consoleOutputElement.querySelector('.text-gray-500');
-  if (placeholder && placeholder.textContent === 'Console output will appear here...') {
-    placeholder.remove();
-  }
+  removeConsolePlaceholder();
   // Remove save hint if it exists
   const saveHint = document.getElementById('consoleSaveHint');
   if (saveHint) {
@@ -147,18 +69,14 @@ function appendConsoleLog(message, timestamp) {
   }
   // Create new log line element with timestamp
   const logLine = document.createElement('div');
-  logLine.className = 'text-green-400 leading-relaxed';
   let timeStr = '';
   if (timestamp) {
-    try {
-      const date = new Date(timestamp);
-      timeStr = '<span class="text-gray-500">[' + date.toLocaleTimeString() + ']</span> ';
-    } catch (e) {}
+    const date = new Date(timestamp);
+    if (!isNaN(date.getTime())) {
+      timeStr = '<span class="text-gray-500">[' + escapeHtml(date.toLocaleTimeString()) + ']</span> ';
+    }
   }
 
-  // Escape message to prevent XSS (core.js always loads before this file)
-  let escapedMessage = escapeHtml(message);
-  
   // Set different colors for different log levels using patterns below.
   // Default is green.
   let logClass = 'text-green-400';
@@ -173,9 +91,9 @@ function appendConsoleLog(message, timestamp) {
     }
   }
   logLine.className = logClass + ' leading-relaxed';
-
   // Build complete log line with timestamp and message
-  logLine.innerHTML = timeStr + escapedMessage;
+  // Escape message to prevent XSS (core.js always loads before this file)
+  logLine.innerHTML = timeStr + escapeHtml(message);
   // Add log line to console
   consoleOutputElement.appendChild(logLine);
 
@@ -188,9 +106,6 @@ function appendConsoleLog(message, timestamp) {
 
 // Clear the console
 function clearConsole() {
-  if (!consoleOutputElement) {
-    consoleOutputElement = document.getElementById('consoleOutputWindow');
-  }
   if (consoleOutputElement) {
     consoleOutputElement.textContent = '';
   }
