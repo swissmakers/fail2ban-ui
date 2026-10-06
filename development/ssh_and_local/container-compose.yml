@@ -12,7 +12,8 @@ services:
       # Required for fail2ban container: Allows to run as root (needed to manage network interfaces and raw sockets)
       - SYS_ADMIN
     #privileged: true
-    network_mode: host # needed to add iptables rules to the host network
+    # needed to add iptables rules to the host network
+    network_mode: host
     environment:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
@@ -106,7 +107,8 @@ services:
       #- PUID=0
       #- PGID=0
       # This agent listens on 9700 (published above); -> must match Fail2ban-UI server agentUrl.
-      - AGENT_SECRET=dev-agent-secret-change-me
+      # Dev-only value; the agent refuses secrets shorter than 16 characters or known placeholders.
+      - AGENT_SECRET=dev-agent-9f3c1a7e5b2d4086
       - AGENT_BIND_ADDRESS=0.0.0.0
       # - AGENT_PORT=9700
       # Development only:
@@ -153,14 +155,19 @@ services:
       - ./ssh-keys:/config/.ssh:z
       # Required for fail2ban-ui: Used for testing, that logpath is working, before enabeling a jail. Without this read only access the fail2ban-ui will not be able to enable jails (logpath-test would fail)
       - /var/log:/var/log:ro
-      - /var/log/httpd:/remotelogs/apache2:ro # this mounts the apache2 logs of a RPM based system (e.g. Rocky Linux) to the default location set by linuxserver-fail2ban. (on debian based systems this is /var/log/apache2 and currently hardcoded in the linuxserver-fail2ban container)
+      # this mounts the apache2 logs of a RPM based system (e.g. Rocky Linux) to the default location set by linuxserver-fail2ban. (on debian based systems this is /var/log/apache2 and currently hardcoded in the linuxserver-fail2ban container)
+      - /var/log/httpd:/remotelogs/apache2:ro
 
       # Required for compose-local fail2ban instance: We mount the same Fail2Ban config as the linuxserver-fail2ban container (under /config/fail2ban to fail2ban-ui can modify configs)
-      - ./fail2ban-config-local/fail2ban:/etc/fail2ban:z # CONFIG for primary local connector
-      - ./fail2ban-config-local-secondary/fail2ban:/etc/fail2ban-secondary:z # CONFIG for secondary local connector
+      # CONFIG for primary local connector
+      - ./fail2ban-config-local/fail2ban:/etc/fail2ban:z
+      # CONFIG for secondary local connector
+      - ./fail2ban-config-local-secondary/fail2ban:/etc/fail2ban-secondary:z
 
       # Required for compose-local fail2ban instance: Mount the same run directory that contains fail2ban.sock for communication between fail2ban-ui and the linuxserver-fail2ban container
-      - ./f2b-run-local:/var/run/fail2ban:z # SOCKET for primary local connector
-      - ./f2b-run-local-secondary:/var/run/fail2ban-secondary:z # SOCKET for secondary local connector
+      # SOCKET for primary local connector
+      - ./f2b-run-local:/var/run/fail2ban:z
+      # SOCKET for secondary local connector
+      - ./f2b-run-local-secondary:/var/run/fail2ban-secondary:z
 
     restart: unless-stopped

@@ -117,24 +117,26 @@ Click **Send Test Webhook** after saving the settings. This sends a test payload
 
 ## Elasticsearch
 
-Indexes ban and unban events as structured documents, using ECS (Elastic Common Schema) field names for native Kibana compatibility.
+Writes ban and unban events to an Elasticsearch data stream as structured documents, using ECS (Elastic Common Schema) field names for native Kibana compatibility. A data stream rolls its backing indices over and deletes them through its lifecycle policy, so events never pile up in one ever-growing index. Requires Elasticsearch 8.13 or later.
 
 ### Settings
 
 
-| Field                 | Description                                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Elasticsearch URL     | Cluster endpoint, for example `https://elasticsearch.example.com:9200`                                        |
-| Index Name            | Base name for the index (default: `fail2ban-events`). A daily suffix `-YYYY.MM.DD` is appended automatically. |
-| API Key               | Base64-encoded API key (preferred authentication). Leave empty for username/password auth.                    |
-| Username              | Basic auth username, used when API Key is empty                                                               |
-| Password              | Basic auth password                                                                                           |
-| Skip TLS Verification | Disables certificate validation for self-signed clusters                                                      |
+| Field                 | Description                                                                                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Elasticsearch URL     | Cluster endpoint, for example `https://elasticsearch.example.com:9200`                                                                                                                   |
+| Data Stream           | Target data stream (default: `logs-fail2ban_ui.events-default`). The default matches the built-in `logs-*-*` template. A custom name needs an index template with data streams enabled. |
+| API Key               | Base64-encoded API key (preferred authentication). Leave empty for username/password auth.                                                                                               |
+| Username              | Basic auth username, used when API Key is empty                                                                                                                                          |
+| Password              | Basic auth password                                                                                                                                                                      |
+| Skip TLS Verification | Disables certificate validation for self-signed clusters                                                                                                                                 |
 
 
 ### Document structure
 
-Each event is indexed to `<index>-YYYY.MM.DD`, for example `fail2ban-events-2026.06.19`.
+Each event is written to the configured data stream, for example `logs-fail2ban_ui.events-default`. Elasticsearch stores it in hidden backing indices such as `.ds-logs-fail2ban_ui.events-default-2026.09.30-000001`.
+
+When the name follows the `logs-<dataset>-<namespace>` scheme, each document also carries `data_stream.type`, `data_stream.dataset`, and `data_stream.namespace`, so Kibana can filter events by dataset.
 
 The raw `fail2ban.logs` and `fail2ban.whois` fields are always present. In addition, Fail2Ban UI parses both fields - logs through grok patterns, Whois through regular expressions - and extracts structured, searchable ECS fields. The enrichment is best-effort: if a log format is not recognized, only the raw text is indexed.
 
@@ -151,7 +153,10 @@ The raw `fail2ban.logs` and `fail2ban.whois` fields are always present. In addit
   "fail2ban.jail": "sshd",
   "fail2ban.failures": "5",
   "fail2ban.whois": "...",
-  "fail2ban.logs": "..."
+  "fail2ban.logs": "...",
+  "data_stream.type": "logs",
+  "data_stream.dataset": "fail2ban_ui.events",
+  "data_stream.namespace": "default"
 }
 ```
 
@@ -219,51 +224,53 @@ The jail name is used as a hint to prioritize pattern matching - an `sshd` jail 
 
 ### Elasticsearch setup
 
-#### 1. Create an index template
+#### 1. Create an index template (recommended)
 
-In Kibana Dev Tools or via the API:
+The default data stream works without a template, because the built-in `logs-*-*` template matches it. That template maps fields dynamically, though: `log.timestamp` becomes a date field and drops the raw log timestamps, long `fail2ban.logs` values stay unsearchable, and `fail2ban.parsed_logs` loses its per-line grouping. The following template keeps the built-in logs settings and lifecycle and adds the exact field types.
+
+Run it in Kibana Dev Tools before the first event arrives. Mappings apply only to backing indices created afterwards.
 
 ```
-PUT _index_template/fail2ban
+PUT _index_template/logs-fail2ban_ui.events
 {
-  "index_patterns": ["fail2ban-events-*"],
+  "index_patterns": ["logs-fail2ban_ui.events-*"],
+  "data_stream": {},
+  "priority": 200,
+  "composed_of": ["logs@mappings", "logs@settings", "logs@custom", "logs-fail2ban_ui.events@custom", "ecs@mappings"],
+  "ignore_missing_component_templates": ["logs@custom", "logs-fail2ban_ui.events@custom"],
   "template": {
-    "settings": {
-      "number_of_shards": 1,
-      "number_of_replicas": 0
-    },
     "mappings": {
       "properties": {
-        "@timestamp":                    { "type": "date" },
-        "event.kind":                    { "type": "keyword" },
-        "event.type":                    { "type": "keyword" },
-        "event.action":                  { "type": "keyword" },
-        "source.ip":                     { "type": "ip" },
-        "source.address":                { "type": "keyword" },
-        "source.port":                   { "type": "integer" },
-        "source.user.name":              { "type": "keyword" },
-        "source.geo.country_iso_code":   { "type": "keyword" },
-        "observer.hostname":             { "type": "keyword" },
-        "server.address":                { "type": "keyword" },
-        "http.request.method":           { "type": "keyword" },
-        "http.response.status_code":     { "type": "integer" },
-        "http.response.body.bytes":      { "type": "long" },
-        "http.request.referrer":         { "type": "keyword" },
-        "http.version":                  { "type": "keyword" },
-        "url.original":                  { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
-        "url.path":                      { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
-        "url.query":                     { "type": "text" },
-        "user_agent.original":           { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 }}},
-        "process.name":                  { "type": "keyword" },
-        "process.pid":                   { "type": "integer" },
-        "log.timestamp":                 { "type": "keyword" },
-        "log.level":                     { "type": "keyword" },
-        "log.syslog.hostname":           { "type": "keyword" },
-        "message":                       { "type": "text" },
-        "fail2ban.jail":                 { "type": "keyword" },
-        "fail2ban.failures":             { "type": "keyword" },
-        "fail2ban.whois":                { "type": "text" },
-        "fail2ban.logs":                 { "type": "text" },
+        "@timestamp":                  { "type": "date" },
+        "event.kind":                  { "type": "keyword" },
+        "event.type":                  { "type": "keyword" },
+        "event.action":                { "type": "keyword" },
+        "source.ip":                   { "type": "ip" },
+        "source.address":              { "type": "keyword" },
+        "source.port":                 { "type": "integer" },
+        "source.user.name":            { "type": "keyword" },
+        "source.geo.country_iso_code": { "type": "keyword" },
+        "observer.hostname":           { "type": "keyword" },
+        "server.address":              { "type": "keyword" },
+        "http.request.method":         { "type": "keyword" },
+        "http.response.status_code":   { "type": "integer" },
+        "http.response.body.bytes":    { "type": "long" },
+        "http.request.referrer":       { "type": "keyword" },
+        "http.version":                { "type": "keyword" },
+        "url.original":                { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+        "url.path":                    { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+        "url.query":                   { "type": "text" },
+        "user_agent.original":         { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 512 }}},
+        "process.name":                { "type": "keyword" },
+        "process.pid":                 { "type": "integer" },
+        "log.timestamp":               { "type": "keyword" },
+        "log.level":                   { "type": "keyword" },
+        "log.syslog.hostname":         { "type": "keyword" },
+        "message":                     { "type": "text" },
+        "fail2ban.jail":               { "type": "keyword" },
+        "fail2ban.failures":           { "type": "keyword" },
+        "fail2ban.whois":              { "type": "text" },
+        "fail2ban.logs":               { "type": "text" },
         "fail2ban.parsed_logs": {
           "type": "nested",
           "properties": {
@@ -283,51 +290,98 @@ PUT _index_template/fail2ban
             "message":                   { "type": "text" }
           }
         },
-        "whois.net_range":               { "type": "keyword" },
-        "whois.cidr":                    { "type": "keyword" },
-        "whois.net_name":                { "type": "keyword" },
-        "whois.org_name":                { "type": "text", "fields": { "keyword": { "type": "keyword" }}},
-        "whois.org_id":                  { "type": "keyword" },
-        "whois.country":                 { "type": "keyword" },
-        "whois.abuse_email":             { "type": "keyword" },
-        "whois.abuse_phone":             { "type": "keyword" },
-        "whois.asn":                     { "type": "keyword" },
-        "whois.registration_date":      { "type": "keyword" },
-        "whois.updated_date":            { "type": "keyword" }
+        "whois.net_range":             { "type": "keyword" },
+        "whois.cidr":                  { "type": "keyword" },
+        "whois.net_name":              { "type": "keyword" },
+        "whois.org_name":              { "type": "text", "fields": { "keyword": { "type": "keyword" }}},
+        "whois.org_id":                { "type": "keyword" },
+        "whois.country":               { "type": "keyword" },
+        "whois.abuse_email":           { "type": "keyword" },
+        "whois.abuse_phone":           { "type": "keyword" },
+        "whois.asn":                   { "type": "keyword" },
+        "whois.registration_date":     { "type": "keyword" },
+        "whois.updated_date":          { "type": "keyword" }
       }
     }
   }
 }
 ```
 
-**Note:** If an older index template already exists, update or recreate it with the new mappings. Existing indices and documents are not modified retroactively; templates apply when new indices are created.
+To change the retention for Fail2Ban UI events only, put the lifecycle policy in the optional `logs-fail2ban_ui.events@custom` component template, which the template above already includes. The policy must contain a rollover action:
+
+```
+PUT _component_template/logs-fail2ban_ui.events@custom
+{
+  "template": {
+    "settings": { "index.lifecycle.name": "<your-policy>" }
+  }
+}
+```
+
+Without it, the events inherit the `logs` policy, or the policy set in `logs@custom`.
 
 #### 2. Create an API key
 
-In Kibana: **Stack Management -> API Keys -> Create API key**. The key needs write access to the `fail2ban-events-`* indices.
+Give the key only the privileges that Fail2Ban UI needs: `create_doc` appends events but can't read, change or delete them, and `auto_configure` lets the first event create the data stream and lets new fields extend the mapping.
+
+In Kibana Dev Tools:
+
+```
+POST _security/api_key
+{
+  "name": "fail2ban-ui",
+  "role_descriptors": {
+    "fail2ban_ui_writer": {
+      "indices": [
+        { "names": ["logs-fail2ban_ui.events-*"], "privileges": ["create_doc", "auto_configure"] }
+      ]
+    }
+  }
+}
+```
+
+Copy the `encoded` value from the response. If you use a custom data stream name, adjust `names` to match it.
 
 #### 3. Configure Fail2Ban UI
 
-Enter the Elasticsearch URL, index name, and API key under **Settings -> Alert Settings**. Save and click **Test Connection** to verify; the test creates the first document.
+Enter the Elasticsearch URL, data stream, and API key under **Settings -> Alert Settings**. Save and click **Test Connection** to verify. The test event creates the data stream if it does not exist yet.
 
 #### 4. Create a Kibana data view
 
-In Kibana: **Stack Management -> Data Views -> Create data view**. Use `fail2ban-events-`* as the name and index pattern, and select `@timestamp` as the time field.
+In Kibana: **Stack Management -> Data Views -> Create data view**. Use `logs-fail2ban_ui.events-*` as the name and index pattern, and select `@timestamp` as the time field.
 
 #### 5. Explore in Discover
 
-Open Kibana Discover and select the `fail2ban-events-*` data view. The indexed events appear there.
+Open Kibana Discover and select the `logs-fail2ban_ui.events-*` data view. The events appear there.
+
+### Upgrading from daily indices
+
+Earlier releases wrote to daily indices named `fail2ban-events-YYYY.MM.DD`. On upgrade, a stored index name of `fail2ban-events`, the old default, switches to `logs-fail2ban_ui.events-default` automatically. A custom index name is kept and must now name a data stream; otherwise every alert fails with a "not a data stream" error.
+
+1. Create a new API key as described in [Create an API key](#2-create-an-api-key). A key restricted to `fail2ban-events-*` can't write to the data stream. If you use a role, add `logs-fail2ban_ui.events-*` with `create_doc` and `auto_configure` to it.
+2. Optional: create the index template before the first event.
+3. Save the new key under **Settings -> Alert Settings** and click **Test Connection**.
+4. To see old and new events together, create a data view with the index pattern `logs-fail2ban_ui.events-*,fail2ban-events-*`. The field types of the template above match the old daily indices, so the combined view has no field conflicts.
+
+The old daily indices stay until you delete them or their lifecycle policy removes them. To move their events into the data stream instead, reindex them. Data streams accept only `create` operations:
+
+```
+POST _reindex
+{
+  "source": { "index": "fail2ban-events-*" },
+  "dest": { "index": "logs-fail2ban_ui.events-default", "op_type": "create" }
+}
+```
 
 ### Testing
 
-**Test Connection** indexes a test document (`"event.type": "test"`) with a dummy IP. A successful test confirms authentication, network connectivity, and index write permissions.
+**Test Connection** writes a test event (`"event.type": "test"`) with a dummy IP. A successful test confirms authentication, network connectivity, and write permissions on the data stream.
 
 ### Technical details
 
 - Authentication: API key (sent as `Authorization: ApiKey <key>`) or basic auth.
-- Index naming: `<index>-YYYY.MM.DD` using the UTC date of the event.
+- Target: a data stream. Documents are sent through `POST /<data stream>/_doc?require_data_stream=true`, so Elasticsearch refuses the write instead of creating a plain index when no data stream template matches the name.
 - Timeout: 15 seconds per request.
-- Documents are sent through `POST /<index>/_doc`.
 - TLS verification can be disabled for self-signed clusters.
 - HTTP responses with status `>= 400` are treated as errors and logged.
 
@@ -349,7 +403,7 @@ Ban/unban event
       +-- email         -> sendBanAlert() -> sendEmail() via SMTP
       +-- webhook       -> sendWebhookAlert() -> HTTP POST/PUT
       \-- elasticsearch -> enrich logs (grok) + enrich whois (regex)
-                          -> sendElasticsearchAlert() -> POST /<index>/_doc
+                          -> sendElasticsearchAlert() -> POST /<data stream>/_doc
 ```
 
 Switching providers does not affect event storage or WebSocket broadcasting; only the notification delivery channel changes.

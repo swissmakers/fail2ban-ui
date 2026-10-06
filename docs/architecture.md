@@ -71,7 +71,7 @@ The backend processes each callback in the following order:
 
 Steps 3, 6, and 7 are partially asynchronous. The callback returns `200 OK` as soon as the event has been stored and broadcast; Whois and GeoIP enrichment and alert dispatch continue in a background goroutine. When enrichment completes, the stored row is updated and a `ban_event_update` message is broadcast so already-rendered rows pick up the resolved country.
 
-For SSH servers with *reverse tunnel for events* enabled, the action posts to `http://localhost:<tunnel port><BASE_PATH>` instead of the global `CALLBACK_URL`. Every 45 seconds the UI checks the SSH master and the authenticated callback endpoint through the forward, reconnecting broken tunnels. The same monitor retries pending config writes, validation, and reloads. Callback event IDs deduplicate repeated delivery in SQLite before broadcasts and alerts. See [configuration.md](configuration.md#reverse-ssh-tunnel-for-callbacks).
+For SSH servers with *reverse tunnel for events* enabled, the action posts to `http://localhost:<tunnel port><BASE_PATH>` instead of the global `CALLBACK_URL`. Every 45 seconds the UI checks the SSH master and the authenticated callback endpoint through the forward, reconnecting broken tunnels. The same monitor probes the health of every enabled server, pushes state changes over the WebSocket, and retries pending config writes, validation, and reloads. Callback event IDs deduplicate repeated delivery in SQLite before broadcasts and alerts. See [configuration.md](configuration.md#reverse-ssh-tunnel-for-callbacks).
 
 **Note:** The callback endpoints (`/api/ban`, `/api/unban`) are intentionally reachable without an OIDC session, because they are called by machines, not by users. They are protected exclusively by the callback secret. Treat the secret like a credential and only transport callbacks over TLS or a trusted network.
 
@@ -79,8 +79,8 @@ For SSH servers with *reverse tunnel for events* enabled, the action posts to `h
 
 The browser communicates with the backend over HTTPS (REST) and a WebSocket connection (`GET /api/ws`):
 
-- When OIDC is enabled, the index page, all `/api/`* routes except the callbacks, and the WebSocket upgrade require an authenticated session. The login flow (`/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/status`, `/auth/user`) and static assets remain public.
-- The WebSocket hub validates the `Origin` header against the request `Host` and rejects cross-site connections. Connected clients receive `heartbeat` (about every 30 seconds), `ban_event`, `unban_event`, and `ban_event_update` messages. Only administrators receive redacted `console_log` messages. Enrichment updates carry Whois/GeoIP results for an event that was already broadcast, so the browser can fill in the country without refetching.
+- When OIDC is enabled, the index page, all `/api/`* routes except the callbacks, and the WebSocket upgrade require an authenticated session. The login flow (`/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/status`), the `/healthz` liveness probe, and static assets remain public.
+- The WebSocket hub validates the `Origin` header against the request `Host` and rejects cross-site connections. Connected clients receive `heartbeat` (about every 30 seconds), `ban_event`, `unban_event`, `ban_event_update`, and `server_health` messages. Only administrators receive redacted `console_log` messages. Enrichment updates carry Whois/GeoIP results for an event that was already broadcast, so the browser can fill in the country without refetching.
 
 ## Backend components
 

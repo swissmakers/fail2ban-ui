@@ -27,7 +27,7 @@ All user-supplied IP addresses are validated with Go's `net.ParseIP` and `net.Pa
 
 * Ban/unban callbacks (`/api/ban`, `/api/unban`)
 * Manual ban and unban actions from the dashboard
-* The advanced-actions test endpoint (`/api/advanced-actions/test`)
+* The manual advanced-actions endpoint (`/api/advanced-actions/manual`)
 * All integration connectors (MikroTik, pfSense, OPNsense)
 
 Integration-specific identifiers, such as address-list and alias names, are validated against a strict alphanumeric pattern (`[a-zA-Z0-9._-]`) to prevent injection in SSH commands and API payloads.
@@ -120,7 +120,7 @@ Fail2Ban UI supports three alert providers: Email (SMTP), Webhook, and Elasticse
 ### Elasticsearch
 
 * Prefer API-key authentication over basic auth. API keys can be scoped to specific indices and rotated independently.
-* Restrict the API key to write-only access on the `fail2ban-events-*` index pattern. Avoid cluster-wide or admin-level keys.
+* Restrict the API key to the `create_doc` and `auto_configure` privileges on `logs-fail2ban_ui.events-*`. With `create_doc`, the key can append events but can't read, change or delete them. Avoid cluster-wide or admin-level keys.
 * Use Elasticsearch role-based access control to limit what the Fail2Ban UI service account can do.
 
 ## Audit and operational practices

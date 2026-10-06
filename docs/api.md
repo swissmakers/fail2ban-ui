@@ -10,7 +10,7 @@ This is a practical endpoint index for operators. The web frontend uses these en
 
 ## Input validation
 
-Every endpoint that accepts an IP address validates it server-side with Go's `net.ParseIP` / `net.ParseCIDR`. Requests with invalid IPs receive `400 Bad Request`. This applies to the ban/unban callbacks, manual ban/unban from the dashboard, and the advanced-actions test endpoint.
+Every endpoint that accepts an IP address validates it server-side with Go's `net.ParseIP` / `net.ParseCIDR`. Requests with invalid IPs receive `400 Bad Request`. This applies to the ban/unban callbacks, manual ban/unban from the dashboard, and the manual advanced-actions endpoint.
 
 ## Common headers
 
@@ -28,8 +28,20 @@ Every endpoint that accepts an IP address validates it server-side with Go's `ne
 | `POST /api/servers` | Create or update a server |
 | `DELETE /api/servers/:id` | Delete a server |
 | `POST /api/servers/:id/default` | Set a server as the default |
-| `POST /api/servers/:id/test` | Test server connectivity |
+| `POST /api/servers/:id/test` | Test server connectivity without changing anything on the host |
 | `GET /api/ssh/keys` | List available SSH keys |
+
+Each enabled server in `GET /api/servers` carries its state so the UI can flag a host that stopped protecting you, without waiting for a user to notice missing bans:
+
+| Field | Meaning |
+|-------|---------|
+| `health.state` | `ok`, `degraded` (Fail2Ban runs but callbacks cannot reach the UI), `down` (Fail2Ban or the host is unreachable), or `unknown` (not probed yet) |
+| `health.checkedAt` | Time of the last probe |
+| `health.fail2banOk`, `health.callbackOk`, `health.error` | Probe details, administrators only. `callbackOk` is omitted when it does not apply, for example on local servers |
+| `restartNeeded` | Configuration files are on the host but not active yet; restarting Fail2Ban applies them |
+| `configSync` | Administrators only: `pending`, `phase` (`pending`, `written`, or `applied`), the last `error`, and the `lastAttempt`, `lastWritten`, and `lastApplied` times |
+
+The UI probes every enabled server every 45 seconds. Read-only users receive only `health.state` and `health.checkedAt`.
 
 ### Jails and configuration
 
@@ -39,7 +51,7 @@ Every endpoint that accepts an IP address validates it server-side with Go's `ne
 | `GET /api/jails/:jail/banned` | Paginated banned-IP list for one jail (`limit`, `offset`, optional `q` search) |
 | `GET /api/jails/manage` | List jails with their enabled/disabled state |
 | `POST /api/jails/manage` | Update the enabled/disabled state of a jail |
-| `POST /api/jails` | Create a jail |
+| `POST /api/jails` | Create a jail; `409` with `messageKey: jails.errors.already_exists` if the name is taken |
 | `DELETE /api/jails/:jail` | Delete a jail |
 | `GET /api/jails/:jail/config` | Read jail and filter configuration |
 | `POST /api/jails/:jail/config` | Update jail and filter configuration |
@@ -106,11 +118,13 @@ Stored events are pruned on a schedule; see [configuration.md](configuration.md#
 | `GET /api/advanced-actions/blocks` | List permanent block records |
 | `POST /api/advanced-actions/blocks` | Bulk permanent block for a list of IPs, used by the ban-insights modal |
 | `DELETE /api/advanced-actions/blocks` | Delete all permanent block records |
-| `POST /api/advanced-actions/test` | Manually test block/unblock on the configured integration |
+| `POST /api/advanced-actions/manual` | Block or unblock one IP on the configured integration (`{"action": "block"\|"unblock", "ip": "..."}`) |
 
 `POST /api/advanced-actions/blocks` takes `{"ips": ["203.0.113.10", "..."]}`, at most 500 addresses per request. It requires a configured and valid advanced-actions integration (MikroTik, pfSense, or OPNsense); otherwise it returns `400`. Duplicates are removed while preserving order, and loopback, link-local, multicast, unspecified, and private addresses are skipped. After five consecutive identical integration errors the run aborts and the remaining addresses are returned with status `aborted`.
 
 Response: `{ "results": [{ "ip", "status", "message" }], "summary": { "requested", "blocked", "alreadyBlocked", "skipped", "invalid", "failed", "aborted" } }`, where `status` is one of `blocked`, `already_blocked`, `skipped_private`, `invalid`, `error`, or `aborted`. `summary.requested` counts the addresses left after deduplication.
+
+Permanent blocks always target single addresses. Every path (manual, bulk, and the automatic threshold) refuses CIDR ranges and refuses to block private or reserved addresses, so a typo cannot lock out your own network. Unblocking accepts any single address, so older entries can still be removed.
 
 ### Settings
 
@@ -118,11 +132,21 @@ Response: `{ "results": [{ "ip", "status", "message" }], "summary": { "requested
 |-----------------|-------------|
 | `GET /api/settings` | Read the current application settings |
 | `POST /api/settings` | Update application settings |
-| `POST /api/settings/test-email` | Send a test email (Email provider) |
+| `POST /api/settings/test-email` | Send a test email (Email provider); `400` with `messageKey: settings.errors.smtp_not_configured` when destination, SMTP host, or sender is missing |
 | `POST /api/settings/test-webhook` | Send a test webhook payload (Webhook provider) |
-| `POST /api/settings/test-elasticsearch` | Index a test document (Elasticsearch provider) |
+| `POST /api/settings/test-elasticsearch` | Write a test event to the Elasticsearch data stream |
 
-The settings payload includes the alert provider configuration (`alertProvider`, `webhook`, and `elasticsearch` fields). See [alert-providers.md](alert-providers.md) for the full provider documentation.
+The settings payload includes the alert provider configuration (`alertProvider`, `webhook`, and `elasticsearch` fields). See [alert-providers.md](alert-providers.md) for the full provider documentation. Servers are not part of the settings payload; manage them through `/api/servers`.
+
+`POST /api/settings` pushes changed defaults to every server before it returns. The response reports what is still outstanding:
+
+| Field | Meaning |
+|-------|---------|
+| `syncPending` | At least one server did not receive the change yet; the UI retries automatically |
+| `restartNeeded` | At least one server received the files but did not load them; restart Fail2Ban on that server |
+| `warnings` | Per-server error messages |
+
+When the SMTP connection uses login credentials without TLS to a non-local relay, the test email still goes out, but the response adds `warning` and `warningKey: settings.email.warning_plaintext_auth`.
 
 ### Filter management
 
@@ -130,7 +154,7 @@ The settings payload includes the alert provider configuration (`alertProvider`,
 |-----------------|-------------|
 | `GET /api/filters` | List available filters |
 | `GET /api/filters/:filter/content` | Read filter file content |
-| `POST /api/filters` | Create a filter |
+| `POST /api/filters` | Create a filter; `409` with `messageKey: filters.errors.already_exists` if the name is taken |
 | `POST /api/filters/test` | Test a filter regex against log lines |
 | `DELETE /api/filters/:filter` | Delete a filter |
 
@@ -138,7 +162,9 @@ The settings payload includes the alert provider configuration (`alertProvider`,
 
 | Method and path | Description |
 |-----------------|-------------|
-| `POST /api/fail2ban/restart` | Restart or reload the Fail2Ban service |
+| `POST /api/fail2ban/restart` | Apply pending configuration, validate it, then restart or reload Fail2Ban |
+
+The restart refuses to run with `409` and `messageKey: servers.errors.config_not_applied` when the configuration never reached the host or fails `fail2ban-client -t`. Restarting into a broken configuration would stop Fail2Ban from protecting the host. The response `mode` is `restart` or `reload`: hosts without a usable service manager are reloaded instead.
 
 ### Threat intelligence
 
@@ -165,9 +191,12 @@ See [threat-intel.md](threat-intel.md) for setup and full behavior.
 
 | Method and path | Description |
 |-----------------|-------------|
+| `GET /healthz` | Liveness probe for container runtimes and load balancers; returns `200 ok` and nothing else |
 | `GET /api/healthcheck/callback` | Validates the `X-Callback-Secret` header without side effects and returns `{"ok": true}` |
 
-This endpoint lets a managed host - primarily the [fail2ban-ui-agent](https://github.com/swissmakers/fail2ban-ui-agent) - confirm that it holds the correct callback secret before it starts posting events. Like `/api/ban` and `/api/unban`, it is exempt from the OIDC session check and is protected only by the callback secret. A missing, unconfigured, or mismatched secret returns `401`.
+`/healthz` needs no session and answers both at `/healthz` and at `<BASE_PATH>/healthz`, so a probe does not need to know the base path. It reports only that the UI process serves HTTP; the state of each managed server is in `GET /api/servers`.
+
+The UI's server monitor calls `/api/healthcheck/callback` from each SSH host, through the reverse tunnel when one is enabled, to prove that ban events can reach the UI. The [fail2ban-ui-agent](https://github.com/swissmakers/fail2ban-ui-agent) uses it the same way. Like `/api/ban` and `/api/unban`, it is exempt from the OIDC session check and is protected only by the callback secret. A missing, unconfigured, or mismatched secret returns `401`.
 
 ### WebSocket
 
@@ -184,6 +213,7 @@ The connection streams real-time events to the frontend:
 | `ban_event` | Real-time ban event broadcast |
 | `unban_event` | Real-time unban event broadcast |
 | `ban_event_update` | Enrichment update for an event that was already delivered, sent once the asynchronous Whois/GeoIP lookup completes |
+| `server_health` | A server's health state changed: `{"serverId", "state", "checkedAt"}`, without error text so every viewer can receive it |
 
 All message types are carried on the single `/api/ws` connection; there is no second WebSocket endpoint. `ban_event_update` is emitted after the callback response has already been returned: the event is stored and broadcast immediately, while the Whois and GeoIP lookups, which can take several seconds, run in the background. When they finish, the enriched record is broadcast, with the `whois` and `logs` fields stripped from the payload, so the frontend can merge the resolved country into the row it is already displaying.
 
@@ -216,5 +246,4 @@ All IPs in callback payloads are validated before processing. After validation, 
 | `GET /auth/login` | Initiate the OIDC login flow |
 | `GET /auth/callback` | OIDC provider callback |
 | `GET /auth/logout` | Log out and clear the session |
-| `GET /auth/status` | Check authentication status |
-| `GET /auth/user` | Read current user information |
+| `GET /auth/status` | Check authentication status and read the current user |
