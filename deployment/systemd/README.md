@@ -25,7 +25,7 @@ This option runs Fail2Ban UI from `/opt/fail2ban-ui/` under systemd.
 
 ### Prerequisites
 
-Install Go 1.25 or later and the required dependencies:
+Install Go 1.27 or later and the required dependencies:
 
 ```bash
 sudo dnf install -y golang git jq
