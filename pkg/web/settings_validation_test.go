@@ -17,6 +17,7 @@
 package web
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
@@ -60,5 +61,57 @@ func TestNormalizeSettingsWebhookHeaders(t *testing.T) {
 		if err := normalizeAndValidateSettingsRequest(&req); err == nil {
 			t.Errorf("header name %q must be rejected", name)
 		}
+	}
+}
+
+func TestNormalizeJailDefaults(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     config.AppSettings
+		wantKey string
+		wantIPs []string
+	}{
+		{name: "valid and trimmed", req: config.AppSettings{IgnoreIPs: []string{" 127.0.0.1/8 ", "", "::1"}, Banaction: " nftables[type=multiport] ", Chain: "INPUT"}, wantIPs: []string{"127.0.0.1/8", "::1"}},
+		{name: "ignoreip newline", req: config.AppSettings{IgnoreIPs: []string{"1.2.3.4\nbantime = -1"}}, wantKey: "settings.errors.invalid_ignoreip"},
+		{name: "banaction newline", req: config.AppSettings{Banaction: "x\naction = evil"}, wantKey: "settings.errors.invalid_banaction"},
+		{name: "allports invalid", req: config.AppSettings{BanactionAllports: "a b"}, wantKey: "settings.errors.invalid_banaction"},
+		{name: "chain invalid", req: config.AppSettings{Chain: "IN\rPUT"}, wantKey: "settings.errors.invalid_chain"},
+		{name: "empty defaults allowed", req: config.AppSettings{}, wantIPs: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := tt.req
+			err := normalizeJailDefaults(&req)
+			if tt.wantKey != "" {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if got := buildErrorResponse(err, "")["messageKey"]; got != tt.wantKey {
+					t.Fatalf("messageKey = %v, want %s", got, tt.wantKey)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(req.IgnoreIPs, tt.wantIPs) {
+				t.Fatalf("IgnoreIPs = %q, want %q", req.IgnoreIPs, tt.wantIPs)
+			}
+		})
+	}
+}
+
+func TestNormalizeSettingsElasticsearchDataStream(t *testing.T) {
+	for in, want := range map[string]string{"": config.DefaultElasticsearchDataStream, "fail2ban-events": config.DefaultElasticsearchDataStream, " logs-x-prod ": "logs-x-prod"} {
+		req := config.AppSettings{Elasticsearch: config.ElasticsearchSettings{Index: in}}
+		if err := normalizeAndValidateSettingsRequest(&req); err != nil {
+			t.Errorf("index %q should be accepted: %v", in, err)
+		} else if req.Elasticsearch.Index != want {
+			t.Errorf("index %q normalized to %q, want %q", in, req.Elasticsearch.Index, want)
+		}
+	}
+	req := config.AppSettings{Elasticsearch: config.ElasticsearchSettings{Index: "logs-*"}}
+	if err := normalizeAndValidateSettingsRequest(&req); err == nil {
+		t.Error("a pattern must be rejected as data stream name")
 	}
 }

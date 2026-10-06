@@ -29,8 +29,16 @@ type syncTestConnector struct {
 	Connector
 	writeErr        error
 	validationErr   error
+	reloadErr       error
+	restartErr      error
 	writes, reloads int
+	restarts        int
 	onReload        func()
+}
+
+func (c *syncTestConnector) Restart(context.Context) (string, error) {
+	c.restarts++
+	return "restart", c.restartErr
 }
 
 func (c *syncTestConnector) Server() shared.Fail2banServer {
@@ -45,7 +53,7 @@ func (c *syncTestConnector) Reload(context.Context) error {
 	if c.onReload != nil {
 		c.onReload()
 	}
-	return nil
+	return c.reloadErr
 }
 
 func (c *syncTestConnector) ValidateConfiguration(context.Context) error {
@@ -108,7 +116,7 @@ func TestConfigSyncPreservesChangesQueuedDuringReload(t *testing.T) {
 }
 
 func TestConfigRetryDelayBacksOff(t *testing.T) {
-	cases := map[int]time.Duration{0: 0, 1: 0, 2: 2 * tunnelCheckInterval, 3: 4 * tunnelCheckInterval, 7: maxConfigRetryDelay, 500: maxConfigRetryDelay}
+	cases := map[int]time.Duration{0: 0, 1: 0, 2: 2 * monitorInterval, 3: 4 * monitorInterval, 7: maxConfigRetryDelay, 500: maxConfigRetryDelay}
 	for failures, want := range cases {
 		if got := configRetryDelay(failures); got != want {
 			t.Errorf("configRetryDelay(%d) = %v, want %v", failures, got, want)
@@ -141,33 +149,6 @@ func TestConfigRetryBacksOffUntilANewRequest(t *testing.T) {
 	}
 }
 
-type appliedProbeProvider struct {
-	testProvider
-	m      *Manager
-	called chan struct{}
-}
-
-func (p appliedProbeProvider) ConfigApplied(id string) {
-	p.m.ConfigSyncStatus(id)
-	close(p.called)
-}
-
-// ConfigApplied takes the settings lock and writes the DB, so it must not run under the sync lock.
-func TestConfigAppliedRunsOutsideSyncLock(t *testing.T) {
-	conn := &syncTestConnector{}
-	m := &Manager{connectors: map[string]Connector{"test": conn}}
-	probe := appliedProbeProvider{m: m, called: make(chan struct{})}
-	SetProvider(probe)
-	defer SetProvider(noopProvider{})
-	m.RequestConfigSync("test", false, true)
-	go func() { _ = m.SyncServerConfig(context.Background(), "test") }()
-	select {
-	case <-probe.called:
-	case <-time.After(3 * time.Second):
-		t.Fatal("deadlock: ConfigApplied was called while the sync lock was held")
-	}
-}
-
 func TestConfigSyncRecordsMissingConnectorError(t *testing.T) {
 	m := &Manager{connectors: map[string]Connector{}}
 	m.RequestConfigSync("gone", true, true)
@@ -189,8 +170,87 @@ func TestConfigSyncStatusIsReadOnly(t *testing.T) {
 	}
 }
 
-// Config sync discovers validation through an optional interface; a rename would silently skip it.
 var (
-	_ interface{ ValidateConfiguration(context.Context) error } = (*SSHConnector)(nil)
-	_ interface{ ValidateConfiguration(context.Context) error } = (*LocalConnector)(nil)
+	_ Connector = (*SSHConnector)(nil)
+	_ Connector = (*LocalConnector)(nil)
+	_ Connector = (*AgentConnector)(nil)
 )
+
+func TestSyncPhase(t *testing.T) {
+	tests := []struct {
+		pending            bool
+		writtenGen, genNow uint64
+		want               string
+	}{
+		{false, 0, 0, SyncApplied},
+		{false, 2, 3, SyncApplied},
+		{true, 0, 1, SyncPending},
+		{true, 3, 3, SyncWritten},
+		{true, 2, 3, SyncPending},
+	}
+	for _, tt := range tests {
+		if got := syncPhase(tt.pending, tt.writtenGen, tt.genNow); got != tt.want {
+			t.Errorf("syncPhase(%v, %d, %d) = %s, want %s", tt.pending, tt.writtenGen, tt.genNow, got, tt.want)
+		}
+	}
+}
+
+func TestSyncStatusReportsWrittenPhaseAfterFailedReload(t *testing.T) {
+	conn := &syncTestConnector{reloadErr: errors.New("daemon down")}
+	m := &Manager{connectors: map[string]Connector{"test": conn}}
+	m.RequestConfigSync("test", false, true)
+	_ = m.SyncServerConfig(context.Background(), "test")
+	if phase := m.ConfigSyncStatus("test").Phase; phase != SyncWritten {
+		t.Fatalf("phase = %s, want written", phase)
+	}
+	m.RequestConfigSync("test", false, true)
+	if phase := m.ConfigSyncStatus("test").Phase; phase != SyncPending {
+		t.Fatalf("a newer request must be pending again, got %s", phase)
+	}
+}
+
+func TestApplyAndRestart(t *testing.T) {
+	t.Run("written but unloaded config is restarted and marked applied", func(t *testing.T) {
+		conn := &syncTestConnector{reloadErr: errors.New("daemon down")}
+		m := &Manager{connectors: map[string]Connector{"test": conn}}
+		m.RequestConfigSync("test", false, true)
+		if _, err := m.ApplyAndRestart(context.Background(), "test"); err != nil {
+			t.Fatalf("ApplyAndRestart: %v", err)
+		}
+		if conn.restarts != 1 || m.ConfigSyncStatus("test").Pending {
+			t.Fatalf("restarts=%d status=%+v", conn.restarts, m.ConfigSyncStatus("test"))
+		}
+	})
+	t.Run("unwritten config refuses restart", func(t *testing.T) {
+		conn := &syncTestConnector{writeErr: errors.New("host unreachable")}
+		m := &Manager{connectors: map[string]Connector{"test": conn}}
+		m.RequestConfigSync("test", false, true)
+		if _, err := m.ApplyAndRestart(context.Background(), "test"); !errors.Is(err, ErrConfigNotApplied) {
+			t.Fatalf("err = %v, want ErrConfigNotApplied", err)
+		}
+		if conn.restarts != 0 {
+			t.Fatal("restarted with files that never reached the host")
+		}
+	})
+	t.Run("invalid config refuses restart", func(t *testing.T) {
+		conn := &syncTestConnector{validationErr: errors.New("bad jail")}
+		m := &Manager{connectors: map[string]Connector{"test": conn}}
+		if _, err := m.ApplyAndRestart(context.Background(), "test"); !errors.Is(err, ErrConfigNotApplied) {
+			t.Fatalf("err = %v, want ErrConfigNotApplied", err)
+		}
+		if conn.restarts != 0 {
+			t.Fatal("restarted into an invalid configuration")
+		}
+	})
+	t.Run("failed restart keeps pending", func(t *testing.T) {
+		conn := &syncTestConnector{reloadErr: errors.New("daemon down"), restartErr: errors.New("systemctl failed")}
+		m := &Manager{connectors: map[string]Connector{"test": conn}}
+		m.RequestConfigSync("test", false, true)
+		if _, err := m.ApplyAndRestart(context.Background(), "test"); err == nil {
+			t.Fatal("restart failure was hidden")
+		}
+		if !m.ConfigSyncStatus("test").Pending {
+			t.Fatal("config marked applied although the restart failed")
+		}
+	})
+}

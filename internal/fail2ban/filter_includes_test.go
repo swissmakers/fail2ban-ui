@@ -17,8 +17,10 @@
 package fail2ban
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -45,10 +47,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "common.conf", "[INCLUDES]\n[Definition]\n__prefix_line = COMMON_PREFIX\n")
 		main := "[INCLUDES]\nbefore = common.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		before := indexOfOrFail(t, out, "COMMON_PREFIX", "included content")
 		mainIdx := indexOfOrFail(t, out, "MAIN_REGEX", "main content")
 		if before > mainIdx {
@@ -61,10 +60,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "tail.conf", "[Definition]\nignoreregex = TAIL_IGNORE\n")
 		main := "[INCLUDES]\nafter = tail.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		mainIdx := indexOfOrFail(t, out, "MAIN_REGEX", "main content")
 		after := indexOfOrFail(t, out, "TAIL_IGNORE", "after-include content")
 		if after < mainIdx {
@@ -78,10 +74,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "tail.conf", "TAIL_MARKER\n")
 		main := "[INCLUDES]\nbefore = head.conf\nafter = tail.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		h := indexOfOrFail(t, out, "HEAD_MARKER", "before content")
 		m := indexOfOrFail(t, out, "MAIN_REGEX", "main content")
 		tl := indexOfOrFail(t, out, "TAIL_MARKER", "after content")
@@ -96,10 +89,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "common.local", "FROM_LOCAL\n")
 		main := "[INCLUDES]\nbefore = common.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if !strings.Contains(out, "FROM_LOCAL") || strings.Contains(out, "FROM_CONF") {
 			t.Fatalf(".local must win over .conf, got:\n%s", out)
 		}
@@ -110,10 +100,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "sshd.conf", "SELF_CONTENT\n")
 		main := "[INCLUDES]\nbefore = sshd.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if strings.Contains(out, "SELF_CONTENT") {
 			t.Fatalf("self-inclusion in before must be skipped, got:\n%s", out)
 		}
@@ -124,10 +111,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "sshd.local", "SELF_AFTER_CONTENT\n")
 		main := "[INCLUDES]\nafter = sshd.local\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if !strings.Contains(out, "SELF_AFTER_CONTENT") {
 			t.Fatalf("self-inclusion in after must be kept, got:\n%s", out)
 		}
@@ -137,10 +121,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		dir := t.TempDir()
 		main := "[INCLUDES]\nbefore = does-not-exist.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("missing include must not error, got: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if !strings.Contains(out, "MAIN_REGEX") {
 			t.Fatalf("main content must survive a missing include, got:\n%s", out)
 		}
@@ -155,10 +136,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		defer func() { _ = os.Remove(outside) }()
 
 		main := "[INCLUDES]\nbefore = ../escaped.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if strings.Contains(out, "ESCAPED_CONTENT") {
 			t.Fatalf("include name must not escape the filter directory, got:\n%s", out)
 		}
@@ -169,10 +147,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "common.conf", "[DEFAULT]\n__prefix_line = INCLUDED_VALUE\nkeepme = KEEP_VALUE\n")
 		main := "[INCLUDES]\nbefore = common.conf\n\n[DEFAULT]\n__prefix_line = MAIN_VALUE\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if strings.Contains(out, "INCLUDED_VALUE") {
 			t.Fatalf("shadowed variable must be removed from the include, got:\n%s", out)
 		}
@@ -189,10 +164,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "common.conf", "NO_TRAILING_NEWLINE")
 		main := "[INCLUDES]\nbefore = common.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if !strings.Contains(out, "NO_TRAILING_NEWLINE\n") {
 			t.Fatalf("a newline must be inserted after an include lacking one, got:\n%q", out)
 		}
@@ -203,10 +175,7 @@ func TestResolveFilterIncludes(t *testing.T) {
 		writeFilterFile(t, dir, "common.conf", "COMMON\n")
 		main := "[INCLUDES]\nbefore = common.conf\n\n[Definition]\nfailregex = MAIN_REGEX\n"
 
-		out, err := resolveFilterIncludes(main, dir, "sshd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		out := resolveFilterIncludes(main, dir, "sshd")
 		if strings.Contains(out, "[INCLUDES]") || strings.Contains(out, "before = common.conf") {
 			t.Fatalf("[INCLUDES] section must not be emitted, got:\n%s", out)
 		}
@@ -283,39 +252,24 @@ func TestRemoveDuplicateVariables(t *testing.T) {
 	})
 }
 
-func TestParseJailConfigContent(t *testing.T) {
-	t.Run("sections parsed with enabled state", func(t *testing.T) {
-		jails := parseJailConfigContent("[sshd]\nenabled = true\n\n[nginx]\nenabled = false\n")
-		if len(jails) != 2 {
-			t.Fatalf("expected 2 jails, got %+v", jails)
-		}
-		if jails[0].JailName != "sshd" || !jails[0].Enabled {
-			t.Fatalf("sshd should be enabled, got %+v", jails[0])
-		}
-		if jails[1].JailName != "nginx" || jails[1].Enabled {
-			t.Fatalf("nginx should be disabled, got %+v", jails[1])
-		}
-	})
-
-	t.Run("DEFAULT and INCLUDES are not jails", func(t *testing.T) {
-		jails := parseJailConfigContent("[DEFAULT]\nenabled = true\n[INCLUDES]\nbefore = x\n[real]\nenabled = true\n")
-		if len(jails) != 1 || jails[0].JailName != "real" {
-			t.Fatalf("expected only the real jail, got %+v", jails)
-		}
-	})
-
-	t.Run("missing enabled key defaults to enabled", func(t *testing.T) {
-		jails := parseJailConfigContent("[sshd]\nport = ssh\n")
-		if len(jails) != 1 || !jails[0].Enabled {
-			t.Fatalf("jail without an enabled key defaults to true, got %+v", jails)
-		}
-	})
-
-	t.Run("empty content yields no jails", func(t *testing.T) {
-		if jails := parseJailConfigContent(""); len(jails) != 0 {
-			t.Fatalf("expected no jails, got %+v", jails)
-		}
-	})
+func TestJailSectionNames(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{name: "sections in order", content: "[sshd]\nenabled = true\n\n[nginx]\nenabled = false\n", want: []string{"sshd", "nginx"}},
+		{name: "DEFAULT and INCLUDES are not jails", content: "[DEFAULT]\nenabled = true\n[INCLUDES]\nbefore = x\n[real]\n", want: []string{"real"}},
+		{name: "indented header", content: "  [sshd]  \nport = ssh\n", want: []string{"sshd"}},
+		{name: "empty content", content: "", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := jailSectionNames(tt.content); !slices.Equal(got, tt.want) {
+				t.Fatalf("jailSectionNames = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestJailAccumulator(t *testing.T) {
@@ -356,4 +310,11 @@ func TestJailAccumulator(t *testing.T) {
 			t.Fatalf("expected [b a] in insertion order, got %+v", acc.jails)
 		}
 	})
+}
+
+func TestDiscoverFiltersMissingDir(t *testing.T) {
+	filters, err := DiscoverFiltersFromFiles(t.TempDir())
+	if !errors.Is(err, ErrFilterDirMissing) || len(filters) != 0 {
+		t.Fatalf("got %v, %v; want empty list and ErrFilterDirMissing", filters, err)
+	}
 }

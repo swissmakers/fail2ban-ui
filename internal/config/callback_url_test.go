@@ -16,12 +16,17 @@
 
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
+)
 
 func TestDefaultCallbackPortChangeKeepsBasePath(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("CALLBACK_URL", "")
-	t.Setenv("BASE_PATH", "/dev/")
+	shared.SetBasePath("/dev/")
+	t.Cleanup(func() { shared.SetBasePath("") })
 	original := GetSettings()
 	t.Cleanup(func() { _, _ = UpdateSettings(original) })
 	settings := original

@@ -50,11 +50,13 @@ exit 0
 	}
 	settings := config.GetSettings()
 	settings.Debug = false
-	settings.Servers = []config.Fail2banServer{{ID: "review", Name: "review", Type: "ssh", Host: "127.0.0.1", Port: 22, SSHUser: "review", SSHKeyPath: filepath.Join(dir, "key"), Enabled: true, IsDefault: true}}
-	_, err := config.UpdateSettings(settings)
-	if err != nil {
+	if _, err := config.UpdateSettings(settings); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := config.UpsertServer(config.Fail2banServer{ID: "review", Name: "review", Type: "ssh", Host: "127.0.0.1", Port: 22, SSHUser: "review", SSHKeyPath: filepath.Join(dir, "key"), Enabled: true, IsDefault: true}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = config.DeleteServer("review") })
 	if err := config.ReloadFail2banManager(); err != nil {
 		t.Fatal(err)
 	}

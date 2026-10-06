@@ -18,71 +18,12 @@ package web
 
 import (
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 )
-
-// splitLogpaths consumes the newline-separated output of ExtractLogpathFromJailConfig.
-func TestSplitLogpaths(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want []string
-	}{
-		{"empty", "", nil},
-		{"only whitespace", "   \n\t\n", nil},
-		{"single", "/var/log/auth.log", []string{"/var/log/auth.log"}},
-		{
-			"newline separated",
-			"/var/log/a.log\n/var/log/b.log",
-			[]string{"/var/log/a.log", "/var/log/b.log"},
-		},
-		{
-			"space separated on one line",
-			"/var/log/a.log /var/log/b.log",
-			[]string{"/var/log/a.log", "/var/log/b.log"},
-		},
-		{
-			"mixed, with blank lines",
-			"/var/log/a.log /var/log/b.log\n\n  /var/log/c.log  \n",
-			[]string{"/var/log/a.log", "/var/log/b.log", "/var/log/c.log"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := splitLogpaths(tc.in); !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("splitLogpaths(%q) = %#v, want %#v", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestEqualStringSlices(t *testing.T) {
-	cases := []struct {
-		name string
-		a, b []string
-		want bool
-	}{
-		{"both nil", nil, nil, true},
-		{"both empty", []string{}, []string{}, true},
-		{"nil vs empty", nil, []string{}, true},
-		{"same order", []string{"a", "b"}, []string{"a", "b"}, true},
-		{"different order", []string{"a", "b"}, []string{"b", "a"}, false},
-		{"different length", []string{"a"}, []string{"a", "b"}, false},
-		{"different content", []string{"a"}, []string{"b"}, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := equalStringSlices(tc.a, tc.b); got != tc.want {
-				t.Fatalf("equalStringSlices(%#v, %#v) = %v, want %v", tc.a, tc.b, got, tc.want)
-			}
-		})
-	}
-}
 
 func TestExtractCountryFromWhois(t *testing.T) {
 	cases := []struct {
@@ -171,7 +112,7 @@ func TestJailConfigsWithoutLogpathYieldNoPaths(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := strings.TrimSpace(fail2ban.ExtractLogpathFromJailConfig(tc.cfg))
-			if got := splitLogpaths(raw); len(got) != 0 {
+			if got := strings.Fields(raw); len(got) != 0 {
 				t.Fatalf("expected no logpaths for %q, got %#v", tc.cfg, got)
 			}
 		})
@@ -181,7 +122,7 @@ func TestJailConfigsWithoutLogpathYieldNoPaths(t *testing.T) {
 // jail that does declare a logpath must still be validated
 func TestJailConfigWithLogpathStillYieldsPaths(t *testing.T) {
 	raw := strings.TrimSpace(fail2ban.ExtractLogpathFromJailConfig("[sshd]\nenabled = true\nlogpath = /var/log/auth.log\n"))
-	got := splitLogpaths(raw)
+	got := strings.Fields(raw)
 	if len(got) != 1 || got[0] != "/var/log/auth.log" {
 		t.Fatalf("got %#v, want [/var/log/auth.log]", got)
 	}

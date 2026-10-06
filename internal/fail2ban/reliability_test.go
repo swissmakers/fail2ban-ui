@@ -18,6 +18,7 @@ package fail2ban
 
 import (
 	"context"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,6 +54,9 @@ exec sh -c "$*"
 	got, err := os.ReadFile(received)
 	if err != nil || !strings.Contains(string(got), "printf injected > '"+marker+"'") {
 		t.Fatalf("log lines did not reach fail2ban-regex verbatim: %q %v", got, err)
+	}
+	if !strings.HasSuffix(string(got), "exit 0\n") {
+		t.Fatalf("last log line must end with a newline or fail2ban-regex skips it: %q", got)
 	}
 }
 func TestRegressionUnreadableJailLocalMustNotBeOverwritten(t *testing.T) {
@@ -99,7 +103,8 @@ func TestRegressionChangingSSHIdentityClosesOldMaster(t *testing.T) {
 	}
 }
 func TestRegressionTunnelCallbackPreservesBasePath(t *testing.T) {
-	t.Setenv("BASE_PATH", "/dev")
+	shared.SetBasePath("/dev")
+	t.Cleanup(func() { shared.SetBasePath("") })
 	sc := regressionConnector(t)
 	sc.tunnelPort = 9443
 	if !strings.HasSuffix(sc.actionCallbackURL(), "/dev") {
@@ -110,11 +115,7 @@ func TestRegressionJailOverridesMergeWithConf(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "service.conf"), []byte("[sshd]\nenabled = true\n[other]\nenabled = true\n"), 0600)
 	os.WriteFile(filepath.Join(dir, "service.local"), []byte("[sshd]\nmaxretry = 9\n"), 0600)
-	script, err := buildJailDirDumpScript(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := exec.Command("sh", "-c", script).Output()
+	out, err := exec.Command("sh", "-c", buildJailDirDumpScript(dir)).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +172,12 @@ exec sh -c "$*"
 	if err != nil || !before.ActionFileDrifted {
 		t.Fatalf("invalid setup: %v %+v", err, before)
 	}
-	manager.RepairActionFile(context.Background(), "review")
+	if !manager.Repair(context.Background(), "review", true, false) {
+		t.Fatal("first repair must run")
+	}
+	if manager.Repair(context.Background(), "review", true, false) {
+		t.Fatal("a second repair inside the debounce window must be skipped")
+	}
 	after, err := sc.GetJailSummary(context.Background())
 	if err != nil {
 		t.Fatal(err)

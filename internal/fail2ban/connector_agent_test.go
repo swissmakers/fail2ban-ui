@@ -23,8 +23,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
@@ -73,55 +75,43 @@ func TestNormalizeAgentURL(t *testing.T) {
 	}
 }
 
-func TestAgentConnectorHeadersAndPathEscape(t *testing.T) {
+func TestAgentConnectorCallbackConfigWithoutConstructorNetwork(t *testing.T) {
 	SetProvider(testProvider{})
 	defer SetProvider(noopProvider{})
-	var capturedPath, capturedToken string
+	var requests int
+	var capturedToken string
 	var callbackConfig map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
+		requests++
 		capturedToken = r.Header.Get("X-F2B-Token")
-		switch {
-		case r.URL.Path == "/v1/callback/config":
+		if r.URL.Path == "/v1/callback/config" {
 			_ = json.NewDecoder(r.Body).Decode(&callbackConfig)
-			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true}`))
-		case strings.HasPrefix(r.URL.Path, "/v1/filters/"):
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			w.WriteHeader(http.StatusNotFound)
+			return
 		}
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
 
-	server := shared.Fail2banServer{
-		ID:          "s1",
-		Name:        "agent",
-		Type:        "agent",
-		AgentURL:    srv.URL,
-		AgentSecret: "secret123",
-	}
-	c, err := NewAgentConnector(server)
+	c, err := NewAgentConnector(shared.Fail2banServer{ID: "s1", Name: "agent", Type: "agent", AgentURL: srv.URL, AgentSecret: "secret123"})
 	if err != nil {
 		t.Fatalf("new connector: %v", err)
 	}
+	if requests != 0 {
+		t.Fatalf("constructor sent %d requests, want none", requests)
+	}
 	ac := c.(*AgentConnector)
-
-	if capturedToken != "secret123" {
-		t.Fatalf("ensureCallbackConfig token mismatch: %q", capturedToken)
+	if err := ac.ensureCallbackConfig(context.Background()); err != nil {
+		t.Fatalf("ensureCallbackConfig: %v", err)
 	}
-	if callbackConfig["serverId"] != "s1" {
-		t.Fatalf("callback config serverId mismatch: %#v", callbackConfig)
+	if capturedToken != "secret123" || callbackConfig["serverId"] != "s1" || callbackConfig["callbackUrl"] == nil {
+		t.Fatalf("token=%q config=%#v", capturedToken, callbackConfig)
 	}
-	if _, ok := callbackConfig["callbackUrl"]; !ok {
-		t.Fatalf("callback config missing callbackUrl: %#v", callbackConfig)
+	if err := ac.DeleteFilter(context.Background(), "apache/auth"); err == nil {
+		t.Fatal("DeleteFilter must reject a name with a slash")
 	}
-
-	if err := ac.DeleteFilter(context.Background(), "apache/auth"); err != nil {
-		t.Fatalf("DeleteFilter: %v", err)
-	}
-	if capturedPath != "/v1/filters/apache%2Fauth" {
-		t.Fatalf("path escape mismatch: %q", capturedPath)
+	if requests != 1 {
+		t.Fatalf("invalid name reached the agent (%d requests)", requests)
 	}
 }
 
@@ -154,12 +144,12 @@ func TestAgentConnectorGetJailsParsesResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new connector: %v", err)
 	}
-	jails, err := c.GetJailInfos(context.Background())
+	summary, err := c.GetJailSummary(context.Background())
 	if err != nil {
-		t.Fatalf("GetJailInfos: %v", err)
+		t.Fatalf("GetJailSummary: %v", err)
 	}
-	if len(jails) != 1 || jails[0].JailName != "sshd" {
-		t.Fatalf("unexpected response: %+v", jails)
+	if len(summary.Jails) != 1 || summary.Jails[0].JailName != "sshd" {
+		t.Fatalf("unexpected response: %+v", summary.Jails)
 	}
 }
 
@@ -287,7 +277,7 @@ func TestAgentConnectorTestLogpathPropagatesAgentError(t *testing.T) {
 	}
 	ac := c.(*AgentConnector)
 
-	_, err = ac.TestLogpath(context.Background(), "/var/log/auth.log")
+	_, err = ac.testLogpathLegacy(context.Background(), "/var/log/auth.log")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -415,7 +405,7 @@ func TestAgentConnectorUnauthorizedIncludesStructuredCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new connector: %v", err)
 	}
-	_, err = c.GetJailInfos(context.Background())
+	_, err = c.GetJailSummary(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -432,5 +422,247 @@ func TestAgentConnectorUnauthorizedIncludesStructuredCode(t *testing.T) {
 	}
 	if got := AgentErrorMessageKey(err); got != "servers.errors.agent_wrong_secret" {
 		t.Fatalf("message key=%q", got)
+	}
+}
+
+func newTestAgent(t *testing.T, handler http.HandlerFunc) *AgentConnector {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	c, err := NewAgentConnector(shared.Fail2banServer{ID: "s1", Name: "agent", Type: "agent", AgentURL: srv.URL, AgentSecret: "secret123"})
+	if err != nil {
+		t.Fatalf("new connector: %v", err)
+	}
+	return c.(*AgentConnector)
+}
+
+func TestAgentNewRequestURL(t *testing.T) {
+	tests := []struct {
+		base, endpoint, want string
+	}{
+		{"http://agent:9700", "/v1/jails", "http://agent:9700/v1/jails"},
+		{"https://proxy.example/agent/", "/v1/jails/sshd/config", "https://proxy.example/agent/v1/jails/sshd/config"},
+		{"http://agent:9700", "/v1/filters/" + url.PathEscape("a b"), "http://agent:9700/v1/filters/a%20b"},
+		{"http://agent:9700", "/v1/callback/config?serverId=s%201", "http://agent:9700/v1/callback/config?serverId=s%201"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.endpoint, func(t *testing.T) {
+			base, err := url.Parse(tt.base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ac := &AgentConnector{base: base}
+			req, err := ac.newRequest(context.Background(), http.MethodGet, tt.endpoint, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := req.URL.String(); got != tt.want {
+				t.Fatalf("URL = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentDoRejectsRedirect(t *testing.T) {
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://elsewhere.example/", http.StatusFound)
+	})
+	err := ac.BanIP(context.Background(), "sshd", "192.0.2.1")
+	if !agentStatusIs(err, http.StatusFound) {
+		t.Fatalf("redirect reported as %v, want an HTTP 302 error", err)
+	}
+}
+
+func TestAgentRestartParsesMode(t *testing.T) {
+	for body, want := range map[string]string{`{"ok":true,"mode":"reload"}`: "reload", `{"ok":true}`: "restart"} {
+		ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+		if mode, err := ac.Restart(context.Background()); err != nil || mode != want {
+			t.Fatalf("body %s: mode=%q err=%v, want %q", body, mode, err, want)
+		}
+	}
+}
+
+func TestAgentValidateConfiguration(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		wantErr string
+	}{
+		{name: "ok", status: 200, body: `{"ok":true,"output":"OK: configuration test is successful"}`},
+		{name: "invalid", status: 422, body: `{"ok":false,"code":"config_invalid","error":"invalid","output":"ERROR No section: 'sshd'"}`, wantErr: "No section: 'sshd'"},
+		{name: "old agent", status: 404, body: `404 page not found`},
+		{name: "agent failure", status: 500, body: `{"ok":false,"error":"boom"}`, wantErr: "500"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v1/actions/validate" || r.Method != http.MethodPost {
+					t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+				}
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			})
+			err := ac.ValidateConfiguration(context.Background())
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestAgentLogpathFallsBackOnlyOnMissingEndpoint(t *testing.T) {
+	for status, wantLegacy := range map[int]bool{http.StatusInternalServerError: false, http.StatusNotFound: true} {
+		legacy := false
+		ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/v1/jails/test-logpath-with-resolution":
+				w.WriteHeader(status)
+			case "/v1/jails/test-logpath":
+				legacy = true
+				_, _ = w.Write([]byte(`{"files":["/var/log/auth.log"]}`))
+			}
+		})
+		_, _, files, err := ac.TestLogpathWithResolution(context.Background(), "/var/log/auth.log")
+		if legacy != wantLegacy {
+			t.Fatalf("status %d: legacy endpoint called=%v, want %v", status, legacy, wantLegacy)
+		}
+		if wantLegacy && (err != nil || len(files) != 1) {
+			t.Fatalf("legacy fallback: files=%v err=%v", files, err)
+		}
+		if !wantLegacy && err == nil {
+			t.Fatal("agent failure was hidden by the fallback")
+		}
+	}
+}
+
+func TestAgentLogpathCodedRejection(t *testing.T) {
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"original_logpath":"/var/log/secure","files":[],"error":"permission denied","code":"logpath_inaccessible"}`))
+	})
+	_, _, _, err := ac.TestLogpathWithResolution(context.Background(), "/var/log/secure")
+	if !errors.Is(err, ErrLogpathInaccessible) {
+		t.Fatalf("coded 422 not mapped to ErrLogpathInaccessible: %v", err)
+	}
+}
+
+func TestAgentLogpathError(t *testing.T) {
+	if err := agentLogpathError("logpath_inaccessible", "permission denied"); !errors.Is(err, ErrLogpathInaccessible) {
+		t.Fatalf("inaccessible not mapped: %v", err)
+	}
+	if err := agentLogpathError("logpath_invalid", "relative path"); errors.Is(err, ErrLogpathInaccessible) || !strings.Contains(err.Error(), "relative path") {
+		t.Fatalf("invalid mapped wrong: %v", err)
+	}
+}
+
+func TestAgentDeregister(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusMethodNotAllowed} {
+		var method, serverID string
+		ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+			method, serverID = r.Method, r.URL.Query().Get("serverId")
+			w.WriteHeader(status)
+		})
+		ac.deregister()
+		if method != http.MethodDelete || serverID != "s1" {
+			t.Fatalf("status %d: got %s serverId=%q", status, method, serverID)
+		}
+	}
+}
+
+func TestReleaseConnectorDeregistersOnlyDepartedAgents(t *testing.T) {
+	deleted := make(chan string, 4)
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deleted <- r.URL.Query().Get("serverId")
+		}
+	}
+	old := newTestAgent(t, handler)
+	sameURL := &AgentConnector{server: old.server, base: old.base}
+	releaseConnector(old, sameURL)
+	select {
+	case id := <-deleted:
+		t.Fatalf("agent with unchanged URL was deregistered (%s)", id)
+	case <-time.After(200 * time.Millisecond):
+	}
+	releaseConnector(old, nil)
+	select {
+	case id := <-deleted:
+		if id != "s1" {
+			t.Fatalf("deregistered %q", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("removed agent was not deregistered")
+	}
+}
+
+func TestHealthFromDetail(t *testing.T) {
+	const fp = "0123456789abcdef0123456789abcdef"
+	ready := func(mod func(*agentHealthDetail)) agentHealthDetail {
+		d := agentHealthDetail{Ready: true}
+		d.Callback.Configured, d.Callback.ServerID, d.Callback.Fingerprint = true, "s1", fp
+		if mod != nil {
+			mod(&d)
+		}
+		return d
+	}
+	tests := []struct {
+		name        string
+		detail      agentHealthDetail
+		want        HealthState
+		wantDrifted bool
+	}{
+		{name: "healthy", detail: ready(nil), want: HealthOK},
+		{name: "not ready", detail: agentHealthDetail{Checks: map[string]bool{"fail2banPing": false, "configWritable": true}}, want: HealthDown},
+		{name: "no callback config", detail: ready(func(d *agentHealthDetail) { d.Callback.Configured = false }), want: HealthDegraded, wantDrifted: true},
+		{name: "stale fingerprint", detail: ready(func(d *agentHealthDetail) { d.Callback.Fingerprint = "other" }), want: HealthDegraded, wantDrifted: true},
+		{name: "other server entry", detail: ready(func(d *agentHealthDetail) { d.Callback.ServerID = "s2" }), want: HealthDegraded},
+		{name: "delivery failing", detail: ready(func(d *agentHealthDetail) { d.Callback.LastError = "connection refused" }), want: HealthDegraded},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, drifted := healthFromDetail(tt.detail, "s1", fp)
+			if got := deriveHealthState(h); got != tt.want || drifted != tt.wantDrifted {
+				t.Fatalf("state=%s drifted=%v (%+v), want %s drifted=%v", got, drifted, h, tt.want, tt.wantDrifted)
+			}
+			if tt.want != HealthOK && h.Error == "" {
+				t.Fatal("unhealthy result without a reason")
+			}
+		})
+	}
+}
+
+func TestHealthFromLegacyReadyz(t *testing.T) {
+	if h := healthFromLegacyReadyz(200, []byte(`{"ready":true,"state":{"healthy":true}}`)); !h.Fail2banOK || h.CallbackOK != nil {
+		t.Fatalf("ready legacy agent: %+v", h)
+	}
+	h := healthFromLegacyReadyz(503, []byte(`{"ready":false,"state":{"lastError":"ping failed"}}`))
+	if h.Fail2banOK || h.Error != "ping failed" {
+		t.Fatalf("unready legacy agent: %+v", h)
+	}
+}
+
+func TestCheckIntegrityOnOldAgentAssumesManaged(t *testing.T) {
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
+	exists, managed, err := ac.CheckJailLocalIntegrity(context.Background())
+	if err != nil || !exists || !managed {
+		t.Fatalf("exists=%v managed=%v err=%v, want true/true/nil", exists, managed, err)
+	}
+}
+
+// Shared vector with the agent's CallbackFingerprint; both sides must agree byte for byte.
+func TestAgentCallbackFingerprint(t *testing.T) {
+	const want = "9563176e6c67afcc7e2efa9843f91808"
+	if got := agentCallbackFingerprint("agent-token-0123456789", "srv-1", "https://ui.example.com/", "cb-secret-123"); got != want {
+		t.Fatalf("fingerprint = %s, want %s", got, want)
+	}
+	if agentCallbackFingerprint("other-token-0123456789", "srv-1", "https://ui.example.com", "cb-secret-123") == want {
+		t.Fatal("fingerprint must depend on the agent token")
 	}
 }

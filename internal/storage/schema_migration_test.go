@@ -159,7 +159,7 @@ func TestSchemaMatchesExpectedColumns(t *testing.T) {
 
 	expected := map[string][]string{
 		"app_settings": {
-			"id", "language", "port", "debug", "restart_needed", "callback_url", "callback_secret",
+			"id", "language", "port", "debug", "callback_url", "callback_secret",
 			"alert_countries", "email_alerts_for_bans", "email_alerts_for_unbans", "smtp_host", "smtp_port",
 			"smtp_username", "smtp_password", "smtp_from", "smtp_use_tls", "bantime_increment",
 			"default_jail_enable", "ignore_ip", "bantime", "findtime", "maxretry", "destemail", "banaction",
@@ -171,7 +171,7 @@ func TestSchemaMatchesExpectedColumns(t *testing.T) {
 		"servers": {
 			"id", "name", "type", "host", "port", "socket_path", "config_path", "ssh_user", "ssh_key_path",
 			"agent_url", "agent_secret", "hostname", "tags", "is_default", "enabled", "reverse_tunnel",
-			"tunnel_port", "needs_restart", "created_at", "updated_at",
+			"tunnel_port", "created_at", "updated_at",
 		},
 		"ban_events": {
 			"id", "server_id", "server_name", "jail", "ip", "country", "hostname", "failures", "whois",

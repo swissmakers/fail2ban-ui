@@ -7,6 +7,8 @@ const test = require('node:test');
 const vm = require('node:vm');
 const filename = path.join(__dirname, '../../pkg/web/static/js/modals.js');
 const source = fs.readFileSync(filename, 'utf8');
+const utilsFilename = path.join(__dirname, '../../pkg/web/static/js/utils.js');
+const utilsSource = fs.readFileSync(utilsFilename, 'utf8');
 
 function createHarness(responses, serverId = 'test-server') {
   const opened = [];
@@ -22,6 +24,7 @@ function createHarness(responses, serverId = 'test-server') {
   };
   const context = vm.createContext({
     currentServerId: serverId,
+    translations: {},
     showLoading: active => loading.push(active),
     showToast: (message, type) => toasts.push({ message, type }),
     t: (key, fallback) => fallback,
@@ -51,6 +54,7 @@ function createHarness(responses, serverId = 'test-server') {
       };
     }
   });
+  vm.runInContext(utilsSource, context, { filename: utilsFilename });
   vm.runInContext(source, context, { filename });
   context.openModal = id => opened.push(id);
   return { context, elements, opened, toasts, loading, requests, listeners };

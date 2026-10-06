@@ -18,9 +18,9 @@ package fail2ban
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
@@ -217,9 +217,10 @@ func TestBuildRemoteWriteScript(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe path is rejected", func(t *testing.T) {
-		if _, err := buildRemoteWriteScript("/tmp/f'oo", "x\n"); err == nil {
-			t.Fatal("expected error for path containing a single quote")
+	t.Run("quote in path is escaped", func(t *testing.T) {
+		script, err := buildRemoteWriteScript("/tmp/f'oo", "x\n")
+		if err != nil || !strings.Contains(script, "target="+shellQuote("/tmp/f'oo")) {
+			t.Fatalf("path not escaped: err=%v\n%s", err, script)
 		}
 	})
 
@@ -298,10 +299,7 @@ func TestParseRemoteFileDump(t *testing.T) {
 
 func TestBuildJailDirDumpScript(t *testing.T) {
 	t.Run("emits all conf files before local overrides", func(t *testing.T) {
-		script, err := buildJailDirDumpScript("/etc/fail2ban/jail.d")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		script := buildJailDirDumpScript("/etc/fail2ban/jail.d")
 		if !strings.Contains(script, "'/etc/fail2ban/jail.d'/*.local") {
 			t.Fatalf("missing quoted .local glob: %s", script)
 		}
@@ -319,9 +317,9 @@ func TestBuildJailDirDumpScript(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe directory is rejected", func(t *testing.T) {
-		if _, err := buildJailDirDumpScript("/etc/fail2'ban/jail.d"); err == nil {
-			t.Fatal("expected an error for a path containing a single quote")
+	t.Run("quote in directory is escaped", func(t *testing.T) {
+		if script := buildJailDirDumpScript("/etc/fail2'ban/jail.d"); !strings.Contains(script, shellQuote("/etc/fail2'ban/jail.d")+"/*.local") {
+			t.Fatalf("directory not escaped: %s", script)
 		}
 	})
 }
@@ -437,10 +435,7 @@ func TestSplitFilterTestOutput(t *testing.T) {
 }
 
 func TestBuildConfigTreeDumpScript(t *testing.T) {
-	script, err := buildConfigTreeDumpScript("/etc/fail2ban")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	script := buildConfigTreeDumpScript("/etc/fail2ban")
 	for _, want := range []string{"'/etc/fail2ban'", "-name '*.conf'", "-name '*.local'", batchFileBegin, batchFileEnd} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q: %s", want, script)
@@ -451,9 +446,6 @@ func TestBuildConfigTreeDumpScript(t *testing.T) {
 	}
 	if strings.Contains(script, "2>&1") {
 		t.Fatalf("stderr must never be merged into stdout: %s", script)
-	}
-	if _, err := buildConfigTreeDumpScript("/etc/fail2'ban"); err == nil {
-		t.Fatal("expected an error for a path containing a single quote")
 	}
 }
 
@@ -595,12 +587,6 @@ func TestBuildEnsureActionScript(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe path is rejected", func(t *testing.T) {
-		if _, err := buildEnsureActionScript("/etc/fail2ban/action.d/u'i.conf", "x\n"); err == nil {
-			t.Fatal("expected error for path containing a single quote")
-		}
-	})
-
 	t.Run("delimiter collision is rejected", func(t *testing.T) {
 		if _, err := buildEnsureActionScript(actionPath, "a\n"+remoteWriteDelimiter+"\nb\n"); err == nil {
 			t.Fatal("expected error for content containing the heredoc delimiter")
@@ -634,10 +620,7 @@ func TestExtractMarkerValue(t *testing.T) {
 }
 
 func TestBuildBannedSummaryScriptIncludesActionFile(t *testing.T) {
-	script, err := buildBannedSummaryScript("", "/config/fail2ban/jail.local", "/config/fail2ban/action.d/ui-custom-action.conf")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	script := buildBannedSummaryScript("", "/config/fail2ban/jail.local", "/config/fail2ban/action.d/ui-custom-action.conf")
 	for _, want := range []string{
 		"cat '/config/fail2ban/jail.local'",
 		"cat '/config/fail2ban/action.d/ui-custom-action.conf'",
@@ -706,22 +689,6 @@ func TestSplitBannedSummary(t *testing.T) {
 			t.Fatal("expected an error for output without the batch end marker")
 		}
 	})
-}
-
-func TestBeginActionRepairDebounces(t *testing.T) {
-	sc := testSSHConnector()
-
-	if !sc.beginActionRepair() {
-		t.Fatal("the first repair attempt must be allowed")
-	}
-	if sc.beginActionRepair() {
-		t.Fatal("a second attempt inside the debounce window must be refused")
-	}
-
-	sc.actionRepairAt = time.Now().Add(-actionRepairDebounce - time.Second)
-	if !sc.beginActionRepair() {
-		t.Fatal("an attempt after the debounce window must be allowed again")
-	}
 }
 
 // A missed marker means the UI reports success for a broken jail.
@@ -817,4 +784,18 @@ func TestIsSystemctlUnavailable(t *testing.T) {
 			t.Fatal("the marker must be found in the output carried by the error")
 		}
 	})
+}
+
+// The quoted word must reach the remote shell byte for byte, whatever it contains.
+func TestShellQuoteRoundTrip(t *testing.T) {
+	for _, word := range []string{"plain", "with space", "it's", `"double"`, "$(id)", "`id`", "a\nb", "back\\slash", "*", ""} {
+		out, err := exec.Command("sh", "-c", "printf '%s' "+shellQuote(word)).Output()
+		if err != nil || string(out) != word {
+			t.Fatalf("shellQuote(%q) round-trip = %q, %v", word, out, err)
+		}
+	}
+	out, err := exec.Command("sh", "-c", "printf '[%s]' "+shellJoin("a b", "c'd", "$x")).Output()
+	if err != nil || string(out) != "[a b][c'd][$x]" {
+		t.Fatalf("shellJoin round-trip = %q, %v", out, err)
+	}
 }

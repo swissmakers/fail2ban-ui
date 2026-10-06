@@ -334,3 +334,34 @@ func TestGetFail2banPathOnlyTrustsKnownRoots(t *testing.T) {
 		}
 	})
 }
+
+func TestDeleteFilterRemovesBackupsOverSSH(t *testing.T) {
+	logFile := filepath.Join(t.TempDir(), "cmd")
+	t.Setenv("F2BUI_TEST_SSH_LOG", logFile)
+	withFakeSSH(t, `case "$*" in
+  *"-O check"*) exit 0 ;;
+  *"test -d"*)  echo "/config/fail2ban"; exit 0 ;;
+esac
+for a in "$@"; do last="$a"; done
+printf '%s' "$last" > "$F2BUI_TEST_SSH_LOG"
+exit 0
+`)
+	sc := testSSHConnector()
+	if err := sc.DeleteFilter(context.Background(), "apache-auth"); err != nil {
+		t.Fatalf("DeleteFilter: %v", err)
+	}
+	remote, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("sh", "-c", `eval "set -- $1"; printf '%s\n' "$@"`, "_", string(remote)).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	dir := "/config/fail2ban/filter.d/"
+	want := []string{"rm", "-f", dir + "apache-auth.local", dir + "apache-auth.conf", dir + "apache-auth.local.f2bui.bak", dir + "apache-auth.conf.f2bui.bak"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("remote delete ran %q, want %q", got, want)
+	}
+}

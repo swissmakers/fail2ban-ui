@@ -118,3 +118,22 @@ func TestNormalizeServersKeepsManualDisableReasonless(t *testing.T) {
 		t.Errorf("manually disabled server must have empty disabledReason, got %q", out[0].DisabledReason)
 	}
 }
+
+func TestUpdateSettingsIgnoresServers(t *testing.T) {
+	original := GetSettings()
+	t.Cleanup(func() { _, _ = UpdateSettings(original) })
+	req := GetSettings()
+	req.Servers = []Fail2banServer{{ID: "injected", Name: "injected", Type: "local", Enabled: true}}
+	updated, err := UpdateSettings(req)
+	if err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	if len(updated.Servers) != len(original.Servers) {
+		t.Fatalf("servers = %d, want %d unchanged", len(updated.Servers), len(original.Servers))
+	}
+	for _, srv := range GetSettings().Servers {
+		if srv.ID == "injected" {
+			t.Fatal("settings update must not add servers")
+		}
+	}
+}

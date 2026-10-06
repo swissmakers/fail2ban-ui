@@ -172,3 +172,30 @@ func TestLocalReloadLoadsTheServersOwnTree(t *testing.T) {
 		t.Fatalf("reload argv = %q, want %q", strings.TrimSpace(string(got)), want)
 	}
 }
+
+func TestDeleteLocalConfigFilesRemovesBackups(t *testing.T) {
+	root := t.TempDir()
+	dir := FilterDir(root)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"apache.local", "apache.local.f2bui.bak", "apache.conf", "apache.conf.f2bui.bak", "other.local.f2bui.bak"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := deleteLocalConfigFiles(filterKind, "apache", root); err != nil {
+		t.Fatalf("deleteLocalConfigFiles: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, ",") != "other.local.f2bui.bak" {
+		t.Fatalf("left in filter.d: %v, want only the other filter's backup", left)
+	}
+}

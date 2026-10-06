@@ -115,3 +115,87 @@ func TestSplitCommaList(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateIgnoreIPEntry(t *testing.T) {
+	tests := []struct {
+		entry string
+		ok    bool
+	}{
+		{"127.0.0.1/8", true},
+		{"::1", true},
+		{"192.0.2.10", true},
+		{"2001:db8::/32", true},
+		{"example.com", true},
+		{"localhost", true},
+		{"1.2.3", false},
+		{"999.1.1.1", false},
+		{"bad:host", false},
+		{"a/b", false},
+		{"-bad.com", false},
+		{"ok.com\nbantime = -1", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.entry, func(t *testing.T) {
+			if err := ValidateIgnoreIPEntry(tt.entry); (err == nil) != tt.ok {
+				t.Fatalf("ValidateIgnoreIPEntry(%q) = %v, want ok=%v", tt.entry, err, tt.ok)
+			}
+		})
+	}
+}
+
+func TestValidateBanactionName(t *testing.T) {
+	tests := []struct {
+		name string
+		ok   bool
+	}{
+		{"nftables-multiport", true},
+		{"iptables-allports", true},
+		{"nftables[type=allports]", true},
+		{"ufw", true},
+		{"", false},
+		{"-x", false},
+		{"nftables\nbantime = -1", false},
+		{"nftables[type=x\n]", false},
+		{"nftables[type=$(id)]", false},
+		{"a b", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ValidateBanactionName(tt.name); (err == nil) != tt.ok {
+				t.Fatalf("ValidateBanactionName(%q) = %v, want ok=%v", tt.name, err, tt.ok)
+			}
+		})
+	}
+}
+
+func TestValidateChainName(t *testing.T) {
+	tests := []struct {
+		name string
+		ok   bool
+	}{
+		{"INPUT", true},
+		{"DOCKER-USER", true},
+		{"f2b_chain", true},
+		{"", false},
+		{"IN PUT", false},
+		{"INPUT\r\nx", false},
+		{"-INPUT", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ValidateChainName(tt.name); (err == nil) != tt.ok {
+				t.Fatalf("ValidateChainName(%q) = %v, want ok=%v", tt.name, err, tt.ok)
+			}
+		})
+	}
+}
+
+func TestEnvBool(t *testing.T) {
+	for value, want := range map[string]bool{"1": true, "true": true, "TRUE": true, " yes ": true, "on": true, "": false, "0": false, "false": false, "nope": false} {
+		t.Setenv("F2B_TEST_BOOL", value)
+		if got := EnvBool("F2B_TEST_BOOL"); got != want {
+			t.Errorf("EnvBool(%q) = %v, want %v", value, got, want)
+		}
+	}
+}

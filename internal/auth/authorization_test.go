@@ -51,3 +51,29 @@ func TestClaimByPathAndStringSliceFromClaim(t *testing.T) {
 		t.Fatalf("roles = %#v, want nested role slice", roles)
 	}
 }
+
+func TestUsernameFromClaims(t *testing.T) {
+	full := map[string]interface{}{"preferred_username": "alice", "email": "alice@example.com", "upn": "alice@corp.example"}
+	tests := []struct {
+		name   string
+		claims map[string]interface{}
+		claim  string
+		want   string
+	}{
+		{"email", full, "email", "alice@example.com"},
+		{"preferred_username", full, "preferred_username", "alice"},
+		{"custom claim", full, "upn", "alice@corp.example"},
+		{"missing custom claim falls back to preferred_username", full, "sAMAccountName", "alice"},
+		{"then to email", map[string]interface{}{"email": "bob@example.com"}, "upn", "bob@example.com"},
+		{"preferred_username falls back to email", map[string]interface{}{"email": "bob@example.com"}, "preferred_username", "bob@example.com"},
+		{"email does not fall back", map[string]interface{}{"preferred_username": "bob"}, "email", ""},
+		{"non-string claim is skipped", map[string]interface{}{"upn": 42, "preferred_username": "bob"}, "upn", "bob"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usernameFromClaims(tt.claims, tt.claim); got != tt.want {
+				t.Errorf("usernameFromClaims(%v, %q) = %q, want %q", tt.claims, tt.claim, got, tt.want)
+			}
+		})
+	}
+}

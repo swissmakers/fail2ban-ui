@@ -64,15 +64,15 @@ func TestValidateIdentifierRejectsTraversal(t *testing.T) {
 	}
 }
 
-func TestValidateElasticsearchIndex(t *testing.T) {
-	for _, ok := range []string{"fail2ban-events", "logs.app", "abc_123"} {
-		if err := ValidateElasticsearchIndex(ok); err != nil {
-			t.Errorf("ValidateElasticsearchIndex(%q) should pass: %v", ok, err)
+func TestValidateElasticsearchDataStream(t *testing.T) {
+	for _, ok := range []string{"logs-fail2ban_ui.events-default", "logs.app", "abc_123"} {
+		if err := ValidateElasticsearchDataStream(ok); err != nil {
+			t.Errorf("ValidateElasticsearchDataStream(%q) should pass: %v", ok, err)
 		}
 	}
 	for _, bad := range []string{"", "x/_search", "../..", "UPPER", "-leading", "a..b", "a?b", "a#b"} {
-		if err := ValidateElasticsearchIndex(bad); err == nil {
-			t.Errorf("ValidateElasticsearchIndex(%q) should fail", bad)
+		if err := ValidateElasticsearchDataStream(bad); err == nil {
+			t.Errorf("ValidateElasticsearchDataStream(%q) should fail", bad)
 		}
 	}
 }

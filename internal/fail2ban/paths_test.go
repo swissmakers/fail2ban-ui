@@ -113,6 +113,7 @@ func TestResolveWithinDir(t *testing.T) {
 		t.Fatalf("resolveWithinDir: got %q want %q", got, want)
 	}
 
+	// Traversal and injection attempts must be rejected by the name allowlist.
 	for _, name := range []string{"../../etc/passwd", "..", "foo/bar", "a/../../b"} {
 		if _, err := resolveWithinDir(dir, name, ".local"); err == nil {
 			t.Fatalf("resolveWithinDir(%q): expected error, got nil", name)
@@ -120,6 +121,7 @@ func TestResolveWithinDir(t *testing.T) {
 	}
 }
 
+// Guards user-supplied names against path traversal.
 func TestValidateFilterAndJailName(t *testing.T) {
 	t.Parallel()
 

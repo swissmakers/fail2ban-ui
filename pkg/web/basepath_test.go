@@ -17,42 +17,15 @@
 package web
 
 import (
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-func TestNormalizeBasePath(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"", ""},
-		{"   ", ""},
-		{"/", ""},
-		{"/myf2b", "/myf2b"},
-		{"/myf2b/", "/myf2b"},
-		{"myf2b", "/myf2b"},
-		{"  /app/sub/  ", "/app/sub"},
-		{"//evil.com", ""},
-		{"///evil.com", ""},
-		{"https://evil.com", ""},
-		{"http://evil.com", ""},
-		{"/path\r\nSet-Cookie: x=y", ""},
-		{"\\\\evil.com", ""},
-		{"/\\evil.com", ""},
-		{"/a:b", ""},
-	}
-	for _, tt := range tests {
-		if got := NormalizeBasePath(tt.in); got != tt.want {
-			t.Errorf("NormalizeBasePath(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
 func TestExternalPath(t *testing.T) {
-	SetBasePath("/myf2b")
-	defer SetBasePath("")
+	shared.SetBasePath("/myf2b")
+	defer shared.SetBasePath("")
 
 	if got := ExternalPath("/"); got != "/myf2b/" {
 		t.Errorf("ExternalPath('/') = %q", got)
@@ -61,15 +34,15 @@ func TestExternalPath(t *testing.T) {
 		t.Errorf("ExternalPath('/auth/login') = %q", got)
 	}
 
-	SetBasePath("")
+	shared.SetBasePath("")
 	if got := ExternalPath("/api/version"); got != "/api/version" {
 		t.Errorf("root ExternalPath = %q", got)
 	}
 }
 
 func TestStripBasePathHandler(t *testing.T) {
-	SetBasePath("/dev")
-	defer SetBasePath("")
+	shared.SetBasePath("/dev")
+	defer shared.SetBasePath("")
 
 	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Seen-Path", r.URL.Path)
@@ -110,6 +83,16 @@ func TestStripBasePathHandler(t *testing.T) {
 		}
 		if got := rr.Header().Get("Location"); got != "/dev/" {
 			t.Fatalf("location = %q, want %q", got, "/dev/")
+		}
+	})
+
+	t.Run("serves the liveness probe without the base path", func(t *testing.T) {
+		for _, path := range []string{"/healthz", "/dev/healthz"} {
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+			if rr.Code != http.StatusNoContent || rr.Header().Get("X-Seen-Path") != "/healthz" {
+				t.Fatalf("%s: status=%d seen=%q", path, rr.Code, rr.Header().Get("X-Seen-Path"))
+			}
 		}
 	})
 

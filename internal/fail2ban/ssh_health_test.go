@@ -30,19 +30,15 @@ func TestLiveMasterDoesNotHideCallbackFailure(t *testing.T) {
 cat >/dev/null
 printf '404'
 `)
-	sc.CheckTunnelHealth(context.Background())
-	status := sc.HealthStatus()
-	if status.CallbackHealthy || status.CallbackError == "" {
-		t.Fatalf("broken callback reported healthy: %+v", status)
+	if err := sc.checkCallback(context.Background()); err == nil {
+		t.Fatal("broken callback reported healthy")
 	}
 	withFakeSSH(t, `case "$*" in *"-O check"*) exit 0 ;; esac
 cat >/dev/null
 printf '200'
 `)
-	sc.CheckTunnelHealth(context.Background())
-	status = sc.HealthStatus()
-	if !status.CallbackHealthy || status.CallbackError != "" {
-		t.Fatalf("recovery not recorded: %+v", status)
+	if err := sc.checkCallback(context.Background()); err != nil {
+		t.Fatalf("recovery not detected: %v", err)
 	}
 }
 
@@ -59,12 +55,12 @@ esac
 cat >/dev/null
 if [ -f "$F2B_HEALTH_MARKER" ]; then printf '200'; else printf '000'; exit 7; fi
 `)
-	sc.CheckTunnelHealth(context.Background())
-	if _, err := os.Stat(marker); err != nil {
+	err := sc.checkCallback(context.Background())
+	if _, statErr := os.Stat(marker); statErr != nil {
 		t.Fatal("dead forward was not rebuilt")
 	}
-	if !sc.HealthStatus().CallbackHealthy {
-		t.Fatalf("callback did not recover: %+v", sc.HealthStatus())
+	if err != nil {
+		t.Fatalf("callback did not recover: %v", err)
 	}
 }
 
