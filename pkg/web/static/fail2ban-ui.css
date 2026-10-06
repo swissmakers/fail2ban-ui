@@ -114,7 +114,6 @@
     --f2b-ui-theme-badge-warning-hover-bg: #fde68a;
     --f2b-ui-theme-badge-success-bg: #dcfce7;
     --f2b-ui-theme-badge-success-text: #166534;
-    --f2b-ui-prism-bg: #f8fafc;
     --f2b-ui-toast-success-bg: #047857;
     --f2b-ui-toast-info-bg: #1d4ed8;
     --f2b-ui-toast-warning-bg: #d97706;
@@ -233,7 +232,6 @@ html[data-theme="dark"] body:not(.lotr-mode) {
     --f2b-ui-theme-badge-warning-hover-bg: #92400e;
     --f2b-ui-theme-badge-success-bg: #14532d;
     --f2b-ui-theme-badge-success-text: #bbf7d0;
-    --f2b-ui-prism-bg: #020617;
     --f2b-ui-toast-success-bg: #14532d;
     --f2b-ui-toast-info-bg: #1e40af;
     --f2b-ui-toast-warning-bg: #a16207;
@@ -452,15 +450,6 @@ html[data-theme="dark"] body:not(.lotr-mode) .toast-warning {
     background-color: var(--f2b-ui-toast-warning-bg) !important;
 }
 
-html[data-theme="dark"] body:not(.lotr-mode) pre[class*="language-"],
-html[data-theme="dark"] body:not(.lotr-mode) code[class*="language-"] { background: var(--f2b-ui-prism-bg); }
-
-html[data-theme="dark"] body:not(.lotr-mode) .token.operator,
-html[data-theme="dark"] body:not(.lotr-mode) .token.entity,
-html[data-theme="dark"] body:not(.lotr-mode) .token.url,
-html[data-theme="dark"] body:not(.lotr-mode) .language-css .token.string,
-html[data-theme="dark"] body:not(.lotr-mode) .style .token.string { background: transparent; }
-
 /* =========================================================================
    Loading Overlay
    ========================================================================= */
@@ -562,10 +551,6 @@ body:has(#loginPage:not(.hidden)) {
 
 #serverManagerInfoView.server-manager-info-view.hidden {
     display: none;
-}
-
-#serverManagerInfoView .server-manager-info-add {
-    margin-inline: auto;
 }
 
 ::-webkit-scrollbar {
