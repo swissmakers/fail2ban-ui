@@ -14,6 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package httpx provides the shared client
 package httpx
 
 import (
@@ -55,6 +56,7 @@ func ReadLimited(body io.Reader) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(body, MaxResponseBytes))
 }
 
+// Sends req and turns any 4xx/5xx into an error carrying the capped body
 func DoChecked(client *http.Client, req *http.Request, label string) ([]byte, int, error) {
 	resp, err := client.Do(req)
 	if err != nil {

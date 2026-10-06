@@ -25,6 +25,11 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
 
+// =========================================================================
+//  Console log writer that mirrors log output to the WebSocket hub
+//  so the browser can display server logs in real time
+// =========================================================================
+
 type ConsoleLogWriter struct {
 	originalWriter io.Writer
 	hub            *Hub
@@ -46,6 +51,7 @@ func (c *ConsoleLogWriter) SetEnabled(enabled bool) {
 	c.enabled = enabled
 }
 
+// Write sends bytes to the original writer and, when enabled broadcasts the trimmed line to WebSocket clients
 func (c *ConsoleLogWriter) Write(p []byte) (n int, err error) {
 	originalLen := len(p)
 	p = []byte(config.RedactLog(string(p)))
@@ -70,6 +76,10 @@ func (c *ConsoleLogWriter) Write(p []byte) (n int, err error) {
 	}
 	return n, err
 }
+
+// =========================================================================
+//  Global Setup
+// =========================================================================
 
 var globalConsoleLogWriter *ConsoleLogWriter
 var consoleLogWriterOnce sync.Once

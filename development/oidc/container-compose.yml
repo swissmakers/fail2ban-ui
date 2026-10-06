@@ -97,7 +97,7 @@ services:
 
   # Authentik: OIDC Provider (Alternative 2) - Not fully tested
   # Uncomment to use Authentik instead of Keycloak
-  # Authentik requires additional setup (migrations, initial admin user)
+  # Note: Authentik requires additional setup (migrations, initial admin user)
   # authentik-server:
   #   image: ghcr.io/goauthentik/server:latest
   #   container_name: DEV_authentik-server
@@ -266,9 +266,9 @@ services:
 
     restart: unless-stopped
     # Wait for Keycloak to be healthy before starting
-    # keycloak-init runs as a one-time job, so we only wait for Keycloak
+    # Note: keycloak-init runs as a one-time job, so we only wait for Keycloak
     # The application will retry connecting to Keycloak if needed
-    # With host network mode, depends_on still works but network isolation is bypassed
+    # Note: With host network mode, depends_on still works but network isolation is bypassed
     depends_on:
       - keycloak
 
@@ -284,7 +284,7 @@ services:
       # Required for fail2ban container: Allows to run as root (needed to manage network interfaces and raw sockets)
       - SYS_ADMIN
     #privileged: true
-    # Needed to add iptables rules to the host network
+    # needed to add iptables rules to the host network
     network_mode: host
     environment:
       - TZ=Europe/Zurich

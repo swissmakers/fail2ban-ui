@@ -1,3 +1,9 @@
+/* LOTR Easter Egg Theme */
+
+/* =========================================================================
+   Color Variables
+   ========================================================================= */
+
 body.lotr-mode {
   --lotr-forest-green: #1a4d2e;
   --lotr-dark-green: #0d2818;
@@ -20,6 +26,10 @@ body.lotr-mode {
   --lotr-text-light: #faf8f3;
 }
 
+/* =========================================================================
+   Base Theme
+   ========================================================================= */
+
 body.lotr-mode {
   background: url(images/bg-overlay);
   background-size: cover;
@@ -30,6 +40,10 @@ body.lotr-mode {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
 }
+
+/* =========================================================================
+   Typography
+   ========================================================================= */
 
 body.lotr-mode h1,
 body.lotr-mode h2,
@@ -56,6 +70,10 @@ body.lotr-mode h2,
 body.lotr-mode h3 {
   font-weight: 600;
 }
+
+/* =========================================================================
+   Cards and Panels
+   ========================================================================= */
 
 body.lotr-mode .bg-white:not(.modal-content) {
   background: linear-gradient(135deg, var(--lotr-parchment) 0%, var(--lotr-warm-parchment) 100%) !important;
@@ -158,6 +176,10 @@ body.lotr-mode .bg-white .text-gray-600 {
   color: var(--lotr-brown);
 }
 
+/* =========================================================================
+   Buttons
+   ========================================================================= */
+
 body.lotr-mode button:not(.toast),
 body.lotr-mode .bg-blue-500:not(.toast),
 body.lotr-mode .bg-blue-600:not(.toast) {
@@ -166,6 +188,7 @@ body.lotr-mode .bg-blue-600:not(.toast) {
   border-radius: 8px;
   color: var(--lotr-text-dark) !important;
   font-weight: 700;
+  /*padding: 0px 2px 0px 2px;*/
   text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
   box-shadow:
     0 4px 8px rgba(0, 0, 0, 0.4),
@@ -221,6 +244,10 @@ body.lotr-mode nav.bg-blue-600:not(.toast), body.lotr-mode nav.bg-blue-600:hover
   background: linear-gradient(135deg, #342e14 0%, #000000 50%, #916f00 100%) !important;
 }
 
+/* =========================================================================
+   Navigation
+   ========================================================================= */
+
 body.lotr-mode nav {
   background: linear-gradient(135deg,
     var(--lotr-dark-brown) 0%,
@@ -267,6 +294,10 @@ body.lotr-mode nav a:hover {
     1px 1px 2px rgba(0, 0, 0, 0.7),
     0 0 10px rgba(212, 175, 55, 0.5);
 }
+
+/* =========================================================================
+   WebSocket Status Indicator + Tooltip
+   ========================================================================= */
 
 body.lotr-mode #backendStatus {
   color: var(--lotr-bright-gold) !important;
@@ -322,6 +353,10 @@ body.lotr-mode #wsTooltip .border-gray-700 {
   border-color: rgba(212, 175, 55, 0.35) !important;
 }
 
+/* =========================================================================
+   Form Elements
+   ========================================================================= */
+
 body.lotr-mode input:not([type="checkbox"]):not([type="radio"]):not([type="search"]),
 body.lotr-mode select,
 body.lotr-mode textarea {
@@ -349,6 +384,10 @@ body.lotr-mode textarea:focus {
     inset 0 2px 4px rgba(0, 0, 0, 0.1) !important;
   outline: none;
 }
+
+/* =========================================================================
+   Loading Overlay
+   ========================================================================= */
 
 body.lotr-mode #loading-overlay {
   background: url("images/loading-overlay");
@@ -427,6 +466,10 @@ body.lotr-mode #loading-overlay .animate-spin::after {
   }
 }
 
+/* =========================================================================
+   Toast Notifications
+   ========================================================================= */
+
 body.lotr-mode .toast {
   background: linear-gradient(135deg, var(--lotr-parchment) 0%, var(--lotr-warm-parchment) 100%) !important;
   border: 3px solid var(--lotr-gold);
@@ -475,6 +518,10 @@ body.lotr-mode .toast-info {
   border-color: var(--lotr-gold);
 }
 
+/* =========================================================================
+   Utility Classes
+   ========================================================================= */
+
 body.lotr-mode .bg-blue-50,
 body.lotr-mode .bg-gray-50 {
   background: linear-gradient(135deg, var(--lotr-warm-parchment) 0%, var(--lotr-dark-parchment) 100%) !important;
@@ -516,6 +563,10 @@ body.lotr-mode #logpathResults.text-yellow-600 {
   color: var(--lotr-dark-gold) !important;
 }
 
+/* =========================================================================
+   Tables
+   ========================================================================= */
+
 body.lotr-mode table {
   border-collapse: separate;
   border-spacing: 0;
@@ -552,6 +603,10 @@ body.lotr-mode table tr:nth-child(even) td {
 body.lotr-mode table tr:nth-child(even):hover td {
   background: var(--lotr-warm-parchment);
 }
+
+/* =========================================================================
+   Modals
+   ========================================================================= */
 
 body.lotr-mode .modal-content {
   background: linear-gradient(135deg, var(--lotr-parchment) 0%, var(--lotr-warm-parchment) 100%) !important;
@@ -676,6 +731,10 @@ body.lotr-mode .threat-intel-raw {
   color: #f3e5c4;
 }
 
+/* =========================================================================
+   Badges and Labels
+   ========================================================================= */
+
 body.lotr-mode .bg-green-100,
 body.lotr-mode .bg-green-500 {
   background: linear-gradient(135deg, var(--lotr-forest-green) 0%, var(--lotr-dark-green) 100%) !important;
@@ -702,6 +761,10 @@ body.lotr-mode .bg-yellow-400 {
   text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
 }
 
+/* =========================================================================
+   Restart Banner
+   ========================================================================= */
+
 body.lotr-mode #restartBanner {
   background: linear-gradient(135deg,
     var(--lotr-bright-gold) 0%,
@@ -715,6 +778,10 @@ body.lotr-mode #restartBanner {
   text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.5);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
 }
+
+/* =========================================================================
+   Select2 Overrides
+   ========================================================================= */
 
 body.lotr-mode .select2-container--default .select2-selection {
   background: var(--lotr-warm-parchment) !important;
@@ -774,6 +841,10 @@ body.lotr-mode .select2-results__option--highlighted[aria-selected="true"] {
   background: linear-gradient(135deg, var(--lotr-bright-gold) 0%, var(--lotr-gold) 100%) !important;
 }
 
+/* =========================================================================
+   Ignore IPs Tags
+   ========================================================================= */
+
 body.lotr-mode .ignore-ip-tag {
   background: linear-gradient(135deg, var(--lotr-warm-parchment) 0%, var(--lotr-dark-parchment) 100%) !important;
   color: var(--lotr-text-dark) !important;
@@ -796,6 +867,10 @@ body.lotr-mode .ignore-ip-tag button:hover {
   transform: scale(1.2);
   text-shadow: 0 0 4px rgba(193, 18, 31, 0.5);
 }
+
+/* =========================================================================
+   Scrollbar
+   ========================================================================= */
 
 body.lotr-mode ::-webkit-scrollbar {
   width: 14px;
@@ -824,6 +899,10 @@ body.lotr-mode ::-webkit-scrollbar-thumb:hover {
     inset 0 -2px 4px rgba(0, 0, 0, 0.3),
     0 0 10px rgba(212, 175, 55, 0.5);
 }
+
+/* =========================================================================
+   Decorative Elements
+   ========================================================================= */
 
 body.lotr-mode .lotr-divider {
   height: 4px;
@@ -899,6 +978,7 @@ body.lotr-mode .lotr-glow {
   }
 }
 
+/* Fire effect for email headers */
 body.lotr-mode .lotr-fire {
   background: linear-gradient(180deg,
     var(--lotr-fire-red) 0%,
@@ -937,13 +1017,21 @@ body.lotr-mode * {
               box-shadow 0.6s ease;
 }
 
+/* =========================================================================
+   Links and Checkboxes
+   ========================================================================= */
+
 body.lotr-mode a {
   color: var(--lotr-bright-gold) !important;
+  /*text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);*/
   transition: all 0.3s ease;
 }
 
 body.lotr-mode a:hover {
   color: var(--lotr-gold);
+  /*text-shadow:
+    1px 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 10px rgba(212, 175, 55, 0.6);*/
 }
 
 body.lotr-mode input[type="checkbox"],
@@ -1007,6 +1095,10 @@ body.lotr-mode .bg-white label {
 body.lotr-mode main {
   background: transparent;
 }
+
+/* =========================================================================
+   Responsive
+   ========================================================================= */
 
 @media (max-width: 768px) {
   body.lotr-mode .bg-white {

@@ -29,7 +29,7 @@ var (
 	serverIDRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
-// The value must already be trimmed of whitespace and trailing slashes.
+// Checks callback base URL -> the value must already be trimmed of whitespace and trailing slashes
 func ValidateCallbackURL(url string) error {
 	m := callbackURLRe.FindStringSubmatch(url)
 	if m == nil {
@@ -43,7 +43,7 @@ func ValidateCallbackURL(url string) error {
 	return nil
 }
 
-// Empty is allowed and means "generate one".
+// Checks callback secret -> empty is allowed and means "generate one".
 func ValidateCallbackSecret(secret string) error {
 	for _, r := range secret {
 		if r < 0x21 || r > 0x7e || strings.ContainsRune("'\"\\`$%<>", r) {

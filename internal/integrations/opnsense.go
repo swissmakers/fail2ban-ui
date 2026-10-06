@@ -37,6 +37,10 @@ func init() {
 	Register(&opnsenseIntegration{})
 }
 
+// =========================================================================
+//  Interface Implementation
+// =========================================================================
+
 func (o *opnsenseIntegration) ID() string {
 	return "opnsense"
 }
@@ -53,6 +57,10 @@ func (o *opnsenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	}
 	return nil
 }
+
+// =========================================================================
+//  Block/Unblock
+// =========================================================================
 
 func (o *opnsenseIntegration) BlockIP(req Request) error {
 	if err := o.Validate(req.Config); err != nil {
@@ -73,6 +81,10 @@ func (o *opnsenseIntegration) UnblockIP(req Request) error {
 	}
 	return o.callAPI(req, "delete", req.IP)
 }
+
+// =========================================================================
+//  OPNsense API
+// =========================================================================
 
 func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 	cfg := req.Config.OPNsense
@@ -112,6 +124,7 @@ func (o *opnsenseIntegration) callAPI(req Request, action, ip string) error {
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
+		// Provide more specific error messages for connection issues
 		if netErr, ok := err.(interface {
 			Timeout() bool
 			Error() string

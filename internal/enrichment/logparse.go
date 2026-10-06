@@ -24,6 +24,10 @@ import (
 	grok "github.com/elastic/go-grok"
 )
 
+// =========================================================================
+//  Types / Variables
+// =========================================================================
+
 type compiledPattern struct {
 	def  PatternDef
 	grok *grok.Grok
@@ -37,6 +41,7 @@ var (
 	fallbackCompiled []compiledPattern
 )
 
+// Ensure the patterns are initialised.
 func ensureInit() {
 	initOnce.Do(func() {
 		httpCompiled = compileAll(HTTPPatterns)
@@ -63,6 +68,7 @@ func compileAll(defs []PatternDef) []compiledPattern {
 	return out
 }
 
+// Parses the raw log text from a Fail2ban event and returns a map of structured fields.
 func ParseLogLines(logs, jail string) map[string]interface{} {
 	ensureInit()
 
@@ -126,6 +132,10 @@ func ParseLogLines(logs, jail string) map[string]interface{} {
 	return enriched
 }
 
+// =========================================================================
+// Helper functions
+// =========================================================================
+
 func splitAndClean(logs string) []string {
 	raw := strings.Split(logs, "\n")
 	var out []string
@@ -138,6 +148,8 @@ func splitAndClean(logs string) []string {
 	return out
 }
 
+// Returns compiled pattern slices in a priority order derived from the jail name.
+// For example, an "sshd" jail tries SSH patterns first.
 func orderedPatterns(jail string) [][]compiledPattern {
 	jl := strings.ToLower(jail)
 
@@ -162,6 +174,7 @@ func containsAny(s string, substrs ...string) bool {
 	return false
 }
 
+// Tries every compiled pattern in priority order and returns the first successful match.
 func parseLine(line string, ordered [][]compiledPattern) (map[string]interface{}, PatternDef) {
 	for _, group := range ordered {
 		for _, cp := range group {
@@ -179,6 +192,7 @@ func parseLine(line string, ordered [][]compiledPattern) (map[string]interface{}
 	return nil, PatternDef{}
 }
 
+// Removes keys whose value is empty or a dash placeholder.
 func cleanEmpty(m map[string]interface{}) {
 	for k, v := range m {
 		if s, ok := v.(string); ok && (s == "" || s == "-") {
@@ -187,7 +201,9 @@ func cleanEmpty(m map[string]interface{}) {
 	}
 }
 
+// Performs secondary enrichment on the parsed fields.
 func postProcessFields(m map[string]interface{}) {
+	// Splits url.original into url.path and url.query
 	if raw, ok := m["url.original"].(string); ok && raw != "" {
 		if idx := strings.IndexByte(raw, '?'); idx >= 0 {
 			m["url.path"] = raw[:idx]
@@ -197,6 +213,7 @@ func postProcessFields(m map[string]interface{}) {
 		}
 	}
 
+	// Normalises common log.level values to lowercase
 	if lv, ok := m["log.level"].(string); ok {
 		m["log.level"] = strings.ToLower(lv)
 	}

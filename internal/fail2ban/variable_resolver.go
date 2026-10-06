@@ -26,6 +26,10 @@ import (
 	"strings"
 )
 
+// =========================================================================
+//  Pattern Matching
+// =========================================================================
+
 var variablePattern = regexp.MustCompile(`%\(([^)]+)\)s`)
 
 func extractVariablesFromString(s string) []string {
@@ -42,6 +46,10 @@ func extractVariablesFromString(s string) []string {
 	}
 	return variables
 }
+
+// =========================================================================
+//  Variable Lookup
+// =========================================================================
 
 func searchVariableInFile(filePath, varName string) (string, error) {
 	file, err := os.Open(filePath)
@@ -193,6 +201,8 @@ func (s snapshotVariableSource) findVariable(varName string) (string, error) {
 	return "", fmt.Errorf("variable '%s' not found in Fail2Ban configuration files", varName)
 }
 
+// Searches for a variable definition in all .local files first, then .conf files under /etc/fail2ban/ and subdirectories.
+// Returns the FIRST value found (prioritizing .local over .conf).
 func findVariableDefinition(varName, fail2banPath string) (string, error) {
 	fail2banPath = NormalizeConfigPath(fail2banPath)
 	debugf("findVariableDefinition: searching for variable '%s'", varName)
@@ -266,6 +276,10 @@ func findVariableDefinition(varName, fail2banPath string) (string, error) {
 	debugf("findVariableDefinition: variable '%s' not found", varName)
 	return "", fmt.Errorf("variable '%s' not found in Fail2Ban configuration files", varName)
 }
+
+// =========================================================================
+//  Resolution
+// =========================================================================
 
 func resolveVariableRecursive(varName string, visited map[string]bool, src variableSource) (string, error) {
 	if visited[varName] {

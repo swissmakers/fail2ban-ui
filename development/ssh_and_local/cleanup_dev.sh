@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Removes the dev containers, networks, volumes and generated data directories,
-# so the next "podman compose up -d" starts from scratch.
+# cleanup_dev.sh -- Reset the ssh_and_local dev environment to a clean state.
+# This stops and removes all containers, networks, and volumes defined in
+# container-compose.yml, then deletes the generated data directories so you
+# can start fresh with "podman compose up -d" (or docker compose).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
