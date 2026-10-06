@@ -7,6 +7,8 @@ on:
 
 jobs:
   test:
+    # Manual runs must use main too
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: linux_amd64
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +32,7 @@ jobs:
 
   build:
     needs: test
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: linux_amd64
     steps:
       - uses: actions/checkout@v4
