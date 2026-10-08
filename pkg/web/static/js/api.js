@@ -68,12 +68,40 @@ function isSessionExpiredResponse(status, url) {
 if (typeof window.fetch === 'function') {
   var nativeFetch = window.fetch.bind(window);
   window.fetch = function(input, init) {
+    init = init || {};
+    var controller, timer;
+    var url = typeof input === 'string' ? input : (input && input.url);
+    var ownAPI = false;
+    try {
+      var parsed = new URL(url, window.location.href);
+      ownAPI = parsed.origin === window.location.origin && parsed.pathname.indexOf(appPath('/api/')) === 0;
+    } catch (ignore) { }
+    if (ownAPI && ['POST', 'PUT', 'DELETE', 'PATCH'].indexOf(String(init.method || '').toUpperCase()) !== -1 && typeof Headers !== 'undefined') {
+      var headers = new Headers(init.headers || {});
+      if (!headers.has('Idempotency-Key')) {
+        headers.set('Idempotency-Key', typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
+      }
+      init = Object.assign({}, init, { headers: headers });
+    }
+    // These deadlines bound HTTP requests, never the background operation.
+    if (ownAPI && !init.signal && typeof AbortController !== 'undefined') {
+      controller = new AbortController();
+      init = Object.assign({}, init, { signal: controller.signal });
+      timer = setTimeout(function() { controller.abort(); }, 15000);
+    }
     return nativeFetch(input, init).then(function(res) {
       var url = res.url || (typeof input === 'string' ? input : (input && input.url));
       if (isSessionExpiredResponse(res.status, url)) {
         handleSessionExpired();
       }
       return res;
+    }).catch(function(err) {
+      if (controller && controller.signal.aborted) {
+        throw new Error(t('operations.request_timeout', 'The request timed out. A change already submitted may still be running.'));
+      }
+      throw err;
+    }).finally(function() {
+      if (timer) clearTimeout(timer);
     });
   };
 }

@@ -35,6 +35,7 @@ function updateTranslations() {
     });
   });
   refreshHeaderTranslations();
+  if (typeof renderOperations === 'function') renderOperations();
 }
 
 function getTranslationsSettingsOnPageload() {

@@ -37,8 +37,11 @@ function clearStoredServerId() {
 //  Server data loading
 // =========================================================================
 
+var serversLoadPromise = null;
+
 function loadServers() {
-  return fetch(appPath('/api/servers'))
+  if (serversLoadPromise) return serversLoadPromise;
+  serversLoadPromise = fetch(appPath('/api/servers'))
     .then(readJsonResponse)
     .then(function(data) {
       serversCache = (data && data.servers) || [];
@@ -77,7 +80,8 @@ function loadServers() {
       currentServerId = null;
       currentServer = null;
       renderServerState();
-    });
+    }).finally(function() { serversLoadPromise = null; });
+  return serversLoadPromise;
 }
 
 // Reloads the server list and every view that depends on it.
@@ -93,6 +97,7 @@ function renderServerState() {
   renderServerSubtitle();
   updateRestartBanner();
   updateStatusIndicator();
+  if (typeof renderOperations === 'function') renderOperations();
 }
 
 function isServerManagerOpen() {
@@ -107,6 +112,7 @@ function isServerManagerOpen() {
 var SERVER_HEALTH_STYLES = {
   ok: { dotClass: 'bg-green-500', textClass: 'text-green-600', key: 'servers.health.state.ok', fallback: 'Healthy' },
   degraded: { dotClass: 'bg-yellow-500', textClass: 'text-yellow-600', key: 'servers.health.state.degraded', fallback: 'Degraded' },
+  busy: { dotClass: 'bg-yellow-500', textClass: 'text-yellow-600', key: 'servers.health.state.busy', fallback: 'Busy applying changes' },
   down: { dotClass: 'bg-red-500', textClass: 'text-red-600', key: 'servers.health.state.down', fallback: 'Down' },
   unknown: { dotClass: 'bg-gray-400', textClass: 'text-gray-500', key: 'servers.health.state.unknown', fallback: 'Unknown' }
 };
@@ -125,7 +131,7 @@ function serverHealthBadge(health) {
 
 // Worst state over enabled servers; unknown only when none has been checked yet.
 function aggregateServerHealth(servers) {
-  var result = { state: 'unknown', down: 0, degraded: 0 };
+  var result = { state: 'unknown', down: 0, degraded: 0, busy: 0 };
   var checked = 0;
   (servers || []).forEach(function(server) {
     if (!server || !server.enabled || !server.health) {
@@ -136,6 +142,8 @@ function aggregateServerHealth(servers) {
       result.down++;
     } else if (state === 'degraded') {
       result.degraded++;
+    } else if (state === 'busy') {
+      result.busy++;
     } else if (state !== 'ok') {
       return;
     }
@@ -145,6 +153,8 @@ function aggregateServerHealth(servers) {
     result.state = 'down';
   } else if (result.degraded) {
     result.state = 'degraded';
+  } else if (result.busy) {
+    result.state = 'busy';
   } else if (checked) {
     result.state = 'ok';
   }
@@ -228,7 +238,6 @@ function renderServerSelector() {
     + '    <select id="serverSelect" class="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">'
     +        options
     + '    </select>'
-    +      serverHealthDot(currentServer && serverHealthBadge(currentServer.health))
     + '  </div>'
     + '</div>';
 
@@ -263,12 +272,7 @@ function renderServerSubtitle() {
   } else if (currentServer.hostname) {
     parts.push(currentServer.hostname);
   }
-  var badge = serverHealthBadge(currentServer.health);
-  if (badge && badge.state !== 'ok') {
-    parts.push(badge.label);
-  }
-  subtitle.innerHTML = '<span class="inline-flex items-center gap-2">' + serverHealthDot(badge)
-    + '<span>' + escapeHtml(parts.join(' - ')) + '</span></span>';
+  subtitle.textContent = parts.join(' - ');
 }
 
 // Health lines for the server manager card; empty for disabled servers.
@@ -285,7 +289,7 @@ function renderServerHealthDetails(server) {
     if (health.error) {
       html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(health.error) + '</p>';
     }
-    if (health.fail2banOk === false) {
+    if (health.fail2banOk === false && health.state !== 'busy') {
       html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(t('servers.health.fail2ban_down', 'Fail2ban is not responding on this server.')) + '</p>';
     }
     if (health.callbackOk === false) {
@@ -361,7 +365,7 @@ function renderServerManagerList() {
         + '</div>';
     }
     return ''
-      + '<div class="border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">'
+      + '<div class="border border-gray-200 p-4 overflow-x-auto bg-gray-50">'
       + '  <div class="flex items-center justify-between">'
       + '    <div>'
       + '      <p class="font-semibold text-gray-800 flex items-center">' + escapeHtml(server.name || server.id) + defaultBadge + statusBadge + restartBadge + '</p>'
@@ -439,11 +443,13 @@ function setCurrentServer(serverId) {
     clearStoredServerId();
   }
   jailBannedState = {};
-  latestSummary = null;
-  latestSummaryServerId = null;
+  latestSummary = typeof summariesByServer !== 'undefined' && summariesByServer[currentServerId] || null;
+  latestSummaryServerId = currentServerId;
+  latestSummaryError = latestSummary && latestSummary.staleReason || null;
   latestServerInsights = null;
   renderServerState();
-  refreshData();
+  renderDashboard();
+  refreshData({ silent: true });
 }
 
 // =========================================================================
@@ -981,12 +987,11 @@ function restartFail2banServer(serverId) {
     ? t('servers.confirm.reload_local', 'Reload Fail2ban configuration on this server now? This will reload the configuration without restarting the service.')
     : t('servers.confirm.restart_remote', 'Keep in mind that while fail2ban is restarting, logs are not being parsed and no IP addresses are blocked. Restart fail2ban on this server now? This will take some time.');
   if (!confirm(confirmMsg)) return;
-  showLoading(true);
   fetch(appPath('/api/fail2ban/restart?serverId=' + encodeURIComponent(serverId)), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
-    .then(function(res) { return res.json(); })
+    .then(readJsonResponse)
     .then(function(data) {
       if (data.error) {
         showToast(formatApiError(data, 'servers.toast.restart_failed', 'Failed to restart Fail2ban'), 'error');
@@ -1002,14 +1007,11 @@ function restartFail2banServer(serverId) {
         fallback = 'Fail2ban service restarted and passed health check';
       }
       return loadServers().then(function() {
-        showToast(t(key, fallback), 'success');
+        if (!data.operationId) showToast(t(key, fallback), 'success');
         return refreshData({ silent: true });
       });
     })
     .catch(function(err) {
-      showToast(t('servers.toast.restart_failed', 'Failed to restart Fail2ban') + ': ' + err.message, 'error');
-    })
-    .finally(function() {
-      showLoading(false);
+      if (!err.operation) showToast(t('servers.toast.restart_failed', 'Failed to restart Fail2ban') + ': ' + err.message, 'error');
     });
 }

@@ -457,16 +457,16 @@ html[data-theme="dark"] body:not(.lotr-mode) .toast-warning {
 #loading-overlay {
     display: none;
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
+    bottom: 1rem;
+    left: 1rem;
+    width: auto;
+    height: auto;
+    background: var(--f2b-card-bg, white);
+    color: var(--f2b-text, #1f2937);
     z-index: 9999;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    pointer-events: none;
     opacity: 0;
     transition: opacity 0.4s ease;
 }
@@ -817,11 +817,20 @@ mark {
     gap: 0.5rem;
     z-index: 10000;
     pointer-events: none;
+    max-width: calc(100vw - 3rem);
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+}
+
+#operation-toasts {
+    display: contents;
 }
 
 .toast {
     min-width: 240px;
     max-width: 360px;
+    flex-shrink: 0;
+    overflow-wrap: anywhere;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     color: #fff;

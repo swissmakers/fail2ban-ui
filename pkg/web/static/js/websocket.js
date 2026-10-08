@@ -17,7 +17,7 @@ class WebSocketManager {
     this.stopped = false;
     this.isConnecting = false;
     this.isConnected = false;
-    this.lastBanEventId = null;
+    this.seenBanEventIds = new Set();
     this.connectedAt = null;
     this.lastHeartbeatAt = null;
     this.messageCount = 0;
@@ -127,6 +127,12 @@ class WebSocketManager {
       case 'server_health':
         this.emit('server_health', message.data);
         break;
+      case 'operation':
+        this.emit('operation', message.data);
+        break;
+      case 'snapshot_update':
+        this.emit('snapshot_update', message.data);
+        break;
       case 'heartbeat':
         this.lastHeartbeatAt = new Date();
         break;
@@ -141,14 +147,24 @@ class WebSocketManager {
     }
   }
 
-  handleBanEvent(eventData) {
-    // Check if we've already processed this event (prevent duplicates)
-    if (eventData.id && this.lastBanEventId !== null && eventData.id <= this.lastBanEventId) {
-      return;
-    }
+  rememberBanEvent(eventData) {
+    if (!eventData) return false;
     if (eventData.id) {
-      this.lastBanEventId = eventData.id;
+      const id = String(eventData.id);
+      if (this.seenBanEventIds.has(id)) return false;
+      this.seenBanEventIds.add(id);
+      // Different server callbacks can arrive out of order. Remember actual
+      // events instead of treating the highest ID as a delivery watermark.
+      // Keep the cache bounded for long-lived dashboards and bulk unbans.
+      if (this.seenBanEventIds.size > 4096) {
+        this.seenBanEventIds.delete(this.seenBanEventIds.values().next().value);
+      }
     }
+    return true;
+  }
+
+  handleBanEvent(eventData) {
+    if (!this.rememberBanEvent(eventData)) return;
     this.emit('ban_event', eventData);
   }
 

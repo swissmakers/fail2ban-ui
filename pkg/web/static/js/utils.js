@@ -51,6 +51,11 @@ function readJsonResponse(res) {
     .catch(function() { return null; })
     .then(function(data) {
       if (res.ok) {
+        // A mutation is accepted, not completed. Only terminal operation state
+        // may resolve the caller's existing success handler.
+        if (res.status === 202 && data && data.operation && typeof waitForOperation === 'function') {
+          return waitForOperation(data.operation);
+        }
         return data;
       }
       var err = new Error(apiMessage(data, '', '') || t('common.http_error', 'Server returned {status}').replace('{status}', String(res.status)));

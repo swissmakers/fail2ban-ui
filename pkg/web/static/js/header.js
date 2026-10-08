@@ -9,6 +9,37 @@ var clockInterval = null;
 var wsTooltipRefreshContent = null;
 var wsTooltipElement = null;
 
+function headerStatusHasProblem() {
+  var health = aggregateServerHealth(serversCache);
+  return !wsManager || wsManager.state !== 'connected' || health.down > 0 || health.degraded > 0 || health.busy > 0;
+}
+
+function openHeaderServerProblems() {
+  if (hasAccess('admin') && headerStatusHasProblem()) {
+    openServerManager();
+  }
+}
+
+function renderHeaderServerProblems() {
+  if (!hasAccess('admin')) return '';
+  return serversCache.filter(function(server) {
+    return server.enabled && server.health && ['down', 'degraded', 'busy'].indexOf(server.health.state) !== -1;
+  }).map(function(server) {
+    var badge = serverHealthBadge(server.health);
+    var reason = server.health.error || '';
+    if (server.health.state === 'busy') {
+      reason = t('operations.health_busy', 'Fail2Ban is applying a change. Status updates will resume when it finishes.');
+    } else if (!reason && server.health.fail2banOk === false) {
+      reason = t('servers.health.fail2ban_down', 'Fail2ban is not responding on this server.');
+    } else if (!reason && server.health.callbackOk === false) {
+      reason = t('servers.health.callback_down', 'The server cannot reach the callback URL; ban events are not recorded.');
+    }
+    return '<div class="mt-2 pt-2 border-t border-gray-700">'
+      + '<div class="font-semibold">' + escapeHtml(server.name || server.id) + ': ' + escapeHtml(badge.label) + '</div>'
+      + (reason ? '<div class="mt-1 break-words">' + escapeHtml(reason) + '</div>' : '') + '</div>';
+  }).join('');
+}
+
 function getWebSocketStatusText(state) {
   switch (state) {
     case 'connected':
@@ -73,6 +104,9 @@ function updateStatusIndicator() {
     } else if (health.degraded) {
       dotClass = 'bg-yellow-500';
       label = t('header.health.servers_degraded', '{count} server(s) degraded').replace('{count}', String(health.degraded));
+    } else if (health.busy) {
+      dotClass = 'bg-yellow-500';
+      label = t('header.health.servers_busy', '{count} server(s) busy').replace('{count}', String(health.busy));
     }
   } else if (state === 'connecting' || state === 'reconnecting') {
     dotClass = 'bg-yellow-500';
@@ -82,6 +116,13 @@ function updateStatusIndicator() {
   statusDot.classList.remove('bg-green-500', 'bg-yellow-500', 'bg-red-500', 'bg-gray-400');
   statusDot.classList.add(dotClass);
   statusText.textContent = label;
+  var statusEl = document.getElementById('backendStatus');
+  if (statusEl) {
+    var actionable = hasAccess('admin') && headerStatusHasProblem();
+    statusEl.setAttribute('role', actionable ? 'button' : 'status');
+    statusEl.tabIndex = actionable ? 0 : -1;
+    statusEl.classList.toggle('cursor-pointer', actionable);
+  }
 }
 
 function refreshHeaderTranslations() {
@@ -108,6 +149,7 @@ function createWebSocketTooltip() {
   function updateTooltipContent() {
     const info = wsManager && wsManager.getConnectionInfo();
     if (!info) {
+      tooltip.innerHTML = '<div>' + escapeHtml(getWebSocketStatusText(wsManager ? wsManager.state : 'connecting')) + '</div>' + renderHeaderServerProblems();
       return;
     }
     const protocol = info.secure
@@ -137,14 +179,12 @@ function createWebSocketTooltip() {
           <div class="text-gray-500 text-xs mt-1 break-all">${escapeHtml(info.url)}</div>
         </div>
       </div>
-    `;
+    ` + renderHeaderServerProblems();
   }
   wsTooltipRefreshContent = updateTooltipContent;
   function showTooltip() {
-    if (!wsManager || !wsManager.isConnected) {
-      return;
-    }
     updateTooltipContent();
+    tooltip.style.display = 'block';
     const rect = statusEl.getBoundingClientRect();
     const tooltipRect = tooltip.getBoundingClientRect();
     let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
@@ -180,6 +220,19 @@ function createWebSocketTooltip() {
   if (statusEl) {
     statusEl.addEventListener('mouseenter', showTooltip);
     statusEl.addEventListener('mouseleave', hideTooltip);
+    statusEl.addEventListener('focus', showTooltip);
+    statusEl.addEventListener('blur', hideTooltip);
+    statusEl.addEventListener('click', function() {
+      hideTooltip();
+      openHeaderServerProblems();
+    });
+    statusEl.addEventListener('keydown', function(event) {
+      if (hasAccess('admin') && headerStatusHasProblem() && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        hideTooltip();
+        openHeaderServerProblems();
+      }
+    });
   }
   return hideTooltip;
 }

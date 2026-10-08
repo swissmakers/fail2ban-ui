@@ -34,9 +34,6 @@ function refreshData(options) {
   } else {
     summaryPromise = fetchSummaryData();
   }
-  if (!options.silent) {
-    showLoading(true);
-  }
 
   if (!options.silent) {
     Object.keys(jailBannedState || {}).forEach(function(jailName) {
@@ -74,11 +71,6 @@ function refreshData(options) {
       console.error('Error refreshing data:', err);
       latestSummaryError = err ? String(err.message || err) : t('common.unknown_error', 'Unknown error');
       scheduleRender();
-    })
-    .finally(function() {
-      if (!options.silent) {
-        showLoading(false);
-      }
     });
 }
 
@@ -107,28 +99,77 @@ function fetchBanStatisticsData() {
     });
 }
 
+var summariesByServer = Object.create(null);
+var summaryRequests = Object.create(null);
+var summaryRefreshTimer = null;
+var summaryPollingEnabled = true;
+
+function applySelectedSummary(serverId) {
+  if (serverId !== currentServerId) return;
+  var next = summariesByServer[serverId];
+  var changed = next && (!latestSummary || latestSummary.serverId !== serverId ||
+    next.observedAt !== latestSummary.observedAt || next.available !== latestSummary.available ||
+    next.staleReason !== latestSummary.staleReason);
+  if (next && (!latestSummary || next.observedAt !== latestSummary.observedAt)) jailBannedState = {};
+  latestSummary = summariesByServer[serverId] || null;
+  latestSummaryServerId = serverId;
+  latestSummaryError = latestSummary && latestSummary.staleReason || null;
+  jailLocalWarning = !!(latestSummary && latestSummary.jailLocalWarning);
+  if (changed && typeof openManageJailsModal === 'function') {
+    var modal = document.getElementById('manageJailsModal');
+    if (modal && !modal.classList.contains('hidden')) openManageJailsModal({ silent: true });
+  }
+}
+
 function fetchSummaryData() {
-  return fetch(withServerParam('/api/summary'))
-    .then(function(res) { return res.json(); })
+  var serverId = currentServerId;
+  if (!serverId || !summaryPollingEnabled) return Promise.resolve();
+  if (summaryRequests[serverId]) return summaryRequests[serverId];
+  clearTimeout(summaryRefreshTimer);
+  var url = appPath('/api/summary?serverId=' + encodeURIComponent(serverId));
+  summaryRequests[serverId] = fetch(url)
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data && !data.error) {
-        latestSummary = data;
-        latestSummaryServerId = data.serverId || currentServerId || null;
-        latestSummaryError = null;
-        jailLocalWarning = !!data.jailLocalWarning;
-      } else {
-        latestSummary = null;
-        latestSummaryServerId = null;
-        latestSummaryError = formatApiError(data, 'dashboard.errors.summary_failed', 'Failed to load summary from server.');
-        jailLocalWarning = false;
+      if (!data || data.error) throw new Error(formatApiError(data, 'dashboard.errors.summary_failed', 'Failed to load summary from server.'));
+      if (data.serverId && data.serverId !== serverId) throw new Error(t('common.invalid_response', 'Unexpected response from the server'));
+      data.serverId = serverId;
+      var cached = summariesByServer[serverId];
+      if (data.available === false && cached && cached.available !== false) {
+        data = Object.assign({}, cached, { stale: true, refreshing: data.refreshing, staleReason: data.staleReason || data.message || '' });
       }
+      summariesByServer[serverId] = data;
     })
     .catch(function(err) {
-      latestSummary = null;
-      latestSummaryServerId = null;
-      latestSummaryError = err ? String(err.message || err) : t('common.unknown_error', 'Unknown error');
-      jailLocalWarning = false;
+      var cached = summariesByServer[serverId];
+      summariesByServer[serverId] = Object.assign({}, cached || { serverId: serverId, available: false, jails: null }, {
+        stale: true, refreshing: false, staleReason: err.message || String(err)
+      });
+    })
+    .finally(function() {
+      delete summaryRequests[serverId];
+      if (currentServerId !== serverId) return;
+      applySelectedSummary(serverId);
+      scheduleRender();
+      if (typeof updateJailChangeProgress === 'function') updateJailChangeProgress();
+      var snapshot = summariesByServer[serverId];
+      if (summaryPollingEnabled) summaryRefreshTimer = setTimeout(fetchSummaryData, snapshot && (snapshot.refreshing || snapshot.available === false) ? 3000 : 15000);
     });
+  return summaryRequests[serverId];
+}
+
+function summaryStatusFailed(summary) {
+  if (!summary || summary.staleReason === 'operation_in_progress') return false;
+  return !!(summary.refreshError || summary.error || (summary.staleReason &&
+    ['initializing', 'refresh_pending'].indexOf(summary.staleReason) === -1));
+}
+
+function renderSummaryStatus(summary) {
+  // Routine refreshes and running changes need no dashboard notice. Keep the
+  // last received numbers visible, and explain only an actual connection error.
+  if (!summaryStatusFailed(summary) || summary.available === false) return '';
+  return '<p class="mb-4 text-sm text-yellow-700" role="status">'
+    + escapeHtml(t('dashboard.status.connection_lost', 'Server not responding. Showing the last received data.'))
+    + '</p>';
 }
 
 function normalizeJailBannedState(summary) {
@@ -239,6 +280,7 @@ function fetchJailBannedIPs(jailName, options) {
     return Promise.resolve();
   }
   options = options || {};
+  var serverId = currentServerId;
   var append = options.append === true;
   var searchToken = options.searchToken || null;
   var skipCellRender = options.skipCellRender === true;
@@ -252,11 +294,12 @@ function fetchJailBannedIPs(jailName, options) {
   var offset = append ? state.ips.length : 0;
   var url = buildJailBannedQuery(jailName, offset, JAIL_BANNED_PAGE_SIZE);
   return fetch(url)
-    .then(function(res) { return res.json(); })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (!isActiveBannedSearchToken(searchToken)) {
+      if (serverId !== currentServerId || !isActiveBannedSearchToken(searchToken)) {
         return;
       }
+      if (!data || data.available === false || data.error) throw new Error(data && data.error || t('dashboard.banned.unavailable', 'Banned IPs are not available yet.'));
       var ips = Array.isArray(data && data.bannedIPs) ? data.bannedIPs : [];
       if (append) {
         state.ips = state.ips.concat(ips);
@@ -266,26 +309,24 @@ function fetchJailBannedIPs(jailName, options) {
       state.total = typeof data.total === 'number' ? data.total : state.ips.length;
       state.hasMore = data && data.hasMore === true;
       state.loadedQuery = activeQuery;
+      state.stale = !!data.stale;
+      state.observedAt = data.observedAt;
       state.error = data && data.error ? formatApiError(data, '', '') : null;
       state.lastErrorAt = state.error ? Date.now() : 0;
     })
     .catch(function(err) {
-      if (!isActiveBannedSearchToken(searchToken)) {
+      if (serverId !== currentServerId || !isActiveBannedSearchToken(searchToken)) {
         return;
       }
       state.error = err ? String(err.message || err) : t('common.unknown_error', 'Unknown error');
       state.lastErrorAt = Date.now();
-      if (!append) {
-        state.ips = [];
-      }
-      state.hasMore = false;
       state.loadedQuery = activeQuery;
     })
     .finally(function() {
-      if (!isActiveBannedSearchToken(searchToken)) {
+      state.loading = false;
+      if (serverId !== currentServerId || !isActiveBannedSearchToken(searchToken)) {
         return;
       }
-      state.loading = false;
       if (!skipCellRender) {
         renderJailBannedCell(jailName);
       }
@@ -293,7 +334,7 @@ function fetchJailBannedIPs(jailName, options) {
 }
 
 function loadInitialJailBannedPages(summary) {
-  if (!summaryMatchesCurrentServer()) {
+  if (!summaryMatchesCurrentServer() || (summary && (summary.stale || summary.available === false))) {
     return;
   }
   var jails = summary && Array.isArray(summary.jails) ? summary.jails : [];
@@ -325,6 +366,7 @@ function loadInitialJailBannedPages(summary) {
 }
 
 function fetchBanInsightsData() {
+  var requestedServerId = currentServerId;
   var sevenDaysAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000)).toISOString();
   var sinceQuery = '?since=' + encodeURIComponent(sevenDaysAgo);
   var globalPromise = fetch(appPath('/api/events/bans/insights' + sinceQuery))
@@ -343,11 +385,11 @@ function fetchBanInsightsData() {
     serverPromise = fetch(withServerParam('/api/events/bans/insights' + sinceQuery))
       .then(function(res) { return res.json(); })
       .then(function(data) {
-        latestServerInsights = normalizeInsights(data);
+        if (currentServerId === requestedServerId) latestServerInsights = normalizeInsights(data);
       })
       .catch(function(err) {
         console.error('Error fetching server-specific ban insights:', err);
-        latestServerInsights = null;
+        if (currentServerId === requestedServerId) latestServerInsights = null;
       });
   } else {
     latestServerInsights = null;
@@ -377,8 +419,8 @@ function fetchBanEventsData(options) {
       if (offset === 0 && typeof data.total === 'number') {
         banEventsTotal = data.total;
       }
-      if (!append && latestBanEvents.length > 0 && wsManager) {
-        wsManager.lastBanEventId = latestBanEvents[0].id;
+      if (wsManager && typeof wsManager.rememberBanEvent === 'function') {
+        events.forEach(function(event) { wsManager.rememberBanEvent(event); });
       }
     })
     .catch(function(err) {
@@ -403,7 +445,7 @@ function banIP(jail, ip) {
   if (!confirm(confirmMsg)) {
     return;
   }
-  showLoading(true);
+  var actionServerId = currentServerId;
   var url = '/api/jails/' + encodeURIComponent(jail) + '/ban/' + encodeURIComponent(ip);
   fetch(withServerParam(url), {
     method: 'POST',
@@ -411,17 +453,15 @@ function banIP(jail, ip) {
   })
     .then(readJsonResponse)
     .then(function(data) {
-      showLoading(false);
       if (data && data.error) {
-        showToast(formatApiError(data, 'dashboard.toast.block_error', 'Error blocking IP'), 'error');
+        if (!data.operationId) showToast(formatApiError(data, 'dashboard.toast.block_error', 'Error blocking IP'), 'error');
         return;
       }
-      showToast(t('dashboard.manual_block.success', 'IP blocked successfully'), 'success');
-      refreshAfterManualAction(jail);
+      if (!data.operationId) showToast(t('dashboard.manual_block.success', 'IP blocked successfully'), 'success');
+      if (currentServerId === actionServerId) refreshAfterManualAction(jail);
     })
     .catch(function(err) {
-      showLoading(false);
-      showToast(t('dashboard.toast.block_error', 'Error blocking IP') + ': ' + err.message, 'error');
+      if (!err.operation) showToast(t('dashboard.toast.block_error', 'Error blocking IP') + ': ' + err.message, 'error');
     });
 }
 
@@ -455,7 +495,7 @@ function unbanIP(jail, ip) {
   if (!confirm(confirmMsg)) {
     return;
   }
-  showLoading(true);
+  var actionServerId = currentServerId;
   var url = '/api/jails/' + encodeURIComponent(jail) + '/unban/' + encodeURIComponent(ip);
   fetch(withServerParam(url), {
     method: 'POST',
@@ -463,16 +503,14 @@ function unbanIP(jail, ip) {
   })
     .then(readJsonResponse)
     .then(function(data) {
-      showLoading(false);
       if (data && data.error) {
-        showToast(formatApiError(data, 'dashboard.toast.unban_error', 'Error unbanning IP'), 'error');
+        if (!data.operationId) showToast(formatApiError(data, 'dashboard.toast.unban_error', 'Error unbanning IP'), 'error');
         return;
       }
-      refreshAfterManualAction(jail);
+      if (currentServerId === actionServerId) refreshAfterManualAction(jail);
     })
     .catch(function(err) {
-      showLoading(false);
-      showToast(t('dashboard.toast.unban_error', 'Error unbanning IP') + ': ' + err.message, 'error');
+      if (!err.operation) showToast(t('dashboard.toast.unban_error', 'Error unbanning IP') + ': ' + err.message, 'error');
     });
 }
 
@@ -505,7 +543,7 @@ function renderDashboard() {
     restoreFocusState(focusState);
     return;
   }
-  var summary = latestSummary;
+  var summary = summaryMatchesCurrentServer() ? latestSummary : null;
   if (summary && summary.jails && summary.jails.length > 0) {
     normalizeJailBannedState(summary);
   }
@@ -523,16 +561,19 @@ function renderDashboard() {
       + '  </div>'
       + '</div>';
   }
-  if (latestSummaryError) {
+  html += renderSummaryStatus(summary);
+  if (latestSummaryError && !summary) {
     html += ''
       + '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">'
       + escapeHtml(latestSummaryError)
       + '</div>';
   }
-  if (!summary) {
+  if (!summary || summary.available === false) {
     html += ''
       + '<div class="bg-white rounded-lg shadow p-6 mb-6">'
-      + '  <p class="text-gray-500" data-i18n="dashboard.loading_summary">Loading summary data...</p>'
+      + '  <p class="text-gray-500">' + escapeHtml(summaryStatusFailed(summary)
+        ? t('dashboard.status.unavailable', 'Unable to load server status. Check the server connection.')
+        : t('dashboard.status.loading', 'Loading server status…')) + '</p>'
       + '</div>';
   } else {
     var totalBanned = summary.jails ? summary.jails.reduce(function(sum, j) { return sum + (j.totalBanned || 0); }, 0) : 0;
@@ -668,7 +709,8 @@ function renderBannedIPs(jailName) {
     return content + '<em class="text-gray-500">' + t('dashboard.banned.loading', 'Loading banned IPs...') + '</em></div>';
   }
   if (state.error) {
-    return content + '<em class="text-red-600">' + escapeHtml(state.error) + '</em></div>';
+    content += '<em class="text-red-600">' + escapeHtml(state.error) + '</em>';
+    if (!state.ips || !state.ips.length) return content + '</div>';
   }
   if (!state.ips || state.ips.length === 0) {
     if (query) {
@@ -1295,8 +1337,8 @@ function refreshDashboardData() {
   } else {
     summaryPromise = Promise.resolve();
   }
+  summaryPromise.then(scheduleRender);
   Promise.all([
-    summaryPromise,
     fetchBanStatisticsData(),
     fetchBanInsightsData(),
     fetchBanEventCountries()

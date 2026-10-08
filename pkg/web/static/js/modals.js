@@ -326,17 +326,25 @@ function openServerManager() {
 //  Manage Jails Modal
 // =========================================================================
 
-function openManageJailsModal() {
+var manageJailsRequest = null;
+var manageJailsRequestServer = null;
+
+function openManageJailsModal(options) {
+  options = options || {};
   if (!currentServerId) {
     showToast(t('servers.selector.none', 'Please add and select a Fail2ban server first.'), 'info');
     return;
   }
-  showLoading(true);
-  fetch(withServerParam('/api/jails/manage'), {
+  var requestedServerId = currentServerId;
+  if (manageJailsRequest && manageJailsRequestServer === requestedServerId) return manageJailsRequest;
+  manageJailsRequestServer = requestedServerId;
+  if (!options.silent) showLoading(true);
+  var request = fetch(withServerParam('/api/jails/manage'), {
     headers: serverHeaders()
   })
     .then(readJsonResponse)
     .then(data => {
+      if (currentServerId !== requestedServerId) return;
       if (!data || data.error || (data.jails !== null && !Array.isArray(data.jails))) {
         throw new Error((data && data.error) || t('common.invalid_response', 'Unexpected response from the server'));
       }
@@ -347,7 +355,8 @@ function openManageJailsModal() {
         const jsEscapedJailName = escapeJs(jail.jailName);
         return ''
           + '<div class="flex items-center justify-between gap-3 p-3 bg-gray-50">'
-          + '  <span class="text-sm font-medium flex-1 text-gray-900">' + escapedJailName + '</span>'
+          + '  <div class="flex-1"><span class="text-sm font-medium text-gray-900">' + escapedJailName + '</span>'
+          + '  <p id="jail-state-' + jail.jailName.replace(/[^a-zA-Z0-9]/g, '_') + '" class="hidden text-xs text-gray-500 mt-1"></p></div>'
           + '  <div class="flex items-center gap-3">'
           + '    <button'
           + '      type="button"'
@@ -369,6 +378,7 @@ function openManageJailsModal() {
           + '    <label class="inline-flex relative items-center cursor-pointer">'
           + '      <input'
           + '        type="checkbox"'
+          + '        data-jail-name="' + escapedJailName + '" data-confirmed-enabled="' + String(!!jail.enabled) + '"'
           + '        id="toggle-' + jail.jailName.replace(/[^a-zA-Z0-9]/g, '_') + '"'
           + '        class="sr-only peer"'
           + isEnabled
@@ -384,26 +394,31 @@ function openManageJailsModal() {
           + '</div>';
       }).join('');
 
-      document.getElementById('jailsList').innerHTML = html ||
+      document.getElementById('jailsList').innerHTML = data.available === false
+        ? '<p class="p-3 text-gray-500">' + escapeHtml(data.staleReason === 'refresh_failed' || data.refreshError
+          ? t('modal.jails_unavailable', 'Unable to load jails. Check the server connection.')
+          : t('modal.loading_jails', 'Loading jails…')) + '</p>'
+        : html ||
         '<p class="p-3 text-gray-500" data-i18n="modal.toast.no_jails">' +
         escapeHtml(t('modal.toast.no_jails', 'No jails found for this server.')) + '</p>';
 
-      let saveTimeout;
       document.querySelectorAll('#jailsList input[type="checkbox"]').forEach(function(checkbox) {
         checkbox.addEventListener('change', function() {
-          if (saveTimeout) {
-            clearTimeout(saveTimeout);
-          }
-          saveTimeout = setTimeout(function() {
-            saveManageJailsSingle(checkbox);
-          }, 300);
+          saveManageJailsSingle(checkbox);
         });
       });
 
-      openModal('manageJailsModal');
+      if (typeof updateJailChangeProgress === 'function') updateJailChangeProgress();
+
+      if (!options.silent) openModal('manageJailsModal');
     })
     .catch(err => showToast(t('modal.toast.fetch_jails_error', 'Error fetching jails') + ': ' + err.message, 'error'))
-    .finally(() => showLoading(false));
+    .finally(function() {
+      if (manageJailsRequest === request) manageJailsRequest = null;
+      if (!options.silent) showLoading(false);
+    });
+  manageJailsRequest = request;
+  return request;
 }
 
 // =========================================================================

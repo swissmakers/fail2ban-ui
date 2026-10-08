@@ -117,6 +117,7 @@ function handleLogin() {
 function handleLogout() {
   // Clear authentication status and redirect to logout endpoint
   isAuthenticated = false;
+  if (typeof stopOperations === 'function') stopOperations();
   currentUser = null;
   window.location.href = appPath('/auth/logout');
 }
@@ -132,6 +133,7 @@ function handleSessionExpired() {
   }
   sessionExpiredHandled = true;
   isAuthenticated = false;
+  if (typeof stopOperations === 'function') stopOperations();
   if (wsManager) {
     wsManager.disconnect();
   }

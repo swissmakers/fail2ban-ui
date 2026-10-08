@@ -6,6 +6,7 @@
 // =========================================================================
 
 function createFilter() {
+  var actionServerId = currentServerId;
   const filterName = document.getElementById('newFilterName').value.trim();
   const content = document.getElementById('newFilterContent').value.trim();
 
@@ -14,7 +15,6 @@ function createFilter() {
     return;
   }
 
-  showLoading(true);
   fetch(withServerParam('/api/filters'), {
     method: 'POST',
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
@@ -23,18 +23,17 @@ function createFilter() {
       content: content
     })
   })
-    .then(readJsonResponse)
+    .then(function(res) {
+      if (res.status === 202 && currentServerId === actionServerId) closeModal('createFilterModal');
+      return readJsonResponse(res);
+    })
     .then(function(data) {
-      closeModal('createFilterModal');
-      showToast(apiMessage(data, 'filters.toast.create_success', 'Filter created successfully'), 'success');
-      loadFilters();
+      if (!data.operationId) showToast(apiMessage(data, 'filters.toast.create_success', 'Filter created successfully'), 'success');
+      if (currentServerId === actionServerId) loadFilters();
     })
     .catch(function(err) {
       console.error('Error creating filter:', err);
-      showToast(t('filters.toast.create_error', 'Error creating filter') + ': ' + err.message, 'error');
-    })
-    .finally(function() {
-      showLoading(false);
+      if (!err.operation) showToast(t('filters.toast.create_error', 'Error creating filter') + ': ' + err.message, 'error');
     });
 }
 
@@ -167,6 +166,7 @@ function updateFilterContentHints(isEditable) {
 // =========================================================================
 
 function deleteFilter() {
+  var actionServerId = currentServerId;
   const filterName = document.getElementById('filterSelect').value;
   if (!filterName) {
     showToast(t('filters.toast.select_delete', 'Please select a filter to delete'), 'info');
@@ -176,14 +176,14 @@ function deleteFilter() {
   if (!confirm(t('filters.confirm.delete', 'Are you sure you want to delete the filter "{name}"? This action cannot be undone.').replace('{name}', filterName))) {
     return;
   }
-  showLoading(true);
   fetch(withServerParam('/api/filters/' + encodeURIComponent(filterName)), {
     method: 'DELETE',
     headers: serverHeaders()
   })
     .then(readJsonResponse)
     .then(function(data) {
-      showToast(apiMessage(data, 'filters.toast.delete_success', 'Filter deleted successfully'), 'success');
+      if (!data.operationId) showToast(apiMessage(data, 'filters.toast.delete_success', 'Filter deleted successfully'), 'success');
+      if (currentServerId !== actionServerId) return;
       loadFilters();
       document.getElementById('testResults').innerHTML = '';
       document.getElementById('testResults').classList.add('hidden');
@@ -192,10 +192,7 @@ function deleteFilter() {
     })
     .catch(function(err) {
       console.error('Error deleting filter:', err);
-      showToast(t('filters.toast.delete_error', 'Error deleting filter') + ': ' + err.message, 'error');
-    })
-    .finally(function() {
-      showLoading(false);
+      if (!err.operation) showToast(t('filters.toast.delete_error', 'Error deleting filter') + ': ' + err.message, 'error');
     });
 }
 

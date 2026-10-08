@@ -71,26 +71,20 @@ function showToast(message, type, duration) {
   }, duration || 5000);
 }
 
-// One function for both ban and unban events
-function showBanEventToast(event) {
-  var container = document.getElementById('toast-container');
-  if (!container || !event) return;
-  
+// Shared by live events and completed background ban/unban actions.
+function banEventToastHTML(event, operationId) {
   var isUnban = event.eventType === 'unban';
-  var toast = document.createElement('div');
-  toast.className = isUnban ? 'toast toast-unban-event' : 'toast toast-ban-event';
-  
   var unknown = t('common.unknown', 'Unknown');
   var ip = event.ip || unknown;
   var jail = event.jail || unknown;
   var server = event.serverName || event.serverId || unknown;
   var country = event.country || '';
-  
+
   var title = isUnban ? t('toast.unban.title', 'IP unblocked') : t('toast.ban.title', 'New block occurred');
   var action = isUnban ? t('toast.unban.action', 'unblocked from') : t('toast.ban.action', 'banned in');
   var icon = isUnban ? 'fas fa-check-circle text-green-400' : 'fas fa-shield-alt text-red-500';
-  
-  toast.innerHTML = ''
+
+  return ''
     + '<div class="flex items-start gap-3">'
     + '  <div class="flex-shrink-0 mt-1">'
     + '    <i class="' + icon + '"></i>'
@@ -106,14 +100,29 @@ function showBanEventToast(event) {
     + '      ' + escapeHtml(server) + (country ? ' - ' + escapeHtml(country) : '')
     + '    </div>'
     + '  </div>'
-    + '  <button class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="' + escapeHtml(t('modal.close', 'Close')) + '">'
+    + '  <button type="button"' + (operationId ? ' data-dismiss-operation="' + escapeHtml(operationId) + '"' : '') + ' class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="' + escapeHtml(t('modal.close', 'Close')) + '">'
     + '    <i class="fas fa-times text-sm"></i>'
     + '  </button>'
     + '</div>';
+}
+
+// One function for both ban and unban events
+function showBanEventToast(event) {
+  var container = document.getElementById('toast-container');
+  if (!container || !event) return;
+  if (typeof handleOperationBanEventToast === 'function' && handleOperationBanEventToast(event)) return;
+
+  var isUnban = event.eventType === 'unban';
+  var toast = document.createElement('div');
+  var visible = true;
+  toast.className = isUnban ? 'toast toast-unban-event' : 'toast toast-ban-event';
+
+  toast.innerHTML = banEventToastHTML(event);
 
   var closeBtn = toast.querySelector('button');
   closeBtn.addEventListener('click', function(e) {
     e.stopPropagation();
+    visible = false;
     clearTimeout(autoRemoveTimer);
     toast.classList.remove('show');
     setTimeout(function() { toast.remove(); }, 300);
@@ -126,20 +135,28 @@ function showBanEventToast(event) {
       logSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   });
-  
+
   toast.style.cursor = 'pointer';
   container.appendChild(toast);
-  
+
   requestAnimationFrame(function() {
     toast.classList.add('show');
   });
-  
+
   var autoRemoveTimer = setTimeout(function() {
+    visible = false;
     toast.classList.remove('show');
     setTimeout(function() {
       toast.remove();
     }, 300);
   }, 5000);
+  if (typeof rememberBanEventToast === 'function') {
+    rememberBanEventToast(event, function() {
+      clearTimeout(autoRemoveTimer);
+      visible = false;
+      toast.remove();
+    }, function() { return visible; });
+  }
 }
 
 // =========================================================================

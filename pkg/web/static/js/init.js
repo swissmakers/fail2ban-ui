@@ -34,11 +34,19 @@ function initializeApp() {
   wsManager.on('ban_event', addBanEventFromWebSocket);
   wsManager.on('ban_event_update', updateBanEventFromWebSocket);
   wsManager.on('server_health', handleServerHealthMessage);
+  wsManager.on('snapshot_update', function(message) {
+    if (message && message.serverId === currentServerId) {
+      fetchSummaryData();
+    }
+  });
   wsManager.on('reconnected', refreshServerHealth);
+  initOperations();
   wsManager.connect();
+  showLoading(false);
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
       refreshServerHealth();
+      refreshOperations();
     }
   });
 
@@ -74,6 +82,7 @@ function initializeApp() {
 
   Promise.all([loadServers(), translationsLoaded])
     .then(function() {
+      renderDashboard();
       return refreshData({ silent: true });
     })
     .catch(function(err) {
