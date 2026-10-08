@@ -55,6 +55,9 @@ func RegisterRoutes(r *gin.Engine, hub *Hub) {
 	{
 		// Internal call from frontend to the Fail2ban-UI backend to get the summary of the servers (banned IPs per active jail)
 		api.GET("/summary", RequirePermission(PermissionRead), SummaryHandler)
+		api.GET("/operations", RequirePermission(PermissionRead), ListOperationsHandler)
+		api.GET("/operations/:id", RequirePermission(PermissionRead), GetOperationHandler)
+		api.POST("/operations/:id/cancel", RequirePermission(PermissionRead), CancelOperationHandler)
 
 		// External API calls from Fail2ban servers that notify Fail2Ban-UI backend about ban/unban events that where triggered.
 		api.POST("/ban", BanNotificationHandler)

@@ -60,10 +60,30 @@ func main() {
 		}
 	}()
 
+	wsHub := web.NewHub()
+	web.SetWebSocketHub(wsHub)
+	go wsHub.Run()
+
+	// Restore operation leases before monitors can write to an interrupted target.
+	if err := web.PrepareOperations(ctx); err != nil {
+		log.Fatalf("failed to prepare background operations: %v", err)
+	}
+
 	// Initialize Fail2ban connectors (local filesystem bootstrap and active connectors)
 	if err := config.ReloadFail2banManager(); err != nil {
 		log.Fatalf("failed to initialise fail2ban connectors: %v", err)
 	}
+
+	if err := web.StartOperations(); err != nil {
+		log.Fatalf("failed to start background operations: %v", err)
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := web.CloseOperations(closeCtx); err != nil {
+			log.Printf("background operation shutdown: %v", err)
+		}
+	}()
 
 	// Sync local/SSH/agent runtime config and reload so callbacks and defaults become active
 	startupSyncDone := make(chan struct{})
@@ -71,7 +91,7 @@ func main() {
 		defer close(startupSyncDone)
 		manager := fail2ban.GetManager()
 		if failed, total := manager.SyncAll(ctx, 30*time.Second), len(manager.Connectors()); total > 0 {
-			log.Printf("startup config sync complete: %d succeeded, %d failed", total-len(failed), len(failed))
+			log.Printf("startup config sync scheduled: %d accepted, %d failed", total-len(failed), len(failed))
 		}
 	}()
 
@@ -140,9 +160,7 @@ func main() {
 		log.Fatalf("failed to mount embedded web assets: %v", err)
 	}
 
-	// Initialize WebSocket hub and console log capture
-	wsHub := web.NewHub()
-	go wsHub.Run()
+	// Initialize console log capture
 	web.SetupConsoleLogWriter(wsHub)
 	web.UpdateConsoleLogEnabled()
 	config.SetUpdateConsoleLogStateFunc(web.SetConsoleLogEnabled)
@@ -188,6 +206,9 @@ func main() {
 		log.Printf("warning: HTTP server shutdown: %v", err)
 	}
 	<-startupSyncDone
+	if err := web.CloseOperations(shutdownCtx); err != nil {
+		log.Printf("background operations will reconcile on restart: %v", err)
+	}
 	fail2ban.GetManager().Close()
 	log.Println("Fail2Ban-UI stopped.")
 }

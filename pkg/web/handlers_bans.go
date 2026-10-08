@@ -59,12 +59,20 @@ func SummaryHandler(c *gin.Context) {
 		return
 	}
 
-	summary, err := conn.GetJailSummary(c.Request.Context())
+	view, err := SnapshotForServer(c.Request.Context(), conn)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "dashboard.errors.summary_failed"))
 		return
 	}
-	resp := SummaryResponse{ServerID: conn.Server().ID, Jails: summary.Jails}
+	resp := snapshotMetadata(view)
+	resp["serverId"] = conn.Server().ID
+	resp["jails"] = nil
+	if !view.Available || view.Summary == nil {
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+	summary := view.Summary
+	jails := summary.Jails
 
 	serverID := conn.Server().ID
 	since := time.Now().UTC().Add(-1 * time.Hour)
@@ -72,20 +80,21 @@ func SummaryHandler(c *gin.Context) {
 	if countErr != nil {
 		config.DebugLog("Warning: failed to count recent bans for server %s: %v", serverID, countErr)
 	}
-	for i := range resp.Jails {
-		resp.Jails[i].NewInLastHour = recentCounts[resp.Jails[i].JailName]
-		if len(resp.Jails[i].BannedIPs) > summaryBannedPreviewLimit {
-			resp.Jails[i].BannedIPs = resp.Jails[i].BannedIPs[:summaryBannedPreviewLimit]
+	for i := range jails {
+		jails[i].NewInLastHour = recentCounts[jails[i].JailName]
+		if len(jails[i].BannedIPs) > summaryBannedPreviewLimit {
+			jails[i].BannedIPs = jails[i].BannedIPs[:summaryBannedPreviewLimit]
 		}
-		if resp.Jails[i].BannedIPs == nil {
-			resp.Jails[i].BannedIPs = []string{}
+		if jails[i].BannedIPs == nil {
+			jails[i].BannedIPs = []string{}
 		}
 	}
+	resp["jails"] = jails
 
 	// jail.local integrity comes back with the summary itself.
-	resp.JailLocalWarning = summary.JailLocalExists && !summary.JailLocalManaged
+	resp["jailLocalWarning"] = summary.JailLocalExists && !summary.JailLocalManaged
 	// A removed jail.local (finished migration) or a drifted action file is re-pushed in the background.
-	if missing := !summary.JailLocalExists; missing || summary.ActionFileDrifted {
+	if missing := !summary.JailLocalExists; !view.Stale && (missing || summary.ActionFileDrifted) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -96,7 +105,7 @@ func SummaryHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// Searches all servers and jails for a live ban of the given IP via fail2ban-client, unlike the dashboard which only searches stored ban events.
+// Searches last-confirmed runtime snapshots and reports when any answer is stale.
 func SearchBannedIPHandler(c *gin.Context) {
 	ip := c.Param("ip")
 	if err := shared.ValidateIP(ip); err != nil {
@@ -116,48 +125,34 @@ func SearchBannedIPHandler(c *gin.Context) {
 	}
 
 	var (
-		mu      sync.Mutex
-		matches []jailMatch
-		errs    []serverError
-		wg      sync.WaitGroup
+		matches   []jailMatch
+		errs      []serverError
+		freshness = make(map[string]gin.H)
+		complete  = true
 	)
 
 	for _, conn := range fail2ban.GetManager().Connectors() {
-		wg.Add(1)
-		go func(conn fail2ban.Connector) {
-			defer wg.Done()
-			server := conn.Server()
-
-			ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-			defer cancel()
-
-			summary, err := conn.GetJailSummary(ctx)
-			if err != nil {
-				mu.Lock()
-				errs = append(errs, serverError{ServerID: server.ID, ServerName: server.Name, Error: err.Error()})
-				mu.Unlock()
-				return
+		server := conn.Server()
+		view, err := SnapshotForServer(c.Request.Context(), conn)
+		if err != nil {
+			complete = false
+			errs = append(errs, serverError{ServerID: server.ID, ServerName: server.Name, Error: err.Error()})
+			continue
+		}
+		freshness[server.ID] = snapshotMetadata(view)
+		if view.Stale || !view.Available {
+			complete = false
+			errs = append(errs, serverError{ServerID: server.ID, ServerName: server.Name, Error: "Live state is not confirmed; last-known results may be stale"})
+		}
+		if view.Summary == nil {
+			continue
+		}
+		for _, info := range view.Summary.Jails {
+			if slices.Contains(info.BannedIPs, ip) {
+				matches = append(matches, jailMatch{ServerID: server.ID, ServerName: server.Name, Jail: info.JailName})
 			}
-			for _, info := range summary.Jails {
-				if info.TotalBanned == 0 {
-					continue
-				}
-				banned := info.BannedIPs
-				if len(banned) == 0 {
-					banned, err = conn.GetBannedIPs(ctx, info.JailName)
-					if err != nil {
-						continue
-					}
-				}
-				if slices.Contains(banned, ip) {
-					mu.Lock()
-					matches = append(matches, jailMatch{ServerID: server.ID, ServerName: server.Name, Jail: info.JailName})
-					mu.Unlock()
-				}
-			}
-		}(conn)
+		}
 	}
-	wg.Wait()
 
 	sort.Slice(matches, func(i, j int) bool {
 		if matches[i].ServerName != matches[j].ServerName {
@@ -167,10 +162,12 @@ func SearchBannedIPHandler(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{
-		"ip":      ip,
-		"banned":  len(matches) > 0,
-		"matches": matches,
-		"errors":  errs,
+		"ip":        ip,
+		"banned":    len(matches) > 0,
+		"matches":   matches,
+		"errors":    errs,
+		"complete":  complete,
+		"freshness": freshness,
 	})
 }
 
@@ -198,10 +195,26 @@ func ListJailBannedIPsHandler(c *gin.Context) {
 	offset := clampInt(c.Query("offset"), 0, 0, maxOffset)
 
 	query := strings.TrimSpace(c.Query("q"))
-	allIPs, err := conn.GetBannedIPs(c.Request.Context(), jail)
+	view, err := SnapshotForServer(c.Request.Context(), conn)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "dashboard.errors.summary_failed"))
 		return
+	}
+	resp := snapshotMetadata(view)
+	resp["jail"] = jail
+	if !view.Available || view.Summary == nil {
+		resp["bannedIPs"] = nil
+		resp["total"] = nil
+		resp["hasMore"] = false
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+	allIPs := []string{}
+	for _, info := range view.Summary.Jails {
+		if info.JailName == jail {
+			allIPs = info.BannedIPs
+			break
+		}
 	}
 
 	filtered := allIPs
@@ -225,12 +238,8 @@ func ListJailBannedIPsHandler(c *gin.Context) {
 	}
 	paged := filtered[offset:end]
 
-	c.JSON(http.StatusOK, gin.H{
-		"jail":      jail,
-		"bannedIPs": paged,
-		"total":     total,
-		"hasMore":   end < total,
-	})
+	resp["bannedIPs"], resp["total"], resp["hasMore"] = paged, total, end < total
+	c.JSON(http.StatusOK, resp)
 }
 
 // =========================================================================
@@ -239,66 +248,12 @@ func ListJailBannedIPsHandler(c *gin.Context) {
 
 // Bans a given IP in a specific jail.
 func BanIPHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("BanIPHandler called")
-	jail := c.Param("jail")
-	ip := c.Param("ip")
-
-	if err := shared.ValidateIP(ip); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := fail2ban.ValidateJailName(jail); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, buildErrorResponse(err, "dashboard.manual_block.error"))
-		return
-	}
-
-	if err := conn.BanIP(c.Request.Context(), jail, ip); err != nil {
-		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, "dashboard.manual_block.error"))
-		return
-	}
-	log.Printf("%s banned in jail %s", ip, jail)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "IP banned successfully",
-	})
+	submitOperation(c, "jail.ban")
 }
 
 // Unbans a given IP from a specific jail.
 func UnbanIPHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("UnbanIPHandler called")
-	jail := c.Param("jail")
-	ip := c.Param("ip")
-
-	if err := shared.ValidateIP(ip); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := fail2ban.ValidateJailName(jail); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, buildErrorResponse(err, ""))
-		return
-	}
-
-	if err := conn.UnbanIP(c.Request.Context(), jail, ip); err != nil {
-		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, ""))
-		return
-	}
-	log.Printf("%s unbanned from jail %s", ip, jail)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "IP unbanned successfully",
-	})
+	submitOperation(c, "jail.unban")
 }
 
 // Processes incoming ban callbacks from Fail2Ban action scripts.
@@ -368,6 +323,7 @@ func BanNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	InvalidateServerSnapshot(server.ID)
 	c.JSON(http.StatusOK, gin.H{"message": "Ban notification processed successfully"})
 }
 
@@ -432,6 +388,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	InvalidateServerSnapshot(server.ID)
 	c.JSON(http.StatusOK, gin.H{"message": "Unban notification processed successfully"})
 }
 

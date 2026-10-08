@@ -211,12 +211,29 @@ func (h *Hub) deliver(message []byte) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	publicMessage := message
+	if envelope.Type == "operation" {
+		var event struct {
+			Type string          `json:"type"`
+			Data publicOperation `json:"data"`
+		}
+		if json.Unmarshal(message, &event) == nil {
+			event.Data = redactOperation(event.Data, false)
+			if encoded, err := json.Marshal(event); err == nil {
+				publicMessage = encoded
+			}
+		}
+	}
 	for client := range h.clients {
 		if envelope.Type == "console_log" && !client.canReadConsole {
 			continue
 		}
+		payload := message
+		if !client.canReadConsole {
+			payload = publicMessage
+		}
 		select {
-		case client.send <- message:
+		case client.send <- payload:
 		default:
 			close(client.send)
 			delete(h.clients, client)

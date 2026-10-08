@@ -33,6 +33,9 @@ var wsHub *Hub
 
 // SetWebSocketHub sets the global WebSocket hub instance
 func SetWebSocketHub(hub *Hub) {
+	if wsHub == hub {
+		return
+	}
 	wsHub = hub
 }
 

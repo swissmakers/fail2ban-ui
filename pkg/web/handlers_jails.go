@@ -18,8 +18,6 @@ package web
 
 import (
 	"errors"
-	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -97,100 +95,7 @@ func GetJailFilterConfigHandler(c *gin.Context) {
 
 // Saves updated filter/jail config and reloads Fail2ban.
 func SetJailFilterConfigHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("SetJailFilterConfigHandler called")
-	jail := c.Param("jail")
-	config.DebugLog("Jail name: %s", jail)
-
-	if err := fail2ban.ValidateJailName(jail); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		config.DebugLog("Failed to resolve connector: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	config.DebugLog("Connector resolved: %s (type: %s)", conn.Server().Name, conn.Server().Type)
-
-	var req struct {
-		Filter string `json:"filter"`
-		Jail   string `json:"jail"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		config.DebugLog("Failed to parse JSON body: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body: " + err.Error()})
-		return
-	}
-	config.DebugLog("Request parsed - Filter length: %d, Jail length: %d", len(req.Filter), len(req.Jail))
-	if len(req.Filter) > 0 {
-		config.DebugLog("Filter preview (first 100 chars): %s", req.Filter[:min(100, len(req.Filter))])
-	}
-	if len(req.Jail) > 0 {
-		config.DebugLog("Jail preview (first 100 chars): %s", req.Jail[:min(100, len(req.Jail))])
-	}
-
-	if req.Filter != "" {
-		originalJailCfg, _, err := conn.GetJailConfig(c.Request.Context(), jail)
-		if err != nil {
-			config.DebugLog("Failed to load original jail config to determine filter name: %v", err)
-			originalJailCfg = req.Jail
-		}
-
-		// The filter shown in the modal is the one the saved jail referenced, even if the edit renames it.
-		originalFilterName := fail2ban.FilterNameForJail(jail, originalJailCfg)
-
-		config.DebugLog("Saving filter config for filter: %s", originalFilterName)
-		if err := conn.SetFilterConfig(c.Request.Context(), originalFilterName, req.Filter); err != nil {
-			config.DebugLog("Failed to save filter config: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save filter config: " + err.Error()})
-			return
-		}
-		config.DebugLog("Filter config saved successfully to filter: %s", originalFilterName)
-	} else {
-		config.DebugLog("No filter config provided, skipping")
-	}
-
-	if req.Jail != "" {
-		config.DebugLog("Saving jail config for jail: %s", jail)
-		if err := conn.SetJailConfig(c.Request.Context(), jail, fail2ban.NormalizeJailSection(jail, req.Jail)); err != nil {
-			config.DebugLog("Failed to save jail config: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save jail config: " + err.Error()})
-			return
-		}
-		config.DebugLog("Jail config saved successfully")
-	} else {
-		config.DebugLog("No jail config provided, skipping")
-	}
-
-	config.DebugLog("Reloading fail2ban")
-	if err := conn.Reload(c.Request.Context()); err != nil {
-		log.Printf("WARNING: Config saved but fail2ban reload failed: %v", err)
-		// If reload fails, we automatically disable the jail so Fail2ban won't crash on next restart (invalid filter/jail config)
-		disableUpdate := map[string]bool{jail: false}
-		if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
-			log.Printf("WARNING: Failed to auto-disable jail %s after reload failure: %v", jail, disableErr)
-			c.JSON(http.StatusOK, gin.H{
-				"message": "Config saved successfully, but fail2ban reload failed",
-				"warning": err.Error(),
-			})
-			return
-		}
-		if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
-			log.Printf("WARNING: Failed to reload fail2ban after auto-disabling jail %s: %v", jail, reloadErr2)
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"message":          "Config saved successfully, but fail2ban reload failed",
-			"warning":          err.Error(),
-			"jailAutoDisabled": true,
-			"jailName":         jail,
-		})
-		return
-	}
-	config.DebugLog("Fail2ban reloaded successfully")
-	c.JSON(http.StatusOK, gin.H{"message": "Filter and jail config updated and fail2ban reloaded"})
+	submitOperation(c, "jail.config")
 }
 
 // Validates that a jail's log path resolves to real files.
@@ -264,7 +169,7 @@ func TestLogpathHandler(c *gin.Context) {
 					"inaccessible":  true,
 					"files":         []string{},
 					"error":         "",
-					"message":       "Cannot verify: the log directory is not readable by the connector's SSH user. fail2ban runs as root and will read it, so the jail can still be enabled.",
+					"message":       "Cannot verify: the connector cannot read the log directory. Check its directory permissions. Fail2Ban must validate the configuration before the jail can be enabled.",
 				})
 				continue
 			}
@@ -305,12 +210,14 @@ func ManageJailsHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	jails, err := conn.GetAllJails(c.Request.Context())
+	view, err := SnapshotForServer(c.Request.Context(), conn)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load jails: " + err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"jails": jails})
+	resp := snapshotMetadata(view)
+	resp["jails"] = view.Configured
+	c.JSON(http.StatusOK, resp)
 }
 
 func getJailNames(jails map[string]bool) []string {
@@ -353,328 +260,17 @@ func parseJailErrorsFromReloadOutput(output string) []string {
 
 // Enables/disables jails and reloads Fail2ban.
 func UpdateJailManagementHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("UpdateJailManagementHandler called")
-	conn, err := resolveConnector(c)
-	if err != nil {
-		config.DebugLog("Error resolving connector: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	var updates map[string]bool
-	if err := c.ShouldBindJSON(&updates); err != nil {
-		config.DebugLog("Error parsing JSON: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
-		return
-	}
-	config.DebugLog("Received jail updates: %+v", updates)
-	if len(updates) == 0 {
-		config.DebugLog("Warning: No jail updates provided")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No jail updates provided"})
-		return
-	}
-
-	// Validates every jail name before any filesystem operation.
-	for jailName := range updates {
-		if err := fail2ban.ValidateJailName(jailName); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
-	// Tracks which jails were enabled (for error recovery)
-	enabledJails := make(map[string]bool)
-	for jailName, enabled := range updates {
-		if enabled {
-			enabledJails[jailName] = true
-		}
-	}
-
-	// Pre-validates logpath resolution so a jail with a broken logpath is not enabled.
-	var unverifiedJails []string
-	for jailName := range enabledJails {
-		jailCfg, _, cfgErr := conn.GetJailConfig(c.Request.Context(), jailName)
-		if cfgErr != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"error": fmt.Sprintf("Jail '%s' cannot be enabled: failed to read jail config: %v", jailName, cfgErr),
-			})
-			return
-		}
-
-		// No logpath is legitimate -> journal backend, or a jail defined in jail.conf
-		rawLogpath := strings.TrimSpace(fail2ban.ExtractLogpathFromJailConfig(jailCfg))
-		paths := strings.Fields(rawLogpath)
-		if len(paths) == 0 {
-			log.Printf("WARNING: no logpath resolvable for jail %s on server %s; enabling anyway and relying on fail2ban to validate it",
-				jailName, conn.Server().Name)
-			unverifiedJails = append(unverifiedJails, jailName)
-			continue
-		}
-
-		foundAnyFiles := false
-		inaccessible := false
-		var checkErrors []string
-		for _, lp := range paths {
-			_, resolvedPath, filesOnServer, testErr := conn.TestLogpathWithResolution(c.Request.Context(), lp)
-			if testErr != nil {
-				if errors.Is(testErr, fail2ban.ErrLogpathInaccessible) {
-					inaccessible = true
-					continue
-				}
-				checkErrors = append(checkErrors, fmt.Sprintf("%s (%v)", lp, testErr))
-				continue
-			}
-			if len(filesOnServer) > 0 {
-				foundAnyFiles = true
-				break
-			}
-			if strings.TrimSpace(resolvedPath) == "" {
-				resolvedPath = lp
-			}
-			checkErrors = append(checkErrors, fmt.Sprintf("%s (resolved: %s, no files found)", lp, resolvedPath))
-		}
-
-		if !foundAnyFiles {
-			if inaccessible {
-				log.Printf("WARNING: cannot verify logpath(s) for jail %s on server %s (log directory not readable by the connector's user); enabling anyway and relying on fail2ban (root) to read them",
-					jailName, conn.Server().Name)
-				unverifiedJails = append(unverifiedJails, jailName)
-			} else {
-				c.JSON(http.StatusOK, gin.H{
-					"error": fmt.Sprintf("Jail '%s' cannot be enabled because no matching log files were found for its logpath(s): %s", jailName, strings.Join(checkErrors, "; ")),
-				})
-				return
-			}
-		}
-	}
-
-	if err := conn.UpdateJailEnabledStates(c.Request.Context(), updates); err != nil {
-		config.DebugLog("Error updating jail enabled states: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update jail settings: " + err.Error()})
-		return
-	}
-	config.DebugLog("Successfully updated jail enabled states")
-
-	// Reloads fail2ban to apply the changes
-	reloadErr := conn.Reload(c.Request.Context())
-
-	var problematicJails []string
-	var detailedErrorOutput string
-	if reloadErr != nil {
-		errMsg := reloadErr.Error()
-		config.DebugLog("Error: failed to reload fail2ban after updating jail settings: %v", reloadErr)
-
-		if output, ok := fail2ban.CommandOutput(reloadErr); ok {
-			detailedErrorOutput = output
-			problematicJails = parseJailErrorsFromReloadOutput(detailedErrorOutput)
-		} else if idx := strings.Index(errMsg, "output:"); idx >= 0 {
-			detailedErrorOutput = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(errMsg[idx+len("output:"):]), ")"))
-			problematicJails = parseJailErrorsFromReloadOutput(detailedErrorOutput)
-		}
-
-		if detailedErrorOutput != "" {
-			errMsg = strings.TrimSpace(detailedErrorOutput)
-		}
-
-		if len(problematicJails) > 0 {
-			config.DebugLog("Found %d problematic jail(s) in reload output: %v", len(problematicJails), problematicJails)
-
-			disableUpdate := make(map[string]bool)
-			for _, jailName := range problematicJails {
-				disableUpdate[jailName] = false
-			}
-
-			if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
-				config.DebugLog("Error disabling problematic jails: %v", disableErr)
-			} else if reloadErr2 := conn.Reload(c.Request.Context()); reloadErr2 != nil {
-				config.DebugLog("Error: failed to reload fail2ban after disabling problematic jails: %v", reloadErr2)
-			} else {
-				// Recovered by disabling the offenders only
-				var revertedToggled []string
-				for _, jailName := range problematicJails {
-					if enabledJails[jailName] {
-						revertedToggled = append(revertedToggled, jailName)
-					}
-				}
-				if len(revertedToggled) > 0 {
-					c.JSON(http.StatusOK, gin.H{
-						"error":         fmt.Sprintf("Jail '%s' was enabled but caused a reload error: %s. It has been automatically disabled.", strings.Join(revertedToggled, "', '"), errMsg),
-						"autoDisabled":  true,
-						"enabledJails":  revertedToggled,
-						"disabledJails": problematicJails,
-					})
-					return
-				}
-				config.DebugLog("Disabled unrelated broken jail(s) %v; requested change kept", problematicJails)
-				c.JSON(http.StatusOK, gin.H{
-					"message":       fmt.Sprintf("Your change was applied. Unrelated jail '%s' has a broken configuration and was automatically disabled (%s).", strings.Join(problematicJails, "', '"), errMsg),
-					"messageKey":    "jails.manage.offender_disabled",
-					"disabledJails": problematicJails,
-				})
-				return
-			}
-		}
-
-		if len(enabledJails) > 0 {
-			config.DebugLog("Reload failed after enabling %d jail(s), auto-disabling all enabled jails: %v", len(enabledJails), enabledJails)
-
-			disableUpdate := make(map[string]bool)
-			for jailName := range enabledJails {
-				disableUpdate[jailName] = false
-			}
-
-			if disableErr := conn.UpdateJailEnabledStates(c.Request.Context(), disableUpdate); disableErr != nil {
-				config.DebugLog("Error disabling jails after reload failure: %v", disableErr)
-				c.JSON(http.StatusOK, gin.H{
-					"error":        fmt.Sprintf("Failed to reload fail2ban: %s. Additionally, failed to auto-disable enabled jails: %v", errMsg, disableErr),
-					"autoDisabled": false,
-					"enabledJails": getJailNames(enabledJails),
-				})
-				return
-			}
-
-			// Reloads again after disabling
-			if reloadErr = conn.Reload(c.Request.Context()); reloadErr != nil {
-				config.DebugLog("Error: failed to reload fail2ban after disabling jails: %v", reloadErr)
-				c.JSON(http.StatusOK, gin.H{
-					"error":        fmt.Sprintf("Failed to reload fail2ban after disabling jails: %v", reloadErr),
-					"autoDisabled": true,
-					"enabledJails": getJailNames(enabledJails),
-				})
-				return
-			}
-
-			config.DebugLog("Successfully disabled %d jail(s) and reloaded fail2ban", len(enabledJails))
-			jailNamesList := getJailNames(enabledJails)
-			if len(jailNamesList) == 1 {
-				c.JSON(http.StatusOK, gin.H{
-					"error":        fmt.Sprintf("Jail '%s' was enabled but caused a reload error: %s. It has been automatically disabled.", jailNamesList[0], errMsg),
-					"autoDisabled": true,
-					"enabledJails": jailNamesList,
-					"message":      fmt.Sprintf("Jail '%s' was automatically disabled due to configuration error", jailNamesList[0]),
-				})
-			} else {
-				c.JSON(http.StatusOK, gin.H{
-					"error":        fmt.Sprintf("Jails %v were enabled but caused a reload error: %s. They have been automatically disabled.", jailNamesList, errMsg),
-					"autoDisabled": true,
-					"enabledJails": jailNamesList,
-					"message":      fmt.Sprintf("%d jail(s) were automatically disabled due to configuration error", len(jailNamesList)),
-				})
-			}
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"error": fmt.Sprintf("Failed to reload fail2ban: %s", errMsg),
-		})
-		return
-	}
-	resp := gin.H{"message": "Jail settings updated and fail2ban reloaded successfully"}
-	if len(unverifiedJails) > 0 {
-		sort.Strings(unverifiedJails)
-		resp["warning"] = fmt.Sprintf("Enabled, but the log source of %s could not be verified by the UI. This is expected for jails using the systemd journal or defined in jail.conf.",
-			"'"+strings.Join(unverifiedJails, "', '")+"'")
-	}
-	c.JSON(http.StatusOK, resp)
+	submitOperation(c, "jail.manage")
 }
 
 // Creates a new jail with the given name and optional config.
 func CreateJailHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("CreateJailHandler called")
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var req struct {
-		JailName string `json:"jailName" binding:"required"`
-		Content  string `json:"content"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
-		return
-	}
-
-	if err := fail2ban.ValidateJailName(req.JailName); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	defined, err := conn.GetAllJails(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing jails: " + err.Error()})
-		return
-	}
-	var active []fail2ban.JailInfo
-	if summary, err := conn.GetJailSummary(c.Request.Context()); err == nil {
-		active = summary.Jails
-	}
-	if jailNameTaken(req.JailName, defined, active) {
-		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("jail '%s' already exists", req.JailName), "messageKey": "jails.errors.already_exists", "jail": req.JailName})
-		return
-	}
-
-	if strings.TrimSpace(req.Content) == "" {
-		req.Content = "enabled = false\n"
-	}
-
-	if err := conn.CreateJail(c.Request.Context(), req.JailName, fail2ban.NormalizeJailSection(req.JailName, req.Content)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create jail: " + err.Error()})
-		return
-	}
-
-	// The new jail file is on disk but inactive until fail2ban re-reads its config.
-	if err := conn.Reload(c.Request.Context()); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message": fmt.Sprintf("Jail '%s' created, but fail2ban reload reported a problem", req.JailName),
-			"warning": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' created and applied successfully", req.JailName)})
+	submitOperation(c, "jail.create")
 }
 
 // Removes a jail and its config file.
 func DeleteJailHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("DeleteJailHandler called")
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	jailName := c.Param("jail")
-	if jailName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Jail name is required"})
-		return
-	}
-
-	if err := fail2ban.ValidateJailName(jailName); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := conn.DeleteJail(c.Request.Context(), jailName); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete jail: " + err.Error()})
-		return
-	}
-
-	// Reload so the removed jail is actually stopped on the daemon.
-	if err := conn.Reload(c.Request.Context()); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message": fmt.Sprintf("Jail '%s' deleted, but fail2ban reload reported a problem", jailName),
-			"warning": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Jail '%s' deleted and applied successfully", jailName)})
+	submitOperation(c, "jail.delete")
 }
 
 // Active jails count too a jail defined only in jail.conf (such as sshd for example) has no jail.d file

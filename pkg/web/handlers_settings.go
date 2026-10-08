@@ -17,12 +17,10 @@
 package web
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -104,6 +102,21 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	}
 
 	oldSettings := config.GetSettings()
+	manager := fail2ban.GetManager()
+	releaseConfig := manager.GuardServerConfiguration()
+	defer releaseConfig()
+	// UpdateSettings preserves the server list. The listener port is the one
+	// global setting that can replace a live reverse-tunnel connector.
+	if req.Port != oldSettings.Port {
+		for _, server := range oldSettings.Servers {
+			if server.Type == "ssh" && server.ReverseTunnelEnabled {
+				if activity, busy := manager.OperationStatus(server.ID); busy {
+					c.JSON(http.StatusConflict, gin.H{"error": "A server operation is in progress. Wait before changing the UI port used by its SSH tunnel.", "operationId": activity.ID})
+					return
+				}
+			}
+		}
+	}
 	oldDefaults := config.BuildJailLocalContent()
 	newSettings, err := config.UpdateSettings(req)
 	if err != nil {
@@ -121,6 +134,7 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reload fail2ban connectors: " + err.Error()})
 		return
 	}
+	releaseConfig()
 
 	var warnings []string
 	warn := func(format string, v ...interface{}) {
@@ -130,7 +144,6 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	}
 
 	defaultSettingsChanged := oldDefaults != config.BuildJailLocalContent()
-	manager := fail2ban.GetManager()
 	connectors := manager.Connectors()
 	if callbackChanged || defaultSettingsChanged {
 		for _, conn := range connectors {
@@ -275,97 +288,12 @@ func TestFilterHandler(c *gin.Context) {
 
 // Creates a new filter definition file.
 func CreateFilterHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("CreateFilterHandler called")
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var req struct {
-		FilterName string `json:"filterName" binding:"required"`
-		Content    string `json:"content"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: " + err.Error()})
-		return
-	}
-
-	// Validate filter name
-	if err := fail2ban.ValidateFilterName(req.FilterName); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	existing, err := conn.GetFilters(c.Request.Context())
-	if err != nil && !errors.Is(err, fail2ban.ErrFilterDirMissing) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing filters: " + err.Error()})
-		return
-	}
-	if slices.Contains(existing, req.FilterName) {
-		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("filter '%s' already exists", req.FilterName), "messageKey": "filters.errors.already_exists", "filter": req.FilterName})
-		return
-	}
-
-	if req.Content == "" {
-		req.Content = fmt.Sprintf("# Filter: %s\n", req.FilterName)
-	}
-
-	if err := conn.CreateFilter(c.Request.Context(), req.FilterName, req.Content); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create filter: " + err.Error()})
-		return
-	}
-
-	// Reload so a jail referencing this filter can pick it up immediately.
-	if err := conn.Reload(c.Request.Context()); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message": fmt.Sprintf("Filter '%s' created, but fail2ban reload reported a problem", req.FilterName),
-			"warning": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' created and applied successfully", req.FilterName)})
+	submitOperation(c, "filter.create")
 }
 
 // Removes a filter definition file.
 func DeleteFilterHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("DeleteFilterHandler called")
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	filterName := c.Param("filter")
-	if filterName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Filter name is required"})
-		return
-	}
-
-	if err := fail2ban.ValidateFilterName(filterName); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := conn.DeleteFilter(c.Request.Context(), filterName); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete filter: " + err.Error()})
-		return
-	}
-
-	// Reload so fail2ban notices the removal (and reports if a jail still needs it).
-	if err := conn.Reload(c.Request.Context()); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message": fmt.Sprintf("Filter '%s' deleted, but fail2ban reload reported a problem", filterName),
-			"warning": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Filter '%s' deleted and applied successfully", filterName)})
+	submitOperation(c, "filter.delete")
 }
 
 // =========================================================================
@@ -374,38 +302,5 @@ func DeleteFilterHandler(c *gin.Context) {
 
 // Restarts (or reloads) the Fail2ban service on the selected server.
 func RestartFail2banHandler(c *gin.Context) {
-	config.DebugLog("----------------------------")
-	config.DebugLog("RestartFail2banHandler called")
-
-	conn, err := resolveConnector(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	server := conn.Server()
-
-	// browser disconnect must not abort a restart halfway
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 2*time.Minute)
-	defer cancel()
-	// Attempts to restart the fail2ban service via the connector.
-	mode, err := fail2ban.GetManager().ApplyAndRestart(ctx, server.ID)
-	if errors.Is(err, fail2ban.ErrConfigNotApplied) {
-		c.JSON(http.StatusConflict, buildErrorResponse(err, "servers.errors.config_not_applied"))
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, buildErrorResponse(err, ""))
-		return
-	}
-
-	msg := "Fail2ban service restarted successfully"
-	if mode == "reload" {
-		msg = "Fail2ban configuration reloaded successfully (no systemd service restart)"
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"message": msg,
-		"mode":    mode,
-		"server":  maskServer(server),
-	})
+	submitOperation(c, "server.restart")
 }

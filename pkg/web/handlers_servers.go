@@ -131,6 +131,13 @@ func UpsertServerHandler(c *gin.Context) {
 		return
 	}
 
+	manager := fail2ban.GetManager()
+	releaseConfig := manager.GuardServerConfiguration()
+	defer releaseConfig()
+	if activity, busy := manager.OperationStatus(req.ID); busy {
+		c.JSON(http.StatusConflict, gin.H{"error": "This server has an operation in progress. Wait for it to finish before changing its connection settings.", "operationId": activity.ID})
+		return
+	}
 	server, err := config.UpsertServer(req)
 	if err != nil {
 		resp := gin.H{"error": err.Error()}
@@ -145,10 +152,10 @@ func UpsertServerHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	releaseConfig()
 
 	var actionFileWarning string
 	var jailLocalWarning bool
-	manager := fail2ban.GetManager()
 	if server.Enabled {
 		// Saving is the manual way to re-deploy the action file and jail.local.
 		manager.RequestConfigSync(server.ID, true, true)
@@ -184,6 +191,13 @@ func DeleteServerHandler(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing id parameter"})
+		return
+	}
+	manager := fail2ban.GetManager()
+	releaseConfig := manager.GuardServerConfiguration()
+	defer releaseConfig()
+	if activity, busy := manager.OperationStatus(id); busy {
+		c.JSON(http.StatusConflict, gin.H{"error": "This server has an operation in progress and cannot be deleted until its outcome is confirmed.", "operationId": activity.ID})
 		return
 	}
 	if err := config.DeleteServer(id); err != nil {
