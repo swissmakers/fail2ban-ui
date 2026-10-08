@@ -113,3 +113,36 @@ test('loadScriptOnce keeps separate entries per URL', () => {
   h.context.loadScriptOnce('/static/vendor/b.js');
   assert.deepEqual(h.appended.map(el => el.src), ['/static/vendor/a.js', '/static/vendor/b.js']);
 });
+
+test('API request deadlines abort the HTTP wait without retrying a mutation', async () => {
+  let timeout, calls = 0, captured;
+  const window = {
+    __BASE_PATH__: '', location: new URL('https://ui.example.com/'),
+    fetch: (url, options) => {
+      calls++;
+      captured = options;
+      return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    }
+  };
+  const context = vm.createContext({
+    URL, Headers, AbortController, window, crypto: { randomUUID: () => 'request-id-1' },
+    setTimeout: (callback, delay) => { assert.equal(delay, 15000); timeout = callback; return 1; }, clearTimeout() {},
+    t: (key, fallback) => fallback, handleSessionExpired() {}, currentServerId: null
+  });
+  vm.runInContext(source, context, { filename });
+  const pending = window.fetch('/api/jails/manage', { method: 'POST', body: '{"sshd":false}' });
+  const rejected = assert.rejects(pending, /A change already submitted may still be running/);
+  assert.equal(captured.headers.get('Idempotency-Key'), 'request-id-1');
+  timeout();
+  await rejected;
+  assert.equal(calls, 1, 'the UI must never automatically replay an uncertain mutation');
+});
+
+test('an explicit idempotency key is preserved', async () => {
+  let captured;
+  const window = { __BASE_PATH__: '', location: new URL('https://ui.example.com/'), fetch: async (url, init) => { captured = init; return { status: 202 }; } };
+  const context = vm.createContext({ URL, Headers, window, currentServerId: null, handleSessionExpired() {} });
+  vm.runInContext(source, context, { filename });
+  await window.fetch('/api/jails/manage', { method: 'POST', headers: { 'Idempotency-Key': 'retry-same-intent' } });
+  assert.equal(captured.headers.get('Idempotency-Key'), 'retry-same-intent');
+});

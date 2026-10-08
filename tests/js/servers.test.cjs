@@ -20,6 +20,7 @@ const badgeCases = [
   ['degraded', { state: 'degraded' }, { state: 'degraded', dotClass: 'bg-yellow-500', textClass: 'text-yellow-600', label: 'Degraded' }],
   ['down uses the translation', { state: 'down' }, { state: 'down', dotClass: 'bg-red-500', textClass: 'text-red-600', label: 'Nicht erreichbar' }],
   ['unknown', { state: 'unknown' }, { state: 'unknown', dotClass: 'bg-gray-400', textClass: 'text-gray-500', label: 'Unknown' }],
+  ['busy', { state: 'busy' }, { state: 'busy', dotClass: 'bg-yellow-500', textClass: 'text-yellow-600', label: 'Busy applying changes' }],
   ['unexpected state renders as unknown', { state: 'exploded' }, { state: 'unknown', dotClass: 'bg-gray-400', textClass: 'text-gray-500', label: 'Unknown' }],
   ['prototype key is not a state', { state: 'toString' }, { state: 'unknown', dotClass: 'bg-gray-400', textClass: 'text-gray-500', label: 'Unknown' }],
   ['missing state', {}, { state: 'unknown', dotClass: 'bg-gray-400', textClass: 'text-gray-500', label: 'Unknown' }]
@@ -39,15 +40,17 @@ test('serverHealthBadge: no health (disabled server) gives no badge', () => {
 const server = (state, enabled = true) => ({ enabled, health: state === undefined ? undefined : { state } });
 
 const aggregateCases = [
-  ['no servers', [], { state: 'unknown', down: 0, degraded: 0 }],
-  ['nothing checked yet', [server('unknown'), server('unknown')], { state: 'unknown', down: 0, degraded: 0 }],
-  ['all ok', [server('ok'), server('ok')], { state: 'ok', down: 0, degraded: 0 }],
-  ['ok beats unknown', [server('ok'), server('unknown')], { state: 'ok', down: 0, degraded: 0 }],
-  ['degraded beats ok', [server('ok'), server('degraded')], { state: 'degraded', down: 0, degraded: 1 }],
-  ['down beats degraded', [server('degraded'), server('down'), server('down')], { state: 'down', down: 2, degraded: 1 }],
-  ['disabled servers are ignored', [server('down', false), server('ok')], { state: 'ok', down: 0, degraded: 0 }],
-  ['servers without health are ignored', [server(undefined), server('degraded')], { state: 'degraded', down: 0, degraded: 1 }],
-  ['null entries are ignored', [null, server('ok')], { state: 'ok', down: 0, degraded: 0 }]
+  ['no servers', [], { state: 'unknown', down: 0, degraded: 0, busy: 0 }],
+  ['nothing checked yet', [server('unknown'), server('unknown')], { state: 'unknown', down: 0, degraded: 0, busy: 0 }],
+  ['all ok', [server('ok'), server('ok')], { state: 'ok', down: 0, degraded: 0, busy: 0 }],
+  ['ok beats unknown', [server('ok'), server('unknown')], { state: 'ok', down: 0, degraded: 0, busy: 0 }],
+  ['degraded beats ok', [server('ok'), server('degraded')], { state: 'degraded', down: 0, degraded: 1, busy: 0 }],
+  ['down beats degraded', [server('degraded'), server('down'), server('down')], { state: 'down', down: 2, degraded: 1, busy: 0 }],
+  ['busy is separate from unavailable', [server('ok'), server('busy')], { state: 'busy', down: 0, degraded: 0, busy: 1 }],
+  ['failure is not hidden by busy', [server('down'), server('busy')], { state: 'down', down: 1, degraded: 0, busy: 1 }],
+  ['disabled servers are ignored', [server('down', false), server('ok')], { state: 'ok', down: 0, degraded: 0, busy: 0 }],
+  ['servers without health are ignored', [server(undefined), server('degraded')], { state: 'degraded', down: 0, degraded: 1, busy: 0 }],
+  ['null entries are ignored', [null, server('ok')], { state: 'ok', down: 0, degraded: 0, busy: 0 }]
 ];
 
 for (const [name, servers, expected] of aggregateCases) {
@@ -57,7 +60,7 @@ for (const [name, servers, expected] of aggregateCases) {
 }
 
 test('aggregateServerHealth: missing list', () => {
-  assert.deepEqual(plain(aggregateServerHealth(undefined)), { state: 'unknown', down: 0, degraded: 0 });
+  assert.deepEqual(plain(aggregateServerHealth(undefined)), { state: 'unknown', down: 0, degraded: 0, busy: 0 });
 });
 
 test('applyServerHealthUpdate patches state and time, keeps the details', () => {

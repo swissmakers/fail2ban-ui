@@ -144,3 +144,27 @@ test('requires a selected server before requesting jails', async () => {
   assert.deepEqual(h.opened, []);
   assert.equal(h.toasts[0].type, 'info');
 });
+
+test('jail changes start immediately instead of sharing a debounce timer', async () => {
+  const h = createHarness([{ status: 200, body: { jails: [{ jailName: 'sshd', enabled: false }] } }]);
+  const calls = [];
+  h.context.saveManageJailsSingle = checkbox => calls.push(checkbox);
+  await openManage(h);
+  assert.equal(h.listeners.length, 1);
+  h.listeners[0].handler();
+  assert.equal(calls.length, 1, 'the toggle must not wait on a timer another toggle can cancel');
+});
+
+test('jails still loading are not presented as an empty server', async () => {
+  const h = createHarness([{ status: 200, body: { available: false, stale: true, jails: null } }]);
+  await openManage(h);
+  assert.match(h.elements.jailsList.innerHTML, /Loading jails…/);
+  assert.doesNotMatch(h.elements.jailsList.innerHTML, /No jails found|snapshot|Activity/);
+});
+
+test('a failed initial jail read explains the connection problem', async () => {
+  const h = createHarness([{ status: 200, body: { available: false, stale: true, staleReason: 'refresh_failed', jails: null } }]);
+  await openManage(h);
+  assert.match(h.elements.jailsList.innerHTML, /Unable to load jails\. Check the server connection\./);
+  assert.doesNotMatch(h.elements.jailsList.innerHTML, /Loading jails|No jails found|snapshot|Activity/);
+});
