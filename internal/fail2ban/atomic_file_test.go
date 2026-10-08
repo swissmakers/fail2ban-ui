@@ -25,8 +25,33 @@ import (
 )
 
 func TestAtomicConfigPreservesBackupOnRetry(t *testing.T) {
-	for _, remote := range []bool{false, true} {
-		t.Run(map[bool]string{false: "local", true: "SSH script"}[remote], func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		remote  bool
+		minimal bool
+	}{
+		{name: "local"},
+		{name: "SSH script", remote: true},
+		{name: "SSH without cmp", remote: true, minimal: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.remote {
+				// Backup-content checks do not need to flush every filesystem on the test host.
+				withFakeBinary(t, "sync", "exit 0\n")
+			}
+			if tc.minimal {
+				bin := t.TempDir()
+				for _, tool := range []string{"sh", "cat", "chmod", "mktemp", "mv", "readlink", "rm", "stat", "sync"} {
+					path, err := exec.LookPath(tool)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(path, filepath.Join(bin, tool)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				t.Setenv("PATH", bin)
+			}
 			path := filepath.Join(t.TempDir(), "jail.local")
 			old := "[sshd]\nenabled = false\n"
 			if err := os.WriteFile(path, []byte(old), 0640); err != nil {
@@ -37,7 +62,7 @@ func TestAtomicConfigPreservesBackupOnRetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			for i := 0; i < 2; i++ {
-				if remote {
+				if tc.remote {
 					script, err := buildRemoteWriteScript(path, "[sshd]\nenabled = true\n")
 					if err != nil {
 						t.Fatal(err)
@@ -84,6 +109,61 @@ func TestFailedStagingLeavesRemoteConfigUntouched(t *testing.T) {
 	data, err := os.ReadFile(path)
 	if err != nil || string(data) != "original\n" {
 		t.Fatalf("original was truncated: %s %v", data, err)
+	}
+}
+
+func TestRemoteWriteDetectsTrailingNewlineChanges(t *testing.T) {
+	withFakeBinary(t, "sync", "exit 0\n")
+	path := filepath.Join(t.TempDir(), "jail.local")
+	old := "# Keep this dot.\n"
+	content := old + "\n"
+	if err := os.WriteFile(path, []byte(old), 0644); err != nil {
+		t.Fatal(err)
+	}
+	script, err := buildRemoteWriteScript(path, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if output, err := exec.Command("sh", "-c", script).CombinedOutput(); err != nil {
+			t.Fatalf("write: %v %s", err, output)
+		}
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != content {
+		t.Fatalf("newline change was lost: %q %v", got, err)
+	}
+	if got, err := os.ReadFile(path + backupSuffix); err != nil || string(got) != old {
+		t.Fatalf("previous configuration lost: %q %v", got, err)
+	}
+}
+
+func TestRemoteWriteReadFailurePreservesConfigAndBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "jail.local")
+	old, backup := "original\n", "previous backup\n"
+	for name, content := range map[string]string{path: old, path + backupSuffix: backup} {
+		if err := os.WriteFile(name, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	realCat, err := exec.LookPath("cat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withFakeBinary(t, "cat", "if [ \"$#\" -gt 0 ] && [ \"$1\" = "+shellQuote(path)+" ]; then printf partial; exit 1; fi\nexec "+shellQuote(realCat)+" \"$@\"\n")
+	script, err := buildRemoteWriteScript(path, "replacement\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("sh", "-c", script).CombinedOutput(); err == nil {
+		t.Fatalf("read failure was ignored: %s", output)
+	}
+	for name, want := range map[string]string{path: old, path + backupSuffix: backup} {
+		if got, err := os.ReadFile(name); err != nil || string(got) != want {
+			t.Fatalf("file changed after read failure: %s: %q %v", name, got, err)
+		}
+	}
+	if files, err := filepath.Glob(path + ".f2bui.*"); err != nil || len(files) != 1 || files[0] != path+backupSuffix {
+		t.Fatalf("staged files were not cleaned up: %v %v", files, err)
 	}
 }
 
