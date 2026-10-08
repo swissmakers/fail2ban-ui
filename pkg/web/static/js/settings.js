@@ -241,7 +241,7 @@ function saveSettings(event) {
     advancedActions: collectAdvancedActionsSettings()
   };
 
-  fetch(appPath('/api/settings'), {
+  return fetch(appPath('/api/settings'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(settingsData),
@@ -253,15 +253,10 @@ function saveSettings(event) {
       checkAndApplyLOTRTheme(settingsData.alertCountries);
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
         const warningPreview = data.warnings.slice(0, 2).join(' | ');
-        showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'info');
+        showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'warning');
         console.warn('Settings warnings:', data.warnings);
-      }
-      if (data.restartNeeded) {
-        showToast(t('settings.save_success_restart_required', 'Settings saved. Fail2ban restart required.'), 'info');
-      } else if (data.syncPending) {
-        showToast(t('settings.save_success_sync_pending', 'Settings saved, but not every server could be updated yet. Fail2ban UI keeps retrying.'), 'warning', 12000);
       } else {
-        showToast(t('settings.save_success_reloaded', 'Settings saved and fail2ban reloaded'), 'success');
+        showToast(t('settings.save_success', 'Settings saved'), 'success', 3000);
       }
       return loadServers();
     })
