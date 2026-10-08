@@ -31,7 +31,6 @@ function harness() {
     document: { getElementById: id => elements[id], querySelectorAll: () => [], createElement: element },
     setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; }, clearTimeout: id => { if (timers[id - 1]) timers[id - 1].cancelled = true; }, setInterval: () => 1, clearInterval() {},
     fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve: (data, status) => resolve(response(data, status)), reject })),
-    escapeHtml: value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])),
     appPath: url => url, hasAccess: () => true, loadServers: async () => {}, fetchSummaryData: async () => {}, scheduleRender() {},
     showToast: (...args) => toasts.push(args), wsManager: { on: (event, callback) => { events[event] = callback; } }
   });
@@ -128,10 +127,18 @@ test('queued cancellation respects support permissions and cannot cancel a runni
 });
 
 test('operation text is escaped before rendering', () => {
-  const h = harness();
-  h.context.receiveOperation(operation('failed', { target: '<img src=x>', error: '<script>unsafe</script>' }));
-  assert.doesNotMatch(h.elements['operation-toasts'].innerHTML, /<img|<script>/);
-  assert.match(h.elements['operation-toasts'].innerHTML, /&lt;img/);
+  for (const [target, error, escapedTarget, escapedError] of [
+    ['<img src=x>', '<script>unsafe</script>', '&lt;img src=x&gt;', '&lt;script&gt;unsafe&lt;/script&gt;'],
+    ['<IMG src=x>', '<SCRIPT>unsafe</SCRIPT>', '&lt;IMG src=x&gt;', '&lt;SCRIPT&gt;unsafe&lt;/SCRIPT&gt;'],
+    ['<ImG src="x">', '<ScRiPt type="text/javascript">unsafe</ScRiPt>', '&lt;ImG src=&quot;x&quot;&gt;', '&lt;ScRiPt type=&quot;text/javascript&quot;&gt;unsafe&lt;/ScRiPt&gt;']
+  ]) {
+    const h = harness();
+    h.context.receiveOperation(operation('failed', { target, error }));
+    const html = h.elements['operation-toasts'].innerHTML;
+    assert.doesNotMatch(html, /<\/?(?:img|script)\b/i);
+    assert.ok(html.includes(escapedTarget));
+    assert.ok(html.includes(escapedError));
+  }
 });
 
 test('elapsed time is labelled for active work and omitted for immediate or terminal results', () => {
