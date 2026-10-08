@@ -193,9 +193,10 @@ test('server cards wrap fingerprints and keep all actions accessible without hor
   assert.match(html, /flex flex-col gap-3 min-w-0/);
   assert.match(html, /flex flex-wrap items-center gap-x-4 gap-y-2/);
   assert.doesNotMatch(html, /overflow-x-auto/);
-  for (const action of ['editServer', 'makeDefaultServer', 'setServerEnabled', 'restartFail2banServer', 'acceptHostKey', 'testServerConnection', 'deleteServer']) {
+  for (const action of ['editServer', 'setServerEnabled', 'restartFail2banServer', 'acceptHostKey', 'testServerConnection', 'deleteServer']) {
     assert.match(html, new RegExp('onclick="' + action + '\\('));
   }
+  assert.doesNotMatch(html, /makeDefaultServer\(|Set default/);
 });
 
 test('an opened diagnostics section remains open during background server refreshes', () => {

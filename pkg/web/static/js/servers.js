@@ -433,7 +433,6 @@ function renderServerManagerList() {
       + '    </div>'
       + '    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-200 pt-3">'
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="editServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.edit">Edit</button>'
-      + (server.isDefault ? '' : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="makeDefaultServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.set_default">Set default</button>')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="setServerEnabled(\'' + escapeHtml(server.id) + '\',' + (server.enabled ? 'false' : 'true') + ')" data-i18n="' + (server.enabled ? 'servers.actions.disable' : 'servers.actions.enable') + '">' + (server.enabled ? 'Disable' : 'Enable') + '</button>'
       + (server.enabled ? (server.type === 'local'
         ? '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="restartFail2banServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.reload" data-i18n-title="servers.actions.reload_tooltip" title="' + escapeHtml(t('servers.actions.reload_tooltip', 'For local connectors, only a configuration reload is possible via the socket connection. The container cannot restart the Fail2ban service using systemctl. To perform a full restart, run \'systemctl restart fail2ban\' directly on the host system.')) + '">Reload Fail2ban</button>'
@@ -991,28 +990,6 @@ function deleteServer(serverId) {
     })
     .catch(function(err) {
       showToast(t('servers.toast.delete_error', 'Error deleting server') + ': ' + err.message, 'error');
-    })
-    .finally(function() {
-      showLoading(false);
-    });
-}
-
-function makeDefaultServer(serverId) {
-  showLoading(true);
-  fetch(appPath('/api/servers/' + encodeURIComponent(serverId) + '/default'), { method: 'POST' })
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      if (data.error) {
-        showToast(formatApiError(data, 'servers.toast.set_default_error', 'Error setting default server'), 'error');
-        return;
-      }
-      currentServerId = data.server ? data.server.id : serverId;
-      return reloadServerViews().then(function() {
-        showToast(t('servers.actions.set_default_success', 'Server set as default'), 'success');
-      });
-    })
-    .catch(function(err) {
-      showToast(t('servers.toast.set_default_error', 'Error setting default server') + ': ' + err.message, 'error');
     })
     .finally(function() {
       showLoading(false);
