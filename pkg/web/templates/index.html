@@ -1387,7 +1387,8 @@
                   No servers configured yet. Add your first Fail2ban server using the form on the right.
                 </div>
               </div>
-              <div class="server-manager-modal-form-col min-w-0">
+              <div id="serverManagerEditorHome" class="min-w-0">
+              <div id="serverManagerEditor" class="server-manager-modal-form-col min-w-0">
                 <div class="flex items-center justify-between mb-3">
                   <h4 class="text-md font-semibold text-gray-800" data-i18n="servers.modal.form_title">Add or Update Server</h4>
                   <button type="button" onclick="resetServerForm()" class="text-sm text-blue-600 hover:text-blue-800 font-medium" data-i18n="servers.form.new_server">New Server</button>
@@ -1488,12 +1489,14 @@
                     </div>
                   </div>
                   <input type="hidden" id="serverId">
-                  <div class="flex gap-3">
+                  <div class="flex flex-wrap gap-3">
                     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors" data-i18n="servers.form.submit">Save Server</button>
                     <button type="button" class="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors" onclick="resetServerForm()" data-i18n="servers.form.reset">Reset</button>
                   </div>
+                  <button id="serverDeleteButton" type="button" class="hidden text-sm text-red-600 hover:text-red-800" onclick="deleteServer(document.getElementById('serverId').value)" data-i18n="servers.actions.delete">Delete</button>
                 </form>
                 </div>
+              </div>
               </div>
             </div>
           </div>

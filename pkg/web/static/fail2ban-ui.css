@@ -535,6 +535,25 @@ body:has(#loginPage:not(.hidden)) {
     max-height: 100%;
 }
 
+#serverManagerList [data-server-editor-slot]:empty {
+    display: none;
+}
+
+@media (max-width: 1023px) {
+    #serverManagerList {
+        min-height: 0;
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
+    }
+
+    #serverManagerList [data-server-editor-slot] #serverManagerEditor {
+        padding: 1rem;
+        border: 1px solid var(--f2b-ui-border);
+        scroll-margin-top: 1rem;
+    }
+}
+
 #serverManagerInfoView.server-manager-info-view {
     box-sizing: border-box;
     display: grid;

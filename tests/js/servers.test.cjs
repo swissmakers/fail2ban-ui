@@ -193,10 +193,10 @@ test('server cards wrap fingerprints and keep all actions accessible without hor
   assert.match(html, /flex flex-col gap-3 min-w-0/);
   assert.match(html, /flex flex-wrap items-center gap-x-4 gap-y-2/);
   assert.doesNotMatch(html, /overflow-x-auto/);
-  for (const action of ['editServer', 'setServerEnabled', 'restartFail2banServer', 'acceptHostKey', 'testServerConnection', 'deleteServer']) {
+  for (const action of ['editServer', 'setServerEnabled', 'restartFail2banServer', 'acceptHostKey', 'testServerConnection']) {
     assert.match(html, new RegExp('onclick="' + action + '\\('));
   }
-  assert.doesNotMatch(html, /makeDefaultServer\(|Set default/);
+  assert.doesNotMatch(html, /makeDefaultServer\(|deleteServer\(|Set default|>Delete</);
 });
 
 test('an opened diagnostics section remains open during background server refreshes', () => {
@@ -243,4 +243,259 @@ test('server save warnings do not duplicate a host-key failure as an action-file
   h.context.showServerResponseWarnings({ hostKeyError: true, actionFileWarning: 'Write permission denied' });
   assert.equal(toasts.length, 2);
   assert.equal(toasts[0][0], 'Write permission denied');
+});
+
+// Minimal DOM with actual reparenting, focus loss, and scroll clamping on removal.
+// This makes form survival during card replacement observable without a browser.
+function editorHarness(servers, mobile = false) {
+  const document = { activeElement: null };
+  let scrollCalls = 0;
+  class Element {
+    constructor(id = '', attributes = {}) {
+      this.id = id;
+      this.attributes = attributes;
+      this.children = [];
+      this.parentNode = null;
+      this.scrollTop = 0;
+      this.scrollLeft = 0;
+      this.checked = false;
+      this.selectionStart = 0;
+      this.selectionEnd = 0;
+      this._value = '';
+      this.classes = new Set();
+      this.classList = {
+        contains: value => this.classes.has(value),
+        add: value => this.classes.add(value),
+        remove: value => this.classes.delete(value),
+        toggle: (value, enabled) => enabled ? this.classes.add(value) : this.classes.delete(value)
+      };
+    }
+    get value() { return this._value; }
+    set value(value) { this._value = String(value); }
+    get innerHTML() { return this._html || ''; }
+    set innerHTML(value) {
+      this._html = value;
+      for (const child of this.children) child.parentNode = null;
+      this.children = [];
+      if (this.id === 'serverManagerList') {
+        for (const match of value.matchAll(/data-server-editor-slot="([^"]+)"/g)) {
+          this.appendChild(new Element('', { 'data-server-editor-slot': match[1] }));
+        }
+      }
+    }
+    contains(child) { return this === child || this.children.some(item => item.contains(child)); }
+    appendChild(child) {
+      if (child.parentNode) {
+        child.parentNode.children = child.parentNode.children.filter(item => item !== child);
+        if (child.contains(document.activeElement)) {
+          document.activeElement.selectionStart = 0;
+          document.activeElement.selectionEnd = 0;
+          document.activeElement = null;
+        }
+        if (child.id === 'serverManagerEditor') {
+          modal.scrollTop = 0;
+          list.scrollTop = 0;
+        }
+      }
+      this.children.push(child);
+      child.parentNode = this;
+      return child;
+    }
+    getAttribute(name) { return this.attributes[name]; }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    addEventListener() {}
+    focus() { document.activeElement = this; }
+    setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
+    scrollIntoView() { scrollCalls++; }
+    querySelectorAll(selector) {
+      const result = [];
+      for (const child of this.children) {
+        if (selector === '[data-server-editor-slot]' && child.attributes['data-server-editor-slot']) result.push(child);
+        result.push(...child.querySelectorAll(selector));
+      }
+      return result;
+    }
+  }
+  const body = new Element('body');
+  const modal = body.appendChild(new Element('serverManagerModal'));
+  const list = modal.appendChild(new Element('serverManagerList'));
+  modal.appendChild(new Element('serverManagerListEmpty'));
+  const home = modal.appendChild(new Element('serverManagerEditorHome'));
+  const editor = home.appendChild(new Element('serverManagerEditor'));
+  editor.appendChild(new Element('serverManagerInfoView'));
+  const formView = editor.appendChild(new Element('serverFormView'));
+  formView.classList.add('hidden');
+  const form = formView.appendChild(new Element('serverForm'));
+  for (const id of ['serverId', 'serverName', 'serverType', 'serverHost', 'serverPort', 'serverSocket',
+    'serverConfigPath', 'serverHostname', 'serverSSHUser', 'serverSSHKey', 'serverSSHKeySelect',
+    'serverAgentUrl', 'serverAgentSecret', 'serverTags', 'serverDefault', 'serverEnabled',
+    'serverReverseTunnel', 'serverTunnelPort', 'serverConfigPathGroup', 'serverTunnelPortGroup', 'serverDeleteButton']) {
+    form.appendChild(new Element(id));
+  }
+  function find(id, node = body) {
+    if (node.id === id) return node;
+    for (const child of node.children) {
+      const found = find(id, child);
+      if (found) return found;
+    }
+    return null;
+  }
+  document.getElementById = find;
+  document.querySelectorAll = selector => body.querySelectorAll(selector);
+  const changes = [];
+  const media = { matches: mobile, addEventListener: (event, listener) => changes.push(listener) };
+  const context = vm.createContext({
+    document, translations: {}, serversCache: servers, sshKeysCache: [], currentServerId: null,
+    window: { matchMedia: () => media, localStorage: { getItem() { return null; }, removeItem() {} } },
+    escapeHtml: value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])),
+    formatDateTime: value => value || '', sortServersForDisplay: values => values,
+    updateTranslations() {}, showLoading() {}, showToast() {}, appPath: value => value,
+    confirm: () => true
+  });
+  for (const name of ['utils.js', 'servers.js']) {
+    vm.runInContext(fs.readFileSync(path.join(jsDir, name), 'utf8'), context);
+  }
+  context.renderServerManagerList();
+  return {
+    context, document, home, editor, list, modal, find, scrollCalls: () => scrollCalls,
+    resize(next) { media.matches = next; changes.forEach(listener => listener()); },
+    slot: id => list.querySelectorAll('[data-server-editor-slot]').find(element => element.getAttribute('data-server-editor-slot') === id)
+  };
+}
+
+const editableServers = () => [
+  { id: 'a', name: 'First server', type: 'local', enabled: true },
+  { id: 'b', name: 'Second server', type: 'agent', enabled: true, isDefault: true }
+];
+
+test('desktop edit stays beside the list; mobile edit uses the slot immediately after its server card', () => {
+  for (const mobile of [false, true]) {
+    const h = editorHarness(editableServers(), mobile);
+    h.context.editServer('b');
+    assert.equal(h.editor.parentNode, mobile ? h.slot('b') : h.home);
+    assert.equal(h.home.classList.contains('hidden'), mobile);
+    assert.equal(h.find('serverId').value, 'b');
+    assert.equal(h.find('serverDefault').checked, true, 'the default setting stays in the editor');
+    assert.equal(h.find('serverDeleteButton').classList.contains('hidden'), false);
+    assert.equal(h.find('serverDeleteButton').disabled, false);
+    assert.equal(h.scrollCalls(), mobile ? 1 : 0, 'only explicit mobile edits reveal the editor');
+    h.context.editServer('a');
+    assert.equal(h.editor.parentNode, mobile ? h.slot('a') : h.home);
+    assert.equal(h.find('serverId').value, 'a');
+    assert.equal(h.find('serverDefault').checked, false);
+  }
+});
+
+test('health refreshes and breakpoint changes preserve the same form, draft values, focus, selection, and scroll', () => {
+  const h = editorHarness(editableServers(), true);
+  h.context.editServer('b');
+  const input = h.find('serverName');
+  const form = h.find('serverForm');
+  input.value = 'Unsaved name';
+  input.focus();
+  input.setSelectionRange(2, 7);
+  h.find('serverDefault').checked = false;
+  const explicitScrolls = h.scrollCalls();
+  for (const update of [
+    () => h.context.renderServerManagerList(),
+    () => h.resize(false),
+    () => h.resize(true),
+    () => h.context.renderServerManagerList()
+  ]) {
+    h.modal.scrollTop = 450;
+    h.list.scrollTop = 12;
+    update();
+    assert.equal(h.find('serverForm'), form);
+    assert.equal(h.find('serverName'), input);
+    assert.equal(input.value, 'Unsaved name');
+    assert.equal(h.find('serverDefault').checked, false);
+    assert.equal(h.document.activeElement, input);
+    assert.deepEqual([input.selectionStart, input.selectionEnd], [2, 7]);
+    assert.equal(h.modal.scrollTop, 450);
+    assert.equal(h.list.scrollTop, 12);
+    assert.equal(h.scrollCalls(), explicitScrolls, 'background work must not scroll to the form');
+  }
+  assert.equal(h.editor.parentNode, h.slot('b'));
+});
+
+test('new/reset/info views return home and hide Delete; a removed edited server cannot remain editable', () => {
+  const h = editorHarness(editableServers(), true);
+  h.context.editServer('b');
+  h.context.resetServerForm();
+  assert.equal(h.editor.parentNode, h.home);
+  assert.equal(h.find('serverId').value, '');
+  assert.equal(h.find('serverDeleteButton').classList.contains('hidden'), true);
+  assert.equal(h.find('serverDeleteButton').disabled, true);
+  assert.equal(h.find('serverFormView').classList.contains('hidden'), false);
+  h.context.editServer('a');
+  h.context.showServerManagerInfoView();
+  assert.equal(h.editor.parentNode, h.home);
+  assert.equal(h.find('serverId').value, '');
+  assert.equal(h.find('serverDeleteButton').classList.contains('hidden'), true);
+  h.context.editServer('b');
+  h.context.serversCache = [h.context.serversCache[0]];
+  h.context.renderServerManagerList();
+  assert.equal(h.editor.parentNode, h.home);
+  assert.equal(h.find('serverId').value, '');
+  assert.equal(h.find('serverFormView').classList.contains('hidden'), true);
+  assert.equal(h.find('serverDeleteButton').disabled, true);
+  h.context.serversCache = [];
+  h.context.renderServerManagerList();
+  assert.equal(h.find('serverForm').parentNode, h.find('serverFormView'));
+  assert.equal(h.home.classList.contains('hidden'), false);
+});
+
+test('deleting the edited server closes its editor without closing a different server selected while waiting', async () => {
+  for (const switchWhileWaiting of [false, true]) {
+    const h = editorHarness(editableServers(), true);
+    let complete;
+    h.context.fetch = () => new Promise(resolve => { complete = resolve; });
+    h.context.reloadServerViews = async () => {
+      h.context.serversCache = h.context.serversCache.filter(server => server.id !== 'b');
+      h.context.renderServerManagerList();
+    };
+    h.context.editServer('b');
+    const pending = h.context.deleteServer('b');
+    if (switchWhileWaiting) h.context.editServer('a');
+    complete({ json: async () => ({}) });
+    await pending;
+    assert.equal(h.find('serverId').value, switchWhileWaiting ? 'a' : '');
+    assert.equal(h.find('serverDeleteButton').disabled, !switchWhileWaiting);
+    assert.equal(h.editor.parentNode, switchWhileWaiting ? h.slot('a') : h.home);
+  }
+});
+
+test('late SSH-key responses cannot overwrite another server, a reset form, or a manual key draft', async () => {
+  const h = editorHarness([
+    { id: 'a', type: 'ssh', sshKeyPath: '/keys/a' },
+    { id: 'b', type: 'ssh', sshKeyPath: '/keys/b' }
+  ], true);
+  const requests = [];
+  const populated = [];
+  h.context.sshKeysCache = null;
+  h.context.fetch = () => new Promise(resolve => requests.push(resolve));
+  h.context.populateSSHKeySelect = (keys, selected) => populated.push({ keys: Array.from(keys), selected });
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  h.context.editServer('a');
+  h.context.editServer('b');
+  requests[0]({ json: async () => ({ keys: ['/keys/a'] }) });
+  await tick();
+  assert.equal(populated.length, 0, 'the response for the previous server is ignored');
+  requests[1]({ json: async () => ({ keys: ['/keys/b'] }) });
+  await tick();
+  assert.deepEqual(populated, [{ keys: ['/keys/b'], selected: '/keys/b' }]);
+  h.context.sshKeysCache = null;
+  h.context.editServer('a');
+  h.find('serverSSHKey').value = '/keys/manual-draft';
+  requests[2]({ json: async () => ({ keys: ['/keys/a'] }) });
+  await tick();
+  assert.equal(populated.length, 1, 'manual key input is not replaced or made readonly');
+  assert.equal(h.find('serverSSHKey').value, '/keys/manual-draft');
+  h.context.sshKeysCache = null;
+  h.context.editServer('b');
+  h.context.resetServerForm();
+  const afterReset = populated.length;
+  requests[3]({ json: async () => ({ keys: ['/keys/b'] }) });
+  await tick();
+  assert.equal(populated.length, afterReset, 'a response cannot populate the reset/new form');
 });

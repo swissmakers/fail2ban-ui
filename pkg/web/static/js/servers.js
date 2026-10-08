@@ -357,9 +357,22 @@ function renderServerManagerList() {
   var emptyState = document.getElementById('serverManagerListEmpty');
   if (!list || !emptyState) return;
 
+  // Move the existing form out before replacing cards so unsaved values survive.
+  var editor = document.getElementById('serverManagerEditor');
+  var home = document.getElementById('serverManagerEditorHome');
+  var editorFocus = editor ? captureFocusState(editor) : null;
+  var editorScroll = captureServerManagerScroll();
+  if (editor && home && editor.parentNode !== home) home.appendChild(editor);
+  var editingId = document.getElementById('serverId');
+  if (editingId && editingId.value && !serversCache.some(function(server) { return server.id === editingId.value; })) {
+    showServerManagerInfoView();
+    editorFocus = null;
+  }
+
   if (!serversCache.length) {
     list.innerHTML = '';
     emptyState.classList.remove('hidden');
+    positionServerManagerEditor(editorFocus, editorScroll);
     updateTranslations();
     return;
   }
@@ -441,21 +454,80 @@ function renderServerManagerList() {
         ? '<button class="text-sm font-semibold text-red-600 hover:text-red-800" onclick="acceptHostKey(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.accept_hostkey">Accept new host key</button>'
         : '')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="testServerConnection(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.test">Test connection</button>'
-      + '      <button class="text-sm text-red-600 hover:text-red-800" onclick="deleteServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.delete">Delete</button>'
       + '    </div>'
       + '  </div>'
-      + '</div>';
+      + '</div>'
+      + '<div class="min-w-0" data-server-editor-slot="' + escapeHtml(server.id) + '"></div>';
   }).join('');
 
   list.innerHTML = html;
+  positionServerManagerEditor(editorFocus, editorScroll);
   updateTranslations();
 }
 
+var serverEditorRevision = 0;
+var serverEditorMobileQuery = null;
+
+function captureServerManagerScroll() {
+  return ['serverManagerModal', 'serverManagerList'].map(function(id) {
+    var element = document.getElementById(id);
+    return element && { element: element, top: element.scrollTop, left: element.scrollLeft };
+  }).filter(Boolean);
+}
+
+function positionServerManagerEditor(savedFocus, savedScroll) {
+  var editor = document.getElementById('serverManagerEditor');
+  var home = document.getElementById('serverManagerEditorHome');
+  if (!editor || !home) return;
+  var scroll = savedScroll || captureServerManagerScroll();
+  if (!serverEditorMobileQuery && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    serverEditorMobileQuery = window.matchMedia('(max-width: 1023px)');
+    var onLayoutChange = function() { positionServerManagerEditor(); };
+    if (serverEditorMobileQuery.addEventListener) serverEditorMobileQuery.addEventListener('change', onLayoutChange);
+    else if (serverEditorMobileQuery.addListener) serverEditorMobileQuery.addListener(onLayoutChange);
+  }
+  var input = document.getElementById('serverId');
+  var editingId = input && input.value;
+  var isSaved = !!editingId && serversCache.some(function(server) { return server.id === editingId; });
+  var formView = document.getElementById('serverFormView');
+  var isEditing = isSaved && formView && !formView.classList.contains('hidden');
+  var destination = home;
+  if (isEditing && serverEditorMobileQuery && serverEditorMobileQuery.matches) {
+    var list = document.getElementById('serverManagerList');
+    if (list) {
+      var slots = list.querySelectorAll('[data-server-editor-slot]');
+      for (var i = 0; i < slots.length; i++) {
+        if (slots[i].getAttribute('data-server-editor-slot') === editingId) {
+          destination = slots[i];
+          break;
+        }
+      }
+    }
+  }
+  var focus = savedFocus || captureFocusState(editor);
+  home.classList.toggle('hidden', destination !== home);
+  if (editor.parentNode !== destination) destination.appendChild(editor);
+  var deleteButton = document.getElementById('serverDeleteButton');
+  if (deleteButton) {
+    deleteButton.classList.toggle('hidden', !isEditing);
+    deleteButton.disabled = !isEditing;
+  }
+  if (formView && !formView.classList.contains('hidden')) restoreFocusState(focus);
+  scroll.forEach(function(state) {
+    state.element.scrollTop = state.top;
+    state.element.scrollLeft = state.left;
+  });
+}
+
 function showServerManagerInfoView() {
+  serverEditorRevision++;
+  var editingId = document.getElementById('serverId');
+  if (editingId) editingId.value = '';
   var info = document.getElementById('serverManagerInfoView');
   var formView = document.getElementById('serverFormView');
   if (info) info.classList.remove('hidden');
   if (formView) formView.classList.add('hidden');
+  positionServerManagerEditor();
 }
 
 function showServerFormView() {
@@ -463,6 +535,7 @@ function showServerFormView() {
   var formView = document.getElementById('serverFormView');
   if (info) info.classList.add('hidden');
   if (formView) formView.classList.remove('hidden');
+  positionServerManagerEditor();
 }
 
 function setCurrentServer(serverId) {
@@ -495,7 +568,7 @@ function setCurrentServer(serverId) {
 // =========================================================================
 
 function resetServerForm() {
-  showServerFormView();
+  serverEditorRevision++;
   document.getElementById('serverId').value = '';
   document.getElementById('serverName').value = '';
   document.getElementById('serverType').value = 'local';
@@ -516,12 +589,13 @@ function resetServerForm() {
   onReverseTunnelToggle();
   populateSSHKeySelect(sshKeysCache || [], '');
   onServerTypeChange('local');
+  showServerFormView();
 }
 
 function editServer(serverId) {
   var server = serversCache.find(function(s) { return s.id === serverId; });
   if (!server) return;
-  showServerFormView();
+  serverEditorRevision++;
   document.getElementById('serverId').value = server.id || '';
   document.getElementById('serverName').value = server.name || '';
   document.getElementById('serverType').value = server.type || 'local';
@@ -541,10 +615,10 @@ function editServer(serverId) {
   document.getElementById('serverTunnelPort').value = server.tunnelPort || '';
   onReverseTunnelToggle();
   onServerTypeChange(server.type || 'local');
-  if ((server.type || 'local') === 'ssh') {
-    loadSSHKeys().then(function(keys) {
-      populateSSHKeySelect(keys, server.sshKeyPath || '');
-    });
+  showServerFormView();
+  var editor = document.getElementById('serverManagerEditor');
+  if (editor && serverEditorMobileQuery && serverEditorMobileQuery.matches && typeof editor.scrollIntoView === 'function') {
+    editor.scrollIntoView({ block: 'start' });
   }
 }
 
@@ -559,6 +633,7 @@ function onReverseTunnelToggle() {
 }
 
 function onServerTypeChange(type) {
+  serverEditorRevision++;
   document.querySelectorAll('[data-server-fields]').forEach(function(el) {
     var values = (el.getAttribute('data-server-fields') || '').split(/\s+/);
     if (values.indexOf(type) !== -1) {
@@ -571,30 +646,28 @@ function onServerTypeChange(type) {
   if (!enabledToggle) return;
   var isEditing = !!document.getElementById('serverId').value;
   updateLocalConnectorGuidance(type, isEditing);
-  if (isEditing) {
-    return;
-  }
-  if (type === 'local') {
-    enabledToggle.checked = false;
-  } else {
-    enabledToggle.checked = true;
+  if (!isEditing) {
+    enabledToggle.checked = type !== 'local';
   }
   if (type === 'ssh') {
     var portInput = document.getElementById('serverPort');
-    if (portInput && !portInput.value.trim()) {
+    if (!isEditing && portInput && !portInput.value.trim()) {
       portInput.value = '22';
     }
+    var revision = serverEditorRevision;
+    var selectedKey = document.getElementById('serverSSHKey').value;
     loadSSHKeys().then(function(keys) {
-      if (!isEditing) {
-        populateSSHKeySelect(keys, '');
+      if (revision === serverEditorRevision && document.getElementById('serverType').value === 'ssh'
+          && document.getElementById('serverSSHKey').value === selectedKey) {
+        populateSSHKeySelect(keys, selectedKey);
       }
     });
-  } else if (type === 'agent') {
+  } else if (!isEditing && type === 'agent') {
     var sshPortInput = document.getElementById('serverPort');
     if (sshPortInput) {
       sshPortInput.value = '';
     }
-  } else {
+  } else if (!isEditing) {
     populateSSHKeySelect([], '');
   }
 }
@@ -847,20 +920,17 @@ function initSSHKeySelectHandler() {
 
 function loadSSHKeys() {
   if (sshKeysCache !== null) {
-    populateSSHKeySelect(sshKeysCache, document.getElementById('serverSSHKey').value);
     return Promise.resolve(sshKeysCache);
   }
   return fetch(appPath('/api/ssh/keys'))
     .then(function(res) { return res.json(); })
     .then(function(data) {
       sshKeysCache = data.keys || [];
-      populateSSHKeySelect(sshKeysCache, document.getElementById('serverSSHKey').value);
       return sshKeysCache;
     })
     .catch(function(err) {
       console.error('Error loading SSH keys:', err);
       sshKeysCache = [];
-      populateSSHKeySelect(sshKeysCache, document.getElementById('serverSSHKey').value);
       return sshKeysCache;
     });
 }
@@ -968,9 +1038,10 @@ function acceptHostKey(serverId) {
 }
 
 function deleteServer(serverId) {
+  if (!serverId || !serversCache.some(function(server) { return server.id === serverId; })) return;
   if (!confirm(t('servers.actions.delete_confirm', 'Delete this server entry?'))) return;
   showLoading(true);
-  fetch(appPath('/api/servers/' + encodeURIComponent(serverId)), { method: 'DELETE' })
+  return fetch(appPath('/api/servers/' + encodeURIComponent(serverId)), { method: 'DELETE' })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
@@ -984,6 +1055,8 @@ function deleteServer(serverId) {
         currentServerId = null;
         currentServer = null;
       }
+      var editingId = document.getElementById('serverId');
+      if (editingId && editingId.value === serverId) showServerManagerInfoView();
       return reloadServerViews().then(function() {
         showToast(t('servers.actions.delete_success', 'Server removed'), 'success');
       });
