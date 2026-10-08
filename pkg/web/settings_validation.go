@@ -223,6 +223,9 @@ func validateAdvancedActionsSettings(cfg *config.AdvancedActionsConfig) error {
 	cfg.PfSense.Alias = strings.TrimSpace(cfg.PfSense.Alias)
 	cfg.OPNsense.BaseURL = strings.TrimSpace(cfg.OPNsense.BaseURL)
 	cfg.OPNsense.Alias = strings.TrimSpace(cfg.OPNsense.Alias)
+	cfg.UniFi.BaseURL = strings.TrimSpace(cfg.UniFi.BaseURL)
+	cfg.UniFi.SiteName = strings.TrimSpace(cfg.UniFi.SiteName)
+	cfg.UniFi.TrafficListName = strings.TrimSpace(cfg.UniFi.TrafficListName)
 	cfg.Mikrotik.Host = strings.TrimSpace(cfg.Mikrotik.Host)
 	cfg.Mikrotik.AddressList = strings.TrimSpace(cfg.Mikrotik.AddressList)
 	cfg.Mikrotik.SSHKeyPath = strings.TrimSpace(cfg.Mikrotik.SSHKeyPath)
@@ -247,6 +250,21 @@ func validateAdvancedActionsSettings(cfg *config.AdvancedActionsConfig) error {
 	}
 	if cfg.OPNsense.Alias != "" {
 		if err := integrations.ValidateIdentifier(cfg.OPNsense.Alias, "OPNsense alias"); err != nil {
+			return err
+		}
+	}
+	if cfg.UniFi.BaseURL != "" {
+		if err := integrations.ValidateOutboundURL(cfg.UniFi.BaseURL, "UniFi base URL"); err != nil {
+			return err
+		}
+	}
+	if cfg.UniFi.SiteName != "" {
+		if err := integrations.ValidateIdentifier(cfg.UniFi.SiteName, "UniFi site name"); err != nil {
+			return err
+		}
+	}
+	if cfg.UniFi.TrafficListName != "" {
+		if err := integrations.ValidateIdentifier(cfg.UniFi.TrafficListName, "UniFi traffic matching list name"); err != nil {
 			return err
 		}
 	}

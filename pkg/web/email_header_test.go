@@ -17,6 +17,7 @@
 package web
 
 import (
+	"html"
 	"mime"
 	"strings"
 	"testing"
@@ -45,5 +46,37 @@ func TestSubjectEncodingNeutralizesInjection(t *testing.T) {
 	plain := "[Fail2Ban] sshd: banned 1.2.3.4 from host"
 	if got := mime.QEncoding.Encode("UTF-8", plain); got != plain {
 		t.Fatalf("plain subject was altered: got %q want %q", got, plain)
+	}
+}
+
+func TestEmailTemplatesEscapeUntrustedContent(t *testing.T) {
+	t.Parallel()
+	// WHOIS, log lines and event metadata can come from remote servers or callbacks.
+	payload := `</pre><a href="https://attacker.example/">Open this link</a><script>alert(1)</script>`
+	details := []emailDetail{{Label: payload, Value: payload}}
+	for _, style := range []string{"classic", "modern", "lotr"} {
+		t.Run(style, func(t *testing.T) {
+			modern := style != "classic"
+			whois := formatWhoisForEmail(payload, "en", modern)
+			logs := formatLogsForEmail("", payload, "en", modern)
+			var body string
+			switch style {
+			case "classic":
+				body = buildClassicEmailBody(payload, payload, details, whois, logs, payload, payload, payload, "support@example.com")
+			case "modern":
+				body = buildModernEmailBody(payload, payload, details, whois, logs, payload, payload, payload)
+			case "lotr":
+				body = buildLOTREmailBody(payload, payload, payload, details, whois, logs, payload, payload, payload)
+			}
+			if strings.Contains(body, payload) {
+				t.Fatal("untrusted email content was rendered as HTML")
+			}
+			if !strings.Contains(whois, html.EscapeString(payload)) || !strings.Contains(logs, html.EscapeString(payload)) {
+				t.Fatal("WHOIS and log text must be preserved as escaped text")
+			}
+			if !strings.Contains(body, whois) || !strings.Contains(body, logs) || !strings.Contains(body, html.EscapeString(payload)) {
+				t.Fatal("escaped content must remain visible in the email")
+			}
+		})
 	}
 }

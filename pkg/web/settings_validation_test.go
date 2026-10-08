@@ -18,6 +18,7 @@ package web
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
@@ -113,5 +114,76 @@ func TestNormalizeSettingsElasticsearchDataStream(t *testing.T) {
 	req := config.AppSettings{Elasticsearch: config.ElasticsearchSettings{Index: "logs-*"}}
 	if err := normalizeAndValidateSettingsRequest(&req); err == nil {
 		t.Error("a pattern must be rejected as data stream name")
+	}
+}
+
+func TestNormalizeSettingsUniFi(t *testing.T) {
+	for _, baseURL := range []string{"http://192.168.1.1", "https://unifi.lan:8443", "https://[fd00::1]/controller"} {
+		t.Run(baseURL, func(t *testing.T) {
+			want := config.UniFiIntegrationSettings{
+				BaseURL: baseURL, SiteName: "main-site", TrafficListName: "fail2ban_blocked",
+				APIKey: "test-api-key", SkipTLSVerify: true,
+			}
+			input := want
+			input.BaseURL = " " + baseURL + " "
+			input.SiteName = " main-site "
+			input.TrafficListName = " fail2ban_blocked "
+			req := config.AppSettings{AdvancedActions: config.AdvancedActionsConfig{
+				Integration: "unifi", Enabled: true, UniFi: input,
+			}}
+			if err := normalizeAndValidateSettingsRequest(&req); err != nil {
+				t.Fatalf("valid LAN configuration should be accepted: %v", err)
+			}
+			if got := req.AdvancedActions.UniFi; got != want {
+				t.Errorf("normalized UniFi settings = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestNormalizeSettingsUniFiRejectsInvalidFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		input config.UniFiIntegrationSettings
+		field string
+	}{
+		{"unsupported scheme", config.UniFiIntegrationSettings{BaseURL: "file:///etc/passwd"}, "UniFi base URL"},
+		{"missing host", config.UniFiIntegrationSettings{BaseURL: "https://"}, "UniFi base URL"},
+		{"URL control characters", config.UniFiIntegrationSettings{BaseURL: "https://unifi.lan/\r\ninjected"}, "UniFi base URL"},
+		{"site path traversal", config.UniFiIntegrationSettings{SiteName: "../default"}, "UniFi site name"},
+		{"site control characters", config.UniFiIntegrationSettings{SiteName: "main\nsite"}, "UniFi site name"},
+		{"list path traversal", config.UniFiIntegrationSettings{TrafficListName: "../blocked"}, "UniFi traffic matching list name"},
+		{"list command characters", config.UniFiIntegrationSettings{TrafficListName: "blocked;command"}, "UniFi traffic matching list name"},
+		{"list too long", config.UniFiIntegrationSettings{TrafficListName: strings.Repeat("a", 129)}, "UniFi traffic matching list name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Validate stored fields even when another integration is selected.
+			req := config.AppSettings{AdvancedActions: config.AdvancedActionsConfig{
+				Integration: "pfsense", UniFi: tt.input,
+			}}
+			err := normalizeAndValidateSettingsRequest(&req)
+			if err == nil || !strings.Contains(err.Error(), tt.field) {
+				t.Fatalf("expected validation error for %s, got %v", tt.field, err)
+			}
+		})
+	}
+}
+
+func TestNormalizeSettingsUniFiAllowsIncompleteSettings(t *testing.T) {
+	for _, input := range []config.UniFiIntegrationSettings{
+		{},
+		{BaseURL: " ", SiteName: " ", TrafficListName: " "},
+		{BaseURL: "https://unifi.lan"},
+		{SiteName: "default", TrafficListName: "blocked"},
+	} {
+		for _, enabled := range []bool{false, true} {
+			req := config.AppSettings{AdvancedActions: config.AdvancedActionsConfig{
+				Integration: "unifi", Enabled: enabled, UniFi: input,
+			}}
+			if err := normalizeAndValidateSettingsRequest(&req); err != nil {
+				t.Errorf("incomplete configuration %+v (enabled=%v) should remain saveable: %v", input, enabled, err)
+			}
+		}
 	}
 }

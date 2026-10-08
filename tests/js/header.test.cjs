@@ -20,10 +20,9 @@ function harness() {
   const context = vm.createContext({
     translations: {}, serversCache: [], wsManager: { state: 'connected' },
     hasAccess: level => admin && level === 'admin', openServerManager: () => opened++,
-    escapeHtml: value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])),
     document: { getElementById: id => elements[id] }
   });
-  for (const file of ['utils.js', 'servers.js', 'header.js']) {
+  for (const file of ['utils.js', 'core.js', 'servers.js', 'header.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../../pkg/web/static/js', file), 'utf8'), context);
   }
   return { context, elements, opened: () => opened, setAdmin: value => { admin = value; } };
@@ -59,16 +58,17 @@ test('disconnected websocket opens server manager even without reported server f
 test('header tooltip names affected servers and escapes diagnostic text', () => {
   const h = harness();
   h.context.serversCache = [
-    { id: 'a', name: '<script>bad</script>', enabled: true, health: { state: 'down', error: '<img src=x>' } },
+    { id: 'a', name: '<ScRiPt type="text/javascript">bad</ScRiPt>', enabled: true, health: { state: 'down', error: '<IMG src=x onerror="bad()">' } },
     { id: 'b', enabled: true, health: { state: 'degraded', callbackOk: false } },
     { id: 'healthy', enabled: true, health: { state: 'ok' } },
     { id: 'disabled', enabled: false, health: { state: 'down' } }
   ];
   const html = h.context.renderHeaderServerProblems();
-  assert.match(html, /&lt;script&gt;/);
-  assert.match(html, /&lt;img src=x&gt;/);
+  assert.ok(html.includes('&lt;ScRiPt type=&quot;text/javascript&quot;&gt;bad&lt;/ScRiPt&gt;'));
+  assert.ok(html.includes('&lt;IMG src=x onerror=&quot;bad()&quot;&gt;'));
   assert.match(html, /cannot reach the callback URL/);
-  assert.doesNotMatch(html, /healthy|disabled|<script>|<img/);
+  assert.doesNotMatch(html, /healthy|disabled/);
+  assert.doesNotMatch(html, /<\/?(?:script|img)\b/i);
   h.setAdmin(false);
   assert.equal(h.context.renderHeaderServerProblems(), '');
 });

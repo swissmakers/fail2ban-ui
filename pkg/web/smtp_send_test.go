@@ -20,8 +20,10 @@ import (
 	"net"
 	"net/smtp"
 	"net/textproto"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 )
@@ -97,6 +99,74 @@ func TestSendSMTPMessage(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestSendSMTPMessageKeepsDotAndCommandsInsideBody(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+	_ = clientConn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = serverConn.SetDeadline(time.Now().Add(5 * time.Second))
+	type receivedMail struct {
+		commands []string
+		lines    []string
+		err      error
+	}
+	received := make(chan receivedMail, 1)
+	go func() {
+		var got receivedMail
+		defer func() { received <- got }()
+		peer := textproto.NewConn(serverConn)
+		defer peer.Close()
+		_ = peer.PrintfLine("220 fake ESMTP")
+		for {
+			line, err := peer.ReadLine()
+			if err != nil {
+				got.err = err
+				return
+			}
+			command := strings.ToUpper(strings.SplitN(line, " ", 2)[0])
+			got.commands = append(got.commands, command)
+			switch command {
+			case "DATA":
+				_ = peer.PrintfLine("354 go ahead")
+				got.lines, got.err = peer.ReadDotLines()
+				if got.err != nil {
+					return
+				}
+				_ = peer.PrintfLine("250 queued")
+			case "QUIT":
+				_ = peer.PrintfLine("221 bye")
+				return
+			default:
+				_ = peer.PrintfLine("250 ok")
+			}
+		}
+	}()
+	client, err := smtp.NewClient(clientConn, "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	// A standalone dot in untrusted text must not end DATA and inject SMTP commands.
+	wantLines := []string{"Subject: alert", "", "body", ".", "MAIL FROM:<attacker@example.com>", "RCPT TO:<victim@example.com>", "DATA", "spoofed message", "."}
+	message := strings.Join(wantLines, "\r\n") + "\r\n"
+	if err := sendSMTPMessage(client, "from@example.com", []string{"to@example.com"}, []byte(message)); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Quit(); err != nil {
+		t.Fatal(err)
+	}
+	got := <-received
+	if got.err != nil {
+		t.Fatal(got.err)
+	}
+	if !reflect.DeepEqual(got.lines, wantLines) {
+		t.Fatalf("message body changed or ended early: got %q, want %q", got.lines, wantLines)
+	}
+	if want := []string{"EHLO", "MAIL", "RCPT", "DATA", "QUIT"}; !reflect.DeepEqual(got.commands, want) {
+		t.Fatalf("unexpected SMTP commands: got %q, want %q", got.commands, want)
 	}
 }
 
