@@ -28,6 +28,7 @@ Fail2Ban UI does not replace Fail2Ban. Ban decisions are still made by the Fail2
 * Recurring-offender handling with permanent blocks on MikroTik, pfSense, OPNsense, and UniFi Network
 * Persistent event history and permanent-block records, with data management built in
 * Configurable alerts over Email (SMTP), Webhook, and Elasticsearch, with GeoIP/Whois enrichment and country filtering
+* Background changes with progress, per-server queues, and automatic config-recovery for bad configs
 * Optional OIDC login (Keycloak, Authentik, Pocket-ID)
 * Least-privilege, SELinux-aware deployment patterns
 
