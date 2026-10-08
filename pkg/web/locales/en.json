@@ -826,5 +826,7 @@
   "operations.toast.disabling": "Disabling {jail}…",
   "operations.toast.enabled": "{jail} enabled",
   "operations.toast.disabled": "{jail} disabled",
-  "operations.toast.stopping": "Removing existing bans. This can take a few minutes."
+  "operations.toast.stopping": "Removing existing bans. This can take a few minutes.",
+  "operations.elapsed_seconds": "Elapsed: {seconds}s",
+  "operations.elapsed_minutes": "Elapsed: {minutes}m {seconds}s"
 }

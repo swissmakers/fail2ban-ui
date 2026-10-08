@@ -134,6 +134,42 @@ test('operation text is escaped before rendering', () => {
   assert.match(h.elements['operation-toasts'].innerHTML, /&lt;img/);
 });
 
+test('elapsed time is labelled for active work and omitted for immediate or terminal results', () => {
+  const h = harness();
+  h.context.Date = class extends Date { static now() { return Date.parse('2026-10-06T10:01:05Z'); } };
+  assert.equal(h.context.operationElapsed(operation('queued')), 'Elapsed: 1m 5s');
+  assert.equal(h.context.operationElapsed(operation('running', { startedAt: '2026-10-06T10:01:03Z' })), 'Elapsed: 2s');
+  assert.equal(h.context.operationElapsed(operation('reconciling')), 'Elapsed: 1m 5s');
+  for (const createdAt of ['2026-10-06T10:01:04.900Z', '2026-10-06T10:02:00Z', 'invalid']) {
+    assert.equal(h.context.operationElapsed(operation('queued', { createdAt })), '');
+  }
+  for (const state of ['succeeded', 'failed', 'cancelled']) {
+    assert.equal(h.context.operationElapsed(operation(state)), '');
+    h.context.receiveOperation(operation(state, { id: state }));
+  }
+  assert.doesNotMatch(h.elements['operation-toasts'].innerHTML, /data-operation-elapsed|0:00/);
+  h.context.translations['operations.elapsed_minutes'] = '{minutes} min {seconds} sec passed';
+  assert.equal(h.context.operationElapsed(operation('running')), '1 min 5 sec passed');
+});
+
+test('elapsed updates appear as work continues without rebuilding toast controls', () => {
+  const h = harness();
+  let now = Date.parse('2026-10-06T10:00:00Z');
+  h.context.Date = class extends Date { static now() { return now; } };
+  const clock = { getAttribute: () => 'op-1' };
+  h.context.document.querySelectorAll = () => [clock];
+  h.context.receiveOperation(operation('running'));
+  assert.equal(clock.hidden, true);
+  assert.equal(clock.textContent, '');
+  const toast = h.elements['operation-toasts'].children[0];
+  Object.defineProperty(toast, 'innerHTML', { set() { assert.fail('clock update replaced toast controls'); } });
+  now += 61000;
+  h.context.updateOperationElapsed();
+  assert.equal(clock.hidden, false);
+  assert.equal(clock.textContent, 'Elapsed: 1m 1s');
+});
+
+
 test('active progress stays visible, then success disappears once after three seconds', () => {
   const h = harness();
   h.context.receiveOperation(operation('running'));

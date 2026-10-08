@@ -826,5 +826,7 @@
   "operations.toast.disabling": "{jail} wird deaktiviert…",
   "operations.toast.enabled": "{jail} aktiviert",
   "operations.toast.disabled": "{jail} deaktiviert",
-  "operations.toast.stopping": "Bestehende Sperren werden aufgehoben. Das kann einige Minuten dauern."
+  "operations.toast.stopping": "Bestehende Sperren werden aufgehoben. Das kann einige Minuten dauern.",
+  "operations.elapsed_seconds": "Vergangen: {seconds} Sek.",
+  "operations.elapsed_minutes": "Vergangen: {minutes} Min. {seconds} Sek."
 }

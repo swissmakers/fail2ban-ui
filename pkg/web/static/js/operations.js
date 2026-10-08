@@ -160,11 +160,14 @@ function operationKindLabel(kind) {
 }
 
 function operationElapsed(operation) {
+  if (!operationIsActive(operation)) return '';
   var start = Date.parse(operation.startedAt || operation.createdAt);
   if (!Number.isFinite(start)) return '';
-  var end = operation.finishedAt ? Date.parse(operation.finishedAt) : Date.now();
-  var seconds = Math.max(0, Math.floor((end - start) / 1000));
-  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+  var seconds = Math.floor((Date.now() - start) / 1000);
+  if (seconds < 1) return '';
+  if (seconds < 60) return t('operations.elapsed_seconds', 'Elapsed: {seconds}s').replace('{seconds}', seconds);
+  return t('operations.elapsed_minutes', 'Elapsed: {minutes}m {seconds}s')
+    .replace('{minutes}', Math.floor(seconds / 60)).replace('{seconds}', seconds % 60);
 }
 
 function operationCanCancel(operation) {
@@ -228,7 +231,9 @@ function showOperationNotice(operation) {
 function updateOperationElapsed() {
   document.querySelectorAll('[data-operation-elapsed]').forEach(function(element) {
     var operation = operationsById[element.getAttribute('data-operation-elapsed')];
-    if (operation) element.textContent = operationElapsed(operation);
+    var elapsed = operation ? operationElapsed(operation) : '';
+    element.textContent = elapsed;
+    element.hidden = !elapsed;
   });
 }
 
@@ -260,7 +265,8 @@ function renderOperations() {
       + '<div class="text-sm font-semibold break-words">' + escapeHtml(operationToastTitle(operation)) + '</div>'
       + '<div class="text-xs opacity-80 mt-1">' + escapeHtml(server ? server.name : operation.serverId)
       + ' · ' + escapeHtml(operationStateLabel(operation.state))
-      + ' <span aria-hidden="true" data-operation-elapsed="' + escapeHtml(id) + '"></span></div>'
+      + '</div>'
+      + (active ? '<div class="text-xs opacity-80 mt-1" aria-hidden="true" data-operation-elapsed="' + escapeHtml(id) + '" hidden></div>' : '')
       + (detail ? '<p class="text-xs mt-2 break-words">' + escapeHtml(detail) + '</p>' : '')
       + (operation.error ? '<p class="text-xs mt-2 break-words">' + escapeHtml(operation.error) + '</p>' : '')
       + (warning ? '<p class="text-xs mt-2 break-words">' + escapeHtml(warning) + '</p>' : '')

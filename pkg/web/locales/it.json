@@ -826,5 +826,7 @@
   "operations.toast.disabling": "Disattivazione di {jail}…",
   "operations.toast.enabled": "{jail} attivata",
   "operations.toast.disabled": "{jail} disattivata",
-  "operations.toast.stopping": "Rimozione dei blocchi esistenti. Potrebbero volerci alcuni minuti."
+  "operations.toast.stopping": "Rimozione dei blocchi esistenti. Potrebbero volerci alcuni minuti.",
+  "operations.elapsed_seconds": "Tempo trascorso: {seconds} s",
+  "operations.elapsed_minutes": "Tempo trascorso: {minutes} min {seconds} s"
 }

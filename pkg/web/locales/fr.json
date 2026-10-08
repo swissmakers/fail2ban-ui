@@ -826,5 +826,7 @@
   "operations.toast.disabling": "Désactivation de {jail}…",
   "operations.toast.enabled": "{jail} activée",
   "operations.toast.disabled": "{jail} désactivée",
-  "operations.toast.stopping": "Les bannissements existants sont en cours de suppression. Cela peut prendre quelques minutes."
+  "operations.toast.stopping": "Les bannissements existants sont en cours de suppression. Cela peut prendre quelques minutes.",
+  "operations.elapsed_seconds": "Durée écoulée : {seconds} s",
+  "operations.elapsed_minutes": "Durée écoulée : {minutes} min {seconds} s"
 }

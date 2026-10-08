@@ -826,5 +826,7 @@
   "operations.toast.disabling": "{jail} wird deaktiviert…",
   "operations.toast.enabled": "{jail} aktiviert",
   "operations.toast.disabled": "{jail} deaktiviert",
-  "operations.toast.stopping": "Bestehendi Sperre wärde ufghobe. Das cha es paar Minute duure."
+  "operations.toast.stopping": "Bestehendi Sperre wärde ufghobe. Das cha es paar Minute duure.",
+  "operations.elapsed_seconds": "Vergange: {seconds} Sek.",
+  "operations.elapsed_minutes": "Vergange: {minutes} Min. {seconds} Sek."
 }

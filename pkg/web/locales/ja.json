@@ -826,5 +826,7 @@
   "operations.toast.disabling": "{jail} を無効化中…",
   "operations.toast.enabled": "{jail} を有効にしました",
   "operations.toast.disabled": "{jail} を無効にしました",
-  "operations.toast.stopping": "既存のブロックを解除しています。数分かかる場合があります。"
+  "operations.toast.stopping": "既存のブロックを解除しています。数分かかる場合があります。",
+  "operations.elapsed_seconds": "経過: {seconds}秒",
+  "operations.elapsed_minutes": "経過: {minutes}分{seconds}秒"
 }

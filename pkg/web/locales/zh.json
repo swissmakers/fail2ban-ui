@@ -826,5 +826,7 @@
   "operations.toast.disabling": "正在禁用 {jail}…",
   "operations.toast.enabled": "已启用 {jail}",
   "operations.toast.disabled": "已禁用 {jail}",
-  "operations.toast.stopping": "正在解除现有封禁。这可能需要几分钟。"
+  "operations.toast.stopping": "正在解除现有封禁。这可能需要几分钟。",
+  "operations.elapsed_seconds": "已用时：{seconds}秒",
+  "operations.elapsed_minutes": "已用时：{minutes}分{seconds}秒"
 }
