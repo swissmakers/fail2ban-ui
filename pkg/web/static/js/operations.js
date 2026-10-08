@@ -259,6 +259,8 @@ function renderOperations() {
       detail = t('operations.toast.stopping', 'Removing existing bans. This can take a few minutes.');
     }
     var result = operation.result || {};
+    var hostKeyError = isSSHHostKeyError(operation.error);
+    var errorMessage = hostKeyError ? t('servers.card.host_key_error', 'SSH host key changed') : operation.error;
     var html = '<div class="flex items-start gap-3">'
       + '<i class="' + icon + ' mt-1" aria-hidden="true"></i>'
       + '<div class="flex-1 min-w-0">'
@@ -268,7 +270,8 @@ function renderOperations() {
       + '</div>'
       + (active ? '<div class="text-xs opacity-80 mt-1" aria-hidden="true" data-operation-elapsed="' + escapeHtml(id) + '" hidden></div>' : '')
       + (detail ? '<p class="text-xs mt-2 break-words">' + escapeHtml(detail) + '</p>' : '')
-      + (operation.error ? '<p class="text-xs mt-2 break-words">' + escapeHtml(operation.error) + '</p>' : '')
+      + (errorMessage ? '<p class="text-xs mt-2 break-words">' + escapeHtml(errorMessage) + '</p>' : '')
+      + (hostKeyError && hasAccess('admin') ? '<button type="button" class="mt-2 text-xs underline opacity-80 hover:opacity-100" data-operation-servers>' + escapeHtml(t('dashboard.manage_servers', 'Manage Servers')) + '</button>' : '')
       + (warning ? '<p class="text-xs mt-2 break-words">' + escapeHtml(warning) + '</p>' : '')
       + (result.configurationRestored ? '<p class="text-xs mt-2 break-words">' + escapeHtml(result.message || t('operations.configuration_restored', 'The original configuration was restored.')) + '</p>' : '')
       + (operationCanCancel(operation) ? '<button type="button" class="mt-2 text-xs underline opacity-80 hover:opacity-100" data-cancel-operation="' + escapeHtml(id) + '">' + escapeHtml(t('operations.cancel_queued', 'Cancel queued task')) + '</button>' : '')
@@ -429,6 +432,10 @@ function initOperations() {
     var close = event.target.closest('[data-dismiss-operation]');
     if (close) dismissOperationToast(close.getAttribute('data-dismiss-operation'));
     if (button || close) return;
+    if (event.target.closest('[data-operation-servers]')) {
+      if (hasAccess('admin')) openServerManager();
+      return;
+    }
     var toast = event.target.closest('[data-operation-id]');
     var operation = toast && operationsById[toast.getAttribute('data-operation-id')];
     if (operation && operation.state === 'succeeded' && operationBanEvent(operation)) {

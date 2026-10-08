@@ -27,7 +27,11 @@ function renderHeaderServerProblems() {
   }).map(function(server) {
     var badge = serverHealthBadge(server.health);
     var reason = server.health.error || '';
-    if (server.health.state === 'busy') {
+    if (serverHasSSHHostKeyError(server)) {
+      badge.label = t('servers.health.state.connection_blocked', 'Connection blocked');
+      reason = t('servers.card.host_key_error', 'SSH host key changed') + '. '
+        + t('servers.card.host_key_blocked', 'Connection blocked. Verify the new fingerprint on the server before accepting it.');
+    } else if (server.health.state === 'busy') {
       reason = t('operations.health_busy', 'Fail2Ban is applying a change. Status updates will resume when it finishes.');
     } else if (!reason && server.health.fail2banOk === false) {
       reason = t('servers.health.fail2ban_down', 'Fail2ban is not responding on this server.');

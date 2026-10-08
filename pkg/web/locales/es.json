@@ -827,6 +827,10 @@
   "operations.toast.enabled": "{jail} activada",
   "operations.toast.disabled": "{jail} desactivada",
   "operations.toast.stopping": "Se están eliminando los bloqueos existentes. Esto puede tardar unos minutos.",
+  "servers.card.host_key_blocked": "Conexión bloqueada. Verifica la nueva huella digital en el servidor antes de aceptarla.",
+  "servers.card.host_key_fingerprint": "Nueva huella digital",
+  "servers.card.connection_details": "Detalles de la conexión",
+  "servers.health.state.connection_blocked": "Conexión bloqueada",
   "operations.elapsed_seconds": "Tiempo transcurrido: {seconds} s",
   "operations.elapsed_minutes": "Tiempo transcurrido: {minutes} min {seconds} s"
 }

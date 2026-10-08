@@ -827,6 +827,10 @@
   "operations.toast.enabled": "{jail} activée",
   "operations.toast.disabled": "{jail} désactivée",
   "operations.toast.stopping": "Les bannissements existants sont en cours de suppression. Cela peut prendre quelques minutes.",
+  "servers.card.host_key_blocked": "Connexion bloquée. Vérifiez la nouvelle empreinte sur le serveur avant de l’accepter.",
+  "servers.card.host_key_fingerprint": "Nouvelle empreinte",
+  "servers.card.connection_details": "Détails de la connexion",
+  "servers.health.state.connection_blocked": "Connexion bloquée",
   "operations.elapsed_seconds": "Durée écoulée : {seconds} s",
   "operations.elapsed_minutes": "Durée écoulée : {minutes} min {seconds} s"
 }

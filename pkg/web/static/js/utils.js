@@ -94,6 +94,12 @@ function formatApiError(data, fallbackKey, fallbackText) {
   return t('common.unknown_error', 'Unknown error');
 }
 
+// Recognize both the connector's typed errors and OpenSSH's diagnostic output.
+// This only selects clearer UI text; host-key verification stays on the server.
+function isSSHHostKeyError(message) {
+  return /REMOTE HOST IDENTIFICATION HAS CHANGED|POSSIBLE DNS SPOOFING DETECTED|host key verification failed|ssh host key for .+ has changed|remote host key .+ does not match the approved fingerprint/i.test(String(message || ''));
+}
+
 // Shows or hides a collapsed list and swaps the toggle label (data-more-label / data-less-label).
 function toggleHiddenList(hiddenId, buttonId) {
   var hidden = document.getElementById(hiddenId);

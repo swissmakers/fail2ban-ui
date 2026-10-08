@@ -827,6 +827,10 @@
   "operations.toast.enabled": "已启用 {jail}",
   "operations.toast.disabled": "已禁用 {jail}",
   "operations.toast.stopping": "正在解除现有封禁。这可能需要几分钟。",
+  "servers.card.host_key_blocked": "连接已被阻止。接受新指纹前，请在服务器上核实该指纹。",
+  "servers.card.host_key_fingerprint": "新指纹",
+  "servers.card.connection_details": "连接详情",
+  "servers.health.state.connection_blocked": "连接已被阻止",
   "operations.elapsed_seconds": "已用时：{seconds}秒",
   "operations.elapsed_minutes": "已用时：{minutes}分{seconds}秒"
 }

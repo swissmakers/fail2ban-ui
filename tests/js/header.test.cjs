@@ -83,3 +83,22 @@ test('an active server change is busy rather than a disconnected UI', () => {
   assert.match(tooltip, /applying a change/);
   assert.doesNotMatch(tooltip, /not responding|ping timed out|Activity/);
 });
+
+test('header summarizes SSH trust failures without the raw OpenSSH warning', () => {
+  const h = harness();
+  h.context.serversCache = [{
+    id: 'ssh', name: 'Test SSH', enabled: true,
+    health: {
+      state: 'down', fail2banOk: false,
+      error: 'remote fail2ban ping error: ssh host key for localhost has changed (output: @@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@)'
+    }
+  }];
+  const html = h.context.renderHeaderServerProblems();
+  assert.match(html, /Test SSH: Connection blocked/);
+  assert.match(html, /SSH host key changed/);
+  assert.match(html, /Verify the new fingerprint/);
+  assert.doesNotMatch(html, /@@@|ping error|not responding|REMOTE HOST/);
+  h.context.serversCache[0].hostKeyError = true;
+  h.context.serversCache[0].health.error = '';
+  assert.match(h.context.renderHeaderServerProblems(), /SSH host key changed/);
+});

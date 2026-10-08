@@ -275,32 +275,75 @@ function renderServerSubtitle() {
   subtitle.textContent = parts.join(' - ');
 }
 
-// Health lines for the server manager card; empty for disabled servers.
-function renderServerHealthDetails(server) {
+function serverHasSSHHostKeyError(server) {
+  if (!server) return false;
+  var health = server.health || {};
+  if (server.hostKeyError || isSSHHostKeyError(health.error) || isSSHHostKeyError(server.disabledReason)) return true;
+  var sync = server.configSync;
+  if (!sync || !sync.pending || !isSSHHostKeyError(sync.error)) return false;
+  // A failed sync keeps its last error while retrying. A newer successful SSH
+  // check proves that accepting the key has already restored the connection.
+  var connectionRecovered = (health.transportOk === true || health.fail2banOk === true)
+    && Date.parse(health.checkedAt) > Date.parse(sync.lastAttempt);
+  return !connectionRecovered;
+}
+
+// Keep the actionable cause visible and the full SSH output available on demand.
+function renderServerHostKeyDetails(server, detailsOpen) {
+  var html = '<div class="mt-2 text-xs text-red-600">'
+    + '<p class="font-semibold">' + escapeHtml(t('servers.card.host_key_error', 'SSH host key changed')) + '</p>'
+    + '<p class="mt-1">' + escapeHtml(t('servers.card.host_key_blocked', 'Connection blocked. Verify the new fingerprint on the server before accepting it.')) + '</p>';
+  if (server.hostKeyFingerprint) {
+    html += '<p class="mt-2 text-gray-500">' + escapeHtml(t('servers.card.host_key_fingerprint', 'New fingerprint')) + '</p>'
+      + '<code class="block mt-1 px-2 py-1 bg-red-50 rounded select-all break-all">' + escapeHtml(server.hostKeyFingerprint) + '</code>';
+  }
+  var diagnostic = server.health && server.health.error
+    || server.configSync && server.configSync.error
+    || server.disabledReason
+    || typeof server.hostKeyError === 'string' && server.hostKeyError;
+  if (diagnostic) {
+    html += '<details class="mt-2 min-w-0 text-gray-500" data-server-diagnostics="' + escapeHtml(server.id || '') + '"' + (detailsOpen ? ' open' : '') + '>'
+      + '<summary class="cursor-pointer">' + escapeHtml(t('servers.card.connection_details', 'Connection details')) + '</summary>'
+      + '<pre class="mt-2 max-h-40 max-w-full overflow-y-auto whitespace-pre-wrap break-all text-xs">' + escapeHtml(diagnostic) + '</pre>'
+      + '</details>';
+  }
+  return html + '</div>';
+}
+
+// Status and connection details for the server manager card.
+function renderServerHealthDetails(server, detailsOpen) {
   var html = '';
   var health = server.health;
+  var hostKeyBlocked = serverHasSSHHostKeyError(server);
   var badge = serverHealthBadge(health);
   if (badge) {
+    if (hostKeyBlocked) {
+      badge = { dotClass: 'bg-red-500', textClass: 'text-red-600', label: t('servers.health.state.connection_blocked', 'Connection blocked') };
+    }
     var checked = formatDateTime(health.checkedAt);
     html += '<p class="mt-1 text-xs flex items-center gap-2">' + serverHealthDot(badge)
       + '<span class="font-semibold ' + badge.textClass + '">' + escapeHtml(badge.label) + '</span>'
       + (checked ? '<span class="text-gray-500">' + escapeHtml(t('servers.health.checked_at', 'Last checked')) + ': ' + escapeHtml(checked) + '</span>' : '')
       + '</p>';
-    if (health.error) {
+    if (health.error && !hostKeyBlocked) {
       html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(health.error) + '</p>';
     }
-    if (health.fail2banOk === false && health.state !== 'busy') {
+    if (health.fail2banOk === false && health.state !== 'busy' && !hostKeyBlocked) {
       html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(t('servers.health.fail2ban_down', 'Fail2ban is not responding on this server.')) + '</p>';
     }
-    if (health.callbackOk === false) {
+    if (health.callbackOk === false && !hostKeyBlocked) {
       html += '<p class="mt-1 text-xs text-yellow-600">' + escapeHtml(t('servers.health.callback_down', 'The server cannot reach the callback URL; ban events are not recorded.')) + '</p>';
     }
   }
+  if (hostKeyBlocked) {
+    html += renderServerHostKeyDetails(server, detailsOpen);
+  }
   var sync = server.configSync;
-  if (sync && sync.pending) {
+  if (sync && sync.pending && !hostKeyBlocked) {
+    var syncError = isSSHHostKeyError(sync.error) ? '' : sync.error;
     html += '<p class="mt-1 text-xs text-yellow-600">'
       + escapeHtml(t('servers.card.sync_pending', 'Configuration pending; automatic retry enabled'))
-      + (sync.error ? ': ' + escapeHtml(sync.error) : '') + '</p>';
+      + (syncError ? ': ' + escapeHtml(syncError) : '') + '</p>';
   }
   var applied = sync ? formatDateTime(sync.lastApplied) : '';
   if (applied) {
@@ -323,6 +366,10 @@ function renderServerManagerList() {
 
   emptyState.classList.add('hidden');
 
+  var expandedDetails = new Set();
+  list.querySelectorAll('details[data-server-diagnostics][open]').forEach(function(details) {
+    expandedDetails.add(details.getAttribute('data-server-diagnostics'));
+  });
   var html = sortServersForDisplay(serversCache).map(function(server) {
     var statusBadge = server.enabled
       ? '<span class="ml-2 text-xs font-semibold text-green-600" data-i18n="servers.badge.enabled">Enabled</span>'
@@ -374,22 +421,14 @@ function renderServerManagerList() {
       + '<span data-i18n="servers.card.server_id">Server-ID</span>: '
       + '<code class="px-1 py-0.5 bg-gray-100 rounded select-all">' + escapeHtml(server.id || '') + '</code>'
       + '</p>'
-      + (!server.enabled && server.disabledReason
+      + (!server.enabled && server.disabledReason && !isSSHHostKeyError(server.disabledReason)
         ? '<p class="mt-1 text-xs text-red-600">'
           + escapeHtml(t('servers.card.disabled_reason', 'Disabled reason')) + ': '
           + escapeHtml(server.disabledReason)
           + '</p>'
         : '')
-      + (server.hostKeyError
-        ? '<p class="mt-1 text-xs text-red-600">'
-          + escapeHtml(t('servers.card.host_key_error', 'SSH host key changed'))
-          + (server.hostKeyFingerprint
-            ? ': <code class="px-1 py-0.5 bg-red-50 rounded select-all">' + escapeHtml(server.hostKeyFingerprint) + '</code>'
-            : '')
-          + '</p>'
-        : '')
       +        localDetails
-      +        renderServerHealthDetails(server)
+      +        renderServerHealthDetails(server, expandedDetails.has(server.id))
       +        tags
       + '    </div>'
       + '    <div class="flex flex-col gap-2">'
@@ -734,15 +773,15 @@ function submitServerForm(event) {
 
 // Shows the optional warnings a server save/test response may carry.
 function showServerResponseWarnings(data) {
+  var hostKeyBlocked = data.hostKeyError || isSSHHostKeyError(data.actionFileWarning);
   if (data.jailLocalWarning) {
     showToast(t('servers.jail_local_warning', 'Warning: jail.local is not managed by Fail2ban-UI. Move each jail into its own file under jail.d/ and delete jail.local so Fail2ban-UI can recreate it (hit once save on the settings page to write the file). See docs for permissions.'), 'warning', 12000);
   }
-  if (data.actionFileWarning) {
+  if (data.actionFileWarning && !isSSHHostKeyError(data.actionFileWarning)) {
     showToast(data.actionFileWarning, 'warning', 12000);
   }
-  if (data.hostKeyError) {
-    showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.')
-      + (data.hostKeyFingerprint ? ' ' + data.hostKeyFingerprint : ''), 'warning', 12000);
+  if (hostKeyBlocked) {
+    showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.'), 'warning', 12000);
   }
 }
 
@@ -872,12 +911,16 @@ function setServerEnabled(serverId, enabled) {
 function testServerConnection(serverId) {
   if (!serverId) return;
   showLoading(true);
-  fetch(appPath('/api/servers/' + encodeURIComponent(serverId) + '/test'), {
+  return fetch(appPath('/api/servers/' + encodeURIComponent(serverId) + '/test'), {
     method: 'POST'
   })
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
+        if (data.hostKeyError || data.messageKey === 'servers.errors.host_key_changed' || isSSHHostKeyError(data.error)) {
+          showToast(t('servers.errors.host_key_changed', 'The SSH host key of this server has changed. Verify the new fingerprint before accepting it.'), 'warning', 12000);
+          return refreshServerHealth();
+        }
         showToast(formatApiError(data, 'servers.actions.test_failure', 'Connection failed'), 'error');
         return;
       }

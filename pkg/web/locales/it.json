@@ -827,6 +827,10 @@
   "operations.toast.enabled": "{jail} attivata",
   "operations.toast.disabled": "{jail} disattivata",
   "operations.toast.stopping": "Rimozione dei blocchi esistenti. Potrebbero volerci alcuni minuti.",
+  "servers.card.host_key_blocked": "Connessione bloccata. Verifica la nuova impronta sul server prima di accettarla.",
+  "servers.card.host_key_fingerprint": "Nuova impronta",
+  "servers.card.connection_details": "Dettagli della connessione",
+  "servers.health.state.connection_blocked": "Connessione bloccata",
   "operations.elapsed_seconds": "Tempo trascorso: {seconds} s",
   "operations.elapsed_minutes": "Tempo trascorso: {minutes} min {seconds} s"
 }

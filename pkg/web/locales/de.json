@@ -827,6 +827,10 @@
   "operations.toast.enabled": "{jail} aktiviert",
   "operations.toast.disabled": "{jail} deaktiviert",
   "operations.toast.stopping": "Bestehende Sperren werden aufgehoben. Das kann einige Minuten dauern.",
+  "servers.card.host_key_blocked": "Verbindung blockiert. Prüfen Sie den neuen Fingerabdruck auf dem Server, bevor Sie ihn akzeptieren.",
+  "servers.card.host_key_fingerprint": "Neuer Fingerabdruck",
+  "servers.card.connection_details": "Verbindungsdetails",
+  "servers.health.state.connection_blocked": "Verbindung blockiert",
   "operations.elapsed_seconds": "Vergangen: {seconds} Sek.",
   "operations.elapsed_minutes": "Vergangen: {minutes} Min. {seconds} Sek."
 }

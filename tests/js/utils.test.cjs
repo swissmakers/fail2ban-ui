@@ -88,6 +88,19 @@ test('formatApiError: nothing to show uses the translated unknown error', () => 
   assert.equal(translated.formatApiError(null, '', ''), 'Something went wrong');
 });
 
+test('SSH host-key diagnostics are recognized without masking other connection failures', () => {
+  for (const message of [
+    'remote fail2ban ping error: ssh host key for localhost has changed (presented SHA256:new)',
+    '@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @',
+    'WARNING: POSSIBLE DNS SPOOFING DETECTED!',
+    'ssh host key verification failed for localhost',
+    'remote host key SHA256:new does not match the approved fingerprint SHA256:old'
+  ]) assert.equal(context.isSSHHostKeyError(message), true, message);
+  for (const message of [null, '', 'Permission denied (publickey)', 'ssh: connect to host localhost port 2222: Connection refused', 'fail2ban ping timed out']) {
+    assert.equal(context.isSSHHostKeyError(message), false, message);
+  }
+});
+
 function fakeResponse(status, body) {
   return {
     ok: status >= 200 && status < 300,

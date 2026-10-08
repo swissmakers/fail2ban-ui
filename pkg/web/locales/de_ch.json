@@ -827,6 +827,10 @@
   "operations.toast.enabled": "{jail} aktiviert",
   "operations.toast.disabled": "{jail} deaktiviert",
   "operations.toast.stopping": "Bestehendi Sperre wärde ufghobe. Das cha es paar Minute duure.",
+  "servers.card.host_key_blocked": "Verbindig blockiert. Prüef dr nöi Fingerabdruck uf em Server, bevor du ihn akzeptiersch.",
+  "servers.card.host_key_fingerprint": "Nöie Fingerabdruck",
+  "servers.card.connection_details": "Verbindigsdetails",
+  "servers.health.state.connection_blocked": "Verbindig blockiert",
   "operations.elapsed_seconds": "Vergange: {seconds} Sek.",
   "operations.elapsed_minutes": "Vergange: {minutes} Min. {seconds} Sek."
 }

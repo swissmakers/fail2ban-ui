@@ -827,6 +827,10 @@
   "operations.toast.enabled": "{jail} activada",
   "operations.toast.disabled": "{jail} desactivada",
   "operations.toast.stopping": "S’estan retirant els bloquejos existents. Això pot trigar uns minuts.",
+  "servers.card.host_key_blocked": "Connexió bloquejada. Verifica l’empremta nova al servidor abans d’acceptar-la.",
+  "servers.card.host_key_fingerprint": "Empremta nova",
+  "servers.card.connection_details": "Detalls de la connexió",
+  "servers.health.state.connection_blocked": "Connexió bloquejada",
   "operations.elapsed_seconds": "Temps transcorregut: {seconds} s",
   "operations.elapsed_minutes": "Temps transcorregut: {minutes} min {seconds} s"
 }

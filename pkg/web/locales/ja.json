@@ -827,6 +827,10 @@
   "operations.toast.enabled": "{jail} を有効にしました",
   "operations.toast.disabled": "{jail} を無効にしました",
   "operations.toast.stopping": "既存のブロックを解除しています。数分かかる場合があります。",
+  "servers.card.host_key_blocked": "接続がブロックされました。承認する前に、サーバー上で新しいフィンガープリントを確認してください。",
+  "servers.card.host_key_fingerprint": "新しいフィンガープリント",
+  "servers.card.connection_details": "接続の詳細",
+  "servers.health.state.connection_blocked": "接続がブロックされました",
   "operations.elapsed_seconds": "経過: {seconds}秒",
   "operations.elapsed_minutes": "経過: {minutes}分{seconds}秒"
 }

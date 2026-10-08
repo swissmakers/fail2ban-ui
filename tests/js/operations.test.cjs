@@ -169,6 +169,30 @@ test('elapsed updates appear as work continues without rebuilding toast controls
   assert.equal(clock.textContent, 'Elapsed: 1m 1s');
 });
 
+test('SSH trust failures use a concise toast and open server settings without accepting a key', async () => {
+  const h = harness();
+  let opened = 0;
+  h.context.openServerManager = () => { opened++; };
+  h.context.initOperations();
+  h.requests[0].resolve({ operations: [] });
+  await new Promise(setImmediate);
+  const error = 'remote fail2ban ping error: ssh host key for localhost has changed (presented SHA256:new) (output: @ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @)';
+  const promise = h.context.waitForOperation(operation('running', { kind: 'server.sync', target: '' }));
+  const rejected = assert.rejects(promise, err => err.message === error);
+  h.context.receiveOperation(operation('failed', { kind: 'server.sync', target: '', error }));
+  await rejected;
+  assert.match(h.elements['operation-toasts'].innerHTML, /SSH host key changed/);
+  assert.match(h.elements['operation-toasts'].innerHTML, /data-operation-servers/);
+  assert.doesNotMatch(h.elements['operation-toasts'].innerHTML, /REMOTE HOST IDENTIFICATION|SHA256:new|data-operation-elapsed/);
+  h.elements['operation-toasts'].onclick({ target: { closest: selector => selector === '[data-operation-servers]' ? {} : null } });
+  assert.equal(opened, 1);
+  assert.equal(h.requests.length, 1, 'opening server settings must not send a trust or retry request');
+  h.context.hasAccess = () => false;
+  h.context.renderOperations();
+  assert.doesNotMatch(h.elements['operation-toasts'].innerHTML, /data-operation-servers/);
+  h.elements['operation-toasts'].onclick({ target: { closest: selector => selector === '[data-operation-servers]' ? {} : null } });
+  assert.equal(opened, 1, 'only admins can open server settings');
+});
 
 test('active progress stays visible, then success disappears once after three seconds', () => {
   const h = harness();
