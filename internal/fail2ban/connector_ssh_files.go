@@ -187,7 +187,14 @@ cat > "$tmp" <<'%s'
 %s
 %s
 %s
-if [ -f "$target" ] && cmp -s "$target" "$tmp"; then
+unchanged=false
+if [ -f "$target" ]; then
+  # Keep trailing newlines and stop on read errors; minimal hosts may lack cmp.
+  current=$(cat "$target" && printf '.')
+  staged=$(cat "$tmp" && printf '.')
+  if [ "$current" = "$staged" ]; then unchanged=true; fi
+fi
+if [ "$unchanged" = true ]; then
   rm -f "$tmp"
 else
   if [ -f "$target" ]; then
