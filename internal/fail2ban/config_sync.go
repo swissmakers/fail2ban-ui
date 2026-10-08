@@ -130,6 +130,20 @@ func (m *Manager) configRetryDue(id string) bool {
 }
 
 func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
+	if !m.ownsOperation(ctx, id) {
+		m.mu.RLock()
+		schedule := m.configSyncScheduler
+		m.mu.RUnlock()
+		if schedule != nil {
+			schedule(id)
+			return nil
+		}
+	}
+	ctx, release, err := m.BeginOperation(ctx, id, "", "config_sync")
+	if err != nil {
+		return err
+	}
+	defer release()
 	state := m.syncState(id)
 	select {
 	case state.run <- struct{}{}:
@@ -154,8 +168,14 @@ func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
 		state.mu.Unlock()
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	if OperationID(ctx) == "" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+	if err := OperationCheckpoint(ctx, "writing"); err != nil {
+		return err
+	}
 	if action {
 		err = updateConnectorAction(ctx, conn)
 	}
@@ -167,8 +187,20 @@ func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
 		state.status.LastWritten = time.Now().UTC()
 		state.writtenGen = generation
 		state.mu.Unlock()
-		if err = conn.ValidateConfiguration(ctx); err == nil {
-			err = conn.Reload(ctx)
+		if err = OperationCheckpoint(ctx, "validating"); err == nil {
+			err = conn.ValidateConfiguration(ctx)
+		}
+		if err == nil {
+			if err = OperationCheckpoint(ctx, "applying"); err == nil {
+				if reloadErr := conn.Reload(ctx); reloadErr != nil {
+					err = fmt.Errorf("%w: %v", ErrOperationOutcomeUnknown, reloadErr)
+				} else {
+					err = OperationCheckpoint(ctx, "applied")
+					if err != nil {
+						err = fmt.Errorf("%w: %v", ErrOperationOutcomeUnknown, err)
+					}
+				}
+			}
 		}
 	}
 	state.mu.Lock()
@@ -200,14 +232,24 @@ func (state *configSyncState) markAppliedLocked(generation uint64) {
 
 // Applies pending config, then restarts fail2ban; refuses when the files on the host would not load.
 func (m *Manager) ApplyAndRestart(ctx context.Context, id string) (string, error) {
+	ctx, release, err := m.BeginOperation(ctx, id, "", "restart")
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	conn, err := m.Connector(id)
 	if err != nil {
 		return "", err
 	}
 	if m.ConfigSyncStatus(id).Pending {
 		// A failed reload is fine here as long as the files were written; the restart loads them.
-		if syncErr := m.SyncServerConfig(ctx, id); syncErr != nil && m.ConfigSyncStatus(id).Phase == SyncPending {
-			return "", fmt.Errorf("%w: %v", ErrConfigNotApplied, syncErr)
+		if syncErr := m.SyncServerConfig(ctx, id); syncErr != nil {
+			if errors.Is(syncErr, ErrOperationOutcomeUnknown) {
+				return "", syncErr
+			}
+			if m.ConfigSyncStatus(id).Phase == SyncPending {
+				return "", fmt.Errorf("%w: %v", ErrConfigNotApplied, syncErr)
+			}
 		}
 	}
 	if err := conn.ValidateConfiguration(ctx); err != nil {

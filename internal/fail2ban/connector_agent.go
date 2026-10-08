@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -52,11 +53,14 @@ const (
 
 // Connector for a remote Fail2ban-Agent via HTTP API.
 type AgentConnector struct {
-	server  shared.Fail2banServer
-	base    *url.URL
-	client  *http.Client
-	driftMu sync.Mutex
-	drifted bool
+	server            shared.Fail2banServer
+	base              *url.URL
+	client            *http.Client
+	driftMu           sync.Mutex
+	drifted           bool
+	capabilityMu      sync.Mutex
+	operationCapable  bool
+	capabilityChecked time.Time
 }
 
 type AgentConfigErrorKind string
@@ -312,7 +316,9 @@ func (ac *AgentConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 		return err
 	}
 	payload := map[string]string{"ip": ip}
-	return ac.post(ctx, "/v1/jails/"+url.PathEscape(jail)+"/unban", payload, nil)
+	payload["jail"] = jail
+	_, err := ac.serviceOperation(ctx, "unban", payload)
+	return err
 }
 
 func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
@@ -320,14 +326,14 @@ func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
 		return err
 	}
 	payload := map[string]string{"ip": ip}
-	return ac.post(ctx, "/v1/jails/"+url.PathEscape(jail)+"/ban", payload, nil)
+	payload["jail"] = jail
+	_, err := ac.serviceOperation(ctx, "ban", payload)
+	return err
 }
 
 func (ac *AgentConnector) Reload(ctx context.Context) error {
-	var resp struct {
-		Output string `json:"output"`
-	}
-	if err := ac.call(ctx, http.MethodPost, "/v1/actions/reload", agentServiceTimeout, nil, &resp); err != nil {
+	resp, err := ac.serviceOperation(ctx, "reload")
+	if err != nil {
 		return err
 	}
 	return checkReloadOutput(resp.Output)
@@ -335,10 +341,7 @@ func (ac *AgentConnector) Reload(ctx context.Context) error {
 
 // Returns the agent-reported mode; agents before 0.2 do not report one.
 func (ac *AgentConnector) Restart(ctx context.Context) (string, error) {
-	var resp struct {
-		Mode string `json:"mode"`
-	}
-	err := ac.call(ctx, http.MethodPost, "/v1/actions/restart", agentServiceTimeout, nil, &resp)
+	resp, err := ac.serviceOperation(ctx, "restart")
 	if resp.Mode == "" {
 		resp.Mode = "restart"
 	}
@@ -346,27 +349,166 @@ func (ac *AgentConnector) Restart(ctx context.Context) (string, error) {
 }
 
 func (ac *AgentConnector) ValidateConfiguration(ctx context.Context) error {
-	var resp struct {
-		Output string `json:"output"`
-	}
-	err := ac.call(ctx, http.MethodPost, "/v1/actions/validate", agentServiceTimeout, nil, &resp)
-	switch {
-	case agentUnsupported(err):
-		debugf("agent %s cannot validate configuration (agent before 0.2); skipping", ac.server.Name)
-		return nil
-	case err != nil:
-		var httpErr *AgentHTTPError
-		if errors.As(err, &httpErr) && httpErr.Code == "config_invalid" {
-			var body struct {
-				Error  string `json:"error"`
-				Output string `json:"output"`
-			}
-			_ = json.Unmarshal([]byte(httpErr.Body), &body)
-			return fmt.Errorf("configuration validation failed: %s", firstNonEmpty(body.Output, body.Error, httpErr.Status))
-		}
+	resp, err := ac.serviceOperation(ctx, "validate")
+	if err != nil {
 		return err
 	}
 	return checkReloadOutput(resp.Output)
+}
+
+type operationPhaseKey struct{}
+
+func WithOperationPhase(ctx context.Context, phase string) context.Context {
+	return context.WithValue(ctx, operationPhaseKey{}, phase)
+}
+
+func AgentOperationID(ctx context.Context, kind string) string {
+	id := OperationID(ctx)
+	if id == "" {
+		return ""
+	}
+	phase, _ := ctx.Value(operationPhaseKey{}).(string)
+	sum := sha256.Sum256([]byte(id + "\x00" + phase + "\x00" + kind))
+	return hex.EncodeToString(sum[:])
+}
+
+type AgentOperation struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Jail      string `json:"jail,omitempty"`
+	IP        string `json:"ip,omitempty"`
+	State     string `json:"state"`
+	Output    string `json:"output,omitempty"`
+	Mode      string `json:"mode,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Quiescent bool   `json:"quiescent"`
+}
+
+func (ac *AgentConnector) RequireOperationSupport(ctx context.Context) error {
+	ac.capabilityMu.Lock()
+	defer ac.capabilityMu.Unlock()
+	if time.Since(ac.capabilityChecked) < time.Minute {
+		if ac.operationCapable {
+			return nil
+		}
+		return fmt.Errorf("agent upgrade required: durable service operations and configuration validation are not supported")
+	}
+	var caps struct {
+		Version int      `json:"version"`
+		Kinds   []string `json:"kinds"`
+	}
+	err := ac.get(ctx, "/v1/operations/capabilities", &caps)
+	if err != nil && !agentUnsupported(err) {
+		return err
+	}
+	ac.operationCapable = err == nil && caps.Version >= 1 && slices.Contains(caps.Kinds, "reload") && slices.Contains(caps.Kinds, "restart") && slices.Contains(caps.Kinds, "validate") && slices.Contains(caps.Kinds, "ban") && slices.Contains(caps.Kinds, "unban")
+	ac.capabilityChecked = time.Now()
+	if !ac.operationCapable {
+		return fmt.Errorf("agent upgrade required: durable service operations and configuration validation are not supported")
+	}
+	return nil
+}
+
+func (ac *AgentConnector) ReconcileOperation(ctx context.Context, kind string) (AgentOperation, error) {
+	id := AgentOperationID(ctx, kind)
+	if id == "" {
+		return AgentOperation{}, fmt.Errorf("operation ID is required for reconciliation")
+	}
+	return ac.reconcileOperationID(ctx, id, kind)
+}
+
+func (ac *AgentConnector) reconcileOperationID(ctx context.Context, id, kind string) (AgentOperation, error) {
+	op, err := ac.getOperation(ctx, id, kind)
+	if !agentStatusIs(err, http.StatusNotFound) {
+		return op, err
+	}
+	err = ac.post(ctx, "/v1/operations/"+url.PathEscape(id)+"/reconcile", map[string]string{"kind": kind}, &op)
+	if err == nil && (op.ID != id || op.Kind != kind || op.State == "") {
+		err = fmt.Errorf("agent returned an invalid reconciliation record")
+	}
+	return op, err
+}
+
+func (ac *AgentConnector) BackupConfiguration(ctx context.Context, id string) error {
+	if err := ac.RequireOperationSupport(ctx); err != nil {
+		return err
+	}
+	return ac.post(ctx, "/v1/config/snapshots", map[string]string{"id": id}, nil)
+}
+func (ac *AgentConnector) RestoreConfiguration(ctx context.Context, id string) error {
+	return ac.post(ctx, "/v1/config/snapshots/"+url.PathEscape(id)+"/restore", nil, nil)
+}
+func (ac *AgentConnector) DeleteConfigurationBackup(ctx context.Context, id string) error {
+	return ac.delete(ctx, "/v1/config/snapshots/"+url.PathEscape(id), nil)
+}
+
+func (ac *AgentConnector) getOperation(ctx context.Context, id, kind string) (AgentOperation, error) {
+	var op AgentOperation
+	err := ac.get(ctx, "/v1/operations/"+url.PathEscape(id), &op)
+	if err == nil && (op.ID != id || op.Kind != kind || op.State == "") {
+		err = fmt.Errorf("agent returned an invalid operation record")
+	}
+	return op, err
+}
+
+func (ac *AgentConnector) serviceOperation(ctx context.Context, kind string, target ...map[string]string) (AgentOperation, error) {
+	if err := ac.RequireOperationSupport(ctx); err != nil {
+		return AgentOperation{}, err
+	}
+	id := AgentOperationID(ctx, kind)
+	if id == "" {
+		id = "standalone-" + rand.Text()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 35*time.Minute)
+	defer cancel()
+	var op AgentOperation
+	payload := map[string]string{"id": id, "kind": kind}
+	if len(target) > 0 {
+		payload["jail"], payload["ip"] = target[0]["jail"], target[0]["ip"]
+	}
+	err := ac.post(ctx, "/v1/operations", payload, &op)
+	if err != nil {
+		var httpErr *AgentHTTPError
+		if errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusBadRequest || httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden || httpErr.StatusCode == http.StatusConflict) {
+			return op, err
+		}
+		var getErr error
+		op, getErr = ac.reconcileOperationID(ctx, id, kind)
+		if getErr != nil {
+			return op, fmt.Errorf("%w: agent operation %s (%s): %v", ErrOperationOutcomeUnknown, id, kind, err)
+		}
+	}
+	for {
+		if op.ID != id || op.Kind != kind {
+			return op, fmt.Errorf("%w: invalid agent operation response for %s", ErrOperationOutcomeUnknown, id)
+		}
+		switch op.State {
+		case "succeeded":
+			return op, nil
+		case "failed":
+			if op.Code == "config_invalid" {
+				return op, fmt.Errorf("configuration validation failed: %s", firstNonEmpty(op.Output, op.Error, "invalid configuration"))
+			}
+			return op, fmt.Errorf("agent %s failed: %s", kind, firstNonEmpty(op.Error, op.Output, op.Code, "no error detail"))
+		case "unknown":
+			return op, fmt.Errorf("%w: agent operation %s: %s", ErrOperationOutcomeUnknown, id, op.Error)
+		case "queued", "running":
+		default:
+			return op, fmt.Errorf("%w: agent operation %s has invalid state %q", ErrOperationOutcomeUnknown, id, op.State)
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return op, fmt.Errorf("%w: agent operation %s continues independently: %v", ErrOperationOutcomeUnknown, id, ctx.Err())
+		case <-timer.C:
+		}
+		op, err = ac.getOperation(ctx, id, kind)
+		if err != nil {
+			return op, fmt.Errorf("%w: cannot read agent operation %s: %v", ErrOperationOutcomeUnknown, id, err)
+		}
+	}
 }
 
 // Checks agent readiness and whether its callback registration still matches this server entry.
@@ -377,7 +519,7 @@ func (ac *AgentConnector) ProbeHealth(ctx context.Context) ServerHealth {
 		return ac.probeLegacyReadiness(ctx)
 	}
 	if err != nil {
-		return ServerHealth{Error: err.Error()}
+		return ServerHealth{Error: err.Error(), TransportOK: agentTransportReachable(err)}
 	}
 	p := mustProvider()
 	fingerprint := agentCallbackFingerprint(ac.server.AgentSecret, ac.server.ID, p.CallbackURL(), p.CallbackSecret())
@@ -407,6 +549,7 @@ func (ac *AgentConnector) probeLegacyReadiness(ctx context.Context) ServerHealth
 
 type agentHealthDetail struct {
 	Ready      bool            `json:"ready"`
+	Busy       bool            `json:"busy"`
 	Checks     map[string]bool `json:"checks"`
 	Supervisor struct {
 		LastError string `json:"lastError"`
@@ -421,7 +564,12 @@ type agentHealthDetail struct {
 
 // Maps agent health detail to ServerHealth; drifted means the UI should push its callback config again.
 func healthFromDetail(d agentHealthDetail, serverID, fingerprint string) (ServerHealth, bool) {
-	h := ServerHealth{Fail2banOK: d.Ready}
+	reachable := true
+	h := ServerHealth{Fail2banOK: d.Ready, TransportOK: &reachable, Busy: d.Busy}
+	if d.Busy {
+		h.Error = "service operation is active; daemon status is temporarily unavailable"
+		return h, false
+	}
 	if !d.Ready {
 		var failed []string
 		for name, ok := range d.Checks {
@@ -454,6 +602,27 @@ func healthFromDetail(d agentHealthDetail, serverID, fingerprint string) (Server
 	}
 	callbackOK = true
 	return h, false
+}
+
+func agentTransportReachable(err error) *bool {
+	var httpErr *AgentHTTPError
+	if errors.As(err, &httpErr) {
+		reachable := true
+		return &reachable
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+	var transportErr *AgentTransportError
+	if errors.As(err, &transportErr) {
+		reachable := false
+		return &reachable
+	}
+	return nil
 }
 
 // Agents before 0.2 only expose /readyz; it reports fail2ban state but nothing about callbacks.
@@ -507,6 +676,9 @@ func (ac *AgentConnector) GetFilterConfig(ctx context.Context, filter string) (s
 
 func (ac *AgentConnector) SetFilterConfig(ctx context.Context, filter, content string) error {
 	if err := ValidateFilterName(filter); err != nil {
+		return err
+	}
+	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
 	payload := map[string]string{"config": content}
@@ -644,6 +816,9 @@ func (ac *AgentConnector) UpdateJailEnabledStates(ctx context.Context, updates m
 			return err
 		}
 	}
+	if err := ac.RequireOperationSupport(ctx); err != nil {
+		return err
+	}
 	return ac.post(ctx, "/v1/jails/update-enabled", updates, nil)
 }
 
@@ -716,6 +891,9 @@ func (ac *AgentConnector) GetJailConfig(ctx context.Context, jail string) (strin
 
 func (ac *AgentConnector) SetJailConfig(ctx context.Context, jail, content string) error {
 	if err := ValidateJailName(jail); err != nil {
+		return err
+	}
+	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
 	payload := map[string]string{"config": content}
@@ -823,6 +1001,9 @@ func (ac *AgentConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 }
 
 func (ac *AgentConnector) EnsureJailLocalStructure(ctx context.Context) error {
+	if err := ac.RequireOperationSupport(ctx); err != nil {
+		return err
+	}
 	content := mustProvider().BuildJailLocalContent()
 	payload := map[string]any{}
 	if strings.TrimSpace(content) != "" {
@@ -850,6 +1031,9 @@ func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content stri
 	if err := ValidateJailName(jailName); err != nil {
 		return err
 	}
+	if err := ac.RequireOperationSupport(ctx); err != nil {
+		return err
+	}
 	payload := map[string]interface{}{
 		"name":    jailName,
 		"content": content,
@@ -861,11 +1045,17 @@ func (ac *AgentConnector) DeleteJail(ctx context.Context, jailName string) error
 	if err := ValidateJailName(jailName); err != nil {
 		return err
 	}
+	if err := ac.RequireOperationSupport(ctx); err != nil {
+		return err
+	}
 	return ac.delete(ctx, "/v1/jails/"+url.PathEscape(jailName), nil)
 }
 
 func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content string) error {
 	if err := ValidateFilterName(filterName); err != nil {
+		return err
+	}
+	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
 	payload := map[string]interface{}{
@@ -877,6 +1067,9 @@ func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content 
 
 func (ac *AgentConnector) DeleteFilter(ctx context.Context, filterName string) error {
 	if err := ValidateFilterName(filterName); err != nil {
+		return err
+	}
+	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
 	return ac.delete(ctx, "/v1/filters/"+url.PathEscape(filterName), nil)

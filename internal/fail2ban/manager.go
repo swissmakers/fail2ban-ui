@@ -84,17 +84,21 @@ type Connector interface {
 
 // Holds connectors for all configured Fail2ban servers.
 type Manager struct {
-	reloadMu        sync.Mutex
-	mu              sync.RWMutex
-	connectors      map[string]Connector
-	defaultServerID string
-	monitorStop     chan struct{}
-	monitorKick     chan struct{}
-	monitorWG       sync.WaitGroup
-	configSync      map[string]*configSyncState
-	health          map[string]ServerHealth
-	healthListener  func(string, ServerHealth)
-	repairAt        map[string]time.Time
+	operationGates      sync.Map
+	operationAdmission  sync.RWMutex
+	configSyncScheduler func(string)
+	operationTargets    map[string]string
+	reloadMu            sync.Mutex
+	mu                  sync.RWMutex
+	connectors          map[string]Connector
+	defaultServerID     string
+	monitorStop         chan struct{}
+	monitorKick         chan struct{}
+	monitorWG           sync.WaitGroup
+	configSync          map[string]*configSyncState
+	health              map[string]ServerHealth
+	healthListener      func(string, ServerHealth)
+	repairAt            map[string]time.Time
 }
 
 const monitorInterval = 45 * time.Second
@@ -118,6 +122,9 @@ func GetManager() *Manager {
 func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 	m.reloadMu.Lock()
 	defer m.reloadMu.Unlock()
+	if err := m.ConfigureOperationTargets(servers); err != nil {
+		return err
+	}
 	m.mu.RLock()
 	old := m.connectors
 	m.mu.RUnlock()
@@ -132,6 +139,15 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 
 	var added []string
 	for _, srv := range servers {
+		if previous := old[srv.ID]; previous != nil {
+			changed := !srv.Enabled || !sameConnectorConfig(previous.Server(), srv)
+			if ssh, ok := previous.(*SSHConnector); ok {
+				changed = changed || sshTunnelConfigChanged(ssh, srv)
+			}
+			if _, busy := m.OperationStatus(srv.ID); busy && changed {
+				return fmt.Errorf("server %s has an operation in progress; its connector cannot be replaced or disabled", srv.ID)
+			}
+		}
 		if !srv.Enabled {
 			continue
 		}

@@ -36,7 +36,8 @@ func checkReloadOutput(output string) error {
 	if trimmed == "" || trimmed == "OK" {
 		return nil
 	}
-	if strings.Contains(output, "Errors in jail") || strings.Contains(output, "Unable to read the filter") {
+	if strings.Contains(output, "Errors in jail") || strings.Contains(output, "Unable to read the filter") ||
+		strings.Contains(output, "Have not found any log file") || strings.Contains(output, "Failed during configuration") {
 		return fmt.Errorf("fail2ban reload completed but with errors (output: %s)", trimmed)
 	}
 	return nil

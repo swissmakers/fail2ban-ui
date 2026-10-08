@@ -210,14 +210,14 @@ func TestSyncStatusReportsWrittenPhaseAfterFailedReload(t *testing.T) {
 }
 
 func TestApplyAndRestart(t *testing.T) {
-	t.Run("written but unloaded config is restarted and marked applied", func(t *testing.T) {
+	t.Run("unknown reload outcome refuses a second service command", func(t *testing.T) {
 		conn := &syncTestConnector{reloadErr: errors.New("daemon down")}
 		m := &Manager{connectors: map[string]Connector{"test": conn}}
 		m.RequestConfigSync("test", false, true)
-		if _, err := m.ApplyAndRestart(context.Background(), "test"); err != nil {
-			t.Fatalf("ApplyAndRestart: %v", err)
+		if _, err := m.ApplyAndRestart(context.Background(), "test"); !errors.Is(err, ErrOperationOutcomeUnknown) {
+			t.Fatalf("ApplyAndRestart: %v, want unknown outcome", err)
 		}
-		if conn.restarts != 1 || m.ConfigSyncStatus("test").Pending {
+		if conn.restarts != 0 || !m.ConfigSyncStatus("test").Pending {
 			t.Fatalf("restarts=%d status=%+v", conn.restarts, m.ConfigSyncStatus("test"))
 		}
 	})

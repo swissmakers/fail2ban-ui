@@ -25,6 +25,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,6 +213,8 @@ func TestAgentConnectorEnsureStructurePassesManagedContent(t *testing.T) {
 	var ensurePayload map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v1/operations/capabilities":
+			_, _ = w.Write([]byte(agentOperationCapabilities))
 		case "/v1/callback/config":
 			_, _ = w.Write([]byte(`{"ok":true}`))
 		case "/v1/jails/check-integrity":
@@ -474,11 +477,183 @@ func TestAgentDoRejectsRedirect(t *testing.T) {
 }
 
 func TestAgentRestartParsesMode(t *testing.T) {
-	for body, want := range map[string]string{`{"ok":true,"mode":"reload"}`: "reload", `{"ok":true}`: "restart"} {
-		ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+	for mode, want := range map[string]string{"reload": "reload", "": "restart"} {
+		ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1/operations/capabilities" {
+				_, _ = w.Write([]byte(agentOperationCapabilities))
+				return
+			}
+			var op AgentOperation
+			if r.Method != http.MethodPost || r.URL.Path != "/v1/operations" {
+				t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			}
+			_ = json.NewDecoder(r.Body).Decode(&op)
+			op.State, op.Mode, op.Quiescent = "succeeded", mode, true
+			_ = json.NewEncoder(w).Encode(op)
+		})
 		if mode, err := ac.Restart(context.Background()); err != nil || mode != want {
-			t.Fatalf("body %s: mode=%q err=%v, want %q", body, mode, err, want)
+			t.Fatalf("mode=%q err=%v, want %q", mode, err, want)
 		}
+	}
+}
+
+const agentOperationCapabilities = `{"version":1,"kinds":["reload","restart","validate","ban","unban"],"configurationSnapshots":true}`
+
+func TestAgentOperationLostSubmitResponseRecoversWithoutResubmit(t *testing.T) {
+	var submitted AgentOperation
+	var posts atomic.Int32
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/operations/capabilities":
+			_, _ = w.Write([]byte(agentOperationCapabilities))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/operations":
+			posts.Add(1)
+			_ = json.NewDecoder(r.Body).Decode(&submitted)
+			submitted.State, submitted.Quiescent = "succeeded", true
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn.Close()
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/"+submitted.ID:
+			_ = json.NewEncoder(w).Encode(submitted)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(404)
+		}
+	})
+	ctx := context.WithValue(context.Background(), operationLeaseKey{}, &operationLease{id: "parent-id"})
+	ctx = WithOperationPhase(ctx, "primary-reload")
+	if err := ac.Reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if posts.Load() != 1 || submitted.ID != AgentOperationID(ctx, "reload") {
+		t.Fatalf("duplicate or unstable submit: %d %+v", posts.Load(), submitted)
+	}
+}
+
+func TestAgentOperationCancellationAndPhaseIdentity(t *testing.T) {
+	ctx := context.WithValue(context.Background(), operationLeaseKey{}, &operationLease{id: "parent-id"})
+	primary := WithOperationPhase(ctx, "primary-reload")
+	rollback := WithOperationPhase(ctx, "rollback-reload")
+	if AgentOperationID(primary, "reload") == AgentOperationID(rollback, "reload") || AgentOperationID(primary, "reload") != AgentOperationID(WithOperationPhase(ctx, "primary-reload"), "reload") {
+		t.Fatal("phase identities are not stable and distinct")
+	}
+	ctx, cancel := context.WithCancel(primary)
+	defer cancel()
+	var posts atomic.Int32
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/operations/capabilities" {
+			_, _ = w.Write([]byte(agentOperationCapabilities))
+			return
+		}
+		posts.Add(1)
+		var op AgentOperation
+		_ = json.NewDecoder(r.Body).Decode(&op)
+		op.State = "running"
+		_ = json.NewEncoder(w).Encode(op)
+		time.AfterFunc(10*time.Millisecond, cancel)
+	})
+	if err := ac.Reload(ctx); !errors.Is(err, ErrOperationOutcomeUnknown) {
+		t.Fatalf("cancellation was reported as definitive failure: %v", err)
+	}
+	if posts.Load() != 1 {
+		t.Fatalf("canceled operation retried: %d", posts.Load())
+	}
+}
+
+func TestOldAgentRefusesConfigChangesBeforeWriting(t *testing.T) {
+	var mutations atomic.Int32
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutations.Add(1)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	for _, change := range []func() error{
+		func() error { return ac.UpdateJailEnabledStates(context.Background(), map[string]bool{"ssh": true}) },
+		func() error { return ac.SetJailConfig(context.Background(), "ssh", "[ssh]\n") },
+		func() error { return ac.SetFilterConfig(context.Background(), "ssh", "[Definition]\n") },
+		func() error { return ac.Reload(context.Background()) },
+		func() error { return ac.ValidateConfiguration(context.Background()) },
+	} {
+		if err := change(); err == nil || !strings.Contains(err.Error(), "upgrade required") {
+			t.Fatalf("unsupported agent admitted change: %v", err)
+		}
+	}
+	if mutations.Load() != 0 {
+		t.Fatalf("old agent received %d mutations", mutations.Load())
+	}
+}
+
+func TestAgentReconcileUnknownRemainsUnknownWhenQuiescent(t *testing.T) {
+	ctx := context.WithValue(context.Background(), operationLeaseKey{}, &operationLease{id: "parent-id"})
+	ctx = WithOperationPhase(ctx, "primary-reload")
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/operations/"+AgentOperationID(ctx, "reload") {
+			t.Errorf("reconciliation mutated or looked up wrong operation: %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(AgentOperation{ID: AgentOperationID(ctx, "reload"), Kind: "reload", State: "unknown", Quiescent: true})
+	})
+	op, err := ac.ReconcileOperation(ctx, "reload")
+	if err != nil || op.State != "unknown" || !op.Quiescent {
+		t.Fatalf("unknown outcome was hidden: %+v %v", op, err)
+	}
+}
+
+func TestAgentReconcileMissingIDSealsDelayedSubmission(t *testing.T) {
+	ctx := context.WithValue(context.Background(), operationLeaseKey{}, &operationLease{id: "missing-parent"})
+	ctx = WithOperationPhase(ctx, "primary-reload")
+	var sealed atomic.Int32
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		id := AgentOperationID(ctx, "reload")
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/operations/"+id {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/operations/"+id+"/reconcile" {
+			sealed.Add(1)
+			_ = json.NewEncoder(w).Encode(AgentOperation{ID: id, Kind: "reload", State: "unknown", Code: "not_dispatched"})
+			return
+		}
+		t.Errorf("recovery sent unexpected command: %s %s", r.Method, r.URL.Path)
+	})
+	op, err := ac.ReconcileOperation(ctx, "reload")
+	if err != nil || op.Code != "not_dispatched" || sealed.Load() != 1 {
+		t.Fatalf("missing ID not sealed: %+v %v", op, err)
+	}
+}
+
+func TestAgentBanAndUnbanUseDurableProtocol(t *testing.T) {
+	for _, kind := range []string{"ban", "unban"} {
+		t.Run(kind, func(t *testing.T) {
+			ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/operations/capabilities" {
+					_, _ = w.Write([]byte(agentOperationCapabilities))
+					return
+				}
+				if r.Method != http.MethodPost || r.URL.Path != "/v1/operations" {
+					t.Errorf("legacy mutation called: %s %s", r.Method, r.URL.Path)
+				}
+				var op AgentOperation
+				_ = json.NewDecoder(r.Body).Decode(&op)
+				if op.Kind != kind || op.Jail != "sshd" || op.IP != "192.0.2.1" {
+					t.Errorf("wrong ban target: %+v", op)
+				}
+				op.State, op.Quiescent = "succeeded", true
+				_ = json.NewEncoder(w).Encode(op)
+			})
+			var err error
+			if kind == "ban" {
+				err = ac.BanIP(context.Background(), "sshd", "192.0.2.1")
+			} else {
+				err = ac.UnbanIP(context.Background(), "sshd", "192.0.2.1")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -491,17 +666,32 @@ func TestAgentValidateConfiguration(t *testing.T) {
 	}{
 		{name: "ok", status: 200, body: `{"ok":true,"output":"OK: configuration test is successful"}`},
 		{name: "invalid", status: 422, body: `{"ok":false,"code":"config_invalid","error":"invalid","output":"ERROR No section: 'sshd'"}`, wantErr: "No section: 'sshd'"},
-		{name: "old agent", status: 404, body: `404 page not found`},
+		{name: "old agent", status: 404, body: `404 page not found`, wantErr: "agent upgrade required"},
 		{name: "agent failure", status: 500, body: `{"ok":false,"error":"boom"}`, wantErr: "500"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/v1/actions/validate" || r.Method != http.MethodPost {
+				if r.URL.Path == "/v1/operations/capabilities" {
+					if tt.status == 404 || tt.status == 500 {
+						w.WriteHeader(tt.status)
+						_, _ = w.Write([]byte(tt.body))
+						return
+					}
+					_, _ = w.Write([]byte(agentOperationCapabilities))
+					return
+				}
+				if r.URL.Path != "/v1/operations" || r.Method != http.MethodPost {
 					t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 				}
-				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte(tt.body))
+				var op AgentOperation
+				_ = json.NewDecoder(r.Body).Decode(&op)
+				_ = json.Unmarshal([]byte(tt.body), &op)
+				op.State, op.Quiescent = "succeeded", true
+				if tt.status == 422 {
+					op.State = "failed"
+				}
+				_ = json.NewEncoder(w).Encode(op)
 			})
 			err := ac.ValidateConfiguration(context.Background())
 			if tt.wantErr == "" {
@@ -619,6 +809,7 @@ func TestHealthFromDetail(t *testing.T) {
 		wantDrifted bool
 	}{
 		{name: "healthy", detail: ready(nil), want: HealthOK},
+		{name: "busy", detail: ready(func(d *agentHealthDetail) { d.Busy = true }), want: HealthBusy},
 		{name: "not ready", detail: agentHealthDetail{Checks: map[string]bool{"fail2banPing": false, "configWritable": true}}, want: HealthDown},
 		{name: "no callback config", detail: ready(func(d *agentHealthDetail) { d.Callback.Configured = false }), want: HealthDegraded, wantDrifted: true},
 		{name: "stale fingerprint", detail: ready(func(d *agentHealthDetail) { d.Callback.Fingerprint = "other" }), want: HealthDegraded, wantDrifted: true},

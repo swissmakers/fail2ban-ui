@@ -307,6 +307,12 @@ func Init(dbPath string) error {
 		if initErr = ensureSchema(context.Background()); initErr != nil {
 			return
 		}
+		if initErr = SharedOperationStore().EnsureSchema(context.Background()); initErr != nil {
+			return
+		}
+		if initErr = ensureSnapshotSchema(context.Background()); initErr != nil {
+			return
+		}
 		if initErr = migrateLegacyTimestamps(context.Background()); initErr != nil {
 			return
 		}

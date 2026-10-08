@@ -704,6 +704,8 @@ func TestCheckReloadOutput(t *testing.T) {
 		{"unrelated chatter is success", "Server ready\n", false},
 		{"errors in jail", "Errors in jail 'sshd'. Skipping...", true},
 		{"unable to read filter", "Unable to read the filter 'nginx'", true},
+		{"no log files", "Have not found any log file for example jail", true},
+		{"configuration failure", "Failed during configuration: invalid backend", true},
 		{"marker among other lines", "OK\nErrors in jail 'sshd'\n", true},
 	}
 	for _, tc := range cases {
