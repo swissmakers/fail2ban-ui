@@ -146,6 +146,7 @@ function createWebSocketTooltip() {
   tooltip.className = 'fixed z-50 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none opacity-0 transition-opacity duration-200';
   tooltip.style.display = 'none';
   tooltip.style.minWidth = '200px';
+  tooltip.style.maxWidth = 'min(360px, calc(100vw - 16px))';
   document.body.appendChild(tooltip);
   wsTooltipElement = tooltip;
   const statusEl = document.getElementById('backendStatus');

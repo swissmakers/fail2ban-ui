@@ -181,6 +181,22 @@ test('a newer successful connection supersedes an old host-key error while confi
   assert.equal(h.context.serverHasSSHHostKeyError(server), true, 'a currently recorded key issue still blocks the connection');
 });
 
+test('server cards wrap fingerprints and keep all actions accessible without horizontal scrolling', () => {
+  const h = cardHarness([{
+    id: 'ssh', name: 'Test SSH', type: 'ssh', host: 'localhost', port: 2222, enabled: true,
+    hostKeyError: true, hostKeyFingerprint: 'SHA256:' + 'x'.repeat(43),
+    health: { state: 'down', error: sshHostKeyDiagnostic }
+  }]);
+  h.context.renderServerManagerList();
+  const html = h.list.innerHTML;
+  assert.match(html, /border border-gray-200 p-4 min-w-0 bg-gray-50/);
+  assert.match(html, /flex flex-col gap-3 min-w-0/);
+  assert.match(html, /flex flex-wrap items-center gap-x-4 gap-y-2/);
+  assert.doesNotMatch(html, /overflow-x-auto/);
+  for (const action of ['editServer', 'makeDefaultServer', 'setServerEnabled', 'restartFail2banServer', 'acceptHostKey', 'testServerConnection', 'deleteServer']) {
+    assert.match(html, new RegExp('onclick="' + action + '\\('));
+  }
+});
 
 test('an opened diagnostics section remains open during background server refreshes', () => {
   const servers = [{ id: 'ssh', enabled: true, hostKeyError: true, health: { state: 'down', error: sshHostKeyDiagnostic } }];

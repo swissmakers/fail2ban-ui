@@ -1380,14 +1380,14 @@
               </p>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
+              <div class="min-w-0">
                 <h4 class="text-md font-semibold text-gray-800 mb-3" data-i18n="servers.modal.list_title">Registered Servers</h4>
-                <div id="serverManagerList" class="space-y-3 max-h-96 overflow-y-auto pr-1"></div>
+                <div id="serverManagerList" class="min-w-0 space-y-3 max-h-96 overflow-y-auto pr-1"></div>
                 <div id="serverManagerListEmpty" class="text-sm text-gray-500 hidden" data-i18n="servers.modal.list_empty">
                   No servers configured yet. Add your first Fail2ban server using the form on the right.
                 </div>
               </div>
-              <div class="server-manager-modal-form-col">
+              <div class="server-manager-modal-form-col min-w-0">
                 <div class="flex items-center justify-between mb-3">
                   <h4 class="text-md font-semibold text-gray-800" data-i18n="servers.modal.form_title">Add or Update Server</h4>
                   <button type="button" onclick="resetServerForm()" class="text-sm text-blue-600 hover:text-blue-800 font-medium" data-i18n="servers.form.new_server">New Server</button>

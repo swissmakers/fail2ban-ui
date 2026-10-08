@@ -321,12 +321,12 @@ function renderServerHealthDetails(server, detailsOpen) {
       badge = { dotClass: 'bg-red-500', textClass: 'text-red-600', label: t('servers.health.state.connection_blocked', 'Connection blocked') };
     }
     var checked = formatDateTime(health.checkedAt);
-    html += '<p class="mt-1 text-xs flex items-center gap-2">' + serverHealthDot(badge)
+    html += '<p class="mt-1 text-xs flex flex-wrap items-center gap-2">' + serverHealthDot(badge)
       + '<span class="font-semibold ' + badge.textClass + '">' + escapeHtml(badge.label) + '</span>'
       + (checked ? '<span class="text-gray-500">' + escapeHtml(t('servers.health.checked_at', 'Last checked')) + ': ' + escapeHtml(checked) + '</span>' : '')
       + '</p>';
     if (health.error && !hostKeyBlocked) {
-      html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(health.error) + '</p>';
+      html += '<p class="mt-1 text-xs text-red-600 break-words">' + escapeHtml(health.error) + '</p>';
     }
     if (health.fail2banOk === false && health.state !== 'busy' && !hostKeyBlocked) {
       html += '<p class="mt-1 text-xs text-red-600">' + escapeHtml(t('servers.health.fail2ban_down', 'Fail2ban is not responding on this server.')) + '</p>';
@@ -341,7 +341,7 @@ function renderServerHealthDetails(server, detailsOpen) {
   var sync = server.configSync;
   if (sync && sync.pending && !hostKeyBlocked) {
     var syncError = isSSHHostKeyError(sync.error) ? '' : sync.error;
-    html += '<p class="mt-1 text-xs text-yellow-600">'
+    html += '<p class="mt-1 text-xs text-yellow-600 break-words">'
       + escapeHtml(t('servers.card.sync_pending', 'Configuration pending; automatic retry enabled'))
       + (syncError ? ': ' + escapeHtml(syncError) : '') + '</p>';
   }
@@ -395,7 +395,7 @@ function renderServerManagerList() {
     }
     var meta = descriptor.join(' - ');
     var tags = (server.tags || []).length
-      ? '<div class="mt-2 text-xs text-gray-500">' + escapeHtml(server.tags.join(', ')) + '</div>'
+      ? '<div class="mt-2 text-xs text-gray-500 break-words">' + escapeHtml(server.tags.join(', ')) + '</div>'
       : '';
     var localDetails = '';
     if ((server.type || '').toLowerCase() === 'local') {
@@ -404,25 +404,25 @@ function renderServerManagerList() {
       localDetails = ''
         + '<div class="mt-1 text-xs text-gray-500">'
         + escapeHtml(t('servers.card.socket_path', 'Socket path')) + ': '
-        + '<code class="px-1 py-0.5 bg-gray-100 rounded">' + escapeHtml(socketPath) + '</code>'
+        + '<code class="px-1 py-0.5 bg-gray-100 rounded break-all">' + escapeHtml(socketPath) + '</code>'
         + '</div>'
         + '<div class="mt-1 text-xs text-gray-500">'
         + escapeHtml(t('servers.card.config_path', 'Configuration path')) + ': '
-        + '<code class="px-1 py-0.5 bg-gray-100 rounded">' + escapeHtml(configPath) + '</code>'
+        + '<code class="px-1 py-0.5 bg-gray-100 rounded break-all">' + escapeHtml(configPath) + '</code>'
         + '</div>';
     }
     return ''
-      + '<div class="border border-gray-200 p-4 overflow-x-auto bg-gray-50">'
-      + '  <div class="flex items-center justify-between">'
-      + '    <div>'
-      + '      <p class="font-semibold text-gray-800 flex items-center">' + escapeHtml(server.name || server.id) + defaultBadge + statusBadge + restartBadge + '</p>'
-      + '      <p class="text-sm text-gray-500">' + escapeHtml(meta || server.id) + '</p>'
+      + '<div class="border border-gray-200 p-4 min-w-0 bg-gray-50">'
+      + '  <div class="flex flex-col gap-3 min-w-0">'
+      + '    <div class="min-w-0">'
+      + '      <p class="font-semibold text-gray-800 flex flex-wrap items-center"><span class="min-w-0 break-all">' + escapeHtml(server.name || server.id) + '</span>' + defaultBadge + statusBadge + restartBadge + '</p>'
+      + '      <p class="text-sm text-gray-500 break-all">' + escapeHtml(meta || server.id) + '</p>'
       + '      <p class="mt-1 text-xs text-gray-500">'
       + '<span data-i18n="servers.card.server_id">Server-ID</span>: '
-      + '<code class="px-1 py-0.5 bg-gray-100 rounded select-all">' + escapeHtml(server.id || '') + '</code>'
+      + '<code class="px-1 py-0.5 bg-gray-100 rounded select-all break-all">' + escapeHtml(server.id || '') + '</code>'
       + '</p>'
       + (!server.enabled && server.disabledReason && !isSSHHostKeyError(server.disabledReason)
-        ? '<p class="mt-1 text-xs text-red-600">'
+        ? '<p class="mt-1 text-xs text-red-600 break-words">'
           + escapeHtml(t('servers.card.disabled_reason', 'Disabled reason')) + ': '
           + escapeHtml(server.disabledReason)
           + '</p>'
@@ -431,7 +431,7 @@ function renderServerManagerList() {
       +        renderServerHealthDetails(server, expandedDetails.has(server.id))
       +        tags
       + '    </div>'
-      + '    <div class="flex flex-col gap-2">'
+      + '    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-200 pt-3">'
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="editServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.edit">Edit</button>'
       + (server.isDefault ? '' : '<button class="text-sm text-blue-600 hover:text-blue-800" onclick="makeDefaultServer(\'' + escapeHtml(server.id) + '\')" data-i18n="servers.actions.set_default">Set default</button>')
       + '      <button class="text-sm text-blue-600 hover:text-blue-800" onclick="setServerEnabled(\'' + escapeHtml(server.id) + '\',' + (server.enabled ? 'false' : 'true') + ')" data-i18n="' + (server.enabled ? 'servers.actions.disable' : 'servers.actions.enable') + '">' + (server.enabled ? 'Disable' : 'Enable') + '</button>'
