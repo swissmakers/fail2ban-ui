@@ -69,7 +69,7 @@ func validateCallbackSecret(c *gin.Context) bool {
 	}
 }
 
-// Validates X-Callback-Secret without side effects (for agent health checks).
+// Validates X-Callback-Secret without side effects (for agent and SSH health checks).
 func HealthcheckCallbackSecret(c *gin.Context) {
 	if !validateCallbackSecret(c) {
 		return

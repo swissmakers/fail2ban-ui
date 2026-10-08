@@ -208,7 +208,7 @@ func findVariableDefinition(varName, fail2banPath string) (string, error) {
 	debugf("findVariableDefinition: searching for variable '%s'", varName)
 
 	if _, err := os.Stat(fail2banPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("variable '%s' not found: /etc/fail2ban directory does not exist", varName)
+		return "", fmt.Errorf("variable '%s' not found: %s does not exist", varName, fail2banPath)
 	}
 
 	var foundValue string

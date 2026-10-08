@@ -30,6 +30,41 @@ function t(key, fallback) {
   return fallback !== undefined ? fallback : key;
 }
 
+// Sets translated text and keeps data-i18n in sync so updateTranslations does not revert it.
+function setI18nText(el, key, fallback) {
+  el.setAttribute('data-i18n', key);
+  el.textContent = t(key, fallback);
+}
+
+// messageKey wins, then the server's text, then the caller's fallback.
+function apiMessage(data, fallbackKey, fallbackText) {
+  var text = data ? (data.error || data.message || '') : '';
+  if (data && data.messageKey) {
+    return t(data.messageKey, text || t(fallbackKey, fallbackText));
+  }
+  return text ? String(text) : t(fallbackKey, fallbackText);
+}
+
+// Resolves with the parsed body (null when not JSON); rejects non-2xx with a translated message.
+function readJsonResponse(res) {
+  return res.json()
+    .catch(function() { return null; })
+    .then(function(data) {
+      if (res.ok) {
+        // A mutation is accepted, not completed. Only terminal operation state
+        // may resolve the caller's existing success handler.
+        if (res.status === 202 && data && data.operation && typeof waitForOperation === 'function') {
+          return waitForOperation(data.operation);
+        }
+        return data;
+      }
+      var err = new Error(apiMessage(data, '', '') || t('common.http_error', 'Server returned {status}').replace('{status}', String(res.status)));
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    });
+}
+
 function formatApiError(data, fallbackKey, fallbackText) {
   var shortMessage = '';
   if (data && data.messageKey) {
@@ -56,7 +91,26 @@ function formatApiError(data, fallbackKey, fallbackText) {
     return shortMessage;
   }
 
-  return 'Unknown error';
+  return t('common.unknown_error', 'Unknown error');
+}
+
+// Recognize both the connector's typed errors and OpenSSH's diagnostic output.
+// This only selects clearer UI text; host-key verification stays on the server.
+function isSSHHostKeyError(message) {
+  return /REMOTE HOST IDENTIFICATION HAS CHANGED|POSSIBLE DNS SPOOFING DETECTED|host key verification failed|ssh host key for .+ has changed|remote host key .+ does not match the approved fingerprint/i.test(String(message || ''));
+}
+
+// Shows or hides a collapsed list and swaps the toggle label (data-more-label / data-less-label).
+function toggleHiddenList(hiddenId, buttonId) {
+  var hidden = document.getElementById(hiddenId);
+  var button = document.getElementById(buttonId);
+  if (!hidden || !button) {
+    return;
+  }
+  var expand = hidden.classList.contains('hidden');
+  hidden.classList.toggle('hidden', !expand);
+  button.textContent = button.getAttribute(expand ? 'data-less-label' : 'data-more-label') || button.textContent;
+  button.setAttribute('data-expanded', expand ? 'true' : 'false');
 }
 
 // =========================================================================
@@ -151,11 +205,9 @@ function isSuspiciousLogLine(line, ip) {
   }
   var containsIP = ip && line.indexOf(ip) !== -1;
   var lowered = line.toLowerCase();
-  // Detect HTTP status codes (>= 300 considered problematic)
-  var statusMatch = line.match(/"[^"]*"\s+(\d{3})\b/);
-  if (!statusMatch) {
-    statusMatch = line.match(/\s(\d{3})\s+(?:\d+|-)/);
-  }
+  var statusMatch = line.match(/"(?:status|code|statusCode)"\s*:\s*(\d{3})\b/i) ||
+    line.match(/"[^"]*"\s+(\d{3})\b/) ||
+    line.match(/\s(\d{3})\s+(?:\d+|-)/);
   var statusCode = statusMatch ? parseInt(statusMatch[1], 10) : NaN;
   var hasBadStatus = !isNaN(statusCode) && statusCode >= 300;
   // Detect common attack indicators in URLs/payloads
@@ -209,4 +261,12 @@ function buildHighlightedLogsHtml(logs, ip) {
 
 function countryLabel(country) {
   return country || t('logs.overview.country_unknown', 'Unknown');
+}
+
+function sortServersForDisplay(servers) {
+  return (servers || []).slice().sort(function (a, b) {
+    var an = a.name || a.id || '';
+    var bn = b.name || b.id || '';
+    return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' });
+  });
 }

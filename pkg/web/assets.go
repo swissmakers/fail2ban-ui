@@ -17,13 +17,17 @@
 package web
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
+	"github.com/swissmakers/fail2ban-ui/internal/version"
 )
 
 //go:embed templates/*
@@ -44,6 +48,32 @@ func init() {
 		panic("web: locales embed: " + err.Error())
 	}
 	LocalesFS = sub
+}
+
+// Cache-busting token for asset URLs: stable across restarts, new whenever an embedded asset changes.
+var assetVersion = sync.OnceValue(func() string {
+	return version.Version + "-" + contentHash(embeddedStatic, embeddedLocales)
+})
+
+// Hashes every file path and body in walk order; the first 8 hex characters are plenty for cache busting.
+func contentHash(trees ...fs.FS) string {
+	sum := sha256.New()
+	for _, tree := range trees {
+		_ = fs.WalkDir(tree, ".", func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := fs.ReadFile(tree, p)
+			if err != nil {
+				return err
+			}
+			sum.Write([]byte(p))
+			sum.Write([]byte{0})
+			sum.Write(data)
+			return nil
+		})
+	}
+	return hex.EncodeToString(sum.Sum(nil))[:8]
 }
 
 // Registers HTML templates and /static and /locales handlers using data embedded at compile time.

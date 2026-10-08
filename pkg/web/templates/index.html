@@ -16,7 +16,7 @@
   limitations under the License.
 -->
 <!DOCTYPE html>
-<html lang="en" data-auto-dark="{{if .autoDark}}true{{else}}false{{end}}" data-url-prefix="{{if .URLPrefix}}{{.URLPrefix}}{{end}}">
+<html lang="en" data-auto-dark="{{if .autoDark}}true{{else}}false{{end}}" data-url-prefix="{{if .URLPrefix}}{{.URLPrefix}}{{end}}" data-asset-version="{{.version}}">
 
 <head>
   <meta charset="UTF-8" />
@@ -27,7 +27,6 @@
       var root = document.documentElement;
       var base = root ? (root.getAttribute('data-url-prefix') || '') : '';
       window.__BASE_PATH__ = base;
-      window.__PRISM_LANGUAGES_PATH__ = (base || '') + '/static/vendor/prism/components/';
     })();
   </script>
   <script>
@@ -58,15 +57,6 @@
       if (appleTouchIcon) { appleTouchIcon.setAttribute('href', href); }
     })();
   </script>
-  <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/prism/prism-tomorrow.min.css?v={{.version}}" />
-  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/prism/prism-core.min.js?v={{.version}}"></script>
-  <script>
-    window.Prism = window.Prism || {};
-    Prism.plugins = Prism.plugins || {};
-    Prism.plugins.autoloader = Prism.plugins.autoloader || {};
-    Prism.plugins.autoloader.languages_path = window.__PRISM_LANGUAGES_PATH__ || '';
-  </script>
-  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/prism/prism-autoloader.min.js?v={{.version}}"></script>
   <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/tailwind.css?v={{.version}}">
   <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/fontawesome/all.min.css?v={{.version}}">
   <link rel="stylesheet" href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/select2/select2.min.css?v={{.version}}" />
@@ -78,19 +68,20 @@
 <body class="bg-gray-50 overflow-y-scroll" data-skip-login-page="{{if .skipLoginPage}}true{{else}}false{{end}}" data-oidc-enabled="{{if .oidcEnabled}}true{{else}}false{{end}}">
 
   <!-- Loading Overlay -->
-  <div id="loading-overlay" class="show fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50 backdrop-blur-sm">
-    <div class="h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+  <div id="loading-overlay" class="show flex items-center gap-2 p-3 rounded-lg shadow-lg" role="status" aria-live="polite">
+    <div class="h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" aria-hidden="true"></div>
+    <span class="text-sm" data-i18n="operations.loading_request">Loading…</span>
   </div>
 
   <!-- Restart Banner -->
   <div id="restartBanner" class="bg-yellow-400 text-gray-900 p-3 text-center">
     <div class="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-center gap-4">
       <strong data-i18n="restart_banner.message">Fail2ban configuration changed! To apply the changes, please: </strong>
-      <button class="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="restartFail2ban()" data-i18n="restart_banner.button">Restart Service</button>
+      <button class="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors" onclick="restartFail2banServer(currentServerId)" data-i18n="restart_banner.button">Restart Service</button>
     </div>
   </div>
 
-  <div id="toast-container"></div>
+  <div id="toast-container"><div id="operation-toasts"></div></div>
 
   <!-- ******************************************************************* -->
   <!--                          Navigation START                           -->
@@ -100,7 +91,7 @@
       <div class="flex items-center justify-between h-16">
         <div class="flex items-center">
           <div class="flex-shrink-0">
-            <a href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/" class="inline-flex items-center transition-colors cursor-pointer" aria-label="Fail2ban UI home">
+            <a href="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/" class="inline-flex items-center transition-colors cursor-pointer" data-i18n-aria-label="nav.home" aria-label="Fail2ban UI home">
               <img src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/images/logo-light.png?v={{.version}}" alt="Fail2ban UI" class="h-8 w-auto" />
             </a>
           </div>
@@ -207,9 +198,7 @@
           </div>
         </div>
         <div class="pt-6 border-t border-gray-200">
-          <p class="text-xs text-center text-gray-500">
-            Secure authentication via OpenID Connect
-          </p>
+          <p class="text-xs text-center text-gray-500" data-i18n="auth.oidc_hint">Secure authentication via OpenID Connect</p>
         </div>
       </div>
     </div>
@@ -233,7 +222,7 @@
           {{if not .disableExternalIP}}
           <div class="text-sm text-gray-500 sm:ml-2">
             <span data-i18n="dashboard.external_ip">Your ext. IP:</span>
-            <span id="external-ip" class="font-medium text-blue-600 cursor-pointer">Loading...</span>
+            <span id="external-ip" class="font-medium text-blue-600 cursor-pointer" data-i18n="loading">Loading...</span>
           </div>
           {{end}}
           <div class="flex flex-col sm:flex-row gap-3">
@@ -269,7 +258,7 @@
             <label for="filterSelect" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="filter_debug.select_filter">Select a Filter</label>
             <div class="flex gap-2">
               <select id="filterSelect" class="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
-              <button type="button" onclick="deleteFilter()" id="deleteFilterBtn" class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled title="Delete selected filter">
+              <button type="button" onclick="deleteFilter()" id="deleteFilterBtn" class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled data-i18n-title="filter_debug.delete_filter" title="Delete selected filter" data-i18n-aria-label="filter_debug.delete_filter" aria-label="Delete selected filter">
                 <i class="fas fa-trash"></i>
               </button>
             </div>
@@ -283,7 +272,7 @@
           <p class="text-xs text-gray-500 mb-2" data-i18n="filter_debug.filter_content_hint_readonly">Filter content is shown read-only. Click 'Edit' to modify for testing. Changes are temporary and not saved.</p>
           <p class="text-xs text-gray-500 mb-2 hidden" id="filterContentHintEditable" data-i18n="filter_debug.filter_content_hint">Edit the filter regex below for testing. Changes are temporary and not saved.</p>
           <textarea id="filterContentTextarea" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 h-40 font-mono text-sm bg-gray-50" style="min-height: 300px;"
-                    placeholder="Filter content will appear here when a filter is selected..." readonly></textarea>
+                    data-i18n-placeholder="filter_debug.filter_content_placeholder" placeholder="Filter content will appear here when a filter is selected..." readonly></textarea>
         </div>
         <div class="mb-4">
           <label for="logLinesTextarea" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="filter_debug.log_lines">Log Lines</label>
@@ -369,7 +358,7 @@
               <button type="button" onclick="clearConsole()" class="text-xs text-gray-100 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors" data-i18n="settings.console.clear">Clear</button>
             </div>
             <div id="consoleOutputWindow" class="overflow-y-auto p-4 font-mono text-sm text-green-400 bg-gray-900" style="max-height: 430px; min-height: 200px;">
-              <div class="text-gray-500">Console output will appear here...</div>
+              <div id="consolePlaceholder" class="text-gray-500" data-i18n="settings.console.placeholder">Console output will appear here...</div>
             </div>
           </div>
         </div>
@@ -382,7 +371,7 @@
               <p class="text-sm text-gray-500" data-i18n="settings.advanced.description">Automatically add recurring offenders to an external firewall once they hit a specific threshold.</p>
             </div>
             <div class="flex gap-2">
-              <button type="button" class="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50" onclick="refreshPermanentBlockLog()" data-i18n="settings.advanced.refresh_log">Refresh Log</button>
+              <button type="button" class="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50" onclick="loadPermanentBlockLog()" data-i18n="settings.advanced.refresh_log">Refresh Log</button>
               <button type="button" class="px-3 py-2 text-sm rounded border border-blue-600 text-blue-600 hover:bg-blue-50" onclick="openAdvancedTestModal()" data-i18n="settings.advanced.test_button">Manually Block / Test</button>
             </div>
           </div>
@@ -403,6 +392,7 @@
                 <option value="mikrotik">Mikrotik</option>
                 <option value="pfsense">pfSense</option>
                 <option value="opnsense">OPNsense</option>
+                <option value="unifi">UniFi Network</option>
               </select>
               <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.integration_hint">Choose where permanent bans should be synchronized.</p>
             </div>
@@ -455,7 +445,7 @@
                 </div>
                 <div class="md:col-span-2">
                   <label class="block text-sm font-medium text-gray-700" for="pfSenseToken" data-i18n="settings.advanced.pfsense.token">API Key</label>
-                  <input id="pfSenseToken" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key from System > REST API > Keys">
+                  <input id="pfSenseToken" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.advanced.pfsense.token_placeholder" placeholder="Your API key from System > REST API > Keys">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.pfsense.token_hint">Generate in System > REST API > Keys in pfSense webConfigurator</p>
                 </div>
                 <div>
@@ -480,12 +470,12 @@
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700" for="opnsenseKey" data-i18n="settings.advanced.opnsense.key">API Key</label>
-                  <input id="opnsenseKey" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API key">
+                  <input id="opnsenseKey" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.advanced.opnsense.key_placeholder" placeholder="Your API key">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.key_hint">Generate in System > Access > Users > API Keys</p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700" for="opnsenseSecret" data-i18n="settings.advanced.opnsense.secret">API Secret</label>
-                  <input id="opnsenseSecret" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="Your API secret">
+                  <input id="opnsenseSecret" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.advanced.opnsense.secret_placeholder" placeholder="Your API secret">
                   <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.opnsense.secret_hint">Generate together with API key</p>
                 </div>
                 <div>
@@ -495,6 +485,46 @@
                 <div class="flex items-center">
                   <input type="checkbox" id="opnsenseSkipTLS" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
                   <label for="opnsenseSkipTLS" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.opnsense.skip_tls">Skip TLS verification (self-signed)</label>
+                </div>
+              </div>
+            </div>
+            <div id="advancedUniFiFields" class="hidden border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">
+              <p class="text-sm text-gray-500 mb-3"
+                data-i18n="settings.advanced.unifi.note">
+                UniFi Network API documentation is available at https://&lt;your-gateway&gt;/unifi-api/network.
+                Permanent blocks are stored in a UniFi IPv4 Traffic Matching List.
+                If the list does not exist, it will be created automatically when
+                the first IP is permanently blocked.
+              </p>
+              <p class="text-sm text-amber-700 mb-3"
+                data-i18n="settings.advanced.unifi.firewall_note">
+                You must create a UniFi firewall rule that blocks traffic from this list.
+                Fail2Ban UI manages the IPs in the list, but does not create the firewall rule.
+              </p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700" for="unifiBaseURL" data-i18n="settings.advanced.unifi.base_url">Console URL</label>
+                  <input id="unifiBaseURL" type="url" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="https://192.168.1.1">
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700" for="unifiAPIKey" data-i18n="settings.advanced.unifi.api_key"> Network API Key</label>
+                  <input id="unifiAPIKey" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.unifi.key_hint">Create an API key in UniFi Network settings.</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="unifiSiteName" data-i18n="settings.advanced.unifi.site_name">Site Name</label>
+                  <input id="unifiSiteName" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="unifiListName" data-i18n="settings.advanced.unifi.list_name">Traffic Matching List Name</label>
+                  <input id="unifiListName" type="text" value="Fail2Ban-Permanent-Block" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div class="md:col-span-2 flex items-center">
+                  <input type="checkbox" id="unifiSkipTLS" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                  <label for="unifiSkipTLS" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.unifi.skip_tls"> Skip TLS verification (self-signed certificate)</label>
                 </div>
               </div>
             </div>
@@ -545,13 +575,13 @@
           </div>
           <div id="threatIntelAlienVaultFields" class="mb-4">
             <label for="threatIntelAlienVaultApiKey" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.threat_intel.alienvault_api_key">AlienVault API Key</label>
-            <input type="password" id="threatIntelAlienVaultApiKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="AlienVault OTX API key">
+            <input type="password" id="threatIntelAlienVaultApiKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.threat_intel.alienvault_api_key_placeholder" placeholder="AlienVault OTX API key">
             <p class="text-xs text-gray-500 mt-1" data-i18n="settings.threat_intel.alienvault_api_key_hint">Create your OTX key in your AlienVault account profile.</p>
             <p class="text-xs text-red-600 mt-1 hidden" id="threatIntelAlienVaultApiKeyError"></p>
           </div>
           <div id="threatIntelAbuseIPDBFields" class="mb-4 hidden">
             <label for="threatIntelAbuseIpDbApiKey" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.threat_intel.abuseipdb_api_key">AbuseIPDB API Key</label>
-            <input type="password" id="threatIntelAbuseIpDbApiKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="AbuseIPDB API key">
+            <input type="password" id="threatIntelAbuseIpDbApiKey" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.threat_intel.abuseipdb_api_key_placeholder" placeholder="AbuseIPDB API key">
             <p class="text-xs text-gray-500 mt-1" data-i18n="settings.threat_intel.abuseipdb_api_key_hint">Generate your API key in your AbuseIPDB account settings.</p>
             <p class="text-xs text-red-600 mt-1 hidden" id="threatIntelAbuseIpDbApiKeyError"></p>
           </div>
@@ -724,7 +754,7 @@
               <option value="PY">Paraguay (PY)</option>
               <option value="PE">Peru (PE)</option>
               <option value="PH">Philippines (PH)</option>
-              <option value="PL">Polland (PL)</option>
+              <option value="PL">Poland (PL)</option>
               <option value="PT">Portugal (PT)</option>
               <option value="QA">Qatar (QA)</option>
               <option value="RO">Romania (RO)</option>
@@ -790,7 +820,7 @@
           <h3 class="text-lg font-medium text-gray-900 mb-4" data-i18n="settings.destination_email">Destination Emails (Alerts Receivers)</h3>
           <div class="mb-4">
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="destEmail"
-                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@swissmakers.ch, admin@example.com" />
+                   data-i18n-placeholder="settings.destination_email_placeholder" placeholder="alerts@example.com, admin@example.com" />
             <p class="text-xs text-red-600 mt-1 hidden" id="destEmailError"></p>
             <p class="text-xs text-gray-500 mt-1" data-i18n="settings.destination_email_hint">Multiple email addresses can be specified using comma-separated values.</p>
           </div>
@@ -800,28 +830,28 @@
           <div class="mb-4">
             <label for="smtpHost" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_host">SMTP Host</label>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpHost"
-                   data-i18n-placeholder="settings.smtp_host_placeholder" placeholder="e.g., smtp.gmail.com" required />
+                   data-i18n-placeholder="settings.smtp_host_placeholder" placeholder="e.g., smtp.gmail.com" />
           </div>
           <div class="mb-4">
             <label for="smtpPort" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_port">SMTP Port</label>
             <input type="number" min="1" max="65535" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpPort"
-                   data-i18n-placeholder="settings.smtp_port_placeholder" placeholder="587" value="587" required />
+                   data-i18n-placeholder="settings.smtp_port_placeholder" placeholder="587" value="587" />
             <p class="mt-1 text-xs text-gray-500" data-i18n="settings.smtp_port_hint">Common ports: 25 (plain), 587 (STARTTLS), 465 (SMTPS), 2525 (alternative STARTTLS)</p>
           </div>
           <div class="mb-4">
             <label for="smtpUsername" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_username">SMTP Username</label>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpUsername"
-                   data-i18n-placeholder="settings.smtp_username_placeholder" placeholder="e.g., user@example.com" required />
+                   data-i18n-placeholder="settings.smtp_username_placeholder" placeholder="e.g., user@example.com" />
           </div>
           <div class="mb-4">
             <label for="smtpPassword" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_password">SMTP Password</label>
             <input type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpPassword"
-                   data-i18n-placeholder="settings.smtp_password_placeholder" placeholder="Enter SMTP Password" required />
+                   data-i18n-placeholder="settings.smtp_password_placeholder" placeholder="Enter SMTP Password" />
           </div>
           <div class="mb-4">
             <label for="smtpFrom" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_sender">Sender Email</label>
             <input type="email" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed" id="smtpFrom"
-                   data-i18n-placeholder="settings.smtp_sender_placeholder" placeholder="noreply@swissmakers.ch" required />
+                   data-i18n-placeholder="settings.smtp_sender_placeholder" placeholder="noreply@example.com" />
           </div>
           <div class="mb-4">
             <label for="smtpAuthMethod" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.smtp_auth_method">Authentication Method</label>
@@ -883,16 +913,16 @@
         <div id="alertElasticsearchFields" class="hidden bg-white rounded-lg shadow p-6">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-medium text-gray-900" data-i18n="settings.elasticsearch.title">Elasticsearch Configuration</h3>
-            <button type="button" onclick="openModal('elasticsearchHelpModal')" class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs font-medium" aria-label="Elasticsearch help" title="Elasticsearch help">?</button>
+            <button type="button" onclick="openModal('elasticsearchHelpModal')" class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs font-medium" data-i18n-aria-label="settings.elasticsearch.help_button" aria-label="Elasticsearch help" data-i18n-title="settings.elasticsearch.help_button" title="Elasticsearch help">?</button>
           </div>
           <div class="mb-4">
             <label for="elasticsearchUrl" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.url">Elasticsearch URL</label>
             <input type="url" id="elasticsearchUrl" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.elasticsearch.url_placeholder" placeholder="https://elasticsearch.example.com:9200">
           </div>
           <div class="mb-4">
-            <label for="elasticsearchIndex" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.index">Index Name</label>
-            <input type="text" id="elasticsearchIndex" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.elasticsearch.index_placeholder" placeholder="fail2ban-events">
-            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.elasticsearch.index_hint">A daily date suffix (-YYYY.MM.DD) is appended automatically for index lifecycle management.</p>
+            <label for="elasticsearchIndex" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.index">Data Stream</label>
+            <input type="text" id="elasticsearchIndex" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.elasticsearch.index_placeholder" placeholder="logs-fail2ban_ui.events-default">
+            <p class="text-xs text-gray-500 mt-1" data-i18n="settings.elasticsearch.index_hint">Events are written to this data stream. The default works with the built-in logs-*-* template; a custom name needs an index template with data streams enabled.</p>
           </div>
           <div class="mb-4">
             <label for="elasticsearchApiKey" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.elasticsearch.api_key">API Key</label>
@@ -937,7 +967,7 @@
           </div>
           <div class="mb-4">
             <label for="banTime" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.default_bantime">Default Bantime</label>
-            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_bantime.description">The number of seconds that a host is banned. Time format: 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1m = 1 month, 1y = 1 year.</p>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_bantime.description">The number of seconds that a host is banned. Time format: 1m = 1 minute, 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1mo = 1 month, 1y = 1 year.</p>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="banTime"
                    data-i18n-placeholder="settings.default_bantime_placeholder" placeholder="e.g., 48h" />
             <p class="text-xs text-red-600 mt-1 hidden" id="banTimeError"></p>
@@ -1040,7 +1070,7 @@
           <div class="mb-4">
             <div class="flex items-center gap-2 mb-2">
               <label for="defaultChain" class="block text-sm font-medium text-gray-700" data-i18n="settings.default_chain">Default Chain</label>
-              <button type="button" onclick="document.getElementById('chainHelpModal').classList.remove('hidden')" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs font-medium" aria-label="Chain help" title="Chains help">?</button>
+              <button type="button" onclick="openModal('chainHelpModal')" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 text-xs font-medium" data-i18n-aria-label="settings.chain_help_button" aria-label="Chain help" data-i18n-title="settings.chain_help_button" title="Chain help">?</button>
             </div>
             <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_chain.description">iptables/nftables chain used for banning (e.g. INPUT for host, DOCKER-USER for Docker containers).</p>
             <select id="defaultChain" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -1051,7 +1081,7 @@
           </div>
           <div class="mb-4">
             <label for="findTime" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="settings.default_findtime">Default Findtime</label>
-            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_findtime.description">A host is banned if it has generated 'maxretry' failures during the last 'findtime' seconds. Time format: 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1m = 1 month, 1y = 1 year.</p>
+            <p class="text-xs text-gray-500 mb-2" data-i18n="settings.default_findtime.description">A host is banned if it has generated 'maxretry' failures during the last 'findtime' seconds. Time format: 1m = 1 minute, 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1mo = 1 month, 1y = 1 year.</p>
             <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" id="findTime"
                    data-i18n-placeholder="settings.default_findtime_placeholder" placeholder="e.g., 30m" />
             <p class="text-xs text-red-600 mt-1 hidden" id="findTimeError"></p>
@@ -1113,7 +1143,7 @@
                 <h3 class="text-lg leading-6 font-medium text-gray-900">
                   <span data-i18n="modal.filter_config">Filter Config:</span> <span id="modalJailName"></span>
                 </h3>
-                <button type="button" onclick="closeModal('jailConfigModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('jailConfigModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1140,7 +1170,8 @@
                       data-icloud-keychain-ignore="true"
                       data-safari-autofill="false"
                       role="textbox"
-                      aria-label="Filter configuration editor"
+                      data-i18n-aria-label="modal.filter_config_label"
+                      aria-label="Filter Configuration"
                       name="filter-config-editor"
                       inputmode="text"
                       style="caret-color: #ffffff; line-height: 1.5; tab-size: 2; width: 100%; min-width: 100%; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; position: relative; z-index: 2;"
@@ -1169,7 +1200,8 @@
                       data-icloud-keychain-ignore="true"
                       data-safari-autofill="false"
                       role="textbox"
-                      aria-label="Jail configuration editor"
+                      data-i18n-aria-label="modal.jail_config_label"
+                      aria-label="Jail Configuration"
                       name="jail-config-editor"
                       inputmode="text"
                       style="height: 300px; caret-color: #ffffff; line-height: 1.5; tab-size: 2; width: 100%; min-width: 100%; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; position: relative; z-index: 2;"
@@ -1210,7 +1242,7 @@
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
               <div class="flex items-center justify-between">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="modal.manage_jails_title">Manage Jails</h3>
-                <button type="button" onclick="closeModal('manageJailsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('manageJailsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1250,7 +1282,7 @@
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
               <div class="flex items-center justify-between">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="modal.create_jail_title">Create New Jail</h3>
-                <button type="button" onclick="closeModal('createJailModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('createJailModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1259,13 +1291,13 @@
               <div class="mt-4">
                 <div class="mb-4">
                   <label for="newJailName" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.jail_name">Jail Name</label>
-                  <input type="text" id="newJailName" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., sshd" />
+                  <input type="text" id="newJailName" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="modal.jail_name_placeholder" placeholder="e.g., sshd" />
                   <p class="text-xs text-gray-500 mt-1" data-i18n="modal.jail_name_hint">Only alphanumeric characters, dashes, and underscores are allowed.</p>
                 </div>
                 <div class="mb-4">
                   <label for="newJailFilter" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.jail_filter">Filter (optional)</label>
                   <select id="newJailFilter" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="updateJailConfigFromFilter()">
-                    <option value="">-- Select a filter --</option>
+                    <option value="" data-i18n="modal.jail_filter_placeholder">-- Select a filter --</option>
                   </select>
                   <p class="text-xs text-gray-500 mt-1" data-i18n="modal.jail_filter_hint">Selecting a filter will auto-populate the jail configuration.</p>
                 </div>
@@ -1297,7 +1329,7 @@
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
               <div class="flex items-center justify-between">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="modal.create_filter_title">Create New Filter</h3>
-                <button type="button" onclick="closeModal('createFilterModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('createFilterModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1306,7 +1338,7 @@
               <div class="mt-4">
                 <div class="mb-4">
                   <label for="newFilterName" class="block text-sm font-medium text-gray-700 mb-2" data-i18n="modal.filter_name">Filter Name</label>
-                  <input type="text" id="newFilterName" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., myfilter" />
+                  <input type="text" id="newFilterName" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="modal.filter_name_placeholder" placeholder="e.g., myfilter" />
                   <p class="text-xs text-gray-500 mt-1" data-i18n="modal.filter_name_hint">Only alphanumeric characters, dashes, and underscores are allowed.</p>
                 </div>
                 <div class="mb-4">
@@ -1337,7 +1369,7 @@
             <div>
               <div class="flex items-center justify-between">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="servers.modal.title">Manage Fail2ban Servers</h3>
-                <button type="button" onclick="closeModal('serverManagerModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('serverManagerModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1348,24 +1380,20 @@
               </p>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
+              <div class="min-w-0">
                 <h4 class="text-md font-semibold text-gray-800 mb-3" data-i18n="servers.modal.list_title">Registered Servers</h4>
-                <div id="serverManagerList" class="space-y-3 max-h-96 overflow-y-auto pr-1"></div>
+                <div id="serverManagerList" class="min-w-0 space-y-3 max-h-96 overflow-y-auto pr-1"></div>
                 <div id="serverManagerListEmpty" class="text-sm text-gray-500 hidden" data-i18n="servers.modal.list_empty">
                   No servers configured yet. Add your first Fail2ban server using the form on the right.
                 </div>
               </div>
-              <div class="server-manager-modal-form-col">
+              <div id="serverManagerEditorHome" class="min-w-0">
+              <div id="serverManagerEditor" class="server-manager-modal-form-col min-w-0">
                 <div class="flex items-center justify-between mb-3">
                   <h4 class="text-md font-semibold text-gray-800" data-i18n="servers.modal.form_title">Add or Update Server</h4>
                   <button type="button" onclick="resetServerForm()" class="text-sm text-blue-600 hover:text-blue-800 font-medium" data-i18n="servers.form.new_server">New Server</button>
                 </div>
                 <div id="serverManagerInfoView" class="server-manager-info-view text-sm text-gray-600">
-                  <button type="button" onclick="resetServerForm()" class="server-manager-info-add mb-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-blue-200 bg-blue-50 text-blue-600 shadow-sm transition-colors hover:border-blue-400 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                    <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                  </button>
                   <p data-i18n="servers.modal.info_body">
                     Edit an existing server from the list, or create a new connector by clicking the button above.
                   </p>
@@ -1461,12 +1489,14 @@
                     </div>
                   </div>
                   <input type="hidden" id="serverId">
-                  <div class="flex gap-3">
+                  <div class="flex flex-wrap gap-3">
                     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors" data-i18n="servers.form.submit">Save Server</button>
                     <button type="button" class="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors" onclick="resetServerForm()" data-i18n="servers.form.reset">Reset</button>
                   </div>
+                  <button id="serverDeleteButton" type="button" class="hidden text-sm text-red-600 hover:text-red-800" onclick="deleteServer(document.getElementById('serverId').value)" data-i18n="servers.actions.delete">Delete</button>
                 </form>
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -1491,7 +1521,7 @@
                 <h3 class="text-lg leading-6 font-medium text-gray-900">
                   <span data-i18n="logs.modal.whois_title">Whois Information</span> - <span id="whoisModalIP"></span>
                 </h3>
-                <button type="button" onclick="closeModal('whoisModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('whoisModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1521,7 +1551,7 @@
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
               <div class="flex items-center justify-between">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.advanced.test_title">Manually Block / Test</h3>
-                <button type="button" onclick="closeModal('advancedTestModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('advancedTestModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1537,7 +1567,7 @@
           </div>
         </div>
         <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
-          <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm" onclick="submitAdvancedTest('block')" data-i18n="settings.advanced.test_block">Block IP</button>
+          <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm" onclick="submitAdvancedTest()" data-i18n="settings.advanced.test_block">Block IP</button>
           <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('advancedTestModal')" data-i18n="modal.close">Close</button>
         </div>
       </div>
@@ -1557,7 +1587,7 @@
                 <h3 class="text-lg leading-6 font-medium text-gray-900">
                   <span data-i18n="logs.modal.logs_title">Logs</span> - <span id="logsModalIP"></span>
                 </h3>
-                <button type="button" onclick="closeModal('logsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('logsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1592,7 +1622,7 @@
                 <h3 class="text-lg leading-6 font-medium text-gray-900">
                   <span data-i18n="threat.modal.title">Threat intelligence</span> - <span id="threatIntelModalIP"></span>
                 </h3>
-                <button type="button" onclick="closeModal('threatIntelModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('threatIntelModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1633,7 +1663,7 @@
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="logs.modal.insights_title">Ban Insights</h3>
-                <button type="button" onclick="closeModal('banInsightsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('banInsightsModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1752,7 +1782,7 @@
         <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
           <div class="flex items-center justify-between mb-2">
             <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="logs.timeline.block_confirm_title">Confirm permanent block</h3>
-            <button type="button" onclick="closeModal('bulkBlockConfirmModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+            <button type="button" onclick="closeModal('bulkBlockConfirmModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
               <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -1762,7 +1792,7 @@
           <div id="bulkBlockIPList" class="max-h-64 overflow-y-auto font-mono text-xs border border-gray-200 rounded-md p-3 bg-gray-50"></div>
         </div>
         <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-          <button type="button" id="bulkBlockConfirmBtn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm" onclick="confirmBulkBlock()">Block</button>
+          <button type="button" id="bulkBlockConfirmBtn" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm" onclick="confirmBulkBlock()"></button>
           <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm" onclick="closeModal('bulkBlockConfirmModal')" data-i18n="modal.cancel">Cancel</button>
         </div>
       </div>
@@ -1779,7 +1809,7 @@
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
               <div class="flex items-center justify-between">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.elasticsearch.help_title">Elasticsearch Setup Guide</h3>
-                <button type="button" onclick="closeModal('elasticsearchHelpModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('elasticsearchHelpModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1787,22 +1817,22 @@
               </div>
               <div class="mt-4 space-y-4 text-sm">
                 <div>
-                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_template_title">1. Create an Index Template</h4>
-                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_template_desc">Create an index template in Kibana Dev Tools or via the API so Elasticsearch maps the fields correctly:</p>
+                  <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_template_title">1. Create an Index Template (recommended)</h4>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_template_desc">The default data stream works without it. The template keeps the built-in logs settings and lifecycle and adds exact types for the Fail2ban, log and WHOIS fields. Run it in Kibana Dev Tools before the first event:</p>
                   <div class="flex justify-end mt-2 mb-1">
-                    <button type="button" onclick="copyElasticsearchTemplate(this)" class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-200 border border-gray-300 text-gray-600 hover:bg-gray-300 hover:text-gray-800 shadow-sm transition-colors" title="Copy to clipboard">
+                    <button type="button" onclick="copyElasticsearchTemplate(this)" class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-200 border border-gray-300 text-gray-600 hover:bg-gray-300 hover:text-gray-800 shadow-sm transition-colors" data-i18n-title="common.copy_to_clipboard" title="Copy to clipboard">
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                      <span>Copy</span>
+                      <span data-i18n="common.copy">Copy</span>
                     </button>
                   </div>
-                  <pre id="esIndexTemplate" class="bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">PUT _index_template/fail2ban
+                  <pre id="esIndexTemplate" class="bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">PUT _index_template/logs-fail2ban_ui.events
 {
-  "index_patterns": ["fail2ban-events-*"],
+  "index_patterns": ["logs-fail2ban_ui.events-*"],
+  "data_stream": {},
+  "priority": 200,
+  "composed_of": ["logs@mappings", "logs@settings", "logs@custom", "logs-fail2ban_ui.events@custom", "ecs@mappings"],
+  "ignore_missing_component_templates": ["logs@custom", "logs-fail2ban_ui.events@custom"],
   "template": {
-    "settings": {
-      "number_of_shards": 1,
-      "number_of_replicas": 0
-    },
     "mappings": {
       "properties": {
         "@timestamp":                  { "type": "date" },
@@ -1872,7 +1902,7 @@
                 </div>
                 <div>
                   <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_doc_title">2. Document Structure</h4>
-                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_doc_desc">Fail2ban-UI sends ECS-compatible documents with automatic log and WHOIS normalisation. Each ban/unban event can be indexed to fail2ban-events-YYYY.MM.DD:</p>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_doc_desc">Fail2ban-UI sends ECS-compatible documents with automatic log and WHOIS enrichment. Log lines are parsed via grok patterns (Apache, Nginx, sshd, Postfix, etc.) and WHOIS text is extracted into structured fields. Each event is written to the data stream logs-fail2ban_ui.events-default:</p>
                   <pre class="mt-2 bg-gray-100 rounded p-3 text-xs overflow-x-auto font-mono text-gray-800">{
   "@timestamp": "2026-03-05T12:00:00Z",
   "event.kind": "alert",
@@ -1885,6 +1915,9 @@
   "fail2ban.failures": "5",
   "fail2ban.whois": "... (raw text) ...",
   "fail2ban.logs": "... (raw text) ...",
+  "data_stream.type": "logs",
+  "data_stream.dataset": "fail2ban_ui.events",
+  "data_stream.namespace": "default",
 
   "server.address": "code.example.com",
   "source.address": "1.2.3.4",
@@ -1906,19 +1939,19 @@
                 </div>
                 <div>
                   <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_auth_title">3. Authentication</h4>
-                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_auth_desc">Use an API key (preferred) or basic auth with a user that has write access to the fail2ban-events-* indices. Create an API key in Kibana under Stack Management &rarr; API Keys.</p>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_auth_desc">Use an API key (preferred) or basic auth with a user that has the create_doc and auto_configure privileges on logs-fail2ban_ui.events-*. Create an API key in Kibana under Stack Management &rarr; API Keys.</p>
                 </div>
                 <div>
                   <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_savetest_title">4. Save and Test</h4>
-                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_savetest_desc">Save the Fail2ban-UI settings and test the connection to Elasticsearch by clicking the Test button. (This will create the fail2ban-events-* index and ingests as well the first event.)</p>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_savetest_desc">Save the Fail2ban-UI settings and click Test Connection. The test event creates the data stream if it does not exist yet.</p>
                 </div>
                 <div>
                   <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_dataview_title">5. Kibana Data View</h4>
-                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_dataview_desc">In Kibana, go to Stack Management &rarr; Data Views &rarr; Create data view. Use the pattern fail2ban-events-* as name and as index pattern and select @timestamp as the time field.</p>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_dataview_desc">In Kibana, go to Stack Management &rarr; Data Views &rarr; Create data view. Use logs-fail2ban_ui.events-* as name and index pattern and select @timestamp as the time field.</p>
                 </div>
                 <div>
                   <h4 class="font-medium text-gray-900" data-i18n="settings.elasticsearch.help_review_title">6. Review the Data</h4>
-                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_review_desc">In Kibana, go to Discover &rarr; Select the fail2ban-events-* index and you should see your first ingested event.</p>
+                  <p class="text-gray-600 mt-1" data-i18n="settings.elasticsearch.help_review_desc">In Kibana, go to Discover and select the logs-fail2ban_ui.events-* data view. The first event appears there.</p>
                 </div>
               </div>
             </div>
@@ -1942,7 +1975,7 @@
             <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
               <div class="flex items-center justify-between">
                 <h3 class="text-lg leading-6 font-medium text-gray-900" data-i18n="settings.chain_help_title">Default chain</h3>
-                <button type="button" onclick="closeModal('chainHelpModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" aria-label="Close">
+                <button type="button" onclick="closeModal('chainHelpModal')" class="text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600" data-i18n-aria-label="modal.close" aria-label="Close">
                   <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -1979,8 +2012,6 @@
   <!-- ******************************************************************* -->
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/jquery/jquery-3.6.0.min.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/select2/select2.min.js?v={{.version}}"></script>
-  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/globe/globe.gl.min.js?v={{.version}}"></script>
-  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/vendor/echarts/echarts.min.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/globals.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/theme.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/core.js?v={{.version}}"></script>
@@ -2003,6 +2034,7 @@
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/header.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/lotr.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/auth.js?v={{.version}}"></script>
+  <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/operations.js?v={{.version}}"></script>
   <script src="{{if .URLPrefix}}{{.URLPrefix}}{{end}}/static/js/init.js?v={{.version}}"></script>
 </body>
 </html>

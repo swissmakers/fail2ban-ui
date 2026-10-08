@@ -29,6 +29,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
@@ -37,9 +38,10 @@ import (
 // =========================================================================
 
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
+	hub            *Hub
+	conn           *websocket.Conn
+	send           chan []byte
+	canReadConsole bool
 }
 
 type Hub struct {
@@ -100,7 +102,7 @@ func checkWSOrigin(r *http.Request) bool {
 //  Fail2ban-UI WebSocket Hub
 // =========================================================================
 
-// Broadcasts the console log message to all connected clients.
+// Broadcasts the console log message to all connected admin clients.
 func (h *Hub) BroadcastConsoleLog(message string) {
 	logMsg := map[string]interface{}{
 		"type":    "console_log",
@@ -141,6 +143,23 @@ func (h *Hub) BroadcastToast(level, message string) {
 	}
 }
 
+// Pushes health state transition -> carries no error text because every viewer receives it
+func (h *Hub) BroadcastServerHealth(serverID string, health fail2ban.ServerHealth) {
+	data, err := json.Marshal(map[string]any{
+		"type": "server_health",
+		"data": map[string]any{"serverId": serverID, "state": health.State, "checkedAt": health.CheckedAt},
+	})
+	if err != nil {
+		log.Printf("Error marshaling server health: %v", err)
+		return
+	}
+	select {
+	case h.broadcast <- data:
+	default:
+		log.Printf("Broadcast channel full, dropping server health")
+	}
+}
+
 // Creates new Hub instance.
 func NewHub() *Hub {
 	return &Hub{
@@ -174,19 +193,50 @@ func (h *Hub) Run() {
 			log.Printf("WebSocket client disconnected. Total clients: %d", len(h.clients))
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
-			}
-			h.mu.RUnlock()
+			h.deliver(message)
 
 		case <-ticker.C:
 			h.sendHeartbeat()
+		}
+	}
+}
+
+// Event readers must not receive admin console traffic on the shared socket.
+func (h *Hub) deliver(message []byte) {
+	var envelope struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(message, &envelope); err != nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	publicMessage := message
+	if envelope.Type == "operation" {
+		var event struct {
+			Type string          `json:"type"`
+			Data publicOperation `json:"data"`
+		}
+		if json.Unmarshal(message, &event) == nil {
+			event.Data = redactOperation(event.Data, false)
+			if encoded, err := json.Marshal(event); err == nil {
+				publicMessage = encoded
+			}
+		}
+	}
+	for client := range h.clients {
+		if envelope.Type == "console_log" && !client.canReadConsole {
+			continue
+		}
+		payload := message
+		if !client.canReadConsole {
+			payload = publicMessage
+		}
+		select {
+		case client.send <- payload:
+		default:
+			close(client.send)
+			delete(h.clients, client)
 		}
 	}
 }
@@ -203,7 +253,7 @@ func (h *Hub) sendHeartbeat() {
 		return
 	}
 
-	h.mu.RLock()
+	h.mu.Lock()
 	for client := range h.clients {
 		select {
 		case client.send <- data:
@@ -212,7 +262,7 @@ func (h *Hub) sendHeartbeat() {
 			delete(h.clients, client)
 		}
 	}
-	h.mu.RUnlock()
+	h.mu.Unlock()
 }
 
 // =========================================================================
@@ -317,29 +367,22 @@ func (c *Client) writePump() {
 	}
 }
 
-// Serves the WebSocket connection.
-func serveWS(hub *Hub, c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
-		return
-	}
-
-	client := &Client{
-		hub:  hub,
-		conn: conn,
-		send: make(chan []byte, 256),
-	}
-
-	client.hub.register <- client
-
-	go client.writePump()
-	go client.readPump()
-}
-
-// This is called from routes.go and returns the Gin handler for WebSocket connections.
+// Returns the Gin handler that upgrades a request to a WebSocket client of hub
 func WebSocketHandler(hub *Hub) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		serveWS(hub, c)
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Printf("WebSocket upgrade error: %v", err)
+			return
+		}
+		client := &Client{
+			hub:            hub,
+			conn:           conn,
+			send:           make(chan []byte, 256),
+			canReadConsole: userHasAdminAccess(c),
+		}
+		client.hub.register <- client
+		go client.writePump()
+		go client.readPump()
 	}
 }

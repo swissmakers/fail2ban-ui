@@ -1,6 +1,22 @@
 // LOTR Mode functions for Fail2ban UI
 "use strict";
 
+// Keys rendered with LOTR wording while the mode is active.
+var LOTR_KEY_OVERRIDES = {
+  'page.title': 'lotr.page_title',
+  'dashboard.cards.total_banned': 'lotr.threats_banished',
+  'dashboard.table.banned_ips': 'lotr.threats_banished',
+  'dashboard.search_label': 'lotr.search_banished',
+  'dashboard.manage_servers': 'lotr.manage_realms',
+  'dashboard.unban': 'lotr.restore_to_realm',
+  'dashboard.ban.confirm': 'lotr.confirm_ban',
+  'dashboard.unban.confirm': 'lotr.confirm_unban'
+};
+
+function lotrI18nKey(key) {
+  return isLOTRModeActive && Object.prototype.hasOwnProperty.call(LOTR_KEY_OVERRIDES, key) ? LOTR_KEY_OVERRIDES[key] : key;
+}
+
 function isLOTRMode(alertCountries) {
   if (!alertCountries || !Array.isArray(alertCountries)) {
     return false;
@@ -21,19 +37,14 @@ function applyLOTRTheme(active) {
     }
     body.classList.add('lotr-mode');
     isLOTRModeActive = true;
-    console.log('🎭 LOTR Mode Activated - Welcome to Middle-earth!');
   } else {
     body.classList.remove('lotr-mode');
     if (lotrCSS) {
       lotrCSS.disabled = true;
     }
     isLOTRModeActive = false;
-    if (typeof syncSystemTheme === 'function') {
-      syncSystemTheme();
-    }
-    console.log('🎭 LOTR Mode Deactivated');
   }
-  if (active && typeof syncSystemTheme === 'function') {
+  if (typeof syncSystemTheme === 'function') {
     syncSystemTheme();
   }
   void body.offsetHeight;
@@ -41,69 +52,16 @@ function applyLOTRTheme(active) {
 
 function checkAndApplyLOTRTheme(alertCountries) {
   const shouldBeActive = isLOTRMode(alertCountries);
-  if (shouldBeActive !== isLOTRModeActive) {
-    applyLOTRTheme(shouldBeActive);
-    updateLOTRTerminology(shouldBeActive);
+  if (shouldBeActive === isLOTRModeActive) {
+    return;
   }
-}
-
-function updateLOTRTerminology(active) {
-  if (active) {
-    const navTitle = document.querySelector('nav .text-xl');
-    if (navTitle) {
-      navTitle.textContent = 'Middle-earth Security';
-    }
-    const pageTitle = document.querySelector('title');
-    if (pageTitle) {
-      pageTitle.textContent = 'Middle-earth Security Realm';
-    }
-    updateDashboardLOTRTerminology(true);
+  applyLOTRTheme(shouldBeActive);
+  if (shouldBeActive) {
     addLOTRDecorations();
   } else {
-    const navTitle = document.querySelector('nav .text-xl');
-    if (navTitle) {
-      navTitle.textContent = 'Fail2ban UI';
-    }
-    const pageTitle = document.querySelector('title');
-    if (pageTitle && pageTitle.hasAttribute('data-i18n')) {
-      const i18nKey = pageTitle.getAttribute('data-i18n');
-      pageTitle.textContent = t(i18nKey, 'Fail2ban UI Dashboard');
-    }
-    updateDashboardLOTRTerminology(false);
     removeLOTRDecorations();
   }
-}
-
-function updateDashboardLOTRTerminology(active) {
-  const elements = document.querySelectorAll('[data-i18n]');
-  elements.forEach(el => {
-    const i18nKey = el.getAttribute('data-i18n');
-    if (active) {
-      if (i18nKey === 'dashboard.cards.total_banned') {
-        el.textContent = t('lotr.threats_banished', 'Threats Banished');
-      } else if (i18nKey === 'dashboard.table.banned_ips') {
-        el.textContent = t('lotr.threats_banished', 'Threats Banished');
-      } else if (i18nKey === 'dashboard.search_label') {
-        el.textContent = t('lotr.threats_banished', 'Search Banished Threats');
-      } else if (i18nKey === 'dashboard.manage_servers') {
-        el.textContent = t('lotr.realms_protected', 'Manage Realms');
-      }
-    } else {
-      if (i18nKey) {
-        el.textContent = t(i18nKey, el.textContent);
-      }
-    }
-  });
-  const unbanButtons = document.querySelectorAll('button, a');
-  unbanButtons.forEach(btn => {
-    if (btn.textContent && btn.textContent.includes('Unban')) {
-      if (active) {
-        btn.textContent = btn.textContent.replace(/Unban/gi, t('lotr.banished', 'Restore to Realm'));
-      } else {
-        btn.textContent = btn.textContent.replace(/Restore to Realm/gi, t('dashboard.unban', 'Unban'));
-      }
-    }
-  });
+  updateTranslations();
 }
 
 function addLOTRDecorations() {

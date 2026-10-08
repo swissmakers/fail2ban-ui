@@ -45,7 +45,7 @@ function showToast(message, type, duration) {
 
   var closeBtn = document.createElement('button');
   closeBtn.className = 'flex-shrink-0 ml-2 mt-0.5 opacity-60 hover:opacity-100 focus:outline-none';
-  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.setAttribute('aria-label', t('modal.close', 'Close'));
   closeBtn.innerHTML = '<i class="fas fa-times text-sm"></i>';
 
   wrapper.appendChild(textSpan);
@@ -71,48 +71,58 @@ function showToast(message, type, duration) {
   }, duration || 5000);
 }
 
-// One function for both ban and unban events
-function showBanEventToast(event) {
-  var container = document.getElementById('toast-container');
-  if (!container || !event) return;
-  
+// Shared by live events and completed background ban/unban actions.
+function banEventToastHTML(event, operationId) {
   var isUnban = event.eventType === 'unban';
-  var toast = document.createElement('div');
-  toast.className = isUnban ? 'toast toast-unban-event' : 'toast toast-ban-event';
-  
-  var ip = event.ip || 'Unknown IP';
-  var jail = event.jail || 'Unknown Jail';
-  var server = event.serverName || event.serverId || 'Unknown Server';
+  var unknown = t('common.unknown', 'Unknown');
+  var ip = event.ip || unknown;
+  var jail = event.jail || unknown;
+  var server = event.serverName || event.serverId || unknown;
   var country = event.country || '';
-  
+
   var title = isUnban ? t('toast.unban.title', 'IP unblocked') : t('toast.ban.title', 'New block occurred');
   var action = isUnban ? t('toast.unban.action', 'unblocked from') : t('toast.ban.action', 'banned in');
   var icon = isUnban ? 'fas fa-check-circle text-green-400' : 'fas fa-shield-alt text-red-500';
-  
-  toast.innerHTML = ''
+
+  return ''
     + '<div class="flex items-start gap-3">'
     + '  <div class="flex-shrink-0 mt-1">'
     + '    <i class="' + icon + '"></i>'
     + '  </div>'
     + '  <div class="flex-1 min-w-0">'
-    + '    <div class="font-semibold text-sm">' + title + '</div>'
+    + '    <div class="font-semibold text-sm">' + escapeHtml(title) + '</div>'
     + '    <div class="text-sm mt-1">'
     + '      <span class="font-mono font-semibold">' + escapeHtml(ip) + '</span>'
-    + '      <span> ' + action + ' </span>'
+    + '      <span> ' + escapeHtml(action) + ' </span>'
     + '      <span class="font-semibold">' + escapeHtml(jail) + '</span>'
     + '    </div>'
     + '    <div class="text-xs text-gray-400 mt-1">'
     + '      ' + escapeHtml(server) + (country ? ' - ' + escapeHtml(country) : '')
     + '    </div>'
     + '  </div>'
-    + '  <button class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="Close">'
+    + '  <button type="button"' + (operationId ? ' data-dismiss-operation="' + escapeHtml(operationId) + '"' : '') + ' class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="' + escapeHtml(t('modal.close', 'Close')) + '">'
     + '    <i class="fas fa-times text-sm"></i>'
     + '  </button>'
     + '</div>';
+}
+
+// One function for both ban and unban events
+function showBanEventToast(event) {
+  var container = document.getElementById('toast-container');
+  if (!container || !event) return;
+  if (typeof handleOperationBanEventToast === 'function' && handleOperationBanEventToast(event)) return;
+
+  var isUnban = event.eventType === 'unban';
+  var toast = document.createElement('div');
+  var visible = true;
+  toast.className = isUnban ? 'toast toast-unban-event' : 'toast toast-ban-event';
+
+  toast.innerHTML = banEventToastHTML(event);
 
   var closeBtn = toast.querySelector('button');
   closeBtn.addEventListener('click', function(e) {
     e.stopPropagation();
+    visible = false;
     clearTimeout(autoRemoveTimer);
     toast.classList.remove('show');
     setTimeout(function() { toast.remove(); }, 300);
@@ -125,20 +135,28 @@ function showBanEventToast(event) {
       logSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   });
-  
+
   toast.style.cursor = 'pointer';
   container.appendChild(toast);
-  
+
   requestAnimationFrame(function() {
     toast.classList.add('show');
   });
-  
+
   var autoRemoveTimer = setTimeout(function() {
+    visible = false;
     toast.classList.remove('show');
     setTimeout(function() {
       toast.remove();
     }, 300);
   }, 5000);
+  if (typeof rememberBanEventToast === 'function') {
+    rememberBanEventToast(event, function() {
+      clearTimeout(autoRemoveTimer);
+      visible = false;
+      toast.remove();
+    }, function() { return visible; });
+  }
 }
 
 // =========================================================================
@@ -166,7 +184,7 @@ function escapeJs(value) {
     switch (match) {
       case '\\': return '\\\\';
       case "'": return "\\'";
-      case '"': return '\\"';
+      case '"': return '\\x22';
       case '<': return '\\x3C';
       case '>': return '\\x3E';
       case '&': return '\\x26';
@@ -196,6 +214,10 @@ function formatDateTime(value) {
   var date = new Date(value);
   if (isNaN(date.getTime())) {
     return value;
+  }
+  // Go zero time (0001-01-01T00:00:00Z) means "never".
+  if (date.getUTCFullYear() <= 1) {
+    return '';
   }
   var year = date.getFullYear();
   var month = String(date.getMonth() + 1).padStart(2, '0');
@@ -239,7 +261,8 @@ function displayExternalIP() {
 
   const tryProvider = (index) => {
     if (index >= providers.length) {
-      target.textContent = 'Unavailable';
+      target.setAttribute('data-i18n', 'dashboard.external_ip_unavailable');
+      target.textContent = t('dashboard.external_ip_unavailable', 'Unavailable');
       return;
     }
     const provider = providers[index];
@@ -250,11 +273,9 @@ function displayExternalIP() {
       })
       .then(data => {
         const ip = provider.extract(data);
-        if (ip) {
-          target.textContent = ip;
-        } else {
-          throw new Error('Missing IP');
-        }
+        if (!ip) throw new Error('Missing IP');
+        target.removeAttribute('data-i18n');
+        target.textContent = ip;
       })
       .catch(() => {
         tryProvider(index + 1);
@@ -264,34 +285,23 @@ function displayExternalIP() {
   tryProvider(0);
 }
 
+// Clicking the external IP searches the banned lists for it.
+function bindExternalIPSearch() {
+  const target = document.getElementById('external-ip');
+  if (!target) return;
+  target.addEventListener('click', function() {
+    const searchInput = document.getElementById('ipSearch');
+    if (!searchInput || target.hasAttribute('data-i18n')) return;
+    searchInput.value = target.textContent.trim();
+    filterIPs();
+    searchInput.focus();
+    searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
 // =========================================================================
 //  UI Initialization
 // =========================================================================
-
-function initializeTooltips() {
-  const tooltips = document.querySelectorAll('[data-tooltip]');
-  tooltips.forEach(el => {
-    el.addEventListener('mouseenter', () => {
-      const tooltip = document.createElement('div');
-      tooltip.className = 'absolute z-10 bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap';
-      tooltip.textContent = el.getAttribute('data-tooltip');
-      tooltip.style.top = (el.offsetTop - 30) + 'px';
-      tooltip.style.left = (el.offsetLeft + (el.offsetWidth / 2) - (tooltip.offsetWidth / 2)) + 'px';
-      tooltip.id = 'tooltip-' + Date.now();
-      document.body.appendChild(tooltip);
-      el.setAttribute('data-tooltip-id', tooltip.id);
-    });
-    
-    el.addEventListener('mouseleave', () => {
-      const tooltipId = el.getAttribute('data-tooltip-id');
-      if (tooltipId) {
-        const tooltip = document.getElementById(tooltipId);
-        if (tooltip) tooltip.remove();
-        el.removeAttribute('data-tooltip-id');
-      }
-    });
-  });
-}
 
 // Restrict the IP search input to common IP search characters.
 function initializeSearch() {

@@ -19,7 +19,14 @@ package shared
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
+)
+
+var (
+	// An action.d name with optional [key=value,...] arguments, e.g. nftables[type=allports].
+	banactionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(\[[A-Za-z0-9_.,=:/ -]{0,128}\])?$`)
+	chainRe     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 )
 
 // Ensures a value is a well-formed IPv4/IPv6 address or CIDR before it is handed to fail2ban-client
@@ -61,4 +68,30 @@ func SplitCommaList(value string) []string {
 		}
 	}
 	return out
+}
+
+// Checks one ignoreip entry: an IP, a CIDR range or a hostname.
+func ValidateIgnoreIPEntry(entry string) error {
+	if ValidateIP(entry) == nil {
+		return nil
+	}
+	labels := strings.Split(entry, ".")
+	if strings.ContainsAny(entry, ":/") || ValidateHost(entry) != nil || strings.Trim(labels[len(labels)-1], "0123456789") == "" {
+		return fmt.Errorf("invalid ignoreip entry %q: use an IP address, CIDR range or hostname", entry)
+	}
+	return nil
+}
+
+func ValidateBanactionName(name string) error {
+	if !banactionRe.MatchString(name) {
+		return fmt.Errorf("invalid banaction %q", name)
+	}
+	return nil
+}
+
+func ValidateChainName(name string) error {
+	if !chainRe.MatchString(name) {
+		return fmt.Errorf("invalid chain name %q", name)
+	}
+	return nil
 }

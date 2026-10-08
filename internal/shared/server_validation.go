@@ -24,11 +24,11 @@ import (
 )
 
 var (
-	// A hostname or IP literal
+	// Hostname or IP literal
 	hostRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:_-]*$`)
-	// A POSIX-ish user name
+	// POSIX-ish user name
 	sshUserRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*$`)
-	// An absolute filesystem path with no shell
+	// Absolute filesystem path with no shell
 	absPathRe = regexp.MustCompile(`^[A-Za-z0-9 ._/-]+$`)
 )
 
@@ -42,7 +42,7 @@ func ValidateHost(host string) error {
 	return nil
 }
 
-// Checks an SSH login name. The value must already be normalized (trimmed).
+// Checks SSH login name. The value must already be normalized (trimmed).
 func ValidateSSHUser(user string) error {
 	if user == "" {
 		return fmt.Errorf("sshUser cannot be empty")
@@ -53,7 +53,7 @@ func ValidateSSHUser(user string) error {
 	return nil
 }
 
-// Checks a filesystem path used for a key, socket or config root.
+// Checks filesystem path used for a key, socket or config root.
 func ValidateAbsolutePath(path, label string) error {
 	if path == "" {
 		return nil
@@ -74,6 +74,11 @@ func ValidateAbsolutePath(path, label string) error {
 }
 
 func ValidateServerFields(srv Fail2banServer) error {
+	if srv.ID != "" {
+		if err := ValidateServerID(srv.ID); err != nil {
+			return err
+		}
+	}
 	switch srv.Type {
 	case "", "local":
 		if err := ValidateAbsolutePath(srv.SocketPath, "socketPath"); err != nil {

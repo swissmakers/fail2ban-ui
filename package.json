@@ -4,7 +4,7 @@
   "description": "Fail2Ban-UI is a Swiss-made management platform for Fail2Ban. It provides a central place to monitor, configure, and manage Fail2Ban across one or more hosts, supporting both local and remote Fail2Ban servers.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/js/*.test.cjs"
   },
   "repository": {
     "type": "git",

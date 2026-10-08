@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build script for Tailwind CSS v3
 # This script builds Tailwind CSS for production use
-# Always installs latest Tailwind CSS v3 (matches CDN version)
+# Always installs latest Tailwind CSS v3
 
 set -e
 
@@ -35,7 +35,7 @@ npm install -D tailwindcss@^3 --silent
 
 # Verify the CLI binary exists
 if [ ! -f "node_modules/.bin/tailwindcss" ] && [ ! -f "node_modules/tailwindcss/lib/cli.js" ]; then
-    echo "❌ Error: Tailwind CSS CLI not found after installation."
+    echo "Error: Tailwind CSS CLI not found after installation."
     exit 1
 fi
 
@@ -82,17 +82,17 @@ elif [ -f "node_modules/tailwindcss/lib/cli.js" ]; then
 elif command -v npx &> /dev/null; then
     npx --yes tailwindcss -i .tailwind-build/input.css -o pkg/web/static/tailwind.css --minify
 else
-    echo "❌ Error: Could not find Tailwind CSS CLI"
+    echo "Error: Could not find Tailwind CSS CLI"
     exit 1
 fi
 
 # Verify output file was created and is not empty
 if [ ! -f "pkg/web/static/tailwind.css" ] || [ ! -s "pkg/web/static/tailwind.css" ]; then
-    echo "❌ Error: Output file was not created or is empty"
+    echo "Error: Output file was not created or is empty"
     exit 1
 fi
 
-echo "✅ Tailwind CSS v3 built successfully!"
+echo "Tailwind CSS v3 built successfully."
 echo "Output: pkg/web/static/tailwind.css"
 echo ""
 echo "The application will now use the local Tailwind CSS file instead of the CDN."

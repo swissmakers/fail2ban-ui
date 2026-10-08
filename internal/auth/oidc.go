@@ -35,7 +35,6 @@ import (
 // =========================================================================
 
 type OIDCClient struct {
-	Provider     *oidc.Provider
 	Verifier     *oidc.IDTokenVerifier
 	OAuth2Config *oauth2.Config
 	Config       *config.OIDCConfig
@@ -179,7 +178,6 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 	})
 
 	oidcClient = &OIDCClient{
-		Provider:     provider,
 		Verifier:     verifier,
 		OAuth2Config: oauth2Config,
 		Config:       cfg,
@@ -231,6 +229,23 @@ func claimByPath(claims map[string]interface{}, path string) interface{} {
 		current = m[part]
 	}
 	return current
+}
+
+// "email" never falls back; any other claim falls back to preferred_username, then email.
+func usernameFromClaims(claims map[string]interface{}, usernameClaim string) string {
+	get := func(name string) string {
+		s, _ := claims[name].(string)
+		return s
+	}
+	if usernameClaim == "email" {
+		return get("email")
+	}
+	for _, name := range []string{usernameClaim, "preferred_username", "email"} {
+		if s := get(name); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func stringSliceFromClaim(value interface{}) []string {
@@ -287,13 +302,11 @@ func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*Use
 	}
 
 	var claims struct {
-		Subject           string `json:"sub"`
-		Email             string `json:"email"`
-		EmailVerified     bool   `json:"email_verified"`
-		Name              string `json:"name"`
-		PreferredUsername string `json:"preferred_username"`
-		GivenName         string `json:"given_name"`
-		FamilyName        string `json:"family_name"`
+		Subject    string `json:"sub"`
+		Email      string `json:"email"`
+		Name       string `json:"name"`
+		GivenName  string `json:"given_name"`
+		FamilyName string `json:"family_name"`
 	}
 
 	if err := idToken.Claims(&claims); err != nil {
@@ -308,35 +321,11 @@ func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*Use
 
 	userInfo := &UserInfo{
 		ID:          claims.Subject,
+		Username:    usernameFromClaims(allClaims, c.Config.UsernameClaim),
 		Email:       claims.Email,
 		Name:        claims.Name,
 		Roles:       roles,
 		AccessLevel: accessLevelForRoles(c.Config, roles),
-	}
-
-	switch c.Config.UsernameClaim {
-	case "email":
-		userInfo.Username = claims.Email
-	case "preferred_username":
-		userInfo.Username = claims.PreferredUsername
-		if userInfo.Username == "" {
-			userInfo.Username = claims.Email
-		}
-	default:
-		var claimValue interface{}
-		if err := idToken.Claims(&map[string]interface{}{
-			c.Config.UsernameClaim: &claimValue,
-		}); err == nil {
-			if str, ok := claimValue.(string); ok {
-				userInfo.Username = str
-			}
-		}
-		if userInfo.Username == "" {
-			userInfo.Username = claims.PreferredUsername
-			if userInfo.Username == "" {
-				userInfo.Username = claims.Email
-			}
-		}
 	}
 
 	if userInfo.Name == "" {

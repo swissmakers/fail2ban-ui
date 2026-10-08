@@ -19,6 +19,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -179,14 +180,14 @@ func TestBanEventsFTSSearchAndEnrichment(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	id1, err := RecordBanEvent(ctx, BanEventRecord{
+	id1, _, err := RecordBanEventOnce(ctx, BanEventRecord{
 		ServerID: "srv-1", ServerName: "web frontend", Jail: "swissmakers-nextcloud",
 		IP: "203.0.113.45", Country: "UA", EventType: "ban",
 	})
 	if err != nil || id1 <= 0 {
 		t.Fatalf("RecordBanEvent: id=%d err=%v", id1, err)
 	}
-	id2, err := RecordBanEvent(ctx, BanEventRecord{
+	id2, _, err := RecordBanEventOnce(ctx, BanEventRecord{
 		ServerID: "srv-2", ServerName: "mail relay", Jail: "postfix-sasl",
 		IP: "198.51.100.7", EventType: "ban",
 	})
@@ -277,7 +278,7 @@ func TestBanEventsFTSBackfillsExistingRows(t *testing.T) {
 		}
 	}
 	ftsAvailable = false
-	if _, err := RecordBanEvent(ctx, BanEventRecord{
+	if _, _, err := RecordBanEventOnce(ctx, BanEventRecord{
 		ServerID: "srv-1", ServerName: "legacy box", Jail: "sshd",
 		IP: "192.0.2.99", Country: "DE", EventType: "ban",
 		OccurredAt: time.Now().UTC().Add(-time.Hour),
@@ -320,7 +321,7 @@ func TestCountRecentBanEventsByJail(t *testing.T) {
 		{ServerID: "srv-2", ServerName: "server 2", Jail: "sshd", IP: "192.0.2.14", EventType: "ban", OccurredAt: now.Add(-5 * time.Minute)},
 	}
 	for _, event := range events {
-		if _, err := RecordBanEvent(ctx, event); err != nil {
+		if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent: %v", err)
 		}
 	}
@@ -347,7 +348,7 @@ func TestRecordBanEventUsesSortableStorageTime(t *testing.T) {
 		EventType:  "ban",
 		OccurredAt: occurredAt,
 	}
-	if _, err := RecordBanEvent(ctx, event); err != nil {
+	if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
 		t.Fatalf("RecordBanEvent: %v", err)
 	}
 
@@ -392,7 +393,7 @@ func TestListBanEventsFilteredOmitsHeavyFields(t *testing.T) {
 		OccurredAt: now.Add(-2 * time.Minute),
 	}
 	for _, event := range []BanEventRecord{withDetail, withoutDetail} {
-		if _, err := RecordBanEvent(ctx, event); err != nil {
+		if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent: %v", err)
 		}
 	}
@@ -504,7 +505,7 @@ func TestBanEventFilterUntilIsExclusive(t *testing.T) {
 		cutoff,
 		cutoff.Add(time.Minute),
 	} {
-		if _, err := RecordBanEvent(ctx, BanEventRecord{
+		if _, _, err := RecordBanEventOnce(ctx, BanEventRecord{
 			ServerID: "srv-1", ServerName: "server 1", Jail: "sshd",
 			IP: "192.0.2.10", EventType: "ban", OccurredAt: occurredAt,
 		}); err != nil {
@@ -539,7 +540,7 @@ func TestBanEventTimelineBucketsAndZeroFill(t *testing.T) {
 		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.4", EventType: "ban", OccurredAt: base.Add(4 * time.Hour)},
 	}
 	for i, event := range events {
-		if _, err := RecordBanEvent(ctx, event); err != nil {
+		if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent %d: %v", i, err)
 		}
 	}
@@ -574,11 +575,12 @@ func TestListBanEventIPsAggregatesAndTruncates(t *testing.T) {
 	events := []BanEventRecord{
 		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", Country: "DE", EventType: "ban", OccurredAt: base},
 		{ServerID: "srv-1", ServerName: "s1", Jail: "nginx", IP: "192.0.2.1", Country: "DE", EventType: "ban", OccurredAt: base.Add(10 * time.Minute)},
-		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "unban", OccurredAt: base.Add(20 * time.Minute)}, // not counted
+		// not counted
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "unban", OccurredAt: base.Add(20 * time.Minute)},
 		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "198.51.100.7", Country: "BR", EventType: "ban", OccurredAt: base.Add(5 * time.Minute)},
 	}
 	for i, event := range events {
-		if _, err := RecordBanEvent(ctx, event); err != nil {
+		if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent %d: %v", i, err)
 		}
 	}
@@ -626,7 +628,7 @@ func TestListBanEventIPActivityFindsOverlappingDays(t *testing.T) {
 		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "203.0.113.9", EventType: "ban", OccurredAt: earlier.Add(2 * time.Minute)},
 	}
 	for i, event := range events {
-		if _, err := RecordBanEvent(ctx, event); err != nil {
+		if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent %d: %v", i, err)
 		}
 	}
@@ -655,13 +657,16 @@ func TestCountBanEventTotals(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
 	events := []BanEventRecord{
-		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "ban", OccurredAt: now.Add(-time.Hour)},           // today+week
-		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.2", EventType: "ban", OccurredAt: now.Add(-3 * 24 * time.Hour)},  // week
-		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.3", EventType: "ban", OccurredAt: now.Add(-30 * 24 * time.Hour)}, // overall only
+		// today+week
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", EventType: "ban", OccurredAt: now.Add(-time.Hour)},
+		// week
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.2", EventType: "ban", OccurredAt: now.Add(-3 * 24 * time.Hour)},
+		// overall only
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.3", EventType: "ban", OccurredAt: now.Add(-30 * 24 * time.Hour)},
 		{ServerID: "srv-2", ServerName: "s2", Jail: "sshd", IP: "192.0.2.4", EventType: "ban", OccurredAt: now.Add(-time.Hour)},
 	}
 	for i, event := range events {
-		if _, err := RecordBanEvent(ctx, event); err != nil {
+		if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
 			t.Fatalf("RecordBanEvent %d: %v", i, err)
 		}
 	}
@@ -687,21 +692,21 @@ func TestLatestBanEnrichmentForIP(t *testing.T) {
 	initTestStorage(t)
 	ctx := context.Background()
 
-	if _, err := RecordBanEvent(ctx, BanEventRecord{
+	if _, _, err := RecordBanEventOnce(ctx, BanEventRecord{
 		ServerID: "srv-1", ServerName: "s", Jail: "sshd", IP: "203.0.113.99",
 		Country: "DE", Whois: "old whois", EventType: "ban",
 		OccurredAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("RecordBanEvent: %v", err)
 	}
-	if _, err := RecordBanEvent(ctx, BanEventRecord{
+	if _, _, err := RecordBanEventOnce(ctx, BanEventRecord{
 		ServerID: "srv-1", ServerName: "s", Jail: "sshd", IP: "203.0.113.99",
 		Country: "CH", Whois: "new whois", EventType: "ban",
 		OccurredAt: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("RecordBanEvent: %v", err)
 	}
-	if _, err := RecordBanEvent(ctx, BanEventRecord{
+	if _, _, err := RecordBanEventOnce(ctx, BanEventRecord{
 		ServerID: "srv-1", ServerName: "s", Jail: "sshd", IP: "203.0.113.99",
 		EventType:  "unban",
 		OccurredAt: time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC),
@@ -723,5 +728,86 @@ func TestLatestBanEnrichmentForIP(t *testing.T) {
 	}
 	if country != "" || whois != "" {
 		t.Fatalf("miss returned country=%q whois=%q, want empty", country, whois)
+	}
+}
+
+func TestCountsExcludeUnbans(t *testing.T) {
+	initTestStorage(t)
+	ctx := context.Background()
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	events := []BanEventRecord{
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", Country: "CH", EventType: "ban", OccurredAt: now.Add(-time.Hour)},
+		{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: "192.0.2.1", Country: "CH", EventType: "unban", OccurredAt: now.Add(-30 * time.Minute)},
+	}
+	for i, event := range events {
+		if _, _, err := RecordBanEventOnce(ctx, event); err != nil {
+			t.Fatalf("RecordBanEventOnce %d: %v", i, err)
+		}
+	}
+	since := now.Add(-24 * time.Hour)
+	if overall, today, week, err := CountBanEventTotals(ctx, "", now); err != nil || overall != 1 || today != 1 || week != 1 {
+		t.Fatalf("totals = %d/%d/%d err=%v, want 1/1/1", overall, today, week, err)
+	}
+	if byServer, err := CountBanEventsByServer(ctx, since); err != nil || byServer["srv-1"] != 1 {
+		t.Fatalf("by server = %v err=%v, want srv-1:1", byServer, err)
+	}
+	if byCountry, err := CountBanEventsByCountry(ctx, since, ""); err != nil || byCountry["CH"] != 1 {
+		t.Fatalf("by country = %v err=%v, want CH:1", byCountry, err)
+	}
+}
+
+func TestEnsureSchemaDropsRedundantIndexes(t *testing.T) {
+	initTestStorage(t)
+	ctx := context.Background()
+	for _, ddl := range []string{
+		"CREATE INDEX idx_ban_events_server_id ON ban_events(server_id)",
+		"CREATE INDEX idx_perm_blocks_status ON permanent_blocks(status)",
+	} {
+		if _, err := db.ExecContext(ctx, ddl); err != nil {
+			t.Fatalf("%s: %v", ddl, err)
+		}
+	}
+	if err := ensureSchema(ctx); err != nil {
+		t.Fatalf("ensureSchema: %v", err)
+	}
+	for _, name := range []string{"idx_ban_events_server_id", "idx_perm_blocks_status"} {
+		var n int
+		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?", name).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("index %s: count=%d err=%v, want dropped", name, n, err)
+		}
+	}
+}
+
+func TestListBanEventsFilteredOffset(t *testing.T) {
+	initTestStorage(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		ev := BanEventRecord{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: fmt.Sprintf("192.0.2.%d", i+1), EventType: "ban", OccurredAt: now.Add(-time.Duration(i) * time.Minute)}
+		if _, _, err := RecordBanEventOnce(ctx, ev); err != nil {
+			t.Fatalf("RecordBanEventOnce: %v", err)
+		}
+	}
+	tests := []struct {
+		name   string
+		offset int
+		want   int
+	}{
+		{"first page", 0, 3},
+		{"second item on", 1, 2},
+		{"negative offset starts at the top", -5, 3},
+		{"at the cap", MaxBanEventsOffset, 0},
+		{"past the cap ends the list instead of restarting it", MaxBanEventsOffset + 1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			events, err := ListBanEventsFiltered(ctx, BanEventFilter{}, 10, tt.offset)
+			if err != nil {
+				t.Fatalf("ListBanEventsFiltered: %v", err)
+			}
+			if events == nil || len(events) != tt.want {
+				t.Errorf("offset %d returned %v (%d events), want a list of %d", tt.offset, events, len(events), tt.want)
+			}
+		})
 	}
 }

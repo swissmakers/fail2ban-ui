@@ -62,10 +62,7 @@ func TestParseHostKeyError(t *testing.T) {
 		if hk.Fingerprint != "SHA256:31qptbbgMC2I2FWQsTsaKadlJA0UUgZFHYOr+83qzlA" {
 			t.Errorf("fingerprint = %q", hk.Fingerprint)
 		}
-		if hk.KeyType != "ED25519" {
-			t.Errorf("key type = %q", hk.KeyType)
-		}
-		if hk.Host != "127.0.0.1" || hk.Port != 2222 || hk.ServerID != "srv-1" {
+		if hk.Host != "127.0.0.1" || hk.ServerID != "srv-1" {
 			t.Errorf("server identity not carried: %+v", hk)
 		}
 	})

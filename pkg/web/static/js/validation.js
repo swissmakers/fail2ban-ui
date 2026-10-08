@@ -4,13 +4,12 @@
 //  Field Validators
 // =========================================================================
 
-function validateTimeFormat(value, fieldName) {
+function validateTimeFormat(value) {
   if (!value || !value.trim()) return { valid: true };
-  const timePattern = /^\d+([smhdwy]|mo)$/i;
-  if (!timePattern.test(value.trim())) {
-    return { 
-      valid: false, 
-      message: 'Invalid time format. Use format: 1m = 1 minute, 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1mo = 1 month, 1y = 1 year'
+  if (!/^\d+([smhdwy]|mo)$/i.test(value.trim())) {
+    return {
+      valid: false,
+      message: t('settings.validation.time_format', 'Invalid time format. Use: 1m = 1 minute, 1h = 1 hour, 1d = 1 day, 1w = 1 week, 1mo = 1 month, 1y = 1 year')
     };
   }
   return { valid: true };
@@ -20,9 +19,9 @@ function validateMaxRetry(value) {
   if (!value || value.trim() === '') return { valid: true };
   const num = parseInt(value, 10);
   if (isNaN(num) || num < 1) {
-    return { 
-      valid: false, 
-      message: 'Max retry must be a positive integer (minimum 1)' 
+    return {
+      valid: false,
+      message: t('settings.validation.max_retry', 'Max retry must be a positive integer (minimum 1)')
     };
   }
   return { valid: true };
@@ -36,7 +35,7 @@ function validateEmail(value) {
     if (!emailPattern.test(email)) {
       return {
         valid: false,
-        message: 'Invalid email format: "' + email + '"'
+        message: t('settings.validation.email_format', 'Invalid email format') + ': ' + email
       };
     }
   }
@@ -65,54 +64,77 @@ function isValidHostname(host) {
   return true;
 }
 
-function isValidIP(ip) {
-  if (!ip || !ip.trim()) return false;
-  ip = ip.trim();
-  // IPv4 with optional CIDR
-  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-  // IPv6 with optional CIDR
-  const ipv6Pattern = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(\/\d{1,3})?$/;
-  const ipv6CompressedPattern = /^::([0-9a-fA-F]{0,4}:){0,6}[0-9a-fA-F]{0,4}(\/\d{1,3})?$/;
-  const ipv6FullPattern = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}(\/\d{1,3})?$/;
+function isValidIPv4(value) {
+  const octets = value.split('.');
+  if (octets.length !== 4) return false;
+  return octets.every(function(octet) {
+    return /^(0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255;
+  });
+}
 
-  if (ipv4Pattern.test(ip)) {
-    const parts = ip.split('/');
-    const octets = parts[0].split('.');
-    for (let octet of octets) {
-      const num = parseInt(octet, 10);
-      if (num < 0 || num > 255) return false;
+function isValidIPv6(value) {
+  const gap = value.indexOf('::');
+  if (gap !== -1 && value.indexOf('::', gap + 1) !== -1) return false;
+  const halves = gap === -1 ? [value] : [value.slice(0, gap), value.slice(gap + 2)];
+  let groups = 0;
+  for (let h = 0; h < halves.length; h++) {
+    if (halves[h] === '') continue;
+    const parts = halves[h].split(':');
+    for (let i = 0; i < parts.length; i++) {
+      const isLast = h === halves.length - 1 && i === parts.length - 1;
+      if (isLast && parts[i].indexOf('.') !== -1) {
+        if (!isValidIPv4(parts[i])) return false;
+        groups += 2;
+      } else if (/^[0-9a-fA-F]{1,4}$/.test(parts[i])) {
+        groups += 1;
+      } else {
+        return false;
+      }
     }
-    if (parts.length > 1) {
-      const cidr = parseInt(parts[1], 10);
-      if (cidr < 0 || cidr > 32) return false;
-    }
-    return true;
   }
-  if (ipv6Pattern.test(ip) || ipv6CompressedPattern.test(ip) || ipv6FullPattern.test(ip)) {
-    if (ip.includes('/')) {
-      const parts = ip.split('/');
-      const cidr = parseInt(parts[1], 10);
-      if (cidr < 0 || cidr > 128) return false;
-    }
-    return true;
+  return gap === -1 ? groups === 8 : groups <= 7;
+}
+
+// IPv4 or IPv6 address; with allowCidr also a network prefix (e.g. 10.0.0.0/8).
+function isValidIP(value, allowCidr) {
+  if (typeof value !== 'string') return false;
+  let addr = value.trim();
+  if (!addr) return false;
+  let prefix = null;
+  const slash = addr.indexOf('/');
+  if (slash !== -1) {
+    if (!allowCidr) return false;
+    prefix = addr.slice(slash + 1);
+    addr = addr.slice(0, slash);
+    if (!/^(0|[1-9]\d{0,2})$/.test(prefix)) return false;
   }
-  if (isValidHostname(ip)) {
-    return true;
+  // IPv4 with optional CIDR
+  if (isValidIPv4(addr)) {
+    return prefix === null || Number(prefix) <= 32;
+  }
+  // IPv6 with optional CIDR
+  if (isValidIPv6(addr)) {
+    return prefix === null || Number(prefix) <= 128;
   }
   return false;
 }
 
+// ignoreip entry: IP, CIDR or hostname; an all-digit last label is a malformed IP, not a host.
+function isValidIgnoreEntry(value) {
+  if (typeof value !== 'string') return false;
+  const entry = value.trim();
+  if (isValidIP(entry, true)) return true;
+  if (!isValidHostname(entry)) return false;
+  return !/^\d+$/.test(entry.split('.').pop());
+}
+
 function validateIgnoreIPs() {
-  if (typeof getIgnoreIPsArray !== 'function') {
-    console.error('getIgnoreIPsArray function not found');
-    return { valid: true };
-  }
   const ignoreIPs = getIgnoreIPsArray();
   const invalidIPs = [];
 
   for (let i = 0; i < ignoreIPs.length; i++) {
     const ip = ignoreIPs[i];
-    if (!isValidIP(ip)) {
+    if (!isValidIgnoreEntry(ip)) {
       invalidIPs.push(ip);
     }
   }
@@ -120,7 +142,7 @@ function validateIgnoreIPs() {
   if (invalidIPs.length > 0) {
     return {
       valid: false,
-      message: 'Invalid IP addresses, CIDR notation, or hostnames: ' + invalidIPs.join(', ')
+      message: t('settings.validation.ignore_ips', 'Invalid IP addresses, CIDR notation, or hostnames') + ': ' + invalidIPs.join(', ')
     };
   }
   return { valid: true };
@@ -164,7 +186,7 @@ function validateAllSettings() {
   let isValid = true;
   const banTime = document.getElementById('banTime');
   if (banTime) {
-    const banTimeValidation = validateTimeFormat(banTime.value, 'bantime');
+    const banTimeValidation = validateTimeFormat(banTime.value);
     if (!banTimeValidation.valid) {
       showFieldError('banTime', banTimeValidation.message);
       isValid = false;
@@ -175,7 +197,7 @@ function validateAllSettings() {
 
   const findTime = document.getElementById('findTime');
   if (findTime) {
-    const findTimeValidation = validateTimeFormat(findTime.value, 'findtime');
+    const findTimeValidation = validateTimeFormat(findTime.value);
     if (!findTimeValidation.valid) {
       showFieldError('findTime', findTimeValidation.message);
       isValid = false;
@@ -232,7 +254,7 @@ function validateAllSettings() {
     const abuseKeyEl = document.getElementById('threatIntelAbuseIpDbApiKey');
     if (provider === 'alienvault') {
       if (!alienKeyEl || !alienKeyEl.value.trim()) {
-        showFieldError('threatIntelAlienVaultApiKey', 'AlienVault API key is required');
+        showFieldError('threatIntelAlienVaultApiKey', t('settings.validation.alienvault_key_required', 'AlienVault API key is required'));
         isValid = false;
       } else {
         clearFieldError('threatIntelAlienVaultApiKey');
@@ -240,7 +262,7 @@ function validateAllSettings() {
       clearFieldError('threatIntelAbuseIpDbApiKey');
     } else if (provider === 'abuseipdb') {
       if (!abuseKeyEl || !abuseKeyEl.value.trim()) {
-        showFieldError('threatIntelAbuseIpDbApiKey', 'AbuseIPDB API key is required');
+        showFieldError('threatIntelAbuseIpDbApiKey', t('settings.validation.abuseipdb_key_required', 'AbuseIPDB API key is required'));
         isValid = false;
       } else {
         clearFieldError('threatIntelAbuseIpDbApiKey');
@@ -262,7 +284,7 @@ function setupFormValidation() {
   
   if (banTimeInput) {
     banTimeInput.addEventListener('blur', function() {
-      const validation = validateTimeFormat(this.value, 'bantime');
+      const validation = validateTimeFormat(this.value);
       if (!validation.valid) {
         showFieldError('banTime', validation.message);
       } else {
@@ -273,7 +295,7 @@ function setupFormValidation() {
 
   if (findTimeInput) {
     findTimeInput.addEventListener('blur', function() {
-      const validation = validateTimeFormat(this.value, 'findtime');
+      const validation = validateTimeFormat(this.value);
       if (!validation.valid) {
         showFieldError('findTime', validation.message);
       } else {

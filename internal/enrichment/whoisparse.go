@@ -111,7 +111,7 @@ func ParseWhois(whois string) map[string]interface{} {
 		seenKeys[outField] = true
 	}
 
-	// Normalises the ASN: strips "AS" prefix if present (e.g. "AS200373" -> "200373")
+	// Normalises the ASN -> strips "AS" prefix if present (e.g. "AS200373" -> "200373")
 	if asn, ok := result["whois.asn"].(string); ok {
 		asn = strings.TrimSpace(asn)
 		if strings.HasPrefix(strings.ToUpper(asn), "AS") {

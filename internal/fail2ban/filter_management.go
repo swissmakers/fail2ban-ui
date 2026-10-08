@@ -70,7 +70,7 @@ func SetFilterConfigLocal(jail, newContent, configPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(localPath, []byte(newContent), 0644); err != nil {
+	if err := writeConfigAtomic(localPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to write filter .local file for %s: %w", jail, err)
 	}
 	debugf("Successfully wrote filter config to .local file: %s", localPath)
@@ -82,20 +82,18 @@ func ValidateFilterName(name string) error {
 	return validateConfigName(name, "filter name")
 }
 
-// Lists all filter files in the specified directory.
-func ListFilterFiles(directory string) ([]string, error) {
-	return listConfigFiles(filterKind, directory)
-}
+// Returned by filter listing when the filter.d directory does not exist.
+var ErrFilterDirMissing = errors.New("filter directory does not exist")
 
 // Returns all filters from the filesystem at the given config path.
 func DiscoverFiltersFromFiles(configPath string) ([]string, error) {
 	filterDPath := FilterDir(configPath)
 
 	if _, err := os.Stat(filterDPath); os.IsNotExist(err) {
-		return []string{}, nil
+		return []string{}, ErrFilterDirMissing
 	}
 
-	files, err := ListFilterFiles(filterDPath)
+	files, err := listConfigFiles(filterKind, filterDPath)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +116,7 @@ func CreateFilter(filterName, content, configPath string) error {
 		return err
 	}
 	// Filters carry no [name] section header, unlike jails.
-	return createLocalConfigFile(filterKind, filterName, content, "", configPath)
+	return createLocalConfigFile(filterKind, filterName, content, configPath)
 }
 
 // Deletes a filter's .local and .conf files from filter.d/ if they exist.
@@ -254,11 +252,11 @@ func filterIncludeBaseName(fileName string) string {
 	return fileName
 }
 
-func resolveFilterIncludes(filterContent string, filterDPath string, currentFilterName string) (string, error) {
+func resolveFilterIncludes(filterContent string, filterDPath string, currentFilterName string) string {
 	return resolveFilterIncludesWith(filterContent, currentFilterName, localFilterIncludeReader(filterDPath))
 }
 
-func resolveFilterIncludesWith(filterContent string, currentFilterName string, readInclude filterIncludeReader) (string, error) {
+func resolveFilterIncludesWith(filterContent string, currentFilterName string, readInclude filterIncludeReader) string {
 	lines := strings.Split(filterContent, "\n")
 	var beforeFiles []string
 	var afterFiles []string
@@ -361,7 +359,7 @@ func resolveFilterIncludesWith(filterContent string, currentFilterName string, r
 		}
 	}
 
-	return combined.String(), nil
+	return combined.String()
 }
 
 // =========================================================================
@@ -388,11 +386,7 @@ func TestFilterLocal(ctx context.Context, filterName string, logLines []string, 
 		defer tempFilterFile.Close()
 
 		filterDPath := FilterDir(configPath)
-		contentToWrite, err := resolveFilterIncludes(filterContent, filterDPath, filterName)
-		if err != nil {
-			debugf("Warning: failed to resolve filter includes, using original content: %v", err)
-			contentToWrite = filterContent
-		}
+		contentToWrite := resolveFilterIncludes(filterContent, filterDPath, filterName)
 
 		if !strings.HasSuffix(contentToWrite, "\n") {
 			contentToWrite += "\n"
@@ -408,7 +402,7 @@ func TestFilterLocal(ctx context.Context, filterName string, logLines []string, 
 
 		tempFilterFile.Close()
 		filterPath = tempFilterFile.Name()
-		debugf("TestFilterLocal: using custom filter content from temporary file: %s (size: %d bytes, includes resolved: %v)", filterPath, len(contentToWrite), err == nil)
+		debugf("TestFilterLocal: using custom filter content from temporary file: %s (size: %d bytes)", filterPath, len(contentToWrite))
 	} else {
 		filterDPath := FilterDir(configPath)
 		localPath, err := resolveWithinDir(filterDPath, filterName, ".local")

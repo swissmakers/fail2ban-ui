@@ -4,9 +4,17 @@
 
 Check:
 
-* The container or service is running.
+* The container or service is running. `curl -fsS http://127.0.0.1:8080/healthz` on the host returns `ok` while the UI process serves HTTP.
 * The host firewall allows the configured port.
 * The reverse proxy forwards correctly, if one is used.
+
+## A server shows Degraded or Down
+
+The UI probes every enabled server every 45 seconds and shows the result as a colored dot next to the server name. Open **Manage Servers** to see the reason.
+
+* **Down** means Fail2Ban did not answer `fail2ban-client ping`, or the UI could not reach the host or agent. Bans still work on the host only if Fail2Ban itself runs; check the service there first.
+* **Degraded** means Fail2Ban runs, but ban events cannot reach the UI. For SSH servers, the UI runs `curl` on the host against `/api/healthcheck/callback`: install `curl`, check the callback URL and secret, and check the reverse tunnel if one is enabled. For agents, the agent reports its callback registration and the last delivery error; the UI re-sends a missing or outdated registration automatically.
+* **Unknown** appears for a few seconds after startup or after adding a server.
 
 ```bash
 podman ps
@@ -77,6 +85,15 @@ Recommended minimum sudoers for SSH connector accounts:
 
 **Note:** Fail2Ban UI executes the Fail2Ban commands with `sudo` over SSH. The `NOPASSWD` option is therefore required.
 
+Configuration files, including `ui-custom-action.conf`, are written as the service account itself, not through `sudo`. Each file is staged next to its target and renamed into place, so the account needs write access to the **directories** of the Fail2Ban configuration tree, `action.d` included, and rewritten files become owned by that account. Grant it with an ACL rather than a new sudoers entry:
+
+```bash
+setfacl -R -m u:<user>:rwX /etc/fail2ban
+setfacl -R -d -m u:<user>:rwX /etc/fail2ban
+```
+
+A file left over from an earlier root-owned install can still be unwritable for the account. Remove it and let the UI recreate it.
+
 ## Ban/unban notifications do not appear in the UI
 
 This is one of the most common issues. The UI receives ban and unban events from Fail2Ban through HTTP callbacks. If nothing appears on the dashboard or under "Recent stored events", the callback chain is broken somewhere. Work through the following steps in order.
@@ -92,7 +109,16 @@ cat /etc/fail2ban/action.d/ui-custom-action.conf
 # to your callback URL, for example http://10.88.0.1:8080/api/ban
 ```
 
-If the file does not exist or looks wrong, go to **Settings -> Manage Servers** in the UI, select the server, and click **Test connection**. The UI re-deploys the action file automatically for local connectors.
+On containerised hosts the file lives under `/config/fail2ban/action.d/` instead. The UI writes it wherever that host keeps its Fail2Ban configuration.
+
+The UI synchronizes this file on startup, after callback settings change, when a server is saved, and when SSH jail status reveals drift. Failed writes, config validation, or reloads remain pending. The first retry runs after 45 seconds, then the interval doubles up to 15 minutes; saving the settings or accepting a changed host key retries immediately. Check the server's sync status under **Manage Servers** and the operational logs; these errors do not require debug mode. A correct file on disk is not proof that Fail2Ban loaded it. Check that the SSH service account may write to `action.d` and run `fail2ban-client -t` and `reload`. The preceding file content is retained in `ui-custom-action.conf.f2bui.bak`, including its callback credential; keep this backup private.
+
+Two values are expected to differ from the global callback URL:
+
+- Servers with **reverse tunnel for events** enabled carry `http://localhost:<tunnel port><BASE_PATH>`. That is correct, see [Reverse SSH tunnel for callbacks](configuration.md#reverse-ssh-tunnel-for-callbacks). Their status also reports callback health through the tunnel, including authentication and routing failures.
+- Servers running the agent have no action file at all. The agent holds its callback configuration itself and refreshes it on every poll.
+
+If the file does not exist or looks wrong, open **Settings -> Manage Servers** and save the server again: saving re-writes the action file and reloads Fail2Ban. **Test connection** only reads from the host and never changes it.
 
 ### Step 2: Verify jail.local references the action
 
@@ -148,7 +174,7 @@ grep "X-Callback-Secret" /etc/fail2ban/action.d/ui-custom-action.conf
 # Compare with the secret shown in the UI settings
 ```
 
-If they do not match, re-deploy the action file with **Test connection** from the UI, or update the secret in the action file manually and restart Fail2Ban.
+If they do not match, save the server again under **Manage Servers** to re-deploy the action file, or update the secret in the action file manually and restart Fail2Ban.
 
 ### Step 5: Simulate a ban notification with curl
 
@@ -218,7 +244,9 @@ tail -f /var/log/fail2ban.log
 #   WARNING ... Command ... failed
 ```
 
-You can also run the exact `curl` command from the action file manually. Extract it and substitute the Fail2Ban variables (`<ip>`, `<name>`, and so on) with real values:
+The callback runs detached from Fail2Ban, so a slow or unreachable UI never delays the next ban. As a consequence, Fail2Ban does not log a failed **delivery**: a missing `jq` or a TLS error only shows up when you run the command manually, as described next.
+
+You can also run the exact `curl` command from the action file manually. Extract it, substitute the Fail2Ban variables (`<ip>`, `<name>`, and so on) with real values, and drop the surrounding `( ... ) </dev/null >/dev/null 2>&1 &` so that errors are printed:
 
 ```bash
 grep -A5 "actionban" /etc/fail2ban/action.d/ui-custom-action.conf
@@ -227,8 +255,8 @@ grep -A5 "actionban" /etc/fail2ban/action.d/ui-custom-action.conf
 Running it in a shell reveals whether `jq` is missing, `curl` has TLS issues, and similar problems. Common causes at this stage:
 
 * **`jq` not installed.** The action file uses `jq` to build the JSON. Install it: `dnf install jq` or `apt install jq`.
-* **TLS certificate issues.** A callback URL with HTTPS and a self-signed certificate needs the `-k` flag. Fail2Ban UI adds it automatically when the callback URL starts with `https://`.
-* **Fail2Ban not restarted.** After the action file is deployed, Fail2Ban must be restarted to pick up the change: `systemctl restart fail2ban`.
+* **TLS certificate issues.** Configure a trusted certificate chain. `CALLBACK_INSECURE_TLS=true` explicitly enables `-k` for HTTPS callbacks when certificate verification must be disabled.
+* **Fail2Ban has not loaded the change.** The UI validates configuration and reloads Fail2Ban after synchronizing it. Check for a pending sync or reload error before attempting a manual reload.
 
 ### Step 7: Check the Fail2Ban UI logs
 
@@ -248,6 +276,8 @@ journalctl -u fail2ban-ui -f
 ```
 
 With debug mode enabled in the UI settings, the raw JSON body of every incoming callback is logged as well.
+
+Configured secrets and callback authentication headers are redacted from application and browser console logs. The browser console stream is restricted to administrators. Debug mode is not required for SSH connection, tunnel health, or config sync failures. Callback retries are bounded; they cannot recover events after a prolonged outage because there is no persistent outbound queue.
 
 ### Step 8: Verify that the serverId resolves
 
@@ -297,9 +327,9 @@ The symptom "unban works, but the UI only records unbans for *new* blocks" there
 
 ### Alerts not sent (any provider)
 
-1. Verify that alerts are enabled for the event type (ban and/or unban) under **Settings -> Alert Settings**.
-2. Check which alert provider is selected, and re-check all settings of the active provider.
-3. Check the country filter: if specific countries are selected, only IPs geolocated to those countries trigger alerts. Set it to `ALL` to alert on every event.
+1. Verify that alerts are enabled for the event type (ban and/or unban) under **Settings -> Alert Settings**. New installations start with alerts disabled.
+2. Check which alert provider is selected, and re-check all settings of the active provider. The email provider needs a destination address, an SMTP host, and a sender address; without them the UI skips email alerts and logs a warning.
+3. Check the country filter: if specific countries are selected, only IPs geolocated to those countries trigger alerts. Set it to `ALL` to alert on every event. The `LOTR` entry only switches the theme and is ignored by the filter.
 4. Confirm the dispatch in the Fail2Ban UI logs (enable debug logging for more detail):
 
 ```bash
@@ -310,7 +340,7 @@ podman logs -f fail2ban-ui
 # Successful webhook:
 #   Webhook alert sent successfully
 # Successful Elasticsearch:
-#   Elasticsearch alert indexed successfully
+#   Elasticsearch alert indexed: https://es.example.com:9200/logs-fail2ban_ui.events-default/_doc?require_data_stream=true -> 201
 ```
 
 ### Email: test email works, but ban alerts do not arrive
@@ -344,13 +374,15 @@ Common causes:
 
 * **Connection refused / timeout.** Verify that the Elasticsearch URL is reachable from the Fail2Ban UI host.
 * **401 Unauthorized.** API key or credentials are incorrect. Verify the key in Kibana under **Stack Management -> API Keys**.
-* **403 Forbidden.** The API key lacks write permissions on the target index. Create a key with `write` and `create_index` privileges for `fail2ban-events-*`.
-* **Index template missing.** Without a template, Elasticsearch uses dynamic mapping, which may produce suboptimal field types. Create the template as described in [alert-providers.md](alert-providers.md#elasticsearch-setup).
+* **Denied writing (403).** The API key lacks the `create_doc` and `auto_configure` privileges on the data stream. Keys created for the old `fail2ban-events-*` indices can't write to `logs-fail2ban_ui.events-*`; create a new key as described in [alert-providers.md](alert-providers.md#2-create-an-api-key).
+* **Not a data stream (404).** The configured name is a plain index, or no index template with data streams enabled matches it. Use the default `logs-fail2ban_ui.events-default`, or create a data stream template for your name.
+* **Unrecognized parameter `require_data_stream` (400).** Elasticsearch is older than 8.13. Upgrade the cluster.
+* **Unexpected field types.** Without the Fail2Ban UI index template, the built-in `logs-*-*` template maps fields dynamically. Create the template as described in [alert-providers.md](alert-providers.md#elasticsearch-setup); it applies to backing indices created afterwards, so roll the data stream over with `POST logs-fail2ban_ui.events-default/_rollover`.
 
 Manual test:
 
 ```bash
-curl -v -X POST "https://your-es-url/fail2ban-events-test/_doc" \
+curl -v -X POST "https://your-es-url/logs-fail2ban_ui.events-default/_doc?require_data_stream=true" \
   -H "Content-Type: application/json" \
   -H "Authorization: ApiKey YOUR_BASE64_KEY" \
   -d '{"@timestamp":"2026-02-23T00:00:00Z","event.kind":"alert","event.type":"test","source.ip":"203.0.113.1"}'

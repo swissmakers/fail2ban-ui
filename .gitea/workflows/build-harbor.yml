@@ -6,7 +6,33 @@ on:
   workflow_dispatch:
 
 jobs:
+  test:
+    # Manual runs must use main too
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: linux_amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Format, vet and test Go
+        run: |
+          test -z "$(gofmt -l cmd internal pkg)" || { gofmt -l cmd internal pkg; exit 1; }
+          go vet ./cmd/... ./internal/... ./pkg/...
+          go test -count=1 ./cmd/... ./internal/... ./pkg/...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test frontend
+        run: npm test
+
   build:
+    needs: test
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: linux_amd64
     steps:
       - uses: actions/checkout@v4

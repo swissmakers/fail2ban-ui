@@ -34,7 +34,7 @@ For correct behavior, including WebSocket live updates, the proxy must:
 2. Allow WebSocket upgrades on the real-time endpoint: `GET /api/ws` at the site root, or `GET {BASE_PATH}/api/ws` when using a subpath.
 3. Forward client IP context: `X-Forwarded-For` and `X-Forwarded-Proto`.
 
-**Path-prefix handling:** If the proxy *strips* a path prefix before forwarding (external `/myf2b/` -> upstream `/`), leave `BASE_PATH` unset and configure the application as if it lived at the root; only the public URLs change. If the application receives the *full* path including `/myf2b`, set `BASE_PATH=/myf2b` and forward the prefix unchanged.
+**Path-prefix handling:** To serve the UI under a subpath such as `/myf2b/`, set `BASE_PATH=/myf2b` and forward the request path to the application *unchanged*. Do not strip the prefix in the proxy. The application builds every link, static asset, API, WebSocket, and OIDC URL from `BASE_PATH`. If the proxy strips the prefix and `BASE_PATH` is unset, the page loads without styles because the browser requests `/static/...` at the site root, which the proxy does not route to the application. If the proxy strips the prefix and `BASE_PATH` is set, `/` redirects to `/myf2b/`, the proxy strips it again, and the browser ends in a redirect loop.
 
 ## Subpath deployment (`BASE_PATH`)
 
@@ -72,7 +72,7 @@ location /myf2b/api/ws {
 }
 ```
 
-**Important:** Use `proxy_pass http://127.0.0.1:8080;` without a URI suffix so the request URI `/myf2b/...` is forwarded as-is. If you append a URI to `proxy_pass`, Nginx rewrites the path, and that rewrite must match the application's `BASE_PATH`. In practice, avoid stripping unless `BASE_PATH` is unset on the application.
+**Important:** Use `proxy_pass http://127.0.0.1:8080;` without a URI suffix so the request URI `/myf2b/...` is forwarded as-is. A URI suffix such as `proxy_pass http://127.0.0.1:8080/;` makes Nginx strip the prefix, and the UI then breaks as described under "Path-prefix handling".
 
 ## Nginx reference configuration
 
@@ -152,6 +152,35 @@ fail2ban.example.com {
 
 Caddy handles TLS and WebSocket upgrades automatically for this basic setup.
 
+## Caddy subpath configuration
+
+Use this when Fail2Ban UI shares a hostname with other content and lives under a subpath. Run the application with `BASE_PATH=/myf2b` and use `handle`, which keeps the request path. Do not use `handle_path` or `uri strip_prefix`, because both remove the prefix before the request reaches the application.
+
+```caddy
+example.com {
+    encode zstd gzip
+
+    # Fail2Ban UI under /myf2b (BASE_PATH=/myf2b on the application)
+    @f2b path /myf2b /myf2b/*
+    handle @f2b {
+        header {
+            X-Content-Type-Options "nosniff"
+            X-Frame-Options "DENY"
+            Referrer-Policy "no-referrer"
+        }
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    # Everything else on this hostname
+    handle {
+        root * /var/www/html
+        file_server
+    }
+}
+```
+
+The matcher lists `/myf2b` and `/myf2b/*` so that both `https://example.com/myf2b` and `https://example.com/myf2b/` reach the UI. Requests to `https://example.com/` and other paths never touch the application, so `/static`, `/api`, and `/auth` stay free for the other site. Set `CALLBACK_URL=https://example.com/myf2b` and, with OIDC, `OIDC_REDIRECT_URL=https://example.com/myf2b/auth/callback`.
+
 ## Verification
 
 1. UI reachable: `curl -Ik https://fail2ban.example.com/` (or `https://fail2ban.example.com/myf2b/` with `BASE_PATH`).
@@ -160,3 +189,9 @@ Caddy handles TLS and WebSocket upgrades automatically for this basic setup.
    * `101 Switching Protocols` for `/api/ws` or `/myf2b/api/ws`
    * Live ban/unban events appear without a page refresh
 4. Callback path reachable from every managed Fail2Ban host to the configured `CALLBACK_URL`.
+
+## Subpath problems
+
+* **Page loads without styles, and the browser shows 404 for `/static/...` or `/locales/...` at the site root.** The proxy strips the prefix and `BASE_PATH` is unset. Set `BASE_PATH` and forward the prefix unchanged.
+* **Redirect loop between `/` and `/myf2b/`.** `BASE_PATH` is set but the proxy strips the prefix. Remove the strip (`handle_path`, `uri strip_prefix`, or a `proxy_pass` URI suffix).
+* **404 for `https://host/myf2b/`.** `BASE_PATH` on the application does not match the public prefix, for example `BASE_PATH=/f2b` with a `/myf2b/` location. The application serves only the configured prefix and returns 404 for every other path.

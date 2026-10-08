@@ -111,8 +111,7 @@ function renderInsightsGlobe() {
 
   var countries = (latestBanInsights && latestBanInsights.countries) || [];
   if (!countries.length) {
-    var emptyMsg = (translations && translations['logs.modal.threat_map_empty']) || 'No geo data available.';
-    container.innerHTML = '<p class="text-sm text-gray-400 text-center py-16">' + escapeHtml(emptyMsg) + '</p>';
+    container.innerHTML = '<p class="text-sm text-gray-400 text-center py-16">' + escapeHtml(t('logs.modal.threat_map_empty', 'No geo data available.')) + '</p>';
     return;
   }
 
@@ -157,7 +156,7 @@ function renderInsightsGlobe() {
     .showAtmosphere(true)
     .atmosphereColor('#3b82f6')
     .atmosphereAltitude(0.15)
-    .globeImageUrl(typeof appPath === 'function' ? appPath('/static/images/earth-dark.jpg') : '/static/images/earth-dark.jpg')
+    .globeImageUrl(assetUrl('/static/images/earth-dark.jpg'))
     .pointsData(points)
     .pointLat('lat')
     .pointLng('lng')

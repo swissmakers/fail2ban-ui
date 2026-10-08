@@ -27,14 +27,14 @@ import (
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/httpx"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
-
-type pfSenseIntegration struct{}
 
 // =========================================================================
 //  Types
 // =========================================================================
 
+type pfSenseIntegration struct{}
 type FirewallAliasResponse struct {
 	Data FirewallAlias `json:"data"`
 }
@@ -60,10 +60,6 @@ func (p *pfSenseIntegration) ID() string {
 	return "pfsense"
 }
 
-func (p *pfSenseIntegration) DisplayName() string {
-	return "pfSense"
-}
-
 func (p *pfSenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	if err := ValidateOutboundURL(cfg.PfSense.BaseURL, "pfSense base URL"); err != nil {
 		return err
@@ -85,7 +81,7 @@ func (p *pfSenseIntegration) BlockIP(req Request) error {
 	if err := p.Validate(req.Config); err != nil {
 		return err
 	}
-	if err := ValidateIP(req.IP); err != nil {
+	if err := shared.ValidateIP(req.IP); err != nil {
 		return fmt.Errorf("pfsense block: %w", err)
 	}
 	return p.modifyAliasIP(req, req.IP, "Fail2ban-UI permanent block", true)
@@ -95,7 +91,7 @@ func (p *pfSenseIntegration) UnblockIP(req Request) error {
 	if err := p.Validate(req.Config); err != nil {
 		return err
 	}
-	if err := ValidateIP(req.IP); err != nil {
+	if err := shared.ValidateIP(req.IP); err != nil {
 		return fmt.Errorf("pfsense unblock: %w", err)
 	}
 	return p.modifyAliasIP(req, req.IP, "", false)

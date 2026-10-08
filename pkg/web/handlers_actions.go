@@ -17,18 +17,15 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/integrations"
-	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"github.com/swissmakers/fail2ban-ui/internal/storage"
 )
 
@@ -39,7 +36,7 @@ import (
 func requireConfiguredIntegration(c *gin.Context) (config.AppSettings, bool) {
 	settings := config.GetSettings()
 	if settings.AdvancedActions.Integration == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration (MikroTik, pfSense, or OPNsense) in Advanced Actions settings first"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no integration configured. Please configure an integration in Advanced Actions settings first"})
 		return settings, false
 	}
 	integration, ok := integrations.Get(settings.AdvancedActions.Integration)
@@ -56,12 +53,7 @@ func requireConfiguredIntegration(c *gin.Context) (config.AppSettings, bool) {
 
 // Returns the permanent block log entries.
 func ListPermanentBlocksHandler(c *gin.Context) {
-	limit := 100
-	if limitStr := c.DefaultQuery("limit", "100"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
+	limit := clampInt(c.Query("limit"), 100, 1, storage.MaxPermanentBlocksLimit)
 	records, err := storage.ListPermanentBlocks(c.Request.Context(), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -81,7 +73,7 @@ func ClearPermanentBlocksHandler(c *gin.Context) {
 }
 
 // Allows manual block/unblock against the configured integration.
-func AdvancedActionsTestHandler(c *gin.Context) {
+func ManualAdvancedActionHandler(c *gin.Context) {
 	var req struct {
 		Action string `json:"action"`
 		IP     string `json:"ip"`
@@ -90,12 +82,9 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
+	req.IP = strings.TrimSpace(req.IP)
 	if req.IP == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ip is required"})
-		return
-	}
-	if err := integrations.ValidateIP(req.IP); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	action := strings.ToLower(req.Action)
@@ -106,13 +95,15 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "action must be block or unblock"})
 		return
 	}
+	if err := permanentBlockTargetError(action, req.IP); err != nil {
+		c.JSON(http.StatusBadRequest, buildErrorResponse(err, ""))
+		return
+	}
 
 	settings, ok := requireConfiguredIntegration(c)
 	if !ok {
 		return
 	}
-
-	server := config.Fail2banServer{}
 
 	// Checks if the IP is already blocked before attempting the action (for block action only)
 	skipLoggingIfAlreadyBlocked := false
@@ -128,7 +119,7 @@ func AdvancedActionsTestHandler(c *gin.Context) {
 		action,
 		req.IP,
 		settings,
-		server,
+		"",
 		map[string]any{"manual": true},
 		skipLoggingIfAlreadyBlocked,
 	)
@@ -176,12 +167,10 @@ func BulkPermanentBlockHandler(c *gin.Context) {
 	}
 
 	actingUser := ""
-	if sessionValue, exists := c.Get("session"); exists {
-		if session, ok := sessionValue.(*auth.Session); ok && session != nil {
-			actingUser = session.Username
-			if actingUser == "" {
-				actingUser = session.Email
-			}
+	if session := sessionFromContext(c); session != nil {
+		actingUser = session.Username
+		if actingUser == "" {
+			actingUser = session.Email
 		}
 	}
 
@@ -219,15 +208,13 @@ func BulkPermanentBlockHandler(c *gin.Context) {
 			summary["aborted"]++
 			continue
 		}
-		parsed := net.ParseIP(ip)
-		if parsed == nil {
-			results = append(results, bulkBlockResult{IP: ip, Status: "invalid", Message: "not a valid IP address"})
-			summary["invalid"]++
-			continue
-		}
-		if shared.IsReservedIP(parsed) {
+		if err := permanentBlockTargetError("block", ip); errors.Is(err, errReservedIP) {
 			results = append(results, bulkBlockResult{IP: ip, Status: "skipped_private", Message: "private/reserved address"})
 			summary["skipped"]++
+			continue
+		} else if err != nil {
+			results = append(results, bulkBlockResult{IP: ip, Status: "invalid", Message: "not a valid IP address"})
+			summary["invalid"]++
 			continue
 		}
 		if active, err := storage.IsPermanentBlockActive(ctx, ip, settings.AdvancedActions.Integration); err == nil && active {
@@ -236,7 +223,7 @@ func BulkPermanentBlockHandler(c *gin.Context) {
 			continue
 		}
 
-		err := runAdvancedIntegrationAction(ctx, "block", ip, settings, config.Fail2banServer{}, map[string]any{
+		err := runAdvancedIntegrationAction(ctx, "block", ip, settings, "", map[string]any{
 			"reason":    "bulk_insights",
 			"user":      actingUser,
 			"batchSize": len(ips),

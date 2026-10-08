@@ -12,10 +12,12 @@ var insightsTimeline = {
   // Current window. anchoredToNow keeps until=now on refetch (live view).
   range: { since: null, until: null, anchoredToNow: true, presetHours: 8 },
   rangeStack: [],
-  buckets: [],            // [{ts, bans, unbans}] (ts = bucket start, ms)
+  // [{ts, bans, unbans}] (ts = bucket start, ms)
+  buckets: [],
   bucketSeconds: 0,
   events: { items: [], total: null, hasMore: false, loading: false, expanded: {} },
-  incidents: { A: null, B: null }, // {since, until, ips, truncated, loading}
+  // {since, until, ips, truncated, loading}
+  incidents: { A: null, B: null },
   suggestions: [],
   pendingBlockIPs: [],
   fetchToken: 0,
@@ -59,8 +61,8 @@ function initInsightsTimeline() {
     insightsTimeline.resizeObserver.observe(container);
   }
 
-  if (!insightsTimeline.wsRegistered && typeof wsManager !== 'undefined' && wsManager) {
-    wsManager.onBanEvent(handleTimelineLiveEvent);
+  if (!insightsTimeline.wsRegistered) {
+    wsManager.on('ban_event', handleTimelineLiveEvent);
     insightsTimeline.wsRegistered = true;
   }
 
@@ -214,12 +216,10 @@ function fetchTimelineData() {
     + '&until=' + encodeURIComponent(range.until.toISOString());
 
   fetch(appPath('/api/events/bans/timeline' + query))
-    .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
       if (token !== insightsTimeline.fetchToken || !insightsTimeline.active) return;
+      data = data || {};
       insightsTimeline.bucketSeconds = data.bucketSeconds || 0;
       insightsTimeline.buckets = (data.buckets || []).map(function(b) {
         return { ts: new Date(b.start).getTime(), bans: b.bans || 0, unbans: b.unbans || 0 };
@@ -253,21 +253,18 @@ function fetchTimelineEvents(options) {
     + '&limit=50&offset=' + offset;
 
   fetch(appPath('/api/events/bans' + query))
-    .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
       if (token !== insightsTimeline.eventsToken || !insightsTimeline.active) return;
       var events = (data && data.events) || [];
       if (options.reset) {
         state.items = events;
         state.expanded = {};
-        state.total = (typeof data.total === 'number') ? data.total : null;
+        state.total = (data && typeof data.total === 'number') ? data.total : null;
       } else {
         state.items = state.items.concat(events);
       }
-      state.hasMore = data.hasMore === true;
+      state.hasMore = !!(data && data.hasMore === true);
       state.loading = false;
       renderTimelineEventList();
     })
@@ -324,7 +321,8 @@ function buildTimelineOption(isDark) {
   var lineColor = isDark ? '#334155' : '#e5e7eb';
   var surface = isDark ? '#1f2937' : '#f9fafb';
   var banColor = isDark ? '#ef4444' : '#dc2626';
-  var unbanColor = '#0d9488'; // teal: distinguishable from red for color-blind users
+  // teal: distinguishable from red for color-blind users
+  var unbanColor = '#0d9488';
   var bansLabel = t('logs.timeline.series_bans', 'Bans');
   var unbansLabel = t('logs.timeline.series_unbans', 'Unbans');
   var buckets = insightsTimeline.buckets;
@@ -552,10 +550,8 @@ function fetchRangeIPs(since, until) {
   var query = '?since=' + encodeURIComponent(since.toISOString())
     + '&until=' + encodeURIComponent(until.toISOString());
   return fetch(appPath('/api/events/bans/ips' + query))
-    .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    });
+    .then(readJsonResponse)
+    .then(function(data) { return data || {}; });
 }
 
 function pinIncident(slot) {
@@ -632,13 +628,10 @@ function fetchTimelineSuggestions(incident) {
   var query = '?since=' + encodeURIComponent(incident.since.toISOString())
     + '&until=' + encodeURIComponent(incident.until.toISOString());
   fetch(appPath('/api/events/bans/ips/activity' + query))
-    .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
       if (insightsTimeline.incidents.A !== incident) return;
-      insightsTimeline.suggestions = data.periods || [];
+      insightsTimeline.suggestions = (data && data.periods) || [];
       renderIncidentCompare();
     })
     .catch(function(err) {
@@ -677,12 +670,13 @@ function renderIncidentCompare() {
     if (incident) {
       var detail = incident.loading
         ? t('loading', 'Loading...')
-        : formatNumber(incident.ips.length) + ' IPs' + (incident.truncated ? ' (max)' : '');
+        : t('logs.timeline.ip_count', '{count} IPs').replace('{count}', formatNumber(incident.ips.length))
+          + (incident.truncated ? ' ' + t('logs.timeline.ip_count_capped', '(limit reached)') : '');
       chipsHtml += '<span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-xs">'
         + '<b>' + escapeHtml(slotLabel) + '</b> '
         + escapeHtml(formatDateTime(incident.since) + ' – ' + formatDateTime(incident.until))
         + ' · ' + escapeHtml(detail)
-        + '<button type="button" class="text-blue-500 hover:text-blue-800" onclick="clearIncident(\'' + slot + '\')" title="' + escapeHtml(t('logs.timeline.compare_clear', 'Clear')) + '">&times;</button>'
+        + '<button type="button" class="text-blue-500 hover:text-blue-800" onclick="clearIncident(\'' + slot + '\')" title="' + escapeHtml(t('logs.timeline.compare_clear', 'Clear')) + '" aria-label="' + escapeHtml(t('logs.timeline.compare_clear', 'Clear')) + '">&times;</button>'
         + '</span>';
     } else {
       chipsHtml += '<span class="inline-flex items-center px-3 py-1 rounded-full bg-gray-100 text-gray-400 text-xs">'
@@ -729,7 +723,7 @@ function renderIncidentCompare() {
       + '<div class="flex flex-wrap gap-2">';
     for (var s = 0; s < suggestions.length; s++) {
       sHtml += '<button type="button" class="px-2 py-1 text-xs rounded border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100" onclick="applySuggestedPeriod(' + s + ')">'
-        + escapeHtml(suggestions[s].day) + ' · ' + formatNumber(suggestions[s].overlap) + ' IPs'
+        + escapeHtml(suggestions[s].day) + ' · ' + escapeHtml(t('logs.timeline.ip_count', '{count} IPs').replace('{count}', formatNumber(suggestions[s].overlap)))
         + '</button>';
     }
     sHtml += '</div>';
@@ -752,7 +746,8 @@ function renderIncidentCompare() {
 function timelineCsvField(value) {
   var s = String(value === null || value === undefined ? '' : value);
   if (/^[=+\-@\t\r]/.test(s)) {
-    s = "'" + s; // CSV formula-injection guard
+    // CSV formula-injection guard
+    s = "'" + s;
   }
   return '"' + s.replace(/"/g, '""') + '"';
 }
@@ -888,20 +883,13 @@ function confirmBulkBlock() {
 
   fetch(appPath('/api/advanced-actions/blocks'), {
     method: 'POST',
-    headers: Object.assign({ 'Content-Type': 'application/json' }, (typeof serverHeaders === 'function' ? serverHeaders() : {})),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ips: ips })
   })
-    .then(function(res) {
-      return res.json().then(function(data) { return { ok: res.ok, data: data }; });
-    })
-    .then(function(result) {
+    .then(readJsonResponse)
+    .then(function(data) {
       closeModal('bulkBlockConfirmModal');
-      if (!result.ok) {
-        var errMsg = (result.data && result.data.error) || 'HTTP error';
-        showToast(t('logs.timeline.block_error', 'Error submitting block request') + ': ' + errMsg, 'error');
-        return;
-      }
-      var summary = (result.data && result.data.summary) || {};
+      var summary = (data && data.summary) || {};
       var msg = t('logs.timeline.block_success', '{count} IPs submitted for blocking.')
         .replace('{count}', formatNumber(summary.blocked || 0));
       var extras = [];
@@ -914,7 +902,8 @@ function confirmBulkBlock() {
     })
     .catch(function(err) {
       console.error('Error bulk blocking:', err);
-      showToast(t('logs.timeline.block_error', 'Error submitting block request'), 'error');
+      closeModal('bulkBlockConfirmModal');
+      showToast(t('logs.timeline.block_error', 'Error submitting block request') + ': ' + err.message, 'error');
     })
     .finally(function() {
       insightsTimeline.pendingBlockIPs = [];

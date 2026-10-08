@@ -21,6 +21,7 @@ import (
 	"html/template"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestEmbeddedTemplatesIndexName(t *testing.T) {
@@ -63,5 +64,19 @@ func TestIndexTemplateEmitsAppIcons(t *testing.T) {
 	}
 	if strings.Contains(out, "isSafeIconHref") {
 		t.Fatal("the isSafeIconHref workaround should have been removed")
+	}
+}
+
+func TestContentHash(t *testing.T) {
+	base := fstest.MapFS{"js/app.js": {Data: []byte("a")}, "css/x.css": {Data: []byte("b")}}
+	same := fstest.MapFS{"css/x.css": {Data: []byte("b")}, "js/app.js": {Data: []byte("a")}}
+	changed := fstest.MapFS{"js/app.js": {Data: []byte("A")}, "css/x.css": {Data: []byte("b")}}
+	renamed := fstest.MapFS{"js/app2.js": {Data: []byte("a")}, "css/x.css": {Data: []byte("b")}}
+	h := contentHash(base)
+	if len(h) != 8 || contentHash(same) != h {
+		t.Fatalf("hash %q must be 8 chars and independent of map order", h)
+	}
+	if contentHash(changed) == h || contentHash(renamed) == h {
+		t.Fatal("hash must change when a file body or name changes")
 	}
 }

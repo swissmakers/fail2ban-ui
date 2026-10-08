@@ -163,3 +163,99 @@ func TestSanitizeLogpath(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterNameForJail(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain filter", "[sshd]\nenabled = true\nfilter = sshd\n", "sshd"},
+		{"filter with parameters", "filter = apache-auth[mode=aggressive]\n", "apache-auth"},
+		{"spaces around value", "filter    =    nginx-limit-req   \n", "nginx-limit-req"},
+		{"uppercase key", "FILTER = sshd\n", "sshd"},
+		{"commented filter is ignored", "#filter = evil\nfilter = sshd\n", "sshd"},
+		{"only a commented filter falls back to jail", "# filter = sshd\n", "myjail"},
+		{"no filter key falls back to jail", "[sshd]\nenabled = true\n", "myjail"},
+		{"empty input falls back to jail", "", "myjail"},
+		{"first filter wins", "filter = one\nfilter = two\n", "one"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FilterNameForJail("myjail", tc.in); got != tc.want {
+				t.Fatalf("FilterNameForJail(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// Paths come back newline-separated; the jail handlers split them with strings.Fields.
+func TestExtractLogpathFromJailConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"single path", "logpath = /var/log/auth.log\n", "/var/log/auth.log"},
+		{
+			"several paths on one line",
+			"logpath = /var/log/a.log /var/log/b.log\n",
+			"/var/log/a.log\n/var/log/b.log",
+		},
+		{
+			"continuation lines are collected",
+			"logpath = /var/log/a.log\n          /var/log/b.log\n          /var/log/c.log\nmaxretry = 3\n",
+			"/var/log/a.log\n/var/log/b.log\n/var/log/c.log",
+		},
+		{
+			"continuation stops at a comment",
+			"logpath = /var/log/a.log\n          /var/log/b.log\n# /var/log/ignored.log\n",
+			"/var/log/a.log\n/var/log/b.log",
+		},
+		{
+			"continuation stops at the next key",
+			"logpath = /var/log/a.log\n          /var/log/b.log\nenabled = true\n",
+			"/var/log/a.log\n/var/log/b.log",
+		},
+		{"commented logpath is ignored", "# logpath = /var/log/evil.log\n", ""},
+		{"no logpath key", "[sshd]\nenabled = true\n", ""},
+		{"empty input", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ExtractLogpathFromJailConfig(tc.in); got != tc.want {
+				t.Fatalf("ExtractLogpathFromJailConfig(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeJailSection(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "empty", content: "  \n", want: "[sshd]\n"},
+		{name: "no header prepends", content: "enabled = true\n", want: "[sshd]\nenabled = true\n"},
+		{name: "correct header unchanged", content: "[sshd]\nenabled = true\n", want: "[sshd]\nenabled = true\n"},
+		{name: "adds trailing newline", content: "[sshd]\nenabled = true", want: "[sshd]\nenabled = true\n"},
+		{name: "single wrong header renamed", content: "# note\n[other]\nport = ssh\n", want: "# note\n[sshd]\nport = ssh\n"},
+		{name: "duplicate correct header dropped", content: "[sshd]\na = 1\n[sshd]\nb = 2\n", want: "[sshd]\na = 1\nb = 2\n"},
+		{name: "other sections kept verbatim", content: "[sshd]\na = 1\n[extra]\nb = 2\n", want: "[sshd]\na = 1\n[extra]\nb = 2\n"},
+		{
+			name:    "two wrong headers keep content",
+			content: "[one]\na = 1\n[two]\nb = 2\n",
+			want:    "[sshd]\na = 1\n[two]\nb = 2\n",
+		},
+		{name: "default not renamed", content: "[DEFAULT]\nbantime = 1h\n", want: "[sshd]\n[DEFAULT]\nbantime = 1h\n"},
+		{name: "default kept before wrong jail header", content: "[DEFAULT]\nx = 1\n[old]\ny = 2\n", want: "[DEFAULT]\nx = 1\n[sshd]\ny = 2\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeJailSection("sshd", tt.content); got != tt.want {
+				t.Fatalf("NormalizeJailSection =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}

@@ -18,6 +18,7 @@ package fail2ban
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -216,9 +217,10 @@ func TestBuildRemoteWriteScript(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe path is rejected", func(t *testing.T) {
-		if _, err := buildRemoteWriteScript("/tmp/f'oo", "x\n"); err == nil {
-			t.Fatal("expected error for path containing a single quote")
+	t.Run("quote in path is escaped", func(t *testing.T) {
+		script, err := buildRemoteWriteScript("/tmp/f'oo", "x\n")
+		if err != nil || !strings.Contains(script, "target="+shellQuote("/tmp/f'oo")) {
+			t.Fatalf("path not escaped: err=%v\n%s", err, script)
 		}
 	})
 
@@ -227,8 +229,8 @@ func TestBuildRemoteWriteScript(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := "cat > '/tmp/f' <<'" + remoteWriteDelimiter + "'\nline1\nline2\n" + remoteWriteDelimiter + "\n"
-		if script != want {
+		want := "cat > \"$tmp\" <<'" + remoteWriteDelimiter + "'\nline1\nline2\n" + remoteWriteDelimiter + "\n"
+		if !strings.Contains(script, want) {
 			t.Fatalf("script = %q, want %q", script, want)
 		}
 	})
@@ -296,16 +298,13 @@ func TestParseRemoteFileDump(t *testing.T) {
 }
 
 func TestBuildJailDirDumpScript(t *testing.T) {
-	t.Run("emits framed local files then conf files without a local sibling", func(t *testing.T) {
-		script, err := buildJailDirDumpScript("/etc/fail2ban/jail.d")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	t.Run("emits all conf files before local overrides", func(t *testing.T) {
+		script := buildJailDirDumpScript("/etc/fail2ban/jail.d")
 		if !strings.Contains(script, "'/etc/fail2ban/jail.d'/*.local") {
 			t.Fatalf("missing quoted .local glob: %s", script)
 		}
-		if !strings.Contains(script, `[ ! -f "${f%.conf}.local" ]`) {
-			t.Fatalf(".conf files must be skipped when a .local sibling exists: %s", script)
+		if strings.Contains(script, `${f%.conf}.local`) || strings.Index(script, "/*.conf") > strings.Index(script, "/*.local") {
+			t.Fatalf("configuration layers must be merged in order: %s", script)
 		}
 		if !strings.Contains(script, batchFileBegin) || !strings.Contains(script, batchFileEnd) {
 			t.Fatalf("missing framing markers: %s", script)
@@ -318,9 +317,9 @@ func TestBuildJailDirDumpScript(t *testing.T) {
 		}
 	})
 
-	t.Run("unsafe directory is rejected", func(t *testing.T) {
-		if _, err := buildJailDirDumpScript("/etc/fail2'ban/jail.d"); err == nil {
-			t.Fatal("expected an error for a path containing a single quote")
+	t.Run("quote in directory is escaped", func(t *testing.T) {
+		if script := buildJailDirDumpScript("/etc/fail2'ban/jail.d"); !strings.Contains(script, shellQuote("/etc/fail2'ban/jail.d")+"/*.local") {
+			t.Fatalf("directory not escaped: %s", script)
 		}
 	})
 }
@@ -436,10 +435,7 @@ func TestSplitFilterTestOutput(t *testing.T) {
 }
 
 func TestBuildConfigTreeDumpScript(t *testing.T) {
-	script, err := buildConfigTreeDumpScript("/etc/fail2ban")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	script := buildConfigTreeDumpScript("/etc/fail2ban")
 	for _, want := range []string{"'/etc/fail2ban'", "-name '*.conf'", "-name '*.local'", batchFileBegin, batchFileEnd} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q: %s", want, script)
@@ -450,9 +446,6 @@ func TestBuildConfigTreeDumpScript(t *testing.T) {
 	}
 	if strings.Contains(script, "2>&1") {
 		t.Fatalf("stderr must never be merged into stdout: %s", script)
-	}
-	if _, err := buildConfigTreeDumpScript("/etc/fail2'ban"); err == nil {
-		t.Fatal("expected an error for a path containing a single quote")
 	}
 }
 
@@ -500,7 +493,7 @@ func TestSSHTunnelConfigChanged(t *testing.T) {
 		Type: "ssh", Host: "10.0.0.1", Port: 22, SSHUser: "f2b", SSHKeyPath: "/config/.ssh/id",
 		ReverseTunnelEnabled: true, TunnelPort: 9443,
 	}
-	tunneled := &SSHConnector{server: base, tunnelPort: 9443}
+	tunneled := &SSHConnector{server: base, tunnelPort: 9443, forwardPort: 8080}
 
 	cases := []struct {
 		name   string
@@ -523,5 +516,288 @@ func TestSSHTunnelConfigChanged(t *testing.T) {
 				t.Fatalf("sshTunnelConfigChanged = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestBuildEnsureActionScript(t *testing.T) {
+	const actionPath = "/config/fail2ban/action.d/ui-custom-action.conf"
+
+	t.Run("writes under the host's own config root", func(t *testing.T) {
+		script, err := buildEnsureActionScript(actionPath, "[Definition]\n")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(script, "mkdir -p '/config/fail2ban/action.d'") {
+			t.Fatalf("action.d must be created under the probed root: %q", script)
+		}
+		if !strings.Contains(script, "target='"+actionPath+"'") {
+			t.Fatalf("action file must be written under the probed root: %q", script)
+		}
+		if strings.Contains(script, "/etc/fail2ban") {
+			t.Fatalf("the default root must not be hardcoded: %q", script)
+		}
+	})
+
+	t.Run("no python3 and no sudo", func(t *testing.T) {
+		script, err := buildEnsureActionScript(actionPath, "[Definition]\n")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		for _, forbidden := range []string{"python3", "base64", "sudo"} {
+			if strings.Contains(script, forbidden) {
+				t.Fatalf("script must not depend on %q: %q", forbidden, script)
+			}
+		}
+	})
+
+	t.Run("guards permissions and failure propagation", func(t *testing.T) {
+		script, err := buildEnsureActionScript(actionPath, "[Definition]\n")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		for _, want := range []string{"set -e", "umask 077", "chmod 600 '" + actionPath + "'", missingToolsMarker, permWarningMarker} {
+			if !strings.Contains(script, want) {
+				t.Fatalf("script must contain %q: %q", want, script)
+			}
+		}
+	})
+
+	t.Run("action body survives verbatim", func(t *testing.T) {
+		content := "actionban = curl -d 'ip=<ip>' $(hostname) %(logpath)s\n"
+		script, err := buildEnsureActionScript(actionPath, content)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(script, content) {
+			t.Fatalf("content was altered: %q", script)
+		}
+		if strings.Contains(script, `'"'"'`) {
+			t.Fatalf("content must not be shell-escaped inside a quoted heredoc: %q", script)
+		}
+	})
+
+	// Regression: the service account can rewrite a root-owned file but not chmod it.
+	t.Run("chmod failure does not abort the push", func(t *testing.T) {
+		script, err := buildEnsureActionScript(actionPath, "[Definition]\n")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(script, "chmod 600 '"+actionPath+"' 2>/dev/null || true") {
+			t.Fatalf("chmod must be best effort: %q", script)
+		}
+	})
+
+	t.Run("delimiter collision is rejected", func(t *testing.T) {
+		if _, err := buildEnsureActionScript(actionPath, "a\n"+remoteWriteDelimiter+"\nb\n"); err == nil {
+			t.Fatal("expected error for content containing the heredoc delimiter")
+		}
+	})
+}
+
+func TestExtractMarkerValue(t *testing.T) {
+	cases := []struct {
+		name   string
+		out    string
+		marker string
+		want   string
+	}{
+		{"both tools missing", missingToolsMarker + "jq,curl", missingToolsMarker, "jq,curl"},
+		{"one tool missing", missingToolsMarker + "curl", missingToolsMarker, "curl"},
+		{"marker among other output", "some noise\n  " + missingToolsMarker + "jq  \nmore noise", missingToolsMarker, "jq"},
+		{"no marker", "everything fine\n", missingToolsMarker, ""},
+		{"empty output", "", missingToolsMarker, ""},
+		{"permission marker carries the path", permWarningMarker + "/etc/fail2ban/action.d/ui-custom-action.conf", permWarningMarker, "/etc/fail2ban/action.d/ui-custom-action.conf"},
+		{"markers do not cross-match", permWarningMarker + "/etc/f.conf", missingToolsMarker, ""},
+		{"first match wins", missingToolsMarker + "jq\n" + missingToolsMarker + "curl", missingToolsMarker, "jq"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractMarkerValue(tc.out, tc.marker); got != tc.want {
+				t.Fatalf("extractMarkerValue(%q, %q) = %q, want %q", tc.out, tc.marker, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildBannedSummaryScriptIncludesActionFile(t *testing.T) {
+	script := buildBannedSummaryScript("", "/config/fail2ban/jail.local", "/config/fail2ban/action.d/ui-custom-action.conf")
+	for _, want := range []string{
+		"cat '/config/fail2ban/jail.local'",
+		"cat '/config/fail2ban/action.d/ui-custom-action.conf'",
+		batchActionBegin,
+		batchActionMissing,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("summary script must contain %q: %q", want, script)
+		}
+	}
+}
+
+func TestSplitBannedSummary(t *testing.T) {
+	t.Run("both files present", func(t *testing.T) {
+		out := strings.Join([]string{
+			"Jail list: sshd",
+			bannedSectionEnd,
+			batchJailLocalBegin,
+			"[DEFAULT]",
+			batchActionBegin,
+			"[Definition]",
+			"actionban = curl",
+			batchEnd,
+		}, "\n")
+		got, err := splitBannedSummary(out)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got.jailLocalExists || !got.actionExists {
+			t.Fatalf("both files must be reported as present: %+v", got)
+		}
+		if strings.TrimSpace(got.banned) != "Jail list: sshd" {
+			t.Fatalf("banned section = %q", got.banned)
+		}
+		if strings.TrimSpace(got.jailLocal) != "[DEFAULT]" {
+			t.Fatalf("jail.local section = %q", got.jailLocal)
+		}
+		if strings.TrimSpace(got.actionFile) != "[Definition]\nactionban = curl" {
+			t.Fatalf("action section = %q", got.actionFile)
+		}
+	})
+
+	t.Run("action file missing", func(t *testing.T) {
+		out := strings.Join([]string{
+			"Jail list:",
+			bannedSectionEnd,
+			batchJailLocalMissing,
+			batchActionMissing,
+			batchEnd,
+		}, "\n")
+		got, err := splitBannedSummary(out)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.jailLocalExists || got.actionExists {
+			t.Fatalf("neither file must be reported as present: %+v", got)
+		}
+		if strings.TrimSpace(got.actionFile) != "" {
+			t.Fatalf("action content must be empty: %q", got.actionFile)
+		}
+	})
+
+	t.Run("truncated output is an error", func(t *testing.T) {
+		out := "Jail list: sshd\n" + bannedSectionEnd + "\n" + batchJailLocalBegin + "\n[DEFAULT]"
+		if _, err := splitBannedSummary(out); err == nil {
+			t.Fatal("expected an error for output without the batch end marker")
+		}
+	})
+}
+
+// A missed marker means the UI reports success for a broken jail.
+func TestCheckReloadOutput(t *testing.T) {
+	cases := []struct {
+		name    string
+		out     string
+		wantErr bool
+	}{
+		{"empty output is success", "", false},
+		{"OK is success", "OK", false},
+		{"OK with whitespace", "  OK \n", false},
+		{"unrelated chatter is success", "Server ready\n", false},
+		{"errors in jail", "Errors in jail 'sshd'. Skipping...", true},
+		{"unable to read filter", "Unable to read the filter 'nginx'", true},
+		{"no log files", "Have not found any log file for example jail", true},
+		{"configuration failure", "Failed during configuration: invalid backend", true},
+		{"marker among other lines", "OK\nErrors in jail 'sshd'\n", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkReloadOutput(tc.out)
+			if tc.wantErr && err == nil {
+				t.Fatalf("checkReloadOutput(%q) = nil, want an error", tc.out)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("checkReloadOutput(%q) = %v, want nil", tc.out, err)
+			}
+		})
+	}
+}
+
+func TestCheckPingOutput(t *testing.T) {
+	t.Run("pong is healthy", func(t *testing.T) {
+		if err := checkPingOutput("Server replied: pong", nil, "local"); err != nil {
+			t.Fatalf("want nil, got %v", err)
+		}
+	})
+	t.Run("pong is case insensitive", func(t *testing.T) {
+		if err := checkPingOutput("PONG", nil, "local"); err != nil {
+			t.Fatalf("want nil, got %v", err)
+		}
+	})
+	t.Run("missing pong is an error", func(t *testing.T) {
+		if err := checkPingOutput("Server replied: nothing", nil, "local"); err == nil {
+			t.Fatal("want an error for output without pong")
+		}
+	})
+	t.Run("empty output is an error", func(t *testing.T) {
+		if err := checkPingOutput("", nil, "local"); err == nil {
+			t.Fatal("want an error for empty output")
+		}
+	})
+	t.Run("carried error wins over pong", func(t *testing.T) {
+		err := checkPingOutput("pong", errors.New("socket missing"), "remote")
+		if err == nil {
+			t.Fatal("want an error when the command itself failed")
+		}
+		if !strings.Contains(err.Error(), "socket missing") {
+			t.Fatalf("the underlying error must survive, got %v", err)
+		}
+	})
+}
+
+// A missed marker means no fallback to fail2ban-client reload.
+func TestIsSystemctlUnavailable(t *testing.T) {
+	sc := testSSHConnector()
+	markers := []string{
+		"sudo: systemctl: command not found",
+		"System has not been booted with systemd as init system",
+		"Failed to connect to bus: No such file or directory",
+		"Interactive authentication required.",
+		"sudo: a terminal is required to read the password",
+		"sudo: a password is required",
+		"sudo: a password is needed",
+		"sorry, you must have a tty to run sudo",
+	}
+	for _, out := range markers {
+		t.Run("detects/"+out[:min(len(out), 28)], func(t *testing.T) {
+			if !sc.isSystemctlUnavailable(out, errors.New("exit status 1")) {
+				t.Fatalf("isSystemctlUnavailable(%q) = false, want true", out)
+			}
+		})
+	}
+
+	t.Run("unrelated failure is not a systemd problem", func(t *testing.T) {
+		if sc.isSystemctlUnavailable("Job for fail2ban.service failed", errors.New("exit status 1")) {
+			t.Fatal("a genuine unit failure must not be treated as missing systemd")
+		}
+	})
+
+	t.Run("marker carried on the error instead of stdout", func(t *testing.T) {
+		err := &CommandError{Kind: "ssh", Err: errors.New("exit status 1"), Output: "sudo: a password is required"}
+		if !sc.isSystemctlUnavailable("", err) {
+			t.Fatal("the marker must be found in the output carried by the error")
+		}
+	})
+}
+
+// The quoted word must reach the remote shell byte for byte, whatever it contains.
+func TestShellQuoteRoundTrip(t *testing.T) {
+	for _, word := range []string{"plain", "with space", "it's", `"double"`, "$(id)", "`id`", "a\nb", "back\\slash", "*", ""} {
+		out, err := exec.Command("sh", "-c", "printf '%s' "+shellQuote(word)).Output()
+		if err != nil || string(out) != word {
+			t.Fatalf("shellQuote(%q) round-trip = %q, %v", word, out, err)
+		}
+	}
+	out, err := exec.Command("sh", "-c", "printf '[%s]' "+shellJoin("a b", "c'd", "$x")).Output()
+	if err != nil || string(out) != "[a b][c'd][$x]" {
+		t.Fatalf("shellJoin round-trip = %q, %v", out, err)
 	}
 }

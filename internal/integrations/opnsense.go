@@ -28,6 +28,7 @@ import (
 
 	"github.com/swissmakers/fail2ban-ui/internal/config"
 	"github.com/swissmakers/fail2ban-ui/internal/httpx"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 type opnsenseIntegration struct{}
@@ -42,10 +43,6 @@ func init() {
 
 func (o *opnsenseIntegration) ID() string {
 	return "opnsense"
-}
-
-func (o *opnsenseIntegration) DisplayName() string {
-	return "OPNsense"
 }
 
 func (o *opnsenseIntegration) Validate(cfg config.AdvancedActionsConfig) error {
@@ -69,7 +66,7 @@ func (o *opnsenseIntegration) BlockIP(req Request) error {
 	if err := o.Validate(req.Config); err != nil {
 		return err
 	}
-	if err := ValidateIP(req.IP); err != nil {
+	if err := shared.ValidateIP(req.IP); err != nil {
 		return fmt.Errorf("opnsense block: %w", err)
 	}
 	return o.callAPI(req, "add", req.IP)
@@ -79,7 +76,7 @@ func (o *opnsenseIntegration) UnblockIP(req Request) error {
 	if err := o.Validate(req.Config); err != nil {
 		return err
 	}
-	if err := ValidateIP(req.IP); err != nil {
+	if err := shared.ValidateIP(req.IP); err != nil {
 		return fmt.Errorf("opnsense unblock: %w", err)
 	}
 	return o.callAPI(req, "delete", req.IP)

@@ -6,13 +6,45 @@
 // =========================================================================
 
 var clockInterval = null;
-var statusUpdateCallback = null;
-var headerStatusState = 'connecting';
-var headerStatusText = '';
 var wsTooltipRefreshContent = null;
 var wsTooltipElement = null;
 
-function getWebSocketStatusText(state, fallbackText) {
+function headerStatusHasProblem() {
+  var health = aggregateServerHealth(serversCache);
+  return !wsManager || wsManager.state !== 'connected' || health.down > 0 || health.degraded > 0 || health.busy > 0;
+}
+
+function openHeaderServerProblems() {
+  if (hasAccess('admin') && headerStatusHasProblem()) {
+    openServerManager();
+  }
+}
+
+function renderHeaderServerProblems() {
+  if (!hasAccess('admin')) return '';
+  return serversCache.filter(function(server) {
+    return server.enabled && server.health && ['down', 'degraded', 'busy'].indexOf(server.health.state) !== -1;
+  }).map(function(server) {
+    var badge = serverHealthBadge(server.health);
+    var reason = server.health.error || '';
+    if (serverHasSSHHostKeyError(server)) {
+      badge.label = t('servers.health.state.connection_blocked', 'Connection blocked');
+      reason = t('servers.card.host_key_error', 'SSH host key changed') + '. '
+        + t('servers.card.host_key_blocked', 'Connection blocked. Verify the new fingerprint on the server before accepting it.');
+    } else if (server.health.state === 'busy') {
+      reason = t('operations.health_busy', 'Fail2Ban is applying a change. Status updates will resume when it finishes.');
+    } else if (!reason && server.health.fail2banOk === false) {
+      reason = t('servers.health.fail2ban_down', 'Fail2ban is not responding on this server.');
+    } else if (!reason && server.health.callbackOk === false) {
+      reason = t('servers.health.callback_down', 'The server cannot reach the callback URL; ban events are not recorded.');
+    }
+    return '<div class="mt-2 pt-2 border-t border-gray-700">'
+      + '<div class="font-semibold">' + escapeHtml(server.name || server.id) + ': ' + escapeHtml(badge.label) + '</div>'
+      + (reason ? '<div class="mt-1 break-words">' + escapeHtml(reason) + '</div>' : '') + '</div>';
+  }).join('');
+}
+
+function getWebSocketStatusText(state) {
   switch (state) {
     case 'connected':
       return t('header.websocket.status.connected', 'Connected');
@@ -22,23 +54,11 @@ function getWebSocketStatusText(state, fallbackText) {
       return t('header.websocket.status.reconnecting', 'Reconnecting...');
     case 'disconnected':
       return t('header.websocket.status.disconnected', 'Disconnected');
-    case 'disconnecting':
-      return t('header.websocket.status.disconnecting', 'Disconnecting...');
     case 'error':
       return t('header.websocket.status.error', 'Connection error');
     default:
-      return fallbackText || t('header.websocket.status.unknown', 'Unknown');
+      return t('header.websocket.status.unknown', 'Unknown');
   }
-}
-
-function getWebSocketProtocolLabel(protocol) {
-  if (protocol === 'WSS (Secure)') {
-    return t('header.websocket.tooltip.protocol_wss_secure', 'WSS (Secure)');
-  }
-  if (protocol === 'WS') {
-    return t('header.websocket.tooltip.protocol_ws', 'WS');
-  }
-  return protocol || '';
 }
 
 // =========================================================================
@@ -69,78 +89,48 @@ function initClock() {
 //  Status Indicator
 // =========================================================================
 
-function initStatusIndicator() {
-  updateStatusIndicator('connecting');
-  function registerStatusCallback() {
-    if (typeof wsManager !== 'undefined' && wsManager) {
-      wsManager.onStatusChange(function(state, text) {
-        updateStatusIndicator(state, text);
-      });
-      var currentState = wsManager.getConnectionState();
-      var currentText = getWebSocketStatusText('connecting');
-      if (currentState === 'connected' && wsManager.isConnected) {
-        currentText = getWebSocketStatusText('connected');
-      } else if (currentState === 'connecting') {
-        currentText = getWebSocketStatusText('connecting');
-      } else if (currentState === 'disconnected') {
-        currentText = getWebSocketStatusText('disconnected');
-      } else if (currentState === 'disconnecting') {
-        currentText = getWebSocketStatusText('disconnecting');
-      }
-      updateStatusIndicator(currentState, currentText);
-      return true;
-    }
-    return false;
-  }
-  if (!registerStatusCallback()) {
-    var checkInterval = setInterval(function() {
-      if (registerStatusCallback()) {
-        clearInterval(checkInterval);
-      }
-    }, 100);
-    setTimeout(function() {
-      clearInterval(checkInterval);
-    }, 5000);
-  }
-}
-
-function updateStatusIndicator(state, text) {
+// While the WebSocket is up the dot reports server health; otherwise the connection state.
+function updateStatusIndicator() {
   var statusDot = document.getElementById('statusDot');
   var statusText = document.getElementById('statusText');
   if (!statusDot || !statusText) {
     return;
   }
-  headerStatusState = state || 'unknown';
-  headerStatusText = text || '';
+  var state = wsManager ? wsManager.state : 'connecting';
+  var dotClass = 'bg-gray-400';
+  var label = getWebSocketStatusText(state);
+  if (state === 'connected') {
+    var health = aggregateServerHealth(serversCache);
+    dotClass = 'bg-green-500';
+    if (health.down) {
+      dotClass = 'bg-red-500';
+      label = t('header.health.servers_down', '{count} server(s) down').replace('{count}', String(health.down));
+    } else if (health.degraded) {
+      dotClass = 'bg-yellow-500';
+      label = t('header.health.servers_degraded', '{count} server(s) degraded').replace('{count}', String(health.degraded));
+    } else if (health.busy) {
+      dotClass = 'bg-yellow-500';
+      label = t('header.health.servers_busy', '{count} server(s) busy').replace('{count}', String(health.busy));
+    }
+  } else if (state === 'connecting' || state === 'reconnecting') {
+    dotClass = 'bg-yellow-500';
+  } else if (state === 'disconnected' || state === 'error') {
+    dotClass = 'bg-red-500';
+  }
   statusDot.classList.remove('bg-green-500', 'bg-yellow-500', 'bg-red-500', 'bg-gray-400');
-  var statusLabel = getWebSocketStatusText(state, text);
-  switch (state) {
-    case 'connected':
-      statusDot.classList.add('bg-green-500');
-      statusText.textContent = statusLabel;
-      break;
-    case 'connecting':
-    case 'reconnecting':
-      statusDot.classList.add('bg-yellow-500');
-      statusText.textContent = statusLabel;
-      break;
-    case 'disconnected':
-    case 'error':
-      statusDot.classList.add('bg-red-500');
-      statusText.textContent = statusLabel;
-      break;
-    default:
-      statusDot.classList.add('bg-gray-400');
-      statusText.textContent = statusLabel;
+  statusDot.classList.add(dotClass);
+  statusText.textContent = label;
+  var statusEl = document.getElementById('backendStatus');
+  if (statusEl) {
+    var actionable = hasAccess('admin') && headerStatusHasProblem();
+    statusEl.setAttribute('role', actionable ? 'button' : 'status');
+    statusEl.tabIndex = actionable ? 0 : -1;
+    statusEl.classList.toggle('cursor-pointer', actionable);
   }
 }
 
 function refreshHeaderTranslations() {
-  var state = headerStatusState || 'unknown';
-  if (typeof wsManager !== 'undefined' && wsManager && typeof wsManager.getConnectionState === 'function') {
-    state = wsManager.getConnectionState();
-  }
-  updateStatusIndicator(state, headerStatusText);
+  updateStatusIndicator();
   if (wsTooltipElement && wsTooltipElement.style.display !== 'none' && typeof wsTooltipRefreshContent === 'function') {
     wsTooltipRefreshContent();
   }
@@ -156,53 +146,50 @@ function createWebSocketTooltip() {
   tooltip.className = 'fixed z-50 px-3 py-2 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none opacity-0 transition-opacity duration-200';
   tooltip.style.display = 'none';
   tooltip.style.minWidth = '200px';
+  tooltip.style.maxWidth = 'min(360px, calc(100vw - 16px))';
   document.body.appendChild(tooltip);
   wsTooltipElement = tooltip;
   const statusEl = document.getElementById('backendStatus');
-  if (!statusEl) {
-    return;
-  }
   let tooltipUpdateInterval = null;
   function updateTooltipContent() {
-    if (!wsManager || !wsManager.isConnected) {
-      return;
-    }
-    const info = wsManager.getConnectionInfo();
+    const info = wsManager && wsManager.getConnectionInfo();
     if (!info) {
+      tooltip.innerHTML = '<div>' + escapeHtml(getWebSocketStatusText(wsManager ? wsManager.state : 'connecting')) + '</div>' + renderHeaderServerProblems();
       return;
     }
+    const protocol = info.secure
+      ? t('header.websocket.tooltip.protocol_wss_secure', 'WSS (Secure)')
+      : t('header.websocket.tooltip.protocol_ws', 'WS');
     tooltip.innerHTML = `
-      <div class="font-semibold mb-2 text-green-400 border-b border-gray-700 pb-1">${t('header.websocket.tooltip.title', 'WebSocket Connection')}</div>
+      <div class="font-semibold mb-2 text-green-400 border-b border-gray-700 pb-1">${escapeHtml(t('header.websocket.tooltip.title', 'WebSocket Connection'))}</div>
       <div class="space-y-1">
         <div class="flex justify-between">
-          <span class="text-gray-400">${t('header.websocket.tooltip.duration', 'Duration:')}</span>
-          <span class="text-green-400 font-medium">${info.duration}</span>
+          <span class="text-gray-400">${escapeHtml(t('header.websocket.tooltip.duration', 'Duration:'))}</span>
+          <span class="text-green-400 font-medium">${escapeHtml(info.duration)}</span>
         </div>
         <div class="flex justify-between">
-          <span class="text-gray-400">${t('header.websocket.tooltip.last_heartbeat', 'Last Heartbeat:')}</span>
-          <span class="text-blue-400 font-medium">${info.lastHeartbeat}</span>
+          <span class="text-gray-400">${escapeHtml(t('header.websocket.tooltip.last_heartbeat', 'Last Heartbeat:'))}</span>
+          <span class="text-blue-400 font-medium">${escapeHtml(info.lastHeartbeat)}</span>
         </div>
         <div class="flex justify-between">
-          <span class="text-gray-400">${t('header.websocket.tooltip.messages', 'Messages:')}</span>
+          <span class="text-gray-400">${escapeHtml(t('header.websocket.tooltip.messages', 'Messages:'))}</span>
           <span class="text-yellow-400 font-medium">${info.messages}</span>
         </div>
         <div class="flex justify-between">
-          <span class="text-gray-400">${t('header.websocket.tooltip.reconnects', 'Reconnects:')}</span>
+          <span class="text-gray-400">${escapeHtml(t('header.websocket.tooltip.reconnects', 'Reconnects:'))}</span>
           <span class="text-orange-400 font-medium">${info.reconnects}</span>
         </div>
         <div class="mt-2 pt-2 border-t border-gray-700">
-          <div class="text-gray-400 text-xs">${getWebSocketProtocolLabel(info.protocol)}</div>
-          <div class="text-gray-500 text-xs mt-1 break-all">${info.url}</div>
+          <div class="text-gray-400 text-xs">${escapeHtml(protocol)}</div>
+          <div class="text-gray-500 text-xs mt-1 break-all">${escapeHtml(info.url)}</div>
         </div>
       </div>
-    `;
+    ` + renderHeaderServerProblems();
   }
   wsTooltipRefreshContent = updateTooltipContent;
-  function showTooltip(e) {
-    if (!wsManager || !wsManager.isConnected) {
-      return;
-    }
+  function showTooltip() {
     updateTooltipContent();
+    tooltip.style.display = 'block';
     const rect = statusEl.getBoundingClientRect();
     const tooltipRect = tooltip.getBoundingClientRect();
     let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
@@ -235,26 +222,24 @@ function createWebSocketTooltip() {
       tooltipUpdateInterval = null;
     }
   }
-  statusEl.addEventListener('mouseenter', showTooltip);
-  statusEl.addEventListener('mouseleave', hideTooltip);
-  if (typeof wsManager !== 'undefined' && wsManager) {
-    wsManager.onStatusChange(function(state, text) {
-      if (state !== 'connected') {
+  if (statusEl) {
+    statusEl.addEventListener('mouseenter', showTooltip);
+    statusEl.addEventListener('mouseleave', hideTooltip);
+    statusEl.addEventListener('focus', showTooltip);
+    statusEl.addEventListener('blur', hideTooltip);
+    statusEl.addEventListener('click', function() {
+      hideTooltip();
+      openHeaderServerProblems();
+    });
+    statusEl.addEventListener('keydown', function(event) {
+      if (hasAccess('admin') && headerStatusHasProblem() && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
         hideTooltip();
+        openHeaderServerProblems();
       }
     });
-  } else {
-    var checkInterval = setInterval(function() {
-      if (typeof wsManager !== 'undefined' && wsManager) {
-        wsManager.onStatusChange(function(state, text) {
-          if (state !== 'connected') {
-            hideTooltip();
-          }
-        });
-        clearInterval(checkInterval);
-      }
-    }, 100);
   }
+  return hideTooltip;
 }
 
 // =========================================================================
@@ -263,8 +248,14 @@ function createWebSocketTooltip() {
 
 function initHeader() {
   initClock();
-  initStatusIndicator();
-  createWebSocketTooltip();
+  var hideTooltip = createWebSocketTooltip();
+  wsManager.on('status', function(state) {
+    updateStatusIndicator();
+    if (state !== 'connected') {
+      hideTooltip();
+    }
+  });
+  updateStatusIndicator();
 }
 
 if (typeof window !== 'undefined') {

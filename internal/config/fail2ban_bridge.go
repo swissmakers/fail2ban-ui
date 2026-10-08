@@ -44,7 +44,7 @@ func (fail2banRuntime) ServerPort() int {
 	return currentSettings.Port
 }
 
-func (fail2banRuntime) BuildFail2banActionConfig(callbackURL, serverID, secret string) string {
+func (fail2banRuntime) BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, error) {
 	return BuildFail2banActionConfig(callbackURL, serverID, secret)
 }
 
@@ -58,12 +58,5 @@ func registerFail2banProvider() {
 
 func ReloadFail2banManager() error {
 	s := GetSettings()
-	for _, srv := range s.Servers {
-		if srv.Enabled && srv.Type == "local" {
-			if err := EnsureLocalFail2banAction(srv); err != nil {
-				DebugLog("Warning: failed to ensure local fail2ban action for server %s: %v", srv.Name, err)
-			}
-		}
-	}
 	return fail2ban.GetManager().ReloadFromServers(s.Servers)
 }

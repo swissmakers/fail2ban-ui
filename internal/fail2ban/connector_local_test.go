@@ -18,6 +18,8 @@ package fail2ban
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -145,5 +147,55 @@ exit 255
 	}
 	if strings.Contains(err.Error(), "full configuration tree") {
 		t.Fatalf("mount hint must only fire for the config-visibility case, got: %v", err)
+	}
+}
+
+// Without -c, reload pushes the client's default /etc/fail2ban into whichever daemon the socket reaches.
+func TestLocalReloadLoadsTheServersOwnTree(t *testing.T) {
+	logFile := filepath.Join(t.TempDir(), "argv")
+	t.Setenv("F2BUI_TEST_ARGV", logFile)
+	withFakeBinary(t, "fail2ban-client", `printf '%s\n' "$*" >> "$F2BUI_TEST_ARGV"; echo OK`)
+	lc := &LocalConnector{server: shared.Fail2banServer{
+		Name:       "secondary",
+		SocketPath: "/var/run/fail2ban-secondary/fail2ban.sock",
+		ConfigPath: "/etc/fail2ban-secondary",
+	}}
+	if err := lc.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "-s /var/run/fail2ban-secondary/fail2ban.sock -c /etc/fail2ban-secondary reload"
+	if strings.TrimSpace(string(got)) != want {
+		t.Fatalf("reload argv = %q, want %q", strings.TrimSpace(string(got)), want)
+	}
+}
+
+func TestDeleteLocalConfigFilesRemovesBackups(t *testing.T) {
+	root := t.TempDir()
+	dir := FilterDir(root)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"apache.local", "apache.local.f2bui.bak", "apache.conf", "apache.conf.f2bui.bak", "other.local.f2bui.bak"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := deleteLocalConfigFiles(filterKind, "apache", root); err != nil {
+		t.Fatalf("deleteLocalConfigFiles: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, ",") != "other.local.f2bui.bak" {
+		t.Fatalf("left in filter.d: %v, want only the other filter's backup", left)
 	}
 }

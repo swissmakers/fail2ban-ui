@@ -1,24 +1,7 @@
 "use strict";
 
 function fetchThreatIntelData(ip) {
-  return fetch(appPath('/api/threat-intel/' + encodeURIComponent(ip)), { method: 'GET' })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json()
-          .then(function(payload) {
-            var apiError = payload && payload.error ? String(payload.error) : '';
-            var message = apiError || (t('threat.modal.error_http', 'Threat intelligence request failed') + ' (' + res.status + ')');
-            throw new Error(message);
-          })
-          .catch(function(parseErr) {
-            if (parseErr instanceof Error) {
-              throw parseErr;
-            }
-            throw new Error(t('threat.modal.error_http', 'Threat intelligence request failed') + ' (' + res.status + ')');
-          });
-      }
-      return res.json();
-    });
+  return fetch(appPath('/api/threat-intel/' + encodeURIComponent(ip))).then(readJsonResponse);
 }
 
 function renderThreatIntelData(data, selectedIP) {
@@ -39,9 +22,7 @@ function renderThreatIntelData(data, selectedIP) {
       + '<pre class="threat-intel-raw">' + escapeHtml(JSON.stringify(providerData, null, 2)) + '</pre></section>';
   }
   content.innerHTML = html;
-  if (typeof updateTranslations === 'function') {
-    updateTranslations();
-  }
+  updateTranslations();
 }
 
 function renderAlienVaultThreatIntel(payload, selectedIP) {
@@ -196,7 +177,7 @@ function renderThreatIntelHero(opts) {
   html += '  <div class="threat-intel-hero-main">';
   html += '    <p class="threat-intel-hero-kicker">' + escapeHtml(t('threat.metric.provider', 'Provider')) + ': ' + escapeHtml(tiValue(opts.provider)) + '</p>';
   html += '    <h4 class="threat-intel-hero-title">' + escapeHtml(tiValue(opts.ip)) + '</h4>';
-  html += '    <p class="threat-intel-hero-subtitle">' + escapeHtml(t('threat.metric.risk', 'Risk')) + ': ' + escapeHtml(tiValue(opts.riskLabel)) + '</p>';
+  html += '    <p class="threat-intel-hero-subtitle">' + escapeHtml(t('threat.metric.risk', 'Risk')) + ': ' + escapeHtml(tiRiskLabel(opts.riskLabel)) + '</p>';
   html += '  </div><div class="threat-intel-priority-grid">';
   cards.forEach(function(card) {
     html += threatIntelMetricCard(card.label, card.value, 'threat-intel-card-compact');
@@ -214,8 +195,8 @@ function buildThreatIntelCollapsibleEntries(entries, selectedIP, suffix, visible
   var maxVisible = Number.isFinite(visibleCount) && visibleCount > 0 ? visibleCount : 5;
   var visible = safeEntries.slice(0, maxVisible);
   var hidden = safeEntries.slice(maxVisible);
-  var hiddenId = 'threat-intel-list-hidden-' + suffix + '-' + tiSlug(selectedIP || 'ip');
-  var toggleId = 'threat-intel-list-toggle-' + suffix + '-' + tiSlug(selectedIP || 'ip');
+  var hiddenId = slugifyId(selectedIP, 'threat-intel-list-hidden-' + suffix);
+  var toggleId = slugifyId(selectedIP, 'threat-intel-list-toggle-' + suffix);
   var html = '<div class="threat-intel-list">';
 
   visible.forEach(function(entryHtml) {
@@ -224,7 +205,7 @@ function buildThreatIntelCollapsibleEntries(entries, selectedIP, suffix, visible
   html += '</div>';
 
   if (hidden.length) {
-    html += '<div class="threat-intel-list hidden mt-2" style="display:none;" id="' + hiddenId + '" data-initially-hidden="true">';
+    html += '<div class="threat-intel-list hidden mt-2" id="' + hiddenId + '" data-initially-hidden="true">';
     hidden.forEach(function(entryHtml) {
       html += entryHtml;
     });
@@ -236,7 +217,7 @@ function buildThreatIntelCollapsibleEntries(entries, selectedIP, suffix, visible
       + ' data-more-label="' + escapeHtml(moreLabel) + '"'
       + ' data-less-label="' + escapeHtml(lessLabel) + '"'
       + ' data-expanded="false"'
-      + ' onclick="toggleThreatActivityList(\'' + hiddenId + '\', \'' + toggleId + '\')">'
+      + ' onclick="toggleHiddenList(\'' + hiddenId + '\', \'' + toggleId + '\')">'
       + escapeHtml(moreLabel)
       + '</button>';
   }
@@ -380,8 +361,8 @@ function tiRichTextBlock(text, baseId, idx, maxChars) {
   }
   var shortText = value.slice(0, threshold).replace(/\s+$/g, '') + '...';
   var escapedShort = escapeHtml(shortText);
-  var textId = 'threat-intel-rich-text-' + tiSlug(baseId) + '-' + idx;
-  var btnId = 'threat-intel-rich-toggle-' + tiSlug(baseId) + '-' + idx;
+  var textId = slugifyId(baseId, 'threat-intel-rich-text') + '-' + idx;
+  var btnId = slugifyId(baseId, 'threat-intel-rich-toggle') + '-' + idx;
   var moreLabel = t('dashboard.banned.show_more', 'Show more');
   var lessLabel = t('dashboard.banned.show_less', 'Hide extra');
   return ''
@@ -435,7 +416,7 @@ function tiAbuseCategoryLabel(id) {
     "22": "SSH",
     "23": "IoT Targeted"
   };
-  return map[key] || ('Category #' + key);
+  return map[key] || t('threat.field.category_number', 'Category #{id}').replace('{id}', key);
 }
 
 function tiAbuseCountry(entry) {
@@ -482,21 +463,24 @@ function tiBool(value) {
   return value ? t('threat.boolean.yes', 'Yes') : t('threat.boolean.no', 'No');
 }
 
-function tiClassForReputation(reputation) {
-  var value = (reputation || '').toLowerCase();
-  if (value === 'malicious') {
+function tiClassForReputation(risk) {
+  if (risk === 'malicious' || risk === 'suspicious') {
     return 'threat-intel-card-danger';
   }
-  if (value === 'suspicious') {
-    return 'threat-intel-card-danger';
+  return risk === 'low-risk' ? 'threat-intel-card-safe' : '';
+}
+
+function tiRiskLabel(risk) {
+  switch (risk) {
+    case 'malicious':
+      return t('threat.risk.malicious', 'Malicious');
+    case 'suspicious':
+      return t('threat.risk.suspicious', 'Suspicious');
+    case 'low-risk':
+      return t('threat.risk.low_risk', 'Low risk');
+    default:
+      return tiValue(risk);
   }
-  if (value === 'benign') {
-    return 'threat-intel-card-safe';
-  }
-  if (value === 'low-risk') {
-    return 'threat-intel-card-safe';
-  }
-  return '';
 }
 
 function tiAlienVaultRiskLabel(reputation, pulseCount) {
@@ -514,28 +498,4 @@ function tiAlienVaultRiskLabel(reputation, pulseCount) {
 function tiTimestamp(value) {
   var ts = Date.parse(value || '');
   return Number.isFinite(ts) ? ts : 0;
-}
-
-function tiSlug(value) {
-  return String(value || 'ti').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
-
-function toggleThreatActivityList(hiddenId, buttonId) {
-  var hidden = document.getElementById(hiddenId);
-  var button = document.getElementById(buttonId);
-  if (!hidden || !button) {
-    return;
-  }
-  var isHidden = hidden.classList.contains('hidden') || hidden.style.display === 'none';
-  if (isHidden) {
-    hidden.classList.remove('hidden');
-    hidden.style.display = 'flex';
-    button.textContent = button.getAttribute('data-less-label') || button.textContent;
-    button.setAttribute('data-expanded', 'true');
-  } else {
-    hidden.classList.add('hidden');
-    hidden.style.display = 'none';
-    button.textContent = button.getAttribute('data-more-label') || button.textContent;
-    button.setAttribute('data-expanded', 'false');
-  }
 }

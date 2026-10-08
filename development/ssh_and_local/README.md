@@ -216,9 +216,10 @@ To modify the SSH configuration, edit the `command` section in `container-compos
 2. Check the logs: `podman logs DEV_fail2ban-agent`. Fail2Ban should start and the agent should listen on `9700`.
 3. Quick check from the host:
   ```bash
-   curl -sS -H 'X-F2B-Token: dev-agent-secret-change-me' http://127.0.0.1:9700/healthz
+   curl -sS http://127.0.0.1:9700/readyz
+   curl -sS -H 'X-F2B-Token: dev-agent-9f3c1a7e5b2d4086' http://127.0.0.1:9700/v1/health
   ```
-4. In Fail2Ban UI under **Manage Servers**, add a server with type **Agent**, agent URL `http://127.0.0.1:9700` (or the container IP from the bridge), and agent secret `dev-agent-secret-change-me` - it must match `AGENT_SECRET` in `container-compose.yml`.
+4. In Fail2Ban UI under **Manage Servers**, add a server with type **Agent**, agent URL `http://127.0.0.1:9700` (or the container IP from the bridge), and agent secret `dev-agent-9f3c1a7e5b2d4086` - it must match `AGENT_SECRET` in `container-compose.yml`.
 5. Optional: uncomment the `AGENT_CALLBACK_`* environment variables on `fail2ban-agent` to exercise the ban/unban callbacks toward Fail2Ban UI.
 
 ### 3. SSH connector

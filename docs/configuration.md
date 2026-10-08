@@ -29,7 +29,7 @@ Rules:
 
 * Use a single leading slash and no trailing slash: `/myf2b`, not `myf2b/`.
 * When set, the application is served only under that prefix. Visiting `/` redirects to `{BASE_PATH}/`; non-prefixed paths are not served.
-* The reverse proxy must forward requests *with* the path prefix to Fail2Ban UI. See [reverse-proxy.md](reverse-proxy.md).
+* The reverse proxy must forward requests *with* the path prefix to Fail2Ban UI and must not strip it. See [reverse-proxy.md](reverse-proxy.md).
 
 When `BASE_PATH` is set, align the related URLs:
 
@@ -45,8 +45,8 @@ Fail2Ban UI receives ban and unban callbacks at:
 
 | Variable | Description |
 |----------|-------------|
-| `CALLBACK_URL` | URL reachable from every managed Fail2Ban host: scheme, host, optional port, and `BASE_PATH` if used. No trailing slash. |
-| `CALLBACK_SECRET` | Shared secret validated through the `X-Callback-Secret` header. If unset, Fail2Ban UI generates one on first start. |
+| `CALLBACK_URL` | URL reachable from every managed Fail2Ban host: `http(s)://host[:port][/path]`, with `BASE_PATH` if used. No trailing slash. Only letters, digits and `. _ ~ / -` are allowed, because the value is written into a command that Fail2Ban runs as root. |
+| `CALLBACK_SECRET` | Shared secret validated through the `X-Callback-Secret` header. If unset, Fail2Ban UI generates one on first start. Printable ASCII without spaces, quotes, `\`, `` ` ``, `$`, `%`, `<` or `>`. |
 | `CALLBACK_INSECURE_TLS` | Default `false`. When `true` (or `1`/`yes`/`on`), the `curl` command in the generated ban action skips TLS certificate verification (`-k`) for an `https://` callback URL. Only enable this if the UI uses a self-signed certificate that the managed hosts do not trust. |
 
 > **Upgrade note:** older releases always passed `-k` for `https://` callback URLs. TLS verification is now on by default because the callback carries the shared secret. If your UI runs with a self-signed certificate, either install the certificate on every managed host or set `CALLBACK_INSECURE_TLS=true`, otherwise ban callbacks will fail silently after upgrading. The regenerated action file is pushed to managed hosts automatically at startup.
@@ -70,11 +70,33 @@ With a subpath:
 
 SSH-connected servers can enable **reverse tunnel for events** (server form). The UI then opens a reverse tunnel (`ssh -R <tunnel port>:localhost:<server port>`) alongside the SSH control connection so callbacks reach the UI even when the managed host cannot connect to it directly (NAT, firewall, isolated DMZ without outbound access). Two ports are involved: the **tunnel port** is where the remote host listens locally for the fail2ban callbacks, and the **server port** is where the UI's HTTP API listens -> the tunnel carries connections from the former to the latter.
 
-Each server has its own tunnel port setting. Leave it empty to use the UI bind port (`PORT`, default 8080). If set, it must be between 1024 and 65535: the unprivileged SSH service account on the managed host cannot bind ports below 1024, and `ssh` only reports such a failure as a stderr warning while the connection itself stays up. The same applies when the chosen port is already occupied on the remote host, pick a free unprivileged port in that case. The tunnel port only affects the remote side; the tunnel always forwards to the UI's configured server port, so a custom tunnel port does not need to match it.
+Each server has its own tunnel port setting. Leave it empty to use the UI bind port (`PORT`, default 8080). If set, it must be between 1024 and 65535. Choose a free port on the remote host. The UI uses `ExitOnForwardFailure=yes`, so an occupied port or rejected forwarding request fails the tunnel connection and produces an operational warning. The tunnel port only affects the remote side; the tunnel always forwards to the UI's configured server port, so a custom tunnel port does not need to match it.
 
-For tunneled servers, the UI writes `http://localhost:<tunnel port>` into the remote action file, so the callbacks travel through the tunnel regardless of the global `CALLBACK_URL`. This means mixed setups work: keep `CALLBACK_URL` pointing at a public address for directly reachable servers while tunneled servers use the loopback URL. Plain `http` is correct inside the tunnel, the transport is already SSH-encrypted, so TLS (and `CALLBACK_INSECURE_TLS`) is irrelevant for tunneled servers.
+For tunneled servers, the UI writes `http://localhost:<tunnel port><BASE_PATH>` into the remote action file, so callbacks travel through the tunnel regardless of the global `CALLBACK_URL`. For example, `BASE_PATH=/myf2b` produces `http://localhost:8080/myf2b/api/ban`. Mixed setups can keep `CALLBACK_URL` pointing at a public address for directly reachable servers while tunneled servers use the loopback URL. Plain `http` is correct inside the tunnel: the transport is already SSH-encrypted, so `CALLBACK_INSECURE_TLS` is irrelevant for tunneled servers.
 
-The UI checks every tunnel's SSH master connection every 45 seconds and automatically re-establishes it when it has died (for example after a short network outage), so callback delivery resumes without waiting for the next UI-triggered command. Changing a server's tunnel settings tears down the old connection and builds a new one immediately.
+Every 45 seconds the UI checks the SSH master and requests the authenticated callback health endpoint from the remote host through the tunnel. A live SSH session alone does not count as a healthy callback path. Dead connections and failed forwarding paths trigger reconnection; HTTP authentication or routing errors mark the server **Degraded**. Changing the host, SSH user, key path, SSH port, or tunnel settings replaces the old control connection.
+
+### Keeping managed configuration current
+
+The UI synchronizes callback configuration and managed `jail.local` defaults on startup and when their settings change. For SSH and local servers, it stages file replacements in the destination directory and keeps the preceding content in a private `.f2bui.bak` file. An identical retry preserves that backup. An unreadable file is treated as an error, and a user-owned `jail.local` is left intact. Action files are written under the host's Fail2Ban configuration root, including `/config/fail2ban` on containerised hosts.
+
+The UI runs `fail2ban-client -t` before it reloads Fail2Ban after a configuration push or a restart request, on local and SSH servers and on agents from version 0.2. A successful write does not clear pending work: validation and reload must also succeed. Failed operations remain pending and retry every 45 seconds, even with no browser open. Startup reconstructs desired configuration from saved settings. Administrators can see pending work and the last error under **Manage Servers**. Reading SSH jail status also detects action-file drift, and agents report a missing or outdated callback registration; both trigger a repair, at most once every 5 minutes per server.
+
+When the files reached a host but Fail2Ban could not load them, for example because the service was stopped, the server shows **Restart required**. **Restart Fail2ban** first re-applies pending configuration and validates it. The UI refuses the restart when validation fails, because restarting into a broken configuration would leave the host unprotected.
+
+### Server health
+
+The same 45-second monitor probes every enabled server, so a host that stopped protecting you is visible without waiting for missing bans:
+
+| Server type | Healthy when |
+|-------------|--------------|
+| Local | `fail2ban-client ping` answers |
+| SSH | Fail2Ban answers, and `curl` on the host reaches `/api/healthcheck/callback` with the callback secret |
+| Agent | The agent reports ready, and its callback registration matches this server entry |
+
+The result appears as **Healthy**, **Degraded**, or **Down** next to the server name and updates live. See [troubleshooting.md](troubleshooting.md#a-server-shows-degraded-or-down) for what each state means.
+
+Generated callbacks use bounded curl retries and a stable event ID for each delivery attempt. The UI deduplicates retries in SQLite before broadcasting events or dispatching alerts, and returns an error if event storage fails. There is no durable callback queue on the managed host: events can still be lost during an outage that lasts beyond the retry window.
 
 ## Privacy and telemetry controls
 

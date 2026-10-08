@@ -3,19 +3,15 @@ set -euo pipefail
 
 echo "[custom-init] ssh + acl setup starting"
 
-# ---- user management (Alpine-friendly, idempotent) ----
 if ! id -u testuser >/dev/null 2>&1; then
-  # Alpine has adduser by default
   adduser -D -s /bin/bash testuser
-  # UNLOCK the account for SSH publickey auth (BusyBox adduser -D sets '!' in /etc/shadow)
-  # Convert "testuser:!:" (locked) -> "testuser::" (no password, unlocked)
+  # BusyBox adduser -D locks the account, which also blocks key-based SSH logins.
   sed -i -e 's/^testuser:!:/testuser::/' -e 's/^testuser:\*:/testuser::/' /etc/shadow || true
 fi
 
-# ---- SSH host keys ----
 ssh-keygen -A
 
-# ---- persistent client keypair in /mnt/ssh-keys ----
+# The client key pair lives in /mnt/ssh-keys so it survives container rebuilds.
 mkdir -p /mnt/ssh-keys
 if [ ! -f /mnt/ssh-keys/id_rsa ]; then
   echo "[custom-init] generating new SSH key pair in /mnt/ssh-keys"
@@ -24,13 +20,12 @@ if [ ! -f /mnt/ssh-keys/id_rsa ]; then
   chmod 644 /mnt/ssh-keys/id_rsa.pub
 fi
 
-# ---- authorize key for testuser ----
 install -d -m 700 -o testuser -g testuser /home/testuser/.ssh
 cat /mnt/ssh-keys/id_rsa.pub > /home/testuser/.ssh/authorized_keys
 chown testuser:testuser /home/testuser/.ssh/authorized_keys
 chmod 600 /home/testuser/.ssh/authorized_keys
 
-# ---- sshd_config (idempotent; avoid duplicate lines every restart) ----
+# Only append missing options, this script runs on every start.
 SSHD_CFG=/etc/ssh/sshd_config
 
 grep -qE '^PermitRootLogin\s+' "$SSHD_CFG" || echo 'PermitRootLogin no' >> "$SSHD_CFG"
@@ -41,8 +36,6 @@ grep -qE '^PubkeyAuthentication\s+' "$SSHD_CFG" || echo 'PubkeyAuthentication ye
 grep -qE '^LogLevel\s+' "$SSHD_CFG" || echo 'LogLevel VERBOSE' >> "$SSHD_CFG"
 grep -qE '^AuthorizedKeysFile\s+' "$SSHD_CFG" || echo 'AuthorizedKeysFile .ssh/authorized_keys' >> "$SSHD_CFG"
 
-# ---- sudoers for fail2ban-ui remote management in dev ----
-# Keep fail2ban-client for normal operations and allow restart commands used by the UI code path.
 install -d -m 0750 /etc/sudoers.d
 cat > /etc/sudoers.d/fail2ban-ui <<'EOF'
 testuser ALL=(ALL) NOPASSWD: /usr/bin/fail2ban-client *
@@ -50,28 +43,19 @@ testuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban
 EOF
 chmod 0440 /etc/sudoers.d/fail2ban-ui
 
-# ---- ACLs: run AFTER LSIO has created /config/fail2ban on first boot ----
-# The container creates /config content on first run. :contentReference[oaicite:6]{index=6}
 mkdir -p /config/fail2ban/{action.d,filter.d,jail.d}
 
-# Apply both access ACL and default ACL (so new files/dirs inherit)
-# First apply recursively to existing files/directories, then set default ACLs
+# Access ACL for existing files, default ACL so new files inherit it.
 for d in /config/fail2ban /config/fail2ban/action.d /config/fail2ban/filter.d /config/fail2ban/jail.d; do
-  # Apply access ACL recursively to existing files/directories
   setfacl -R -m u:testuser:rwX,m::rwX "$d"
-  # Set default ACL so new files/dirs inherit permissions
   setfacl -d -m u:testuser:rwX,m::rwX "$d"
-  # Also ensure the directory itself has the access ACL
   setfacl -m u:testuser:rwX,m::rwX "$d"
 done
 
 # /etc/fail2ban is a symlink to /config/fail2ban in this image; setfacl follows symlinks by default.
 if [ -e /etc/fail2ban ]; then
-  # Apply recursively to existing files/directories
   setfacl -R -m u:testuser:rwX,m::rwX /etc/fail2ban || true
-  # Set default ACL
   setfacl -d -m u:testuser:rwX,m::rwX /etc/fail2ban || true
-  # Ensure the symlink target has access ACL
   setfacl -m u:testuser:rwX,m::rwX /etc/fail2ban || true
 fi
 

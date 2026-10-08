@@ -41,8 +41,6 @@ func loadLocaleKeys(t *testing.T, name string) map[string]struct{} {
 	return keys
 }
 
-// Every locale must carry exactly the same key set as en.json, so no language
-// silently falls back to English for individual strings.
 func TestLocaleKeySetsMatchEnglish(t *testing.T) {
 	entries, err := fs.Glob(LocalesFS, "*.json")
 	if err != nil {

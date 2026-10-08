@@ -58,20 +58,30 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// Endpoints that bypass authentication, matched exactly.
+var publicExactRoutes = map[string]struct{}{
+	"/auth/login":               {},
+	"/auth/callback":            {},
+	"/auth/logout":              {},
+	"/auth/status":              {},
+	"/api/ban":                  {},
+	"/api/unban":                {},
+	"/api/healthcheck/callback": {},
+}
+
+// Public asset trees, matched by prefix.
+var publicRoutePrefixes = []string{
+	"/static/",
+	"/locales/",
+}
+
+// Exact match for endpoints: a prefix would make /api/bans public via /api/ban.
 func isPublicRoute(path string) bool {
-	publicRoutes := []string{
-		"/auth/login",
-		"/auth/callback",
-		"/auth/logout",
-		"/auth/status",
-		"/api/ban",
-		"/api/unban",
-		"/api/healthcheck/callback",
-		"/static/",
-		"/locales/",
+	if _, ok := publicExactRoutes[path]; ok {
+		return true
 	}
-	for _, route := range publicRoutes {
-		if strings.HasPrefix(path, route) {
+	for _, prefix := range publicRoutePrefixes {
+		if strings.HasPrefix(path, prefix) {
 			return true
 		}
 	}

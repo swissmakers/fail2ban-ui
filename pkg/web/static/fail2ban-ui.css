@@ -114,7 +114,6 @@
     --f2b-ui-theme-badge-warning-hover-bg: #fde68a;
     --f2b-ui-theme-badge-success-bg: #dcfce7;
     --f2b-ui-theme-badge-success-text: #166534;
-    --f2b-ui-prism-bg: #f8fafc;
     --f2b-ui-toast-success-bg: #047857;
     --f2b-ui-toast-info-bg: #1d4ed8;
     --f2b-ui-toast-warning-bg: #d97706;
@@ -233,7 +232,6 @@ html[data-theme="dark"] body:not(.lotr-mode) {
     --f2b-ui-theme-badge-warning-hover-bg: #92400e;
     --f2b-ui-theme-badge-success-bg: #14532d;
     --f2b-ui-theme-badge-success-text: #bbf7d0;
-    --f2b-ui-prism-bg: #020617;
     --f2b-ui-toast-success-bg: #14532d;
     --f2b-ui-toast-info-bg: #1e40af;
     --f2b-ui-toast-warning-bg: #a16207;
@@ -452,15 +450,6 @@ html[data-theme="dark"] body:not(.lotr-mode) .toast-warning {
     background-color: var(--f2b-ui-toast-warning-bg) !important;
 }
 
-html[data-theme="dark"] body:not(.lotr-mode) pre[class*="language-"],
-html[data-theme="dark"] body:not(.lotr-mode) code[class*="language-"] { background: var(--f2b-ui-prism-bg); }
-
-html[data-theme="dark"] body:not(.lotr-mode) .token.operator,
-html[data-theme="dark"] body:not(.lotr-mode) .token.entity,
-html[data-theme="dark"] body:not(.lotr-mode) .token.url,
-html[data-theme="dark"] body:not(.lotr-mode) .language-css .token.string,
-html[data-theme="dark"] body:not(.lotr-mode) .style .token.string { background: transparent; }
-
 /* =========================================================================
    Loading Overlay
    ========================================================================= */
@@ -468,16 +457,16 @@ html[data-theme="dark"] body:not(.lotr-mode) .style .token.string { background: 
 #loading-overlay {
     display: none;
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
+    bottom: 1rem;
+    left: 1rem;
+    width: auto;
+    height: auto;
+    background: var(--f2b-card-bg, white);
+    color: var(--f2b-text, #1f2937);
     z-index: 9999;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    pointer-events: none;
     opacity: 0;
     transition: opacity 0.4s ease;
 }
@@ -546,6 +535,25 @@ body:has(#loginPage:not(.hidden)) {
     max-height: 100%;
 }
 
+#serverManagerList [data-server-editor-slot]:empty {
+    display: none;
+}
+
+@media (max-width: 1023px) {
+    #serverManagerList {
+        min-height: 0;
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
+    }
+
+    #serverManagerList [data-server-editor-slot] #serverManagerEditor {
+        padding: 1rem;
+        border: 1px solid var(--f2b-ui-border);
+        scroll-margin-top: 1rem;
+    }
+}
+
 #serverManagerInfoView.server-manager-info-view {
     box-sizing: border-box;
     display: grid;
@@ -562,10 +570,6 @@ body:has(#loginPage:not(.hidden)) {
 
 #serverManagerInfoView.server-manager-info-view.hidden {
     display: none;
-}
-
-#serverManagerInfoView .server-manager-info-add {
-    margin-inline: auto;
 }
 
 ::-webkit-scrollbar {
@@ -832,11 +836,20 @@ mark {
     gap: 0.5rem;
     z-index: 10000;
     pointer-events: none;
+    max-width: calc(100vw - 3rem);
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+}
+
+#operation-toasts {
+    display: contents;
 }
 
 .toast {
     min-width: 240px;
     max-width: 360px;
+    flex-shrink: 0;
+    overflow-wrap: anywhere;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     color: #fff;

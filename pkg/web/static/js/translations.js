@@ -5,45 +5,46 @@
 //  Translation Engine
 // =========================================================================
 
+var I18N_ATTRIBUTES = ['placeholder', 'title', 'aria-label'];
+
+// Always resolves; a missing locale leaves the current strings in place.
 function loadTranslations(lang) {
-  $.getJSON(appPath('/locales/' + lang + '.json'))
-    .done(function(data) {
+  return Promise.resolve($.getJSON(assetUrl('/locales/' + lang + '.json')))
+    .then(function(data) {
       translations = data;
       updateTranslations();
     })
-    .fail(function() {
+    .catch(function() {
       console.error('Failed to load translations for language:', lang);
     });
 }
 
 function updateTranslations() {
   $('[data-i18n]').each(function() {
-    var key = $(this).data('i18n');
+    var key = lotrI18nKey($(this).attr('data-i18n'));
     if (translations[key]) {
       $(this).text(translations[key]);
     }
   });
-  $('[data-i18n-placeholder]').each(function() {
-    var key = $(this).data('i18n-placeholder');
-    if (translations[key]) {
-      $(this).attr('placeholder', translations[key]);
-    }
+  I18N_ATTRIBUTES.forEach(function(attr) {
+    $('[data-i18n-' + attr + ']').each(function() {
+      var key = lotrI18nKey($(this).attr('data-i18n-' + attr));
+      if (translations[key]) {
+        $(this).attr(attr, translations[key]);
+      }
+    });
   });
-  if (typeof refreshHeaderTranslations === 'function') {
-    refreshHeaderTranslations();
-  }
+  refreshHeaderTranslations();
+  if (typeof renderOperations === 'function') renderOperations();
 }
 
 function getTranslationsSettingsOnPageload() {
-  return fetch(appPath('/api/settings'))
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      var lang = data.language || 'en';
-      $('#languageSelect').val(lang);
-      loadTranslations(lang);
-    })
-    .catch(function(err) {
-      console.error('Error loading initial settings:', err);
-      loadTranslations('en');
-    });
+  return getSettings().then(function(data) {
+    var lang = (data && data.language) || 'en';
+    $('#languageSelect').val(lang);
+    return loadTranslations(lang);
+  }, function(err) {
+    console.error('Error loading initial settings:', err);
+    return loadTranslations('en');
+  });
 }

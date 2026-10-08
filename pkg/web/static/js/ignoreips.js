@@ -21,10 +21,8 @@ function renderIgnoreIPsTags(ips) {
 function addIgnoreIPTag(ip) {
   if (!ip || !ip.trim()) return;
   const trimmedIP = ip.trim();
-  if (typeof isValidIP === 'function' && !isValidIP(trimmedIP)) {
-    if (typeof showToast === 'function') {
-      showToast(t('settings.toast.invalid_ignore_ip', 'Invalid IP address, CIDR, or hostname') + ': ' + trimmedIP, 'error');
-    }
+  if (!isValidIgnoreEntry(trimmedIP)) {
+    showToast(t('settings.toast.invalid_ignore_ip', 'Invalid IP address, CIDR, or hostname') + ': ' + trimmedIP, 'error');
     return;
   }
   const container = document.getElementById('ignoreIPsTags');
@@ -61,14 +59,11 @@ function removeIgnoreIPTag(ip) {
 function setupIgnoreIPsInput() {
   const input = document.getElementById('ignoreIPInput');
   if (!input) return;
-  let lastValue = '';
-  input.addEventListener('input', function(e) {
-    let value = this.value;
-    const filtered = value.replace(/[^0-9a-zA-Z:.\/\-\_\s]/g, '');
-    if (value !== filtered) {
+  input.addEventListener('input', function() {
+    const filtered = this.value.replace(/[^0-9a-zA-Z:.\/\-\_\s]/g, '');
+    if (this.value !== filtered) {
       this.value = filtered;
     }
-    lastValue = filtered;
   });
   input.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === ',') {

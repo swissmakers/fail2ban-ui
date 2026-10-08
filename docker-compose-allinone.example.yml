@@ -10,7 +10,8 @@ services:
       # Required for fail2ban container: Allows to run as root (needed to manage network interfaces and raw sockets)
       - SYS_ADMIN
     #privileged: true
-    network_mode: host # needed to add iptables rules to the host network
+    # needed to add iptables rules to the host network
+    network_mode: host
     environment:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
@@ -35,7 +36,8 @@ services:
     # Or build from source (uncomment to use):
     # image: localhost/fail2ban-ui:dev
     container_name: fail2ban-ui
-    privileged: true # needed because the fail2ban-ui container needs to modify the fail2ban config owned by root inside the linuxserver-fail2ban container
+    # needed because the fail2ban-ui container needs to modify the fail2ban config owned by root inside the linuxserver-fail2ban container
+    privileged: true
     network_mode: host
     environment:
       # ============================================
@@ -140,7 +142,8 @@ services:
       - ./config:/config:Z
       # Required for fail2ban-ui: Used for testing, that logpath is working, before enabeling a jail. Without this read only access the fail2ban-ui will not be able to enable jails (logpath-test would fail)
       - /var/log:/var/log:ro
-      - /var/log/httpd:/remotelogs/apache2:ro # this mounts the apache2 logs of a RPM based system (e.g. Rocky Linux) to the default location set by linuxserver-fail2ban. (on debian based systems this is /var/log/apache2 and currently hardcoded in the linuxserver-fail2ban container)
+      # this mounts the apache2 logs of a RPM based system (e.g. Rocky Linux) to the default location set by linuxserver-fail2ban. (on debian based systems this is /var/log/apache2 and currently hardcoded in the linuxserver-fail2ban container)
+      - /var/log/httpd:/remotelogs/apache2:ro
 
       # Required for compose-local fail2ban instance: We mount the same Fail2Ban config as the linuxserver-fail2ban container (under /config/fail2ban to fail2ban-ui can modify configs)
       - ./fail2ban-config/fail2ban:/etc/fail2ban:z

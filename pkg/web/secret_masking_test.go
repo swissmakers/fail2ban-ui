@@ -26,7 +26,6 @@ func TestMaskAppSettingsSecrets(t *testing.T) {
 	s := config.AppSettings{CallbackSecret: "topsecret"}
 	s.SMTP.Password = "pw"
 	s.Webhook.Headers = map[string]string{"Authorization": "Bearer xyz"}
-	s.Servers = []config.Fail2banServer{{ID: "a", Type: "agent", AgentSecret: "agent-tok"}}
 
 	masked := maskAppSettingsSecrets(s)
 
@@ -39,28 +38,9 @@ func TestMaskAppSettingsSecrets(t *testing.T) {
 	if masked.Webhook.Headers["Authorization"] != secretMaskSentinel {
 		t.Errorf("webhook header not masked: %q", masked.Webhook.Headers["Authorization"])
 	}
-	if masked.Servers[0].AgentSecret != secretMaskSentinel {
-		t.Errorf("embedded server agent secret not masked: %q", masked.Servers[0].AgentSecret)
-	}
-	// Masking must not mutate the original (value fields or the embedded slice).
+	// Masking must not mutate the original.
 	if s.CallbackSecret != "topsecret" {
 		t.Errorf("original mutated: %q", s.CallbackSecret)
-	}
-	if s.Servers[0].AgentSecret != "agent-tok" {
-		t.Errorf("original server slice mutated (aliasing): %q", s.Servers[0].AgentSecret)
-	}
-}
-
-func TestRestoreMaskedServerSecrets(t *testing.T) {
-	stored := config.AppSettings{
-		Servers: []config.Fail2banServer{{ID: "a", AgentSecret: "stored-tok"}},
-	}
-	req := config.AppSettings{
-		Servers: []config.Fail2banServer{{ID: "a", AgentSecret: secretMaskSentinel}},
-	}
-	restoreMaskedSecrets(&req, stored)
-	if req.Servers[0].AgentSecret != "stored-tok" {
-		t.Errorf("unchanged server secret should be restored, got %q", req.Servers[0].AgentSecret)
 	}
 }
 
@@ -105,9 +85,9 @@ func settingsWithAllSecrets() (config.AppSettings, map[string]func(*config.AppSe
 		"Elasticsearch.Password": func(s *config.AppSettings) *string { return &s.Elasticsearch.Password },
 		"Mikrotik.Password":      func(s *config.AppSettings) *string { return &s.AdvancedActions.Mikrotik.Password },
 		"PfSense.APIToken":       func(s *config.AppSettings) *string { return &s.AdvancedActions.PfSense.APIToken },
-		"PfSense.APISecret":      func(s *config.AppSettings) *string { return &s.AdvancedActions.PfSense.APISecret },
 		"OPNsense.APIKey":        func(s *config.AppSettings) *string { return &s.AdvancedActions.OPNsense.APIKey },
 		"OPNsense.APISecret":     func(s *config.AppSettings) *string { return &s.AdvancedActions.OPNsense.APISecret },
+		"UniFi.APIKey":           func(s *config.AppSettings) *string { return &s.AdvancedActions.UniFi.APIKey },
 	}
 	for name, get := range fields {
 		*get(&s) = "secret-" + name

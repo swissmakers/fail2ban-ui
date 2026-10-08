@@ -44,13 +44,14 @@ var SubPatterns = map[string]string{
 
 var HTTPPatterns = []PatternDef{
 	{
-		// Apache/Nginx combined log format with vhost/server-name prefix
+		// Apache/Nginx combined log format with vhost/server-name prefix (optional :port)
 		// www.example.ch 1.1.1.1 - - [23/Feb/2026:14:37:29 +0100] "GET /.git/config HTTP/1.1" 301 248 "-" "Mozilla/5.0"
+		// www.example.ch:443 1.1.1.1 - - [23/Feb/2026:14:37:29 +0100] "GET /.git/config HTTP/1.1" 301 248 "-" "Mozilla/5.0"
 		Name:     "http_combined_vhost",
 		Category: "http",
 		Action:   "http_request",
 		Process:  "httpd",
-		Pattern:  `%{IPORHOST:server.address} %{IPORHOST:source.address} (?:-|%{F2B_HTTPDUSER}) (?:-|%{F2B_HTTPDUSER:source.user.name}) \[%{HTTPDATE:log.timestamp}\] "(?:%{WORD:http.request.method} %{NOTSPACE:url.original}(?: HTTP/%{NUMBER:http.version})?|%{DATA})" (?:-|%{INT:http.response.status_code:int}) (?:-|%{INT:http.response.body.bytes:int}) "(?:-|%{DATA:http.request.referrer})" "(?:-|%{DATA:user_agent.original})"`,
+		Pattern:  `%{IPORHOST:server.address}(?::%{POSINT})? %{IPORHOST:source.address} (?:-|%{F2B_HTTPDUSER}) (?:-|%{F2B_HTTPDUSER:source.user.name}) \[%{HTTPDATE:log.timestamp}\] "(?:%{WORD:http.request.method} %{NOTSPACE:url.original}(?: HTTP/%{NUMBER:http.version})?|%{DATA})" (?:-|%{INT:http.response.status_code:int}) (?:-|%{INT:http.response.body.bytes:int}) "(?:-|%{DATA:http.request.referrer})" "(?:-|%{DATA:user_agent.original})"`,
 	},
 	{
 		// Apache/Nginx combined log format

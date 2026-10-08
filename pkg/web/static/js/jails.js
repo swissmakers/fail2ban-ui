@@ -6,6 +6,7 @@
 // =========================================================================
 
 function createJail() {
+  var actionServerId = currentServerId;
   const jailName = document.getElementById('newJailName').value.trim();
   const content = document.getElementById('newJailContent').value.trim();
 
@@ -13,7 +14,6 @@ function createJail() {
     showToast(t('jails.toast.name_required', 'Jail name is required'), 'error');
     return;
   }
-  showLoading(true);
   fetch(withServerParam('/api/jails'), {
     method: 'POST',
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
@@ -23,28 +23,16 @@ function createJail() {
     })
   })
     .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
+      if (res.status === 202 && currentServerId === actionServerId) closeModal('createJailModal');
+      return readJsonResponse(res);
     })
     .then(function(data) {
-      if (data.error) {
-        showToast(t('jails.toast.create_error', 'Error creating jail') + ': ' + data.error, 'error');
-        return;
-      }
-      closeModal('createJailModal');
-      showToast(data.message || t('jails.toast.create_success', 'Jail created successfully'), 'success');
-      openManageJailsModal();
+      if (!data.operationId) showToast(apiMessage(data, 'jails.toast.create_success', 'Jail created successfully'), 'success');
+      if (currentServerId === actionServerId) openManageJailsModal({ silent: true });
     })
     .catch(function(err) {
       console.error('Error creating jail:', err);
-      showToast(t('jails.toast.create_error', 'Error creating jail') + ': ' + (err.message || err), 'error');
-    })
-    .finally(function() {
-      showLoading(false);
+      if (!err.operation) showToast(t('jails.toast.create_error', 'Error creating jail') + ': ' + (err.message || err), 'error');
     });
 }
 
@@ -54,7 +42,8 @@ function createJail() {
 
 function saveJailConfig() {
   if (!currentJailForConfig) return;
-  showLoading(true);
+  var actionServerId = currentServerId;
+  var actionJail = currentJailForConfig;
 
   var filterConfig = document.getElementById('filterConfigTextarea').value;
   var jailConfig = document.getElementById('jailConfigTextarea').value;
@@ -65,41 +54,30 @@ function saveJailConfig() {
     body: JSON.stringify({ filter: filterConfig, jail: jailConfig }),
   })
     .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
+      if (res.status === 202 && currentServerId === actionServerId && currentJailForConfig === actionJail) closeModal('jailConfigModal');
+      return readJsonResponse(res);
     })
     .then(function(data) {
-      if (data.error) {
-        showToast(t('jails.toast.save_config_error', 'Error saving config') + ': ' + data.error, 'error');
-        return;
-      }
-      closeModal('jailConfigModal');
+      data = data || {};
       if (data.warning) {
         var warnMsg = t('filter_debug.save_reload_warning', 'Config saved, but fail2ban reload failed') + ': ' + data.warning;
         if (data.jailAutoDisabled && data.jailName) {
-          warnMsg = (typeof t === 'function' ? t('filter_debug.jail_auto_disabled', "Jail '%s' was automatically disabled.").replace('%s', data.jailName) : "Jail '" + data.jailName + "' was automatically disabled.") + ' ' + warnMsg;
+          warnMsg = t('filter_debug.jail_auto_disabled', "Jail '%s' was automatically disabled.").replace('%s', data.jailName) + ' ' + warnMsg;
           var toggleId = 'toggle-' + data.jailName.replace(/[^a-zA-Z0-9]/g, '_');
           var cb = document.getElementById(toggleId);
-          if (cb) cb.checked = false;
+          if (cb && currentServerId === actionServerId) cb.checked = false;
         }
-        showToast(warnMsg, 'warning', 12000);
-      } else {
+        if (!data.operationId) showToast(warnMsg, 'warning', 12000);
+      } else if (!data.operationId) {
         showToast(t('filter_debug.save_success', 'Filter and jail config saved and reloaded'), 'success');
       }
-      if (data.jailAutoDisabled) {
+      if (data.jailAutoDisabled && currentServerId === actionServerId) {
         return refreshData({ silent: true, summaryOnly: true });
       }
     })
     .catch(function(err) {
-      console.error("Error saving config:", err);
-      showToast(t('jails.toast.save_config_error', 'Error saving config') + ': ' + err.message, 'error');
-    })
-    .finally(function() {
-      showLoading(false);
+      console.error('Error saving config:', err);
+      if (!err.operation) showToast(t('jails.toast.save_config_error', 'Error saving config') + ': ' + err.message, 'error');
     });
 }
 
@@ -134,107 +112,88 @@ findtime = 600`;
 //  Jail toggle enable/disable state of single jails
 // =========================================================================
 
+// Only tracks the short submission window until the durable operation is known.
+var pendingJailChanges = Object.create(null);
+
+function updateJailChangeProgress() {
+  var local = pendingJailChanges[currentServerId] || {};
+  var active = typeof activeServerOperations === 'function' ? activeServerOperations(currentServerId) : [];
+  document.querySelectorAll('#jailsList input[type="checkbox"]').forEach(function(control) {
+    var name = control.getAttribute('data-jail-name');
+    if (!name) return;
+    var requested = local[name];
+    active.forEach(function(operation) {
+      if (operation.desiredStates && Object.prototype.hasOwnProperty.call(operation.desiredStates, name)) {
+        requested = { enabled: operation.desiredStates[name] };
+      }
+    });
+    control.disabled = !!requested;
+    if (requested) control.checked = requested.enabled;
+    var note = document.getElementById('jail-state-' + name.replace(/[^a-zA-Z0-9]/g, '_'));
+    if (!note) return;
+    note.textContent = requested ? (requested.enabled
+      ? t('jails.manage.enabling', 'Enabling…')
+      : t('jails.manage.disabling', 'Disabling…')) : '';
+    note.classList.toggle('hidden', !requested);
+  });
+}
+
 function saveManageJailsSingle(checkbox) {
-  const item = checkbox.closest('div.flex.items-center.justify-between');
-  if (!item) {
-    console.error('Could not find parent container for checkbox');
-    return;
-  }
-
-  const nameSpan = item.querySelector('span.text-sm.font-medium');
-  if (!nameSpan) {
-    console.error('Could not find jail name span');
-    return;
-  }
-
-  const jailName = nameSpan.textContent.trim();
-  if (!jailName) {
-    console.error('Jail name is empty');
-    return;
-  }
-
-  const isEnabled = checkbox.checked;
-  const updatedJails = {};
+  var serverId = currentServerId;
+  var item = checkbox.closest('div.flex.items-center.justify-between');
+  var nameSpan = item && item.querySelector('span.text-sm.font-medium');
+  var jailName = checkbox.getAttribute('data-jail-name') || (nameSpan && nameSpan.textContent.trim());
+  if (!jailName) return;
+  var pending = pendingJailChanges[serverId] = pendingJailChanges[serverId] || {};
+  if (pending[jailName]) return;
+  var isEnabled = checkbox.checked;
+  var updatedJails = {};
   updatedJails[jailName] = isEnabled;
-
-  console.log('Saving jail state:', jailName, 'enabled:', isEnabled, 'payload:', updatedJails);
-
-  fetch(withServerParam('/api/jails/manage'), {
-    method: 'POST',
-    headers: serverHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(updatedJails),
-  })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+  var url = withServerParam('/api/jails/manage');
+  var headers = serverHeaders({ 'Content-Type': 'application/json' });
+  pending[jailName] = { jail: jailName, enabled: isEnabled, started: Date.now() };
+  updateJailChangeProgress();
+  return fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(updatedJails) })
+    .then(readJsonResponse)
     .then(function(data) {
+      data = data || {};
       if (data.error) {
-        var errorMsg = data.error;
-        var toastType = 'error';
-        // If jails were auto-disabled, check if this jail was one of them
-        var wasAutoDisabled = data.autoDisabled && data.enabledJails && Array.isArray(data.enabledJails) && data.enabledJails.indexOf(jailName) !== -1;
-
-        if (wasAutoDisabled) {
-          checkbox.checked = false;
-          toastType = 'warning';
+        var error = new Error(data.error);
+        error.data = data;
+        throw error;
+      }
+      var disabledJails = Array.isArray(data.disabledJails) ? data.disabledJails : [];
+      checkbox.checked = disabledJails.indexOf(jailName) === -1 && isEnabled;
+      checkbox.setAttribute('data-confirmed-enabled', String(checkbox.checked));
+      if (!data.operationId) {
+        if (data.warning) showToast(data.warning, 'warning', 12000);
+        if (disabledJails.length) {
+          showToast(t('jails.manage.offender_disabled', "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled.").replace('{jail}', disabledJails.join("', '")), 'warning', 15000);
         } else {
-          // Revert checkbox state if error occurs
-          checkbox.checked = !isEnabled;
+          showToast(apiMessage(data, isEnabled ? 'jails.toast.enabled_success' : 'jails.toast.disabled_success', 'Jail {jail} ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully').replace('{jail}', jailName), 'success');
         }
-        showToast(errorMsg, toastType, wasAutoDisabled ? 15000 : undefined);
-
-        // Reload the jail list to reflect the actual state
-        return fetch(withServerParam('/api/jails/manage'), {
-          headers: serverHeaders()
-        }).then(function(res) { return res.json(); })
-        .then(function(data) {
-          if (data.jails && data.jails.length) {
-            const jail = data.jails.find(function(j) { return j.jailName === jailName; });
-            if (jail) {
-              checkbox.checked = jail.enabled;
-            }
-          }
-          loadServers().then(function() {
-            updateRestartBanner();
-            return refreshData({ silent: true, summaryOnly: true });
-          });
-        });
       }
-
-      if (data.warning) {
-        showToast(data.warning, 'warning');
-      }
-
-      console.log('Jail state saved successfully:', data);
-      var disabledJails = (data.disabledJails && Array.isArray(data.disabledJails)) ? data.disabledJails : [];
-      if (disabledJails.length) {
-        var offenderMsg = t('jails.manage.offender_disabled', "Your change was applied. Unrelated jail '{jail}' has a broken configuration and was automatically disabled.")
-          .replace('{jail}', disabledJails.join("', '"));
-        showToast(offenderMsg, 'warning', 15000);
-      } else {
-        showToast(data.message || t(isEnabled ? 'jails.toast.enabled_success' : 'jails.toast.disabled_success', 'Jail {jail} ' + (isEnabled ? 'enabled' : 'disabled') + ' successfully').replace('{jail}', jailName), 'success');
-      }
-      checkbox.checked = disabledJails.indexOf(jailName) !== -1 ? false : isEnabled;
-      disabledJails.forEach(function(name) {
-        var cb = document.getElementById('toggle-' + String(name).replace(/[^a-zA-Z0-9]/g, '_'));
-        if (cb) {
-          cb.checked = false;
-        }
-      });
       return loadServers().then(function() {
-        updateRestartBanner();
-        return refreshData({ silent: true, summaryOnly: true });
+        if (currentServerId === serverId) return refreshData({ silent: true, summaryOnly: true });
       });
     })
     .catch(function(err) {
-      console.error('Error saving jail settings:', err);
-      showToast(t('jails.toast.save_settings_error', 'Error saving jail settings') + ': ' + (err.message || err), 'error');
-      checkbox.checked = !isEnabled;
+      var data = err.data || {};
+      var autoDisabled = data.autoDisabled && Array.isArray(data.enabledJails) && data.enabledJails.indexOf(jailName) !== -1;
+      checkbox.checked = autoDisabled ? false : !isEnabled;
+      if (!err.operation) showToast(t('jails.toast.save_settings_error', 'Error saving jail settings') + ': ' + (err.message || String(err)), autoDisabled ? 'warning' : 'error', 15000);
+      if (typeof refreshOperations === 'function') refreshOperations();
+      // Reconcile the original server, not whichever one the user selected
+      // while the request was running.
+      return fetch(url, { headers: headers }).then(readJsonResponse).then(function(actual) {
+        var jail = actual && Array.isArray(actual.jails) && actual.jails.find(function(j) { return j.jailName === jailName; });
+        if (jail) checkbox.checked = jail.enabled;
+      }).catch(function() { });
+    })
+    .finally(function() {
+      delete pending[jailName];
+      if (!Object.keys(pending).length) delete pendingJailChanges[serverId];
+      updateJailChangeProgress();
     });
 }
 
@@ -243,37 +202,25 @@ function saveManageJailsSingle(checkbox) {
 // =========================================================================
 
 function deleteJail(jailName) {
+  var actionServerId = currentServerId;
   if (!confirm(t('jails.confirm.delete', 'Are you sure you want to delete the jail "{name}"? This action cannot be undone.').replace('{name}', jailName))) {
     return;
   }
-  showLoading(true);
   fetch(withServerParam('/api/jails/' + encodeURIComponent(jailName)), {
     method: 'DELETE',
     headers: serverHeaders()
   })
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().then(function(data) {
-          throw new Error(data.error || 'Server returned ' + res.status);
-        });
-      }
-      return res.json();
-    })
+    .then(readJsonResponse)
     .then(function(data) {
-      if (data.error) {
-        showToast(t('jails.toast.delete_error', 'Error deleting jail') + ': ' + data.error, 'error');
-        return;
+      if (!data.operationId) showToast(apiMessage(data, 'jails.toast.delete_success', 'Jail deleted successfully'), 'success');
+      if (currentServerId === actionServerId) {
+        openManageJailsModal({ silent: true });
+        refreshData({ silent: true, summaryOnly: true });
       }
-      showToast(data.message || t('jails.toast.delete_success', 'Jail deleted successfully'), 'success');
-      openManageJailsModal();
-      refreshData({ silent: true, summaryOnly: true });
     })
     .catch(function(err) {
       console.error('Error deleting jail:', err);
-      showToast(t('jails.toast.delete_error', 'Error deleting jail') + ': ' + (err.message || err), 'error');
-    })
-    .finally(function() {
-      showLoading(false);
+      if (!err.operation) showToast(t('jails.toast.delete_error', 'Error deleting jail') + ': ' + (err.message || err), 'error');
     });
 }
 
@@ -374,18 +321,10 @@ function testLogpath() {
     headers: serverHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ logpath: logpath })
   })
-    .then(function(res) { return res.json(); })
+    .then(readJsonResponse)
     .then(function(data) {
       showLoading(false);
-      if (data.error) {
-        resultsDiv.textContent = t('common.error', 'Error') + ': ' + data.error;
-        resultsDiv.classList.add('text-red-600');
-        setTimeout(function() {
-          resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 100);
-        return;
-      }
-      var originalLogpath = data.original_logpath || '';
+      data = data || {};
       var results = data.results || [];
       var isLocalServer = data.is_local_server || false;
       var output = '';
@@ -436,7 +375,7 @@ function testLogpath() {
         } else if (inaccessible) {
           output += '<span class="text-yellow-600 font-bold">&#9888;</span>';
           output += '<span class="text-yellow-600 text-sm">'
-            + escapeHtml(message || t('jails.logpath_test.inaccessible', 'Cannot verify: the log directory is not readable by the connectors SSH user. Fail2Ban runs as root and will read it, so the jail can still be enabled.'))
+            + escapeHtml(t('jails.logpath_test.inaccessible', message || 'Cannot verify: the connector cannot read the log directory. Check its directory permissions. Fail2Ban must validate the configuration before the jail can be enabled.'))
             + '</span>';
         } else {
           output += '<span class="text-red-600 font-bold">&#10007;</span>';
@@ -482,7 +421,7 @@ function testLogpath() {
     })
     .catch(function(err) {
       showLoading(false);
-      resultsDiv.textContent = 'Error: ' + err;
+      resultsDiv.textContent = t('common.error', 'Error') + ': ' + err.message;
       resultsDiv.classList.add('text-red-600');
       setTimeout(function() {
         resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });

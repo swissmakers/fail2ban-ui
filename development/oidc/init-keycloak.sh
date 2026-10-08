@@ -1,6 +1,5 @@
 #!/bin/bash
-# Automatic Keycloak OIDC client configuration script
-# This script creates the fail2ban-ui OIDC client in Keycloak automatically
+# Creates or updates the fail2ban-ui OIDC client in the dev Keycloak and saves its secret for the UI.
 
 set -e
 
@@ -10,21 +9,19 @@ KEYCLOAK_PASSWORD="${KEYCLOAK_PASSWORD:-admin}"
 REALM="${REALM:-master}"
 CLIENT_ID="${CLIENT_ID:-fail2ban-ui}"
 CLIENT_SECRET="${CLIENT_SECRET:-}"
-# Use PUBLIC_FRONTEND_URL if provided, otherwise default to localhost
 PUBLIC_FRONTEND_URL="${PUBLIC_FRONTEND_URL:-http://localhost:3080}"
 REDIRECT_URI="${REDIRECT_URI:-${PUBLIC_FRONTEND_URL}/auth/callback}"
 POST_LOGOUT_REDIRECT_URI="${POST_LOGOUT_REDIRECT_URI:-${PUBLIC_FRONTEND_URL}/auth/login}"
 WEB_ORIGIN="${WEB_ORIGIN:-${PUBLIC_FRONTEND_URL}}"
 
-# Extract host and port from KEYCLOAK_URL for health check
-# KEYCLOAK_URL is the internal URL (e.g., http://keycloak:8080)
-# Health endpoint is on management port 9000
+# Keycloak serves /health on the management port 9000, not on the KEYCLOAK_URL port.
 KEYCLOAK_HOST=$(echo "${KEYCLOAK_URL}" | sed -E 's|https?://([^:/]+).*|\1|')
 KEYCLOAK_HEALTH_URL="http://${KEYCLOAK_HOST}:9000/health/ready"
 
 echo "Waiting for Keycloak to be ready..."
 echo "Checking health endpoint: ${KEYCLOAK_HEALTH_URL}"
-max_attempts=120  # Increased timeout since Keycloak can take a while
+# Increased timeout since Keycloak can take a while
+max_attempts=120
 attempt=0
 while [ $attempt -lt $max_attempts ]; do
     # Check health endpoint on management port 9000

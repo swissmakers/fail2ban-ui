@@ -45,10 +45,6 @@ func (m *mikrotikIntegration) ID() string {
 	return "mikrotik"
 }
 
-func (m *mikrotikIntegration) DisplayName() string {
-	return "Mikrotik RouterOS"
-}
-
 func (m *mikrotikIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 	if cfg.Mikrotik.Host == "" {
 		return fmt.Errorf("mikrotik host is required")
@@ -70,7 +66,7 @@ func (m *mikrotikIntegration) Validate(cfg config.AdvancedActionsConfig) error {
 // =========================================================================
 
 func safeMikrotikArgs(ip, addressList string) (string, string, error) {
-	if err := ValidateIP(ip); err != nil {
+	if err := shared.ValidateIP(ip); err != nil {
 		return "", "", err
 	}
 	if err := ValidateIdentifier(addressList, "address list"); err != nil {

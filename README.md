@@ -25,9 +25,10 @@ Fail2Ban UI does not replace Fail2Ban. Ban decisions are still made by the Fail2
 * Remote jail and filter configuration management (depending on connector capabilities)
 * Filter debugging with live log-pattern testing
 * Ban insights with a Kibana-like ban/unban timeline, incident comparison to isolate repeat attackers, one-click permanent blocking of a whole time range, and country-level analytics
-* Recurring-offender handling with permanent blocks on MikroTik, pfSense, and OPNsense
+* Recurring-offender handling with permanent blocks on MikroTik, pfSense, OPNsense, and UniFi Network
 * Persistent event history and permanent-block records, with data management built in
 * Configurable alerts over Email (SMTP), Webhook, and Elasticsearch, with GeoIP/Whois enrichment and country filtering
+* Background changes with progress, per-server queues, and automatic config-recovery for bad configs
 * Optional OIDC login (Keycloak, Authentik, Pocket-ID)
 * Least-privilege, SELinux-aware deployment patterns
 
@@ -178,7 +179,7 @@ Ban Insights brings SIEM-like analysis to environments without a full SIEM. The 
 Typical workflows:
 
 * **Correlate two incidents.** Pin one spike as Incident A and another as Incident B -> for example, last week's attack and this week's. The incident compare lists the IPs present in both. Addresses that return across incidents are repeat attackers rather than false positives, and can be banned permanently right to the recurring-offenders list.
-* **Block a botnet in one click.** Select a time range in which no legitimate user is normally active, such as a nightly spike, and permanently block every IP in it on the configured firewall integration (MikroTik, pfSense, OPNsense).
+* **Block a botnet in one click.** Select a time range in which no legitimate user is normally active, such as a nightly spike, and permanently block every IP in it on the configured firewall integration (MikroTik, pfSense, OPNsense, UniFi).
 
 The modal also suggests similar past periods, exports IP lists as CSV or JSON, and shows country-level analytics on an interactive 3D globe together with the top recurring IPs.
 
@@ -202,7 +203,7 @@ When enabled, the debug console streams the live application log into the browse
 
 [![Advanced Ban Actions](screenshots/4.2_Settings_AdvancedBanActions.png)](screenshots/4.2_Settings_AdvancedBanActions.png)
 
-Permanent blocking, firewall integrations (MikroTik, pfSense, OPNsense), and recurring-offender thresholds.
+Permanent blocking, firewall integrations (MikroTik, pfSense, OPNsense, UniFi), and recurring-offender thresholds.
 
 #### Alert settings
 

@@ -64,7 +64,11 @@ func TestPathLayout(t *testing.T) {
 	if got := JailLocal(root); got != wantLocal {
 		t.Fatalf("JailLocal: got %q want %q", got, wantLocal)
 	}
-	wantAction := filepath.Join(root, "action.d", "ui-custom-action.conf")
+	wantActionDir := filepath.Join(root, "action.d")
+	if got := ActionDir(root); got != wantActionDir {
+		t.Fatalf("ActionDir: got %q want %q", got, wantActionDir)
+	}
+	wantAction := filepath.Join(wantActionDir, "ui-custom-action.conf")
 	if got := CustomActionFile(root); got != wantAction {
 		t.Fatalf("CustomActionFile: got %q want %q", got, wantAction)
 	}
@@ -113,6 +117,65 @@ func TestResolveWithinDir(t *testing.T) {
 	for _, name := range []string{"../../etc/passwd", "..", "foo/bar", "a/../../b"} {
 		if _, err := resolveWithinDir(dir, name, ".local"); err == nil {
 			t.Fatalf("resolveWithinDir(%q): expected error, got nil", name)
+		}
+	}
+}
+
+// Guards user-supplied names against path traversal.
+func TestValidateFilterAndJailName(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{"sshd", "nginx-limit-req", "my_jail", "Jail123", "a"}
+	dangerous := []string{
+		"",
+		"   ",
+		"..",
+		"../etc",
+		"../../etc/passwd",
+		"/etc/passwd",
+		"sshd/../../root",
+		"sshd.conf",
+		"sshd space",
+		"sshd;rm -rf /",
+		"sshd$(whoami)",
+		"sshd|cat",
+		"-leading-dash",
+		"sshd\nmore",
+		"sshd\x00",
+	}
+
+	for _, name := range valid {
+		t.Run("filter/valid/"+name, func(t *testing.T) {
+			if err := ValidateFilterName(name); err != nil {
+				t.Fatalf("ValidateFilterName(%q) = %v, want nil", name, err)
+			}
+		})
+		t.Run("jail/valid/"+name, func(t *testing.T) {
+			if err := ValidateJailName(name); err != nil {
+				t.Fatalf("ValidateJailName(%q) = %v, want nil", name, err)
+			}
+		})
+	}
+
+	for _, name := range dangerous {
+		t.Run("filter/rejected/"+name, func(t *testing.T) {
+			if err := ValidateFilterName(name); err == nil {
+				t.Fatalf("ValidateFilterName(%q) = nil, want an error", name)
+			}
+		})
+		t.Run("jail/rejected/"+name, func(t *testing.T) {
+			if err := ValidateJailName(name); err == nil {
+				t.Fatalf("ValidateJailName(%q) = nil, want an error", name)
+			}
+		})
+	}
+}
+
+func TestResolveWithinDirRejectsEscape(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"..", "../evil", "/abs", "a/b"} {
+		if _, err := resolveWithinDir("/etc/fail2ban/jail.d", name, ".local"); err == nil {
+			t.Fatalf("resolveWithinDir(%q) = nil error, want rejection", name)
 		}
 	}
 }

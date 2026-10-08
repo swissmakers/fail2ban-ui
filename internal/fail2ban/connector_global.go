@@ -20,21 +20,15 @@ package fail2ban
 import (
 	"context"
 	"fmt"
+	"github.com/swissmakers/fail2ban-ui/internal/shared"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
 // =========================================================================
 //  Validation
 // =========================================================================
-
-// Ensures an IP/CIDR is well-formed
-func ValidateIP(ip string) error {
-	return shared.ValidateIP(ip)
-}
 
 // Inspects fail2ban-client reload output for the markers tha indicate the daemon reloaded but a jail/filter failed to apply
 func checkReloadOutput(output string) error {
@@ -42,7 +36,8 @@ func checkReloadOutput(output string) error {
 	if trimmed == "" || trimmed == "OK" {
 		return nil
 	}
-	if strings.Contains(output, "Errors in jail") || strings.Contains(output, "Unable to read the filter") {
+	if strings.Contains(output, "Errors in jail") || strings.Contains(output, "Unable to read the filter") ||
+		strings.Contains(output, "Have not found any log file") || strings.Contains(output, "Failed during configuration") {
 		return fmt.Errorf("fail2ban reload completed but with errors (output: %s)", trimmed)
 	}
 	return nil
@@ -142,9 +137,7 @@ type reprScanner struct {
 	pos int
 }
 
-func (s *reprScanner) rest() string { return s.in[s.pos:] }
-func (s *reprScanner) done() bool   { return s.pos >= len(s.in) }
-
+func (s *reprScanner) done() bool { return s.pos >= len(s.in) }
 func (s *reprScanner) skipSpace() {
 	for s.pos < len(s.in) && (s.in[s.pos] == ' ' || s.in[s.pos] == '\t' || s.in[s.pos] == '\n' || s.in[s.pos] == '\r') {
 		s.pos++
@@ -279,36 +272,34 @@ type JailInfo struct {
 
 // Result of one summary fetch
 type JailSummary struct {
-	Jails            []JailInfo
-	JailLocalExists  bool
-	JailLocalManaged bool
+	Jails             []JailInfo
+	JailLocalExists   bool
+	JailLocalManaged  bool
+	ActionFileDrifted bool
 }
 
 // =========================================================================
 //  Service Control
 // =========================================================================
 
-func RestartFail2ban(serverID string) (string, error) {
-	manager := GetManager()
-	var (
-		conn Connector
-		err  error
-	)
-	if serverID != "" {
-		conn, err = manager.Connector(serverID)
-	} else {
-		conn, err = manager.DefaultConnector()
+func validateBanTarget(jail, ip string) error {
+	if err := ValidateJailName(jail); err != nil {
+		return err
 	}
+	return shared.ValidateIP(ip)
+}
+
+type fail2banRunner func(ctx context.Context, args ...string) (string, error)
+
+func pingFail2ban(ctx context.Context, run fail2banRunner, label string) error {
+	out, err := run(ctx, "ping")
+	return checkPingOutput(out, err, label)
+}
+
+func validateConfig(ctx context.Context, run fail2banRunner, root string) error {
+	out, err := run(ctx, "-c", root, "-t")
 	if err != nil {
-		return "", err
+		return fmt.Errorf("configuration validation failed: %w", err)
 	}
-	if withMode, ok := conn.(interface {
-		RestartWithMode(ctx context.Context) (string, error)
-	}); ok {
-		return withMode.RestartWithMode(context.Background())
-	}
-	if err := conn.Restart(context.Background()); err != nil {
-		return "", err
-	}
-	return "restart", nil
+	return checkReloadOutput(out)
 }

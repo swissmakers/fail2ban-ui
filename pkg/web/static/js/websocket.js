@@ -8,36 +8,46 @@
 class WebSocketManager {
   constructor() {
     this.ws = null;
+    this.state = 'connecting';
+    this.listeners = {};
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = Infinity;
     this.reconnectDelay = 1000;
     this.maxReconnectDelay = 30000;
+    this.reconnectTimer = null;
+    this.stopped = false;
     this.isConnecting = false;
     this.isConnected = false;
-    this.lastBanEventId = null;
-    this.statusCallbacks = [];
-    this.banEventCallbacks = [];
-    this.consoleLogCallbacks = [];
+    this.seenBanEventIds = new Set();
     this.connectedAt = null;
     this.lastHeartbeatAt = null;
     this.messageCount = 0;
     this.totalReconnects = 0;
     this.initialConnection = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const base = typeof window.__BASE_PATH__ === 'string' ? window.__BASE_PATH__ : '';
-    this.wsUrl = `${protocol}//${host}${base}/api/ws`;
-    
-    this.connect();
+    this.wsUrl = protocol + '//' + window.location.host + appPath('/api/ws');
+  }
+
+  on(type, callback) {
+    (this.listeners[type] = this.listeners[type] || []).push(callback);
+  }
+
+  emit(type, payload) {
+    (this.listeners[type] || []).forEach(function(callback) {
+      try {
+        callback(payload);
+      } catch (err) {
+        console.error('Error in WebSocket ' + type + ' listener:', err);
+      }
+    });
   }
 
   connect() {
-    if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
+    if (this.stopped || this.isConnecting || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
       return;
     }
 
     this.isConnecting = true;
-    this.updateStatus('connecting', 'Connecting...');
+    this.updateStatus('connecting');
 
     try {
       this.ws = new WebSocket(this.wsUrl);
@@ -46,53 +56,51 @@ class WebSocketManager {
         this.isConnecting = false;
         this.isConnected = true;
         this.connectedAt = new Date();
+        this.reconnectAttempts = 0;
+        this.updateStatus('connected');
         if (!this.initialConnection) {
           this.totalReconnects++;
+          this.emit('reconnected');
         }
         this.initialConnection = false;
-        this.reconnectAttempts = 0;
-        this.reconnectDelay = 1000;
-        this.updateStatus('connected', 'Connected');
-        console.log('WebSocket connected');
       };
 
       this.ws.onmessage = (event) => {
-        try {
-          // WebSocket may send multiple JSON messages separated by newlines
-          // Split by newlines and parse each message separately
-          const messages = event.data.split('\n').filter(line => line.trim().length > 0);
-          for (const messageText of messages) {
-            try {
-              const message = JSON.parse(messageText);
-              this.messageCount++;
-              this.handleMessage(message);
-            } catch (parseErr) {
-              console.error('Error parsing individual WebSocket message:', parseErr, 'Raw:', messageText);
-            }
+        // WebSocket may send multiple JSON messages separated by newlines
+        // Split by newlines and parse each message separately
+        event.data.split('\n').forEach((line) => {
+          if (!line.trim()) {
+            return;
           }
-        } catch (err) {
-          console.error('Error processing WebSocket message:', err);
-        }
+          try {
+            const message = JSON.parse(line);
+            this.messageCount++;
+            this.handleMessage(message);
+          } catch (err) {
+            console.error('Error parsing WebSocket message:', err, 'Raw:', line);
+          }
+        });
       };
 
       this.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        this.updateStatus('error', 'Connection error');
+        this.updateStatus('error');
       };
 
       this.ws.onclose = () => {
         this.isConnecting = false;
         this.isConnected = false;
-        this.updateStatus('disconnected', 'Disconnected');
-        console.log('WebSocket disconnected');
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
+        if (this.stopped) {
+          return;
         }
+        this.updateStatus('disconnected');
+        probeSession();
+        this.scheduleReconnect();
       };
     } catch (error) {
       console.error('Error creating WebSocket connection:', error);
       this.isConnecting = false;
-      this.updateStatus('error', 'Connection failed');
+      this.updateStatus('error');
       this.scheduleReconnect();
     }
   }
@@ -100,10 +108,9 @@ class WebSocketManager {
   scheduleReconnect() {
     this.reconnectAttempts++;
     const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay);
-    
-    this.updateStatus('reconnecting', 'Reconnecting...');
-    
-    setTimeout(() => {
+    this.updateStatus('reconnecting');
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.connect();
     }, delay);
   }
@@ -111,149 +118,75 @@ class WebSocketManager {
   handleMessage(message) {
     switch (message.type) {
       case 'ban_event':
-        this.handleBanEvent(message.data);
-        break;
       case 'unban_event':
         this.handleBanEvent(message.data);
         break;
       case 'ban_event_update':
-        this.handleBanEventUpdate(message.data);
+        this.emit('ban_event_update', message.data);
+        break;
+      case 'server_health':
+        this.emit('server_health', message.data);
+        break;
+      case 'operation':
+        this.emit('operation', message.data);
+        break;
+      case 'snapshot_update':
+        this.emit('snapshot_update', message.data);
         break;
       case 'heartbeat':
-        this.handleHeartbeat(message);
+        this.lastHeartbeatAt = new Date();
         break;
       case 'console_log':
-        this.handleConsoleLog(message);
+        this.emit('console_log', message);
         break;
       case 'toast':
-        this.handleToast(message);
-        break;
-      default:
-        console.log('Unknown message type:', message.type);
-    }
-  }
-
-  handleToast(message) {
-    if (typeof showToast === 'function' && message && message.message) {
-      showToast(message.message, message.level || 'info');
-    }
-  }
-
-  handleConsoleLog(message) {
-    if (this.consoleLogCallbacks) {
-      this.consoleLogCallbacks.forEach(callback => {
-        try {
-          callback(message.message, message.time);
-        } catch (err) {
-          console.error('Error in console log callback:', err);
+        if (message.message) {
+          showToast(message.message, message.level || 'info');
         }
-      });
+        break;
     }
+  }
+
+  rememberBanEvent(eventData) {
+    if (!eventData) return false;
+    if (eventData.id) {
+      const id = String(eventData.id);
+      if (this.seenBanEventIds.has(id)) return false;
+      this.seenBanEventIds.add(id);
+      // Different server callbacks can arrive out of order. Remember actual
+      // events instead of treating the highest ID as a delivery watermark.
+      // Keep the cache bounded for long-lived dashboards and bulk unbans.
+      if (this.seenBanEventIds.size > 4096) {
+        this.seenBanEventIds.delete(this.seenBanEventIds.values().next().value);
+      }
+    }
+    return true;
   }
 
   handleBanEvent(eventData) {
-    // Check if we've already processed this event (prevent duplicates)
-    if (eventData.id && this.lastBanEventId !== null && eventData.id <= this.lastBanEventId) {
-      console.log('Skipping duplicate ban event:', eventData.id);
-      return;
-    }
-    if (eventData.id) {
-      if (this.lastBanEventId === null || eventData.id > this.lastBanEventId) {
-        this.lastBanEventId = eventData.id;
-      }
-    }
-    console.log('Processing ban event:', eventData);
-    this.banEventCallbacks.forEach(callback => {
-      try {
-        callback(eventData);
-      } catch (err) {
-        console.error('Error in ban event callback:', err);
-      }
-    });
+    if (!this.rememberBanEvent(eventData)) return;
+    this.emit('ban_event', eventData);
   }
 
-  handleHeartbeat(message) {
-    this.lastHeartbeatAt = new Date();
-    if (this.isConnected) {
-      this.updateStatus('connected', 'Connected');
-    }
+  updateStatus(state) {
+    this.state = state;
+    this.emit('status', state);
   }
 
-  updateStatus(state, text) {
-    this.statusCallbacks.forEach(callback => {
-      try {
-        callback(state, text);
-      } catch (err) {
-        console.error('Error in status callback:', err);
-      }
-    });
-  }
-
-  onStatusChange(callback) {
-    this.statusCallbacks.push(callback);
-  }
-
-  onBanEvent(callback) {
-    this.banEventCallbacks.push(callback);
-  }
-
-  handleBanEventUpdate(eventData) {
-    if (!this.banEventUpdateCallbacks) {
-      return;
-    }
-    this.banEventUpdateCallbacks.forEach(callback => {
-      try {
-        callback(eventData);
-      } catch (err) {
-        console.error('Error in ban event update callback:', err);
-      }
-    });
-  }
-
-  onBanEventUpdate(callback) {
-    if (!this.banEventUpdateCallbacks) {
-      this.banEventUpdateCallbacks = [];
-    }
-    this.banEventUpdateCallbacks.push(callback);
-  }
-
-  onConsoleLog(callback) {
-    if (!this.consoleLogCallbacks) {
-      this.consoleLogCallbacks = [];
-    }
-    this.consoleLogCallbacks.push(callback);
-  }
-
+  // Stops for good; used when the session ends.
   disconnect() {
+    this.stopped = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     this.isConnected = false;
     this.isConnecting = false;
-  }
-
-  getConnectionState() {
-    if (!this.ws) {
-      return 'disconnected';
-    }
-    
-    switch (this.ws.readyState) {
-      case WebSocket.CONNECTING:
-        return 'connecting';
-      case WebSocket.OPEN:
-        return 'connected';
-      case WebSocket.CLOSING:
-        return 'disconnecting';
-      case WebSocket.CLOSED:
-        return 'disconnected';
-      default:
-        return 'unknown';
-    }
-  }
-
-  isHealthy() {
-    return this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN;
+    this.updateStatus('disconnected');
   }
 
   formatDuration(seconds) {
@@ -275,50 +208,28 @@ class WebSocketManager {
     
     const now = new Date();
     const duration = Math.floor((now - this.connectedAt) / 1000);
-    const durationStr = this.formatDuration(duration);
-    
-    const lastHeartbeat = this.lastHeartbeatAt 
+    const lastHeartbeat = this.lastHeartbeatAt
       ? Math.floor((now - this.lastHeartbeatAt) / 1000)
       : null;
-    const translate = function(key, fallback) {
-      if (typeof t === 'function') {
-        return t(key, fallback);
-      }
-      return fallback;
-    };
     const heartbeatStr = lastHeartbeat !== null
       ? (lastHeartbeat < 60
-        ? translate('header.websocket.heartbeat.seconds_ago', '{seconds}s ago').replace('{seconds}', String(lastHeartbeat))
-        : translate('header.websocket.heartbeat.minutes_ago', '{minutes}m ago').replace('{minutes}', String(Math.floor(lastHeartbeat / 60))))
-      : translate('header.websocket.heartbeat.never', 'Never');
-    
-    const protocol = this.wsUrl.startsWith('wss:') ? 'WSS (Secure)' : 'WS';
-    
+        ? t('header.websocket.heartbeat.seconds_ago', '{seconds}s ago').replace('{seconds}', String(lastHeartbeat))
+        : t('header.websocket.heartbeat.minutes_ago', '{minutes}m ago').replace('{minutes}', String(Math.floor(lastHeartbeat / 60))))
+      : t('header.websocket.heartbeat.never', 'Never');
+
     return {
-      duration: durationStr,
+      duration: this.formatDuration(duration),
       lastHeartbeat: heartbeatStr,
       url: this.wsUrl,
       messages: this.messageCount,
       reconnects: this.totalReconnects,
-      protocol: protocol
+      secure: this.wsUrl.startsWith('wss:')
     };
   }
 }
 
 // =========================================================================
-//  Create Global Instance of WebSocketManager
+//  Global Instance of WebSocketManager (created in initializeApp)
 // =========================================================================
 
 var wsManager = null;
-
-if (typeof window !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      if (!wsManager) {
-        wsManager = new WebSocketManager();
-      }
-    });
-  } else {
-    wsManager = new WebSocketManager();
-  }
-}

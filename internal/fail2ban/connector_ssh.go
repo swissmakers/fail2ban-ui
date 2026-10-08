@@ -18,7 +18,6 @@ package fail2ban
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -42,42 +41,21 @@ type SSHConnector struct {
 	pathMutex       sync.RWMutex
 	tunnelPort      int
 	forwardPort     int
-	tunnelWasUp     bool
 	closed          atomic.Bool
+	reloadPending   atomic.Bool
 	masterMu        sync.Mutex
 	masterUp        atomic.Bool
 	masterFailUntil time.Time
 	sessionSem      chan struct{}
+	tunnelCheckMu   sync.Mutex
 }
-
-const sshEnsureActionScript = `python3 - <<'PY'
-import base64
-import os
-import pathlib
-import shutil
-import sys
-
-try:
-    action_dir = pathlib.Path("/etc/fail2ban/action.d")
-    action_dir.mkdir(parents=True, exist_ok=True)
-    action_cfg = base64.b64decode("__PAYLOAD__").decode("utf-8")
-    action_file = action_dir / "ui-custom-action.conf"
-    action_file.write_text(action_cfg)
-    os.chmod(action_file, 0o600)
-    missing = [t for t in ("jq", "curl") if shutil.which(t) is None]
-    if missing:
-        sys.stdout.write("F2BUI_MISSING_TOOLS:" + ",".join(missing) + "\n")
-except Exception as e:
-    sys.stderr.write(f"Error: {e}\n")
-    sys.exit(1)
-PY`
 
 // =========================================================================
 //  Constructor
 // =========================================================================
 
 // Builds a validated SSHConnector without contacting the remote host.
-func newBareSSHConnector(server shared.Fail2banServer) (*SSHConnector, error) {
+func newSSHConnector(server shared.Fail2banServer) (*SSHConnector, error) {
 	if server.Host == "" {
 		return nil, fmt.Errorf("host is required for ssh connector")
 	}
@@ -97,28 +75,10 @@ func newBareSSHConnector(server shared.Fail2banServer) (*SSHConnector, error) {
 		conn.forwardPort = uiServerPort()
 		debugf("Reverse tunnel enabled for server %s, will use -R %d:localhost:%d", server.Name, conn.tunnelPort, conn.forwardPort)
 	}
-	return conn, nil
-}
-
-// Create a new SSHConnector for the given server config.
-func NewSSHConnector(server shared.Fail2banServer) (Connector, error) {
-	conn, err := newBareSSHConnector(server)
-	if err != nil {
-		return nil, err
-	}
-
 	if kh := conn.knownHostsPath(); kh != "" {
 		if err := os.MkdirAll(filepath.Dir(kh), 0o700); err != nil {
 			debugf("failed to create known_hosts directory for %s: %v", server.Name, err)
 		}
-	}
-
-	// Use a timeout context to prevent hanging if SSH server isn't ready yet
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := conn.ensureAction(ctx); err != nil {
-		debugf("warning: failed to ensure remote fail2ban action for %s during startup (server may not be ready): %v", server.Name, err)
 	}
 	return conn, nil
 }
@@ -131,38 +91,30 @@ func (sc *SSHConnector) Server() shared.Fail2banServer {
 	return sc.server
 }
 
-// Collects jail status for every active remote jail.
-func (sc *SSHConnector) GetJailInfos(ctx context.Context) ([]JailInfo, error) {
-	summary, err := sc.GetJailSummary(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return summary.Jails, nil
-}
-
-// GetJailSummary fetches every jail's banned IPs plus the jail.local integrity state in a single remote command
 func (sc *SSHConnector) GetJailSummary(ctx context.Context) (*JailSummary, error) {
-	script, err := buildBannedSummaryScript(sc.server.SocketPath, JailLocal(sc.getFail2banPath(ctx)))
-	if err != nil {
-		return nil, err
-	}
+	root := sc.getFail2banPath(ctx)
+	script := buildBannedSummaryScript(sc.server.SocketPath, JailLocal(root), CustomActionFile(root))
 	out, err := sc.runRemoteCommand(ctx, []string{script})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read jail status from %s: %w", sc.server.Name, err)
 	}
 
-	bannedOut, jailLocal, exists, err := splitBannedSummary(out)
+	summary, err := splitBannedSummary(out)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", sc.server.Name, err)
 	}
-	infos, err := parseBannedJails(bannedOut)
+	infos, err := parseBannedJails(summary.banned)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", sc.server.Name, err)
 	}
+	desired, renderErr := sc.desiredActionConfig()
+	drifted := sc.reloadPending.Load() || !summary.actionExists ||
+		(renderErr == nil && strings.TrimSpace(summary.actionFile) != strings.TrimSpace(desired))
 	return &JailSummary{
-		Jails:            infos,
-		JailLocalExists:  exists,
-		JailLocalManaged: exists && strings.Contains(jailLocal, managedJailLocalMarker),
+		Jails:             infos,
+		JailLocalExists:   summary.jailLocalExists,
+		JailLocalManaged:  summary.jailLocalExists && strings.Contains(summary.jailLocal, managedJailLocalMarker),
+		ActionFileDrifted: drifted,
 	}, nil
 }
 
@@ -178,10 +130,7 @@ func (sc *SSHConnector) GetBannedIPs(ctx context.Context, jail string) ([]string
 }
 
 func (sc *SSHConnector) UnbanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "unbanip", ip)
@@ -189,10 +138,7 @@ func (sc *SSHConnector) UnbanIP(ctx context.Context, jail, ip string) error {
 }
 
 func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
-	if err := ValidateJailName(jail); err != nil {
-		return err
-	}
-	if err := ValidateIP(ip); err != nil {
+	if err := validateBanTarget(jail, ip); err != nil {
 		return err
 	}
 	_, err := sc.runFail2banCommand(ctx, "set", jail, "banip", ip)
@@ -200,35 +146,37 @@ func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
 }
 
 func (sc *SSHConnector) Reload(ctx context.Context) error {
-	out, err := sc.runFail2banCommand(ctx, "reload")
+	// Same tree that ValidateConfiguration checked; the client, not the daemon, reads the files.
+	out, err := sc.runFail2banCommand(ctx, "-c", sc.getFail2banPath(ctx), "reload")
 	if err != nil {
 		return err
 	}
-	return checkReloadOutput(out)
+	if err := checkReloadOutput(out); err != nil {
+		return err
+	}
+	sc.reloadPending.Store(false)
+	return nil
 }
 
-func (sc *SSHConnector) Restart(ctx context.Context) error {
-	_, err := sc.RestartWithMode(ctx)
-	return err
+func (sc *SSHConnector) ValidateConfiguration(ctx context.Context) error {
+	return validateConfig(ctx, sc.runFail2banCommand, sc.getFail2banPath(ctx))
 }
 
-func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
+func (sc *SSHConnector) Restart(ctx context.Context) (string, error) {
 	// Try systemd restart on the remote host first.
-	out, err := sc.runRemoteCommand(ctx, []string{"sudo", "-n", "systemctl", "restart", "fail2ban"})
+	out, err := sc.runRemoteCommand(ctx, []string{shellJoin("sudo", "-n", "systemctl", "restart", "fail2ban")})
 	if err == nil {
-		if err := sc.checkFail2banHealthyRemote(ctx); err != nil {
+		if err := pingFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban"); err != nil {
 			return "restart", fmt.Errorf("remote fail2ban health check after systemd restart failed: %w", err)
 		}
 		return "restart", nil
 	}
 	// If systemd is not available or if there is an interactive authentication required, we will fall back to fail2ban-client.
 	if sc.isSystemctlUnavailable(out, err) {
-		reloadOut, reloadErr := sc.runFail2banCommand(ctx, "reload")
-		if reloadErr != nil {
-			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w (output: %s)",
-				reloadErr, strings.TrimSpace(reloadOut))
+		if reloadErr := sc.Reload(ctx); reloadErr != nil {
+			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w", reloadErr)
 		}
-		if err := sc.checkFail2banHealthyRemote(ctx); err != nil {
+		if err := pingFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban"); err != nil {
 			return "reload", fmt.Errorf("remote fail2ban health check after reload failed: %w", err)
 		}
 		return "reload", nil
@@ -238,55 +186,43 @@ func (sc *SSHConnector) RestartWithMode(ctx context.Context) (string, error) {
 	return "restart", fmt.Errorf("failed to restart fail2ban via systemd on remote: %w (output: %s)", err, out)
 }
 
-func (sc *SSHConnector) ensureAction(ctx context.Context) error {
+func (sc *SSHConnector) desiredActionConfig() (string, error) {
 	p := mustProvider()
-	actionConfig := p.BuildFail2banActionConfig(sc.actionCallbackURL(), sc.server.ID, p.CallbackSecret())
-	payload := base64.StdEncoding.EncodeToString([]byte(actionConfig))
-	script := strings.ReplaceAll(sshEnsureActionScript, "__PAYLOAD__", payload)
-	scriptB64 := base64.StdEncoding.EncodeToString([]byte(script))
-	args := sc.buildSSHArgs([]string{"sh", "-s"})
+	return p.BuildFail2banActionConfig(sc.actionCallbackURL(), sc.server.ID, p.CallbackSecret())
+}
 
-	// The remote shell reads the base64 payload from stdin and pipes it through base64 -d | bash.
-	scriptContent := fmt.Sprintf("cat <<'ENDBASE64' | base64 -d | bash\n%s\nENDBASE64\n", scriptB64)
-
-	debugf("SSH ensureAction command [%s]: ssh %s (with here-doc via stdin)", sc.server.Name, strings.Join(args, " "))
-
-	sc.ensureMasterLazy(ctx)
-	if err := sc.acquireSession(ctx); err != nil {
-		return err
-	}
-	defer sc.releaseSession()
-
-	stdout, stderr, execErr := sc.execSSH(ctx, args, strings.NewReader(scriptContent))
-	if execErr != nil && ctx.Err() != nil {
-		return ctx.Err()
-	}
-	output, err := selectCommandOutput("ssh", stdout, stderr, execErr)
+func (sc *SSHConnector) ensureAction(ctx context.Context) error {
+	sc.reloadPending.Store(true)
+	actionPath := CustomActionFile(sc.getFail2banPath(ctx))
+	desired, err := sc.desiredActionConfig()
 	if err != nil {
-		if hk := sc.parseHostKeyError(stderr, err); hk != nil {
-			RecordHostKeyIssue(hk)
-			err = hk
-		}
-		debugf("Failed to ensure action file for server %s: %v", sc.server.Name, err)
-		return fmt.Errorf("failed to ensure action file on remote server %s: %w", sc.server.Name, err)
+		return fmt.Errorf("refusing to write the action file on %s: %w", sc.server.Name, err)
 	}
-	ClearHostKeyIssue(sc.server.ID)
-	if marker := extractMissingToolsWarning(output); marker != "" {
+	script, err := buildEnsureActionScript(actionPath, desired)
+	if err != nil {
+		return fmt.Errorf("refusing to write the action file on %s: %w", sc.server.Name, err)
+	}
+	out, err := sc.runRemoteCommand(ctx, []string{script})
+	if err != nil {
+		return fmt.Errorf("failed to ensure the action file %s on %s: %w", actionPath, sc.server.Name, err)
+	}
+	if marker := extractMarkerValue(out, missingToolsMarker); marker != "" {
 		log.Printf("warning: managed host %s (%s) is missing required tool(s): %s - ban callbacks will arrive empty until installed",
 			sc.server.Name, sc.server.ID, marker)
 	}
-	if output != "" {
-		debugf("Successfully ensured action file for server %s (output: %s)", sc.server.Name, output)
-	} else {
-		debugf("Successfully ensured action file for server %s (no output)", sc.server.Name)
+	if marker := extractMarkerValue(out, permWarningMarker); marker != "" {
+		log.Printf("warning: the action file %s on %s (%s) stays readable by every user on that host, so the callback secret is exposed - restrict it or let the UI own the file",
+			marker, sc.server.Name, sc.server.ID)
 	}
+	debugf("Successfully ensured action file %s on server %s", actionPath, sc.server.Name)
 	return nil
 }
 
-func extractMissingToolsWarning(output string) string {
+// Returns the value after marker on the first matching line, or "".
+func extractMarkerValue(output, marker string) string {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
-		if rest, ok := strings.CutPrefix(line, "F2BUI_MISSING_TOOLS:"); ok {
+		if rest, ok := strings.CutPrefix(line, marker); ok {
 			return strings.TrimSpace(rest)
 		}
 	}
@@ -297,35 +233,40 @@ func extractMissingToolsWarning(output string) string {
 //  SSH Helpers
 // =========================================================================
 
-func buildBannedSummaryScript(socketPath, jailLocalPath string) (string, error) {
-	quotedJailLocal, err := quoteRemotePath(jailLocalPath)
-	if err != nil {
-		return "", err
-	}
+func buildBannedSummaryScript(socketPath, jailLocalPath, actionPath string) string {
+	quotedJailLocal, quotedAction := shellQuote(jailLocalPath), shellQuote(actionPath)
 	sockArg := ""
 	if socketPath != "" {
-		quotedSock, err := quoteRemotePath(socketPath)
-		if err != nil {
-			return "", err
-		}
-		sockArg = "-s " + quotedSock + " "
+		sockArg = "-s " + shellQuote(socketPath) + " "
 	}
 	return fmt.Sprintf(`sudo fail2ban-client %sbanned
 echo %s
+if [ -f %s ]; then echo %s; cat %s; else echo %s; fi
 if [ -f %s ]; then echo %s; cat %s; else echo %s; fi
 echo %s
 `, sockArg,
 		bannedSectionEnd,
 		quotedJailLocal, batchJailLocalBegin, quotedJailLocal, batchJailLocalMissing,
-		batchEnd), nil
+		quotedAction, batchActionBegin, quotedAction, batchActionMissing,
+		batchEnd)
 }
 
-func splitBannedSummary(out string) (banned, jailLocal string, jailLocalExists bool, err error) {
-	var bannedBuf, jailLocalBuf strings.Builder
+type bannedSummary struct {
+	banned          string
+	jailLocal       string
+	jailLocalExists bool
+	actionFile      string
+	actionExists    bool
+}
+
+func splitBannedSummary(out string) (bannedSummary, error) {
+	var res bannedSummary
+	var bannedBuf, jailLocalBuf, actionBuf strings.Builder
 	const (
 		inBanned = iota
 		betweenSections
 		inJailLocal
+		inAction
 	)
 	mode := inBanned
 	complete := false
@@ -336,10 +277,16 @@ func splitBannedSummary(out string) (banned, jailLocal string, jailLocalExists b
 		case trimmed == bannedSectionEnd:
 			mode = betweenSections
 		case trimmed == batchJailLocalBegin:
-			jailLocalExists = true
+			res.jailLocalExists = true
 			mode = inJailLocal
 		case trimmed == batchJailLocalMissing:
-			jailLocalExists = false
+			res.jailLocalExists = false
+			mode = betweenSections
+		case trimmed == batchActionBegin:
+			res.actionExists = true
+			mode = inAction
+		case trimmed == batchActionMissing:
+			res.actionExists = false
 			mode = betweenSections
 		case trimmed == batchEnd:
 			complete = true
@@ -350,17 +297,23 @@ func splitBannedSummary(out string) (banned, jailLocal string, jailLocalExists b
 		case mode == inJailLocal:
 			jailLocalBuf.WriteString(line)
 			jailLocalBuf.WriteString("\n")
+		case mode == inAction:
+			actionBuf.WriteString(line)
+			actionBuf.WriteString("\n")
 		}
 	}
 	if !complete {
-		return "", "", false, fmt.Errorf("truncated summary output from the remote host")
+		return bannedSummary{}, fmt.Errorf("truncated summary output from the remote host")
 	}
-	return strings.TrimSpace(bannedBuf.String()), jailLocalBuf.String(), jailLocalExists, nil
+	res.banned = strings.TrimSpace(bannedBuf.String())
+	res.jailLocal = jailLocalBuf.String()
+	res.actionFile = actionBuf.String()
+	return res, nil
 }
 
 func (sc *SSHConnector) runFail2banCommand(ctx context.Context, args ...string) (string, error) {
-	cmdArgs := append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath, args...)...)
-	return sc.runRemoteCommand(ctx, cmdArgs)
+	words := append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath, args...)...)
+	return sc.runRemoteCommand(ctx, []string{shellJoin(words...)})
 }
 
 // Detects "no systemd" situations on the remote host or if an interactive authentication is required.
@@ -377,9 +330,4 @@ func (sc *SSHConnector) isSystemctlUnavailable(output string, err error) bool {
 		strings.Contains(msg, "sudo: a password is required") ||
 		strings.Contains(msg, "sudo: a password is needed") ||
 		strings.Contains(msg, "sorry, you must have a tty")
-}
-
-func (sc *SSHConnector) checkFail2banHealthyRemote(ctx context.Context) error {
-	out, err := sc.runFail2banCommand(ctx, "ping")
-	return checkPingOutput(out, err, "remote fail2ban")
 }

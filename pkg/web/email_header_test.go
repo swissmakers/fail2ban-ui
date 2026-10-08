@@ -36,15 +36,12 @@ func TestSanitizeHeaderValueStripsCRLFAndNUL(t *testing.T) {
 
 func TestSubjectEncodingNeutralizesInjection(t *testing.T) {
 	t.Parallel()
-	// A malicious jail/hostname value containing CRLF must not introduce new
-	// header lines once RFC 2047-encoded.
 	subject := "[Fail2Ban] sshd: banned 1.2.3.4\r\nBcc: attacker@evil.com"
 	encoded := mime.QEncoding.Encode("UTF-8", subject)
 	if strings.ContainsAny(encoded, "\r\n") {
 		t.Fatalf("encoded subject still contains CR/LF: %q", encoded)
 	}
 
-	// A plain ASCII subject should remain human-readable (unchanged).
 	plain := "[Fail2Ban] sshd: banned 1.2.3.4 from host"
 	if got := mime.QEncoding.Encode("UTF-8", plain); got != plain {
 		t.Fatalf("plain subject was altered: got %q want %q", got, plain)
