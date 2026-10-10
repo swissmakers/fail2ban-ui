@@ -369,6 +369,34 @@ func TestRestartOperationRecoversAnOfflineDaemon(t *testing.T) {
 	}
 }
 
+type slowStartRestartConnector struct {
+	*jailSafetyConnector
+}
+
+func (c *slowStartRestartConnector) Restart(context.Context) (string, error) {
+	return "restart", fmt.Errorf("%w: fail2ban ping error: socket missing", fail2ban.ErrRestartNotResponding)
+}
+
+func TestRestartAcceptedButSlowToAnswerReconcilesAsSucceeded(t *testing.T) {
+	conn := &slowStartRestartConnector{&jailSafetyConnector{id: t.Name(), config: "[example]\n", enabled: true, running: true}}
+	e := transactionTestEngine(t, conn)
+	payload, _ := json.Marshal(operationPayload{Fingerprint: serverFingerprint(conn.Server())})
+	op, err := e.Submit(context.Background(), conn.Server().ID, "server.restart", "", "", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	op = awaitOperation(t, e, op.ID, "reconciling")
+	var recovery operationRecovery
+	if err := json.Unmarshal(op.Recovery, &recovery); err != nil || recovery.Stage != "applied" {
+		t.Fatalf("an accepted restart must be recorded as applied: stage=%q err=%v", recovery.Stage, err)
+	}
+	tx := operationTransaction{op: op, payload: operationPayload{Fingerprint: serverFingerprint(conn.Server())}, conn: conn}
+	result, known, err := tx.reconcile(context.Background())
+	if !known || err != nil || result["outcomeUnconfirmed"] != nil {
+		t.Fatalf("restart must reconcile as succeeded once Fail2ban answers: known=%v err=%v result=%v", known, err, result)
+	}
+}
+
 func TestUnknownReloadCannotProveConfigurationFromMatchingJailStates(t *testing.T) {
 	for _, kind := range []string{"jail.config", "jail.create", "filter.create", "filter.delete", "server.sync", "server.restart"} {
 		t.Run(kind, func(t *testing.T) {

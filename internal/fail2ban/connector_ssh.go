@@ -166,8 +166,8 @@ func (sc *SSHConnector) Restart(ctx context.Context) (string, error) {
 	// Try systemd restart on the remote host first.
 	out, err := sc.runRemoteCommand(ctx, []string{shellJoin("sudo", "-n", "systemctl", "restart", "fail2ban")})
 	if err == nil {
-		if err := pingFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban"); err != nil {
-			return "restart", fmt.Errorf("remote fail2ban health check after systemd restart failed: %w", err)
+		if err := waitForFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban", restartReadyTimeout); err != nil {
+			return "restart", fmt.Errorf("%w: remote fail2ban health check after systemd restart failed: %w", ErrRestartNotResponding, err)
 		}
 		return "restart", nil
 	}
@@ -176,8 +176,8 @@ func (sc *SSHConnector) Restart(ctx context.Context) (string, error) {
 		if reloadErr := sc.Reload(ctx); reloadErr != nil {
 			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w", reloadErr)
 		}
-		if err := pingFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban"); err != nil {
-			return "reload", fmt.Errorf("remote fail2ban health check after reload failed: %w", err)
+		if err := waitForFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban", restartReadyTimeout); err != nil {
+			return "reload", fmt.Errorf("%w: remote fail2ban health check after reload failed: %w", ErrRestartNotResponding, err)
 		}
 		return "reload", nil
 	}

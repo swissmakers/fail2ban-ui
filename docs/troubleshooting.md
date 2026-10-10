@@ -30,6 +30,15 @@ firewall-cmd --add-port=8080/tcp --permanent
 firewall-cmd --reload
 ```
 
+## Stays in Checking result
+
+When the UI cannot confirm that a command took effect, for example because the connection dropped or Fail2Ban did not answer after a restart, the change shows **Checking result**. The UI then blocks further changes on that server and reads the server state every few seconds until it can confirm the outcome. It never sends the command again.
+
+The notice shows why the check is still waiting. The most common reasons:
+
+* Fail2Ban is not running on the host. Start it -> the check completes once Fail2Ban answers.
+* Reading the server state takes longer than 30 seconds. On SSH hosts, check how long `time sudo fail2ban-client banned` takes on the host and how long an SSH login takes.
+
 ## Local connector fails
 
 Check:

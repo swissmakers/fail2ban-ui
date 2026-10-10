@@ -18,10 +18,12 @@ package fail2ban
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
@@ -215,5 +217,51 @@ func TestDeleteLocalConfigFilesRemovesBackups(t *testing.T) {
 	}
 	if strings.Join(left, ",") != "other.local.f2bui.bak" {
 		t.Fatalf("left in filter.d: %v, want only the other filter's backup", left)
+	}
+}
+
+const testSocketMissing = `echo "2026-10-10 12:09:34,196 fail2ban [283120]: ERROR   Failed to access socket path: /var/run/fail2ban/fail2ban.sock. Is fail2ban running?" >&2
+exit 255
+`
+
+func TestLocalRestartWaitsForFail2banSocket(t *testing.T) {
+	withFakeBinary(t, "systemctl", "exit 0\n")
+	started := filepath.Join(t.TempDir(), "started")
+	withFakeBinary(t, "fail2ban-client", `if [ ! -e "`+started+`" ]; then
+  touch "`+started+`"
+`+testSocketMissing+`fi
+echo "Server replied: pong"
+`)
+	mode, err := testLocalConnector(t).Restart(context.Background())
+	if err != nil || mode != "restart" {
+		t.Fatalf("restart must wait for the socket instead of failing on the first ping: mode=%q err=%v", mode, err)
+	}
+}
+
+func TestLocalRestartReportsUnresponsiveDaemon(t *testing.T) {
+	withFakeBinary(t, "systemctl", "exit 0\n")
+	withFakeBinary(t, "fail2ban-client", testSocketMissing)
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+
+	_, err := testLocalConnector(t).Restart(ctx)
+	if !errors.Is(err, ErrRestartNotResponding) {
+		t.Fatalf("an accepted restart without a reply must be reported as not responding, got: %v", err)
+	}
+}
+
+func TestWaitForFail2banGivesUpAtDeadline(t *testing.T) {
+	calls := 0
+	run := func(context.Context, ...string) (string, error) {
+		calls++
+		return "", errors.New("socket missing")
+	}
+	start := time.Now()
+	err := waitForFail2ban(context.Background(), run, "fail2ban", 600*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "socket missing") {
+		t.Fatalf("expected the last ping error, got: %v", err)
+	}
+	if calls < 2 || time.Since(start) > 2*time.Second {
+		t.Fatalf("expected a few retries within the deadline: calls=%d elapsed=%s", calls, time.Since(start))
 	}
 }

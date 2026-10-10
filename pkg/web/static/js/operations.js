@@ -254,6 +254,8 @@ function renderOperations() {
       detail = operationsStatusError;
     } else if (operation.state === 'queued') {
       detail = t('operations.queue_hint', 'Waiting for earlier changes on this server.');
+    } else if (operation.state === 'reconciling' && operation.message) {
+      detail = operation.message;
     } else if (operation.state === 'running' && operation.phase === 'applying' &&
         Object.values(operation.desiredStates || {}).some(function(enabled) { return !enabled; })) {
       detail = t('operations.toast.stopping', 'Removing existing bans. This can take a few minutes.');

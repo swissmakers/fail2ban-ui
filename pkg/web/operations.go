@@ -457,9 +457,8 @@ func (s *operationController) reconcile(op operations.Operation) {
 		}
 		return
 	}
-	ctx, cancel := context.WithTimeout(lease.ctx, 8*time.Second)
+	ctx, cancel := context.WithTimeout(lease.ctx, snapshotReadTimeout)
 	defer cancel()
-	// Also stop recovery reads when this process is shutting down.
 	stop := context.AfterFunc(s.ctx, cancel)
 	defer stop()
 	conn, err := s.manager.Connector(op.ServerID)
@@ -474,16 +473,20 @@ func (s *operationController) reconcile(op operations.Operation) {
 	}
 	tx := operationTransaction{op: op, payload: p, conn: conn}
 	result, known, outcomeErr := tx.reconcile(ctx)
+	persistCtx, cancelPersist := context.WithTimeout(s.ctx, 5*time.Second)
+	defer cancelPersist()
 	if !known {
 		message := "The previous command may still be running. Waiting for a confirmed server response before allowing more changes."
-		if outcomeErr != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(outcomeErr, context.DeadlineExceeded) {
+			message = fmt.Sprintf("Still checking the previous command: the server did not answer within %s", snapshotReadTimeout)
+		} else if outcomeErr != nil {
 			message = "Still checking the previous command: " + outcomeErr.Error()
 		}
-		_ = s.engine.ReportReconciliation(ctx, op.ID, message)
+		_ = s.engine.ReportReconciliation(persistCtx, op.ID, message)
 		return
 	}
 	encoded, _ := json.Marshal(result)
-	if _, err := s.engine.Resolve(ctx, op.ID, encoded, outcomeErr); err != nil {
+	if _, err := s.engine.Resolve(persistCtx, op.ID, encoded, outcomeErr); err != nil {
 		return
 	}
 	tx.cleanup(ctx)

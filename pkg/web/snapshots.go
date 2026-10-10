@@ -31,7 +31,8 @@ import (
 )
 
 const snapshotFreshFor = 10 * time.Second
-const snapshotRefreshTimeout = 8 * time.Second
+const snapshotRefreshInterval = 8 * time.Second
+const snapshotReadTimeout = 30 * time.Second
 
 type ServerSnapshot struct {
 	ServerID    string                `json:"serverId"`
@@ -135,12 +136,12 @@ func SnapshotForServer(ctx context.Context, conn fail2ban.Connector) (*ServerSna
 	} else if view.Available && view.Stale {
 		view.StaleReason = "refresh_pending"
 	}
-	if !busy && view.Stale && time.Since(entry.lastAttempt) >= snapshotRefreshTimeout {
+	if !busy && view.Stale && time.Since(entry.lastAttempt) >= snapshotRefreshInterval {
 		select {
 		case entry.refresh <- struct{}{}:
 			entry.lastAttempt = time.Now()
 			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), snapshotRefreshTimeout)
+				ctx, cancel := context.WithTimeout(context.Background(), snapshotReadTimeout)
 				defer cancel()
 				_, _ = refreshSnapshot(ctx, conn, entry)
 				<-entry.refresh
@@ -157,7 +158,7 @@ func SnapshotForServer(ctx context.Context, conn fail2ban.Connector) (*ServerSna
 // read after any older refresh has completed, so a pre-mutation result cannot
 // accidentally verify a newer change. The operation owns the mutation lease.
 func RefreshServerSnapshot(ctx context.Context, conn fail2ban.Connector) (*ServerSnapshot, error) {
-	ctx, cancel := context.WithTimeout(ctx, snapshotRefreshTimeout)
+	ctx, cancel := context.WithTimeout(ctx, snapshotReadTimeout)
 	defer cancel()
 	entry := serverSnapshots.entry(conn)
 	select {

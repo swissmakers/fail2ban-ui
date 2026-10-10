@@ -24,7 +24,6 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
@@ -97,6 +96,9 @@ func (t *operationTransaction) run(ctx context.Context) (gin.H, error) {
 		mode, err := t.conn.Restart(fail2ban.WithOperationPhase(ctx, "primary-restart"))
 		t.recovery.Mode = mode
 		if err != nil {
+			if errors.Is(err, fail2ban.ErrRestartNotResponding) {
+				_ = t.checkpoint(ctx, "applied")
+			}
 			return nil, unknownOutcome(err)
 		}
 		if err := t.checkpoint(ctx, "applied"); err != nil {
@@ -107,7 +109,7 @@ func (t *operationTransaction) run(ctx context.Context) (gin.H, error) {
 
 	// No command has been sent while this bounded read waits. A busy daemon cannot
 	// tie up an HTTP request, and the last confirmed snapshot stays available.
-	readCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, snapshotReadTimeout)
 	before, err := RefreshServerSnapshot(readCtx, t.conn)
 	cancel()
 	if err != nil {
@@ -347,7 +349,7 @@ func (t *operationTransaction) finish(ctx context.Context) (gin.H, error) {
 	if err := t.checkpoint(ctx, "verifying"); err != nil {
 		return nil, unknownOutcome(err)
 	}
-	readCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	readCtx, cancel := context.WithTimeout(ctx, snapshotReadTimeout)
 	defer cancel()
 	snap, err := RefreshServerSnapshot(readCtx, t.conn)
 	if err != nil {
