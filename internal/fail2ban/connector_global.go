@@ -299,6 +299,10 @@ func pingFail2ban(ctx context.Context, run fail2banRunner, label string) error {
 func validateConfig(ctx context.Context, run fail2banRunner, root string) error {
 	out, err := run(ctx, "-c", root, "-t")
 	if err != nil {
+		if strings.Contains(err.Error(), "Found no accessible config files") {
+			return fmt.Errorf("configuration validation failed: %s must contain the complete Fail2ban configuration "+
+				"(fail2ban.conf, jail.conf and the stock action.d and filter.d files), not only custom jail, filter and action files: %w", root, err)
+		}
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 	return checkReloadOutput(out)

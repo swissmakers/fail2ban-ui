@@ -117,6 +117,24 @@ exit 255
 	}
 }
 
+func TestLocalValidateIncompleteTreeHint(t *testing.T) {
+	withFakeBinary(t, "fail2ban-client", `echo "2026-07-26 18:20:56,221 fail2ban.configreader   [18]: ERROR   Found no accessible config files for 'fail2ban' under /etc/fail2ban" >&2
+exit 255
+`)
+	lc := testLocalConnector(t)
+
+	err := lc.ValidateConfiguration(context.Background())
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "must contain the complete Fail2ban configuration") {
+		t.Fatalf("expected the incomplete-tree hint, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Found no accessible config files") {
+		t.Fatalf("validation errors must keep the daemon message, got: %v", err)
+	}
+}
+
 func TestLocalCommandErrorsAreNotLabelledSSH(t *testing.T) {
 	withFakeBinary(t, "fail2ban-client", `echo "boom" >&2
 exit 1
