@@ -136,6 +136,24 @@ Configure under **Settings -> Global Settings**. These values are written to the
 
 Duration fields accept plain seconds or Fail2Ban time suffixes (`3600`, `48h`, `5w`, `1d 12h`). `bantime` additionally accepts `-1` for permanent bans.
 
+### Extending the ignore list for a seperate jail only
+
+Fail2Ban reads `jail.d/*.conf` before the managed `jail.local` and `jail.d/*.local` after it, so a `[DEFAULT] ignoreip` in `jail.d` does not merge with the UI list. In a `.conf` file it is overridden, and in a `.local` file it replaces the UI list when used here the same `ignoreip`.
+
+So the solution to do this is to add entries via `ignoreip_extra` in a `jail.d/*.local` file. The managed `jail.local` appends it then to the `ignoreip`. For example:
+
+```ini
+# jail.d/apache-badbots.local
+[apache-badbots]
+enabled = true
+ignoreip_extra = 203.0.113.10
+..
+port     = http,https
+logpath  = /var/log/httpd/*access_log
+```
+
+This will then extend the ignoreip-list for that jail only instead of the global ignoreip list. Check the effective list per jail with `fail2ban-client get <jail> ignoreip`.
+
 ## Alert settings (UI-managed)
 
 Configure under **Settings -> Alert Settings**:

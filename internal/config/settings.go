@@ -229,6 +229,7 @@ const (
 	actionServerIDPlaceholder = "__SERVER_ID__"
 	actionSecretPlaceholder   = "__CALLBACK_SECRET__"
 	actionCurlInsecureFlag    = "__CURL_INSECURE_FLAG__"
+	ignoreIPExtraRef          = "%(ignoreip_extra)s"
 )
 
 // The host default jail.local file used by initializeFromJailFile (experimental).
@@ -796,10 +797,11 @@ func initializeFromJailFile() error {
 		}
 	}
 	if val, ok := settings["ignoreip"]; ok {
-		if val != "" {
-			currentSettings.IgnoreIPs = strings.Fields(val)
-		} else {
-			currentSettings.IgnoreIPs = []string{}
+		currentSettings.IgnoreIPs = []string{}
+		for _, entry := range strings.Fields(val) {
+			if entry != ignoreIPExtraRef {
+				currentSettings.IgnoreIPs = append(currentSettings.IgnoreIPs, entry)
+			}
 		}
 	}
 	if val, ok := settings["banaction"]; ok {
@@ -1036,21 +1038,20 @@ func buildJailLocalContent(settings AppSettings) string {
 	defaultSection := fmt.Sprintf(`[DEFAULT]
 enabled = %t
 bantime.increment = %t
-ignoreip = %s
+ignoreip_extra =
+ignoreip = %s %s
 bantime = %s
 findtime = %s
 maxretry = %d
 banaction = %s
 banaction_allports = %s
 chain = %s
-`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr,
+`, settings.DefaultJailEnable, settings.BantimeIncrement, ignoreIPStr, ignoreIPExtraRef,
 		settings.Bantime, settings.Findtime, settings.Maxretry,
 		banaction, banactionAllports, chain)
 	if settings.BantimeRndtime != "" {
 		defaultSection += fmt.Sprintf("bantime.rndtime = %s\n", settings.BantimeRndtime)
 	}
-	// bantime.maxtime caps how large escalating bans may grow when
-	// bantime.increment is enabled. Only emitted when the operator sets it.
 	if settings.BantimeMaxtime != "" {
 		defaultSection += fmt.Sprintf("bantime.maxtime = %s\n", settings.BantimeMaxtime)
 	}

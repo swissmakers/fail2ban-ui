@@ -39,6 +39,9 @@ Check:
 * The container has the socket mounted.
 * Permissions allow access to the socket.
 * SELinux is not denying access.
+* The configuration path contains the complete Fail2Ban configuration, not only custom files.
+
+If the log shows `configuration validation failed` with `Found no accessible config files`, Fail2Ban UI cannot see the complete configuration. Before it applies a change, Fail2Ban UI validates the configuration path with `fail2ban-client -t`. That path must contain `fail2ban.conf`, `jail.conf` and the stock `action.d` and `filter.d` files. Mount the directory that holds the configuration the daemon actually loads. For containerised Fail2Ban, use an image that keeps this tree in a host directory, such as linuxserver/fail2ban. See [Container deployment](../deployment/container/README.md#all-in-one-setup-fail2ban--fail2ban-ui).
 
 ```bash
 # RHEL / Rocky / AlmaLinux:

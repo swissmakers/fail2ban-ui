@@ -146,6 +146,7 @@ Details:
 
 - Required only when managing a local Fail2Ban instance.
 - Read/write access is required for configuration management.
+- Must contain the complete configuration that the Fail2Ban daemon loads, including `fail2ban.conf`, `jail.conf` and the stock `action.d` and `filter.d` files. Fail2Ban UI validates this tree with `fail2ban-client -t` before it applies a change. A directory with only custom jails, filters or actions fails validation.
 - On SELinux-enabled systems, mount with the `:Z` flag.
 
 ### `/var/run/fail2ban` - Fail2Ban socket directory
@@ -286,6 +287,7 @@ Volume structure:
 - The fail2ban-ui container requires `privileged: true` in this setup to modify Fail2Ban configs owned by root.
 - Both containers must use `network_mode: host`.
 - Ensure the SELinux labels are correct (`:z` or `:Z` flags).
+- Use a Fail2Ban image that keeps its complete configuration in the shared directory, such as linuxserver/fail2ban. Images that assemble `/etc/fail2ban` inside the container at startup, such as crazymax/fail2ban, only expose custom files in their data directory. Fail2Ban UI cannot validate or apply configuration for them.
 
 See `docker-compose-allinone.example.yml` in the project root for the complete configuration.
 
