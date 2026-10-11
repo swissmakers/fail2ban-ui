@@ -312,16 +312,18 @@ Solution - switch Fail2Ban to nftables-based actions:
 
 Some hosts, such as Synology DSM, still use legacy iptables. linuxserver/fail2ban runs `iptables` with the nftables backend, so its rules end up in a ruleset that the host does not use. Fail2Ban and Fail2Ban UI report the ban, but no rule appears in `iptables -L -n` on the host.
 
-Switch the iptables actions to the legacy binary, which the image already contains:
+Switch the iptables actions to the legacy binary, which the image already contains, and block with `DROP`. The default `REJECT` target is often missing from the DSM kernel, so the ban rule is never added:
 
 1. Create `action.d/iptables.local` in the shared Fail2Ban configuration directory:
 
    ```ini
    [Init]
    iptables = iptables-legacy <lockingopt>
+   blocktype = DROP
 
    [Init?family=inet6]
    iptables = ip6tables-legacy <lockingopt>
+   blocktype = DROP
    ```
 
 2. Keep **Banaction** at `iptables-multiport` and **Banaction Allports** at `iptables-allports`.
