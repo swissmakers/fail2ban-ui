@@ -202,16 +202,20 @@ See [threat-intel.md](threat-intel.md) for details.
 
 ## OIDC authentication
 
+The login uses the authorization code flow with PKCE (S256, RFC 7636) on top of the client secret and `state`. Keycloak, Authentik and Pocket ID all support PKCE, so the provider can be set to require it; in Keycloak that is the client's *Proof Key for Code Exchange Code Challenge Method* = `S256`.
+
 Required when OIDC is enabled:
 
 | Variable | Description |
 |----------|-------------|
 | `OIDC_ENABLED=true` | Enables OIDC authentication |
-| `OIDC_PROVIDER` | `keycloak`, `authentik`, or `pocketid` |
+| `OIDC_PROVIDER` | `keycloak`, `authentik`, `pocketid`, or `generic` |
 | `OIDC_ISSUER_URL` | Issuer URL; must match the provider's discovery document |
 | `OIDC_CLIENT_ID` | Client ID configured at the provider |
 | `OIDC_CLIENT_SECRET` | Client secret |
 | `OIDC_REDIRECT_URL` | `https://<ui-host>{BASE_PATH}/auth/callback`, for example `https://<ui-host>/myf2b/auth/callback` with `BASE_PATH=/myf2b` |
+
+Login works with any provider that publishes a standard OpenID Connect discovery document. `OIDC_PROVIDER` only decides how the UI logs you out at the provider. Use `generic` for providers other than Keycloak, Authentik, and Pocket-ID, for example Casdoor, Zitadel, or Dex. With `generic`, the UI takes the `end_session_endpoint` from the discovery document. If the provider does not publish one, logout only ends the session in the UI. In that case set `OIDC_LOGOUT_URL`.
 
 Common optional variables:
 

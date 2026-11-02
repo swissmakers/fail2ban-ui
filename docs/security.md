@@ -15,6 +15,8 @@ See [reverse-proxy.md](reverse-proxy.md) for hardened proxy examples and the Web
 
 ## Authentication model
 
+The OIDC login is the authorization code flow with PKCE (S256). The code verifier lives in an HttpOnly cookie for the 10 minutes the login may take, next to the `state` cookie, and only its S256 hash goes to the provider. A stolen or injected authorization code therefore cannot be redeemed without the browser that started the login. Configure the provider to require PKCE so a downgraded request is refused too.
+
 Sessions are stateless encrypted cookies (AES-GCM), logout clears the cookie but cannot revoke an already-captured session token before its expiry (`OIDC_SESSION_MAX_AGE`, default 1 hour). Keep session lifetimes short and always serve the UI over TLS.
 
 When OIDC role-based access control is configured (`OIDC_ADMIN_ROLES` / `OIDC_SUPPORT_ROLES`), the user's roles and access level are captured at login and stored in the session cookie. Role changes at the identity provider only take effect after the user logs in again  -  another reason to keep session lifetimes short. Users whose roles match neither list can authenticate but are denied on every API endpoint.

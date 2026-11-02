@@ -1,7 +1,7 @@
 # =========================================
 #  STAGE 1 -- Build Fail2Ban-UI Binary
 # =========================================
-FROM --platform=$BUILDPLATFORM golang:1.27.1 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.3 AS builder
 WORKDIR /app
 
 # Copy module files and download dependencies
@@ -56,13 +56,14 @@ RUN set -eux; \
     test -x /sbin/tini; \
     adduser -D -u 1000 -G root fail2ban
 
-RUN mkdir -p /app /config /config/.ssh \
+# Only fail2ban-client is needed from the package. Its default jails must not stand in for a missing configuration mount.
+RUN rm -rf /etc/fail2ban/* \
+    && mkdir -p /app /config /config/.ssh \
     /etc/fail2ban/jail.d \
     /etc/fail2ban/filter.d \
     /etc/fail2ban/action.d \
     /var/run/fail2ban \
     /usr/share/GeoIP \
-    && touch /etc/fail2ban/jail.local \
     && chown -R fail2ban:0 /app /config /etc/fail2ban /var/run/fail2ban
 
 # Set working directory and volume

@@ -38,6 +38,8 @@ type OIDCClient struct {
 	Verifier     *oidc.IDTokenVerifier
 	OAuth2Config *oauth2.Config
 	Config       *config.OIDCConfig
+	// From the discovery document; used for logout with the generic provider.
+	EndSessionURL string
 }
 
 type UserInfo struct {
@@ -177,10 +179,18 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 		ClientID: cfg.ClientID,
 	})
 
+	var discovery struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	if err := provider.Claims(&discovery); err != nil {
+		config.DebugLog("OIDC discovery document has no readable end_session_endpoint: %v", err)
+	}
+
 	oidcClient = &OIDCClient{
-		Verifier:     verifier,
-		OAuth2Config: oauth2Config,
-		Config:       cfg,
+		Verifier:      verifier,
+		OAuth2Config:  oauth2Config,
+		Config:        cfg,
+		EndSessionURL: discovery.EndSessionEndpoint,
 	}
 
 	config.DebugLog("OIDC authentication initialized with provider: %s, issuer: %s", cfg.Provider, cfg.IssuerURL)
@@ -211,9 +221,9 @@ func GetConfig() *config.OIDCConfig {
 //  OAuth2 Flow
 // =========================================================================
 
-// Returns the OAuth2 authorization URL for the given state.
-func (c *OIDCClient) GetAuthURL(state string) string {
-	return c.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+// Returns the OAuth2 authorization URL for the given state and PKCE verifier (RFC 7636, S256).
+func (c *OIDCClient) GetAuthURL(state, verifier string) string {
+	return c.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))
 }
 
 func claimByPath(claims map[string]interface{}, path string) interface{} {
@@ -273,14 +283,14 @@ func stringSliceFromClaim(value interface{}) []string {
 	}
 }
 
-// Exchanges the authorization code for tokens.
-func (c *OIDCClient) ExchangeCode(ctx context.Context, code string) (*oauth2.Token, error) {
+// Exchanges the authorization code for tokens, proving possession of the PKCE verifier.
+func (c *OIDCClient) ExchangeCode(ctx context.Context, code, verifier string) (*oauth2.Token, error) {
 	if c.OAuth2Config == nil {
 		return nil, fmt.Errorf("OIDC client not properly initialized")
 	}
 
 	ctx = contextWithSkipVerify(ctx, c.Config.SkipVerify)
-	token, err := c.OAuth2Config.Exchange(ctx, code)
+	token, err := c.OAuth2Config.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}

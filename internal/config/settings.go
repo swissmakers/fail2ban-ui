@@ -336,7 +336,7 @@ func Init(dbPath string) error {
 				log.Printf("ERROR: migrating legacy settings: %v", err)
 			}
 			log.Printf("App settings not found, initializing from jail.local (if it exists)")
-			if err := initializeFromJailFile(); err != nil {
+			if err := initializeFromJailFile(); err != nil && !errors.Is(err, os.ErrNotExist) {
 				log.Printf("ERROR: reading jail.local: %v", err)
 			}
 			setDefaults()
@@ -1413,8 +1413,8 @@ func GetOIDCConfigFromEnv() (*OIDCConfig, error) {
 	if config.Provider == "" {
 		return nil, fmt.Errorf("OIDC_PROVIDER environment variable is required when OIDC_ENABLED=true")
 	}
-	if config.Provider != "keycloak" && config.Provider != "authentik" && config.Provider != "pocketid" {
-		return nil, fmt.Errorf("OIDC_PROVIDER must be one of: keycloak, authentik, pocketid")
+	if config.Provider != "keycloak" && config.Provider != "authentik" && config.Provider != "pocketid" && config.Provider != "generic" {
+		return nil, fmt.Errorf("OIDC_PROVIDER must be one of: keycloak, authentik, pocketid, generic")
 	}
 	config.IssuerURL = os.Getenv("OIDC_ISSUER_URL")
 	if config.IssuerURL == "" {

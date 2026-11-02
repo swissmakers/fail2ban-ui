@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"golang.org/x/oauth2"
 )
 
 // =========================================================================
@@ -54,7 +55,19 @@ func redirectToOIDCProvider(c *gin.Context, oidcClient *auth.OIDCClient) {
 	})
 	config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
 
-	c.Redirect(http.StatusFound, oidcClient.GetAuthURL(state))
+	// PKCE: the verifier stays in an HttpOnly cookie; only its S256 challenge goes to the provider
+	verifier := oauth2.GenerateVerifier()
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oidc_pkce",
+		Value:    verifier,
+		Path:     CookiePath(),
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	c.Redirect(http.StatusFound, oidcClient.GetAuthURL(state, verifier))
 }
 
 func LoginHandler(c *gin.Context) {
@@ -88,16 +101,24 @@ func CallbackHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing state parameter", "details": err.Error()})
 		return
 	}
+	verifier, err := c.Cookie("oidc_pkce")
+	if err != nil {
+		config.DebugLog("Failed to get PKCE verifier cookie: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing PKCE verifier", "details": err.Error()})
+		return
+	}
 	isSecure := auth.RequestIsSecure(c.Request)
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "oidc_state",
-		Value:    "",
-		Path:     CookiePath(),
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	for _, name := range []string{"oidc_state", "oidc_pkce"} {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     CookiePath(),
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   isSecure,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 	returnedState := c.Query("state")
 	if returnedState != stateCookie {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state parameter"})
@@ -113,7 +134,7 @@ func CallbackHandler(c *gin.Context) {
 		}
 		return
 	}
-	token, err := oidcClient.ExchangeCode(c.Request.Context(), code)
+	token, err := oidcClient.ExchangeCode(c.Request.Context(), code, verifier)
 	if err != nil {
 		config.DebugLog("Failed to exchange code for token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange authorization code"})
@@ -150,25 +171,7 @@ func LogoutHandler(c *gin.Context) {
 				redirectURI = strings.TrimSuffix(redirectURI, "/auth/callback")
 			}
 			redirectURI = redirectURI + "/auth/login"
-			redirectURIEncoded := url.QueryEscape(redirectURI)
-			clientIDEncoded := url.QueryEscape(oidcClient.Config.ClientID)
-
-			switch oidcClient.Config.Provider {
-			case "keycloak":
-				// Keycloak requires client_id when using post_logout_redirect_uri
-				// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
-				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
-			case "pocketid":
-				// Pocket-ID uses a different logout endpoint (https://pocket-id.io/docs/oidc/#end-session)
-				// Format: {issuer}/api/oidc/end-session?redirect_uri={redirect}
-				logoutURL = fmt.Sprintf("%s/api/oidc/end-session?redirect_uri=%s", issuerURL, redirectURIEncoded)
-			case "authentik":
-				// OIDC format for Authentik (https://docs.goauthentik.io/docs/providers/oidc/#logout)
-				// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
-				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
-			default:
-				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
-			}
+			logoutURL = providerLogoutURL(oidcClient.Config.Provider, issuerURL, oidcClient.EndSessionURL, redirectURI, oidcClient.Config.ClientID)
 		}
 		if logoutURL != "" {
 			config.DebugLog("Redirecting to provider logout: %s", logoutURL)
@@ -177,6 +180,38 @@ func LogoutHandler(c *gin.Context) {
 		}
 	}
 	c.Redirect(http.StatusFound, ExternalPath("/auth/login"))
+}
+
+// Builds the provider logout URL; an empty result means only the local session ends.
+func providerLogoutURL(provider, issuerURL, endSessionURL, redirectURI, clientID string) string {
+	redirectURIEncoded := url.QueryEscape(redirectURI)
+	clientIDEncoded := url.QueryEscape(clientID)
+	switch provider {
+	case "keycloak":
+		// Keycloak requires client_id when using post_logout_redirect_uri
+		// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
+		return fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
+	case "pocketid":
+		// Pocket-ID uses a different logout endpoint (https://pocket-id.io/docs/oidc/#end-session)
+		// Format: {issuer}/api/oidc/end-session?redirect_uri={redirect}
+		return fmt.Sprintf("%s/api/oidc/end-session?redirect_uri=%s", issuerURL, redirectURIEncoded)
+	case "authentik":
+		// OIDC format for Authentik (https://docs.goauthentik.io/docs/providers/oidc/#logout)
+		// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
+		return fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
+	case "generic":
+		// RP-Initiated Logout 1.0: the end-session endpoint comes from the provider's discovery document.
+		if endSessionURL == "" {
+			return ""
+		}
+		separator := "?"
+		if strings.Contains(endSessionURL, "?") {
+			separator = "&"
+		}
+		return endSessionURL + separator + "post_logout_redirect_uri=" + redirectURIEncoded + "&client_id=" + clientIDEncoded
+	default:
+		return fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
+	}
 }
 
 // Returns the current authentication status as JSON.

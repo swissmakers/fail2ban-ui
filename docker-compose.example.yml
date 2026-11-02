@@ -63,7 +63,7 @@ services:
       # ============================================
       # Enable OIDC authentication to protect the web UI
       # - OIDC_ENABLED=true
-      # OIDC Provider: keycloak, authentik, or pocketid
+      # OIDC Provider: keycloak, authentik, pocketid, or generic (any other standard OIDC provider)
       # - OIDC_PROVIDER=keycloak
       # OIDC Issuer URL (required when OIDC_ENABLED=true)
       # Examples:

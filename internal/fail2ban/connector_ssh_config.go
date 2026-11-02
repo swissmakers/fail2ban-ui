@@ -455,6 +455,9 @@ func (sc *SSHConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bool
 		}
 		return false, false, fmt.Errorf("failed to read jail.local on %s: %w", sc.server.Name, err)
 	}
+	if !jailLocalHasContent(output) {
+		return false, false, nil
+	}
 	hasUIAction := strings.Contains(output, managedJailLocalMarker)
 	return true, hasUIAction, nil
 }

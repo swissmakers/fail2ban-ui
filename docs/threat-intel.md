@@ -30,6 +30,13 @@ Under **Settings -> Alert Settings**:
 3. Enter the matching API key.
 4. Save the settings.
 
+## Usage
+
+On the dashboard, click an IP address in the banned IP list of a jail or in **Recent stored events**. The threat intelligence view opens and queries the selected provider for that address.
+
+* **AbuseIPDB** shows the abuse confidence score, the number of reports, the reported hostnames, and the latest reports.
+* **AlienVault OTX** shows the pulses that reference the address, its reputation, the ASN, and location data.
+
 ## API endpoint
 
 `GET /api/threat-intel/:ip`
