@@ -1,6 +1,6 @@
 module github.com/swissmakers/fail2ban-ui
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
