@@ -38,6 +38,8 @@ type OIDCClient struct {
 	Verifier     *oidc.IDTokenVerifier
 	OAuth2Config *oauth2.Config
 	Config       *config.OIDCConfig
+	// From the discovery document; used for logout with the generic provider.
+	EndSessionURL string
 }
 
 type UserInfo struct {
@@ -177,10 +179,18 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 		ClientID: cfg.ClientID,
 	})
 
+	var discovery struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	if err := provider.Claims(&discovery); err != nil {
+		config.DebugLog("OIDC discovery document has no readable end_session_endpoint: %v", err)
+	}
+
 	oidcClient = &OIDCClient{
-		Verifier:     verifier,
-		OAuth2Config: oauth2Config,
-		Config:       cfg,
+		Verifier:      verifier,
+		OAuth2Config:  oauth2Config,
+		Config:        cfg,
+		EndSessionURL: discovery.EndSessionEndpoint,
 	}
 
 	config.DebugLog("OIDC authentication initialized with provider: %s, issuer: %s", cfg.Provider, cfg.IssuerURL)

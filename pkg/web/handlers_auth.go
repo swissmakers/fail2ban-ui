@@ -150,25 +150,7 @@ func LogoutHandler(c *gin.Context) {
 				redirectURI = strings.TrimSuffix(redirectURI, "/auth/callback")
 			}
 			redirectURI = redirectURI + "/auth/login"
-			redirectURIEncoded := url.QueryEscape(redirectURI)
-			clientIDEncoded := url.QueryEscape(oidcClient.Config.ClientID)
-
-			switch oidcClient.Config.Provider {
-			case "keycloak":
-				// Keycloak requires client_id when using post_logout_redirect_uri
-				// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
-				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
-			case "pocketid":
-				// Pocket-ID uses a different logout endpoint (https://pocket-id.io/docs/oidc/#end-session)
-				// Format: {issuer}/api/oidc/end-session?redirect_uri={redirect}
-				logoutURL = fmt.Sprintf("%s/api/oidc/end-session?redirect_uri=%s", issuerURL, redirectURIEncoded)
-			case "authentik":
-				// OIDC format for Authentik (https://docs.goauthentik.io/docs/providers/oidc/#logout)
-				// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
-				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
-			default:
-				logoutURL = fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
-			}
+			logoutURL = providerLogoutURL(oidcClient.Config.Provider, issuerURL, oidcClient.EndSessionURL, redirectURI, oidcClient.Config.ClientID)
 		}
 		if logoutURL != "" {
 			config.DebugLog("Redirecting to provider logout: %s", logoutURL)
@@ -177,6 +159,38 @@ func LogoutHandler(c *gin.Context) {
 		}
 	}
 	c.Redirect(http.StatusFound, ExternalPath("/auth/login"))
+}
+
+// Builds the provider logout URL; an empty result means only the local session ends.
+func providerLogoutURL(provider, issuerURL, endSessionURL, redirectURI, clientID string) string {
+	redirectURIEncoded := url.QueryEscape(redirectURI)
+	clientIDEncoded := url.QueryEscape(clientID)
+	switch provider {
+	case "keycloak":
+		// Keycloak requires client_id when using post_logout_redirect_uri
+		// Format: {issuer}/protocol/openid-connect/logout?post_logout_redirect_uri={redirect}&client_id={client_id}
+		return fmt.Sprintf("%s/protocol/openid-connect/logout?post_logout_redirect_uri=%s&client_id=%s", issuerURL, redirectURIEncoded, clientIDEncoded)
+	case "pocketid":
+		// Pocket-ID uses a different logout endpoint (https://pocket-id.io/docs/oidc/#end-session)
+		// Format: {issuer}/api/oidc/end-session?redirect_uri={redirect}
+		return fmt.Sprintf("%s/api/oidc/end-session?redirect_uri=%s", issuerURL, redirectURIEncoded)
+	case "authentik":
+		// OIDC format for Authentik (https://docs.goauthentik.io/docs/providers/oidc/#logout)
+		// Format: {issuer}/protocol/openid-connect/logout?redirect_uri={redirect}
+		return fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
+	case "generic":
+		// RP-Initiated Logout 1.0: the end-session endpoint comes from the provider's discovery document.
+		if endSessionURL == "" {
+			return ""
+		}
+		separator := "?"
+		if strings.Contains(endSessionURL, "?") {
+			separator = "&"
+		}
+		return endSessionURL + separator + "post_logout_redirect_uri=" + redirectURIEncoded + "&client_id=" + clientIDEncoded
+	default:
+		return fmt.Sprintf("%s/protocol/openid-connect/logout?redirect_uri=%s", issuerURL, redirectURIEncoded)
+	}
 }
 
 // Returns the current authentication status as JSON.

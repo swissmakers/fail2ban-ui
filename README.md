@@ -3,8 +3,9 @@
 **Enterprise-Grade Intrusion Detection System Management Platform**
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go)](https://go.dev/)
 [![Platform](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://www.linux.org/)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/swissmakers)
 
 > Maintained in our free time and free forever. If it is useful to you,
 > [feel free to sponsor the project](https://github.com/sponsors/swissmakers).
@@ -29,15 +30,15 @@ Fail2Ban UI does not replace Fail2Ban. Ban decisions are still made by the Fail2
 * Persistent event history and permanent-block records, with data management built in
 * Configurable alerts over Email (SMTP), Webhook, and Elasticsearch, with GeoIP/Whois enrichment and country filtering
 * Background changes with progress, per-server queues, and automatic config-recovery for bad configs
-* Optional OIDC login (Keycloak, Authentik, Pocket-ID)
+* Optional OIDC login (Keycloak, Authentik, Pocket-ID, or any other standard OIDC provider)
 * Least-privilege, SELinux-aware deployment patterns
 
 ## How it works
 
 The UI runs as a single Go binary, in a container or as a systemd service. Two independent data paths connect it to the managed hosts:
 
-* **Control path** (blue) - Fail2ban UI manages each Fail2Ban instance through one of three connectors (see below): reading jail status, banning and unbanning, editing configuration, restarting the service.
-* **Event path** (green) - a custom Fail2Ban action on each host posts every ban and unban event back to the UI over HTTP, authenticated by a shared callback secret. The UI stores the event, broadcasts it to connected browsers, and triggers alerts and advanced actions.
+* **Control path** (blue) -> Fail2ban UI manages each Fail2Ban instance through one of three connectors (see below): reading jail status, banning and unbanning, editing configuration, restarting the service.
+* **Event path** (green) -> every ban and unban event is posted back to the UI over HTTP, authenticated by a shared callback secret. On local and SSH hosts, a custom Fail2Ban action (`ui-custom-action`) sends it and on agent hosts the agent itself reports it. Ban events include the log lines that mention the banned IP. The UI stores the event, broadcasts it to connected browsers, and triggers alerts and advanced actions.
 
 [![Architecture-Diagram](docs/diagrams/architecture.drawio.svg)](docs/diagrams/architecture.drawio.svg)
 
@@ -56,7 +57,8 @@ See [docs/architecture.md](docs/architecture.md) for the data-flow description.
 ### Prerequisites
 
 * A Linux host with Podman or Docker
-* For a local Fail2Ban instance: access to `/etc/fail2ban` and `/var/run/fail2ban` from the container
+* For a local Fail2Ban instance: the complete Fail2Ban configuration directory (including `fail2ban.conf` and `jail.conf`) and the directory that holds the Fail2Ban socket, both mounted into the container. Fail2Ban UI validates the complete configuration before it applies a change.
+* On every host managed through the local or SSH connector: `curl` and `jq`. The ban action uses them to report events to the UI.
 
 ### Procedure
 
@@ -74,7 +76,8 @@ podman run -d --name fail2ban-ui --network=host \
 ### Verification
 
 1. Open `http://localhost:8080`.
-2. In the UI, go to **Settings -> Manage Servers**, enable the local connector, and click **Test connection**.
+2. On the dashboard, click **Manage Servers**.
+3. On the local server, click **Enable**, then **Test connection**.
 
 ### Next steps
 
@@ -118,7 +121,7 @@ See [docs/security.md](docs/security.md) for details.
 
 ## Screenshots
 
-A set of screenshots is available in `screenshots/`
+A set of screenshots is available in `screenshots/`.
 
 ### Main dashboard
 
@@ -174,11 +177,11 @@ Detailed ban log view showing log lines that triggered the ban, timestamps, and 
 
 [![Ban Insights](screenshots/2.3_Dashboard_Log_Overview_BanInsights.png)](screenshots/2.3_Dashboard_Log_Overview_BanInsights.png)
 
-Ban Insights brings SIEM-like analysis to environments without a full SIEM. The ban and unban activity timeline works similar like the one in Kibana -> drag to zoom into a time range, use presets from 8 hours to 30 days, or define a custom range of up to 12 months, so spikes and attack patterns become visible at a glance.
+Ban Insights brings SIEM-like analysis to environments without a full SIEM. The ban and unban activity timeline works like the one in Kibana: drag to zoom into a time range, use presets from 8 hours to 30 days, or define a custom range of up to 12 months, so spikes and attack patterns become visible at a glance.
 
 Typical workflows:
 
-* **Correlate two incidents.** Pin one spike as Incident A and another as Incident B -> for example, last week's attack and this week's. The incident compare lists the IPs present in both. Addresses that return across incidents are repeat attackers rather than false positives, and can be banned permanently right to the recurring-offenders list.
+* **Correlate two incidents.** Pin one spike as Incident A and another as Incident B -> for example, last week's attack and this week's. The incident compare lists the IPs present in both. Addresses that return across incidents are repeat attackers rather than false positives, and can be blocked permanently on the configured firewall integration with one click.
 * **Block a botnet in one click.** Select a time range in which no legitimate user is normally active, such as a nightly spike, and permanently block every IP in it on the configured firewall integration (MikroTik, pfSense, OPNsense, UniFi).
 
 The modal also suggests similar past periods, exports IP lists as CSV or JSON, and shows country-level analytics on an interactive 3D globe together with the top recurring IPs.
@@ -193,7 +196,7 @@ Results from filter testing showing matched lines, regex performance, and valida
 
 ### Settings
 ![Settings](screenshots/4_Settings.png)
-Main settings page with sections for different configuration categories including general settings, advanced ban actions, alert settings, and global fail2ban settings.
+Main settings page with the sections **General Settings**, **Advanced Actions for Recurring Offenders**, **Alert Settings**, and **Global Default Fail2Ban Configurations**.
 
 #### Debug Console
 ![Debug Console](screenshots/4.1_Settings_DebugConsole.png)
@@ -211,11 +214,11 @@ Permanent blocking, firewall integrations (MikroTik, pfSense, OPNsense, UniFi), 
 
 Three alert providers, Email (SMTP), Webhook, and Elasticsearch, with country filtering, GeoIP provider selection, and per-event toggles. See [docs/alert-providers.md](docs/alert-providers.md).
 
-#### Global settings
+#### Global Default Fail2Ban Configurations
 
 [![Global Settings](screenshots/4.4_Settings_GlobalSettings.png)](screenshots/4.4_Settings_GlobalSettings.png)
 
-Global Fail2Ban defaults: `bantime`, `findtime`, `maxretry`, and the `banaction` backend (nftables, firewalld, iptables). When bantime increment is enabled, the escalation behavior can be tuned with `bantime.rndtime`, `bantime.maxtime` (cap for escalating bans), `bantime.factor` (escalation multiplier), and `bantime.overalljails` (count repeat offenses across all jails).
+Defaults written to the `[DEFAULT]` section of the managed `jail.local` on every server: `bantime`, `findtime`, `maxretry`, `ignoreip`, and the `banaction` backend (nftables, firewalld, iptables). When bantime increment is enabled, the escalation behavior can be tuned with `bantime.rndtime`, `bantime.maxtime` (cap for escalating bans), `bantime.factor` (escalation multiplier), and `bantime.overalljails` (count repeat offenses across all jails).
 
 ## Contributing
 
@@ -223,7 +226,7 @@ Documentation and deployment guidance in security tooling is never "done", and e
 
 If you see a clearer way to describe installation steps, safer container defaults, better reverse-proxy examples, SELinux improvements, or a more practical demo environment, please contribute. Small improvements (typos, wording, examples) are just as valuable as code changes.
 
-To add a UI language: copy `pkg/web/locales/en.json`, translate all values, save it as `pkg/web/locales/<lang>.json`, and open a pull request. Use a lowercase locale code for `<lang>`, for example `ch`, `ch_de`, `es`, or `pt_br`.
+To add a UI language: copy `pkg/web/locales/en.json`, translate all values, save it as `pkg/web/locales/<lang>.json`, and open a pull request. Use a lowercase locale code for `<lang>`, for example `es`, `de_ch`, or `pt_br`. The new language appears in the language selection automatically.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 

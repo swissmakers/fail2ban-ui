@@ -201,3 +201,25 @@ func TestFail2banActionTemplateQuotesSubstitutedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestGetOIDCConfigFromEnvAcceptsGenericProvider(t *testing.T) {
+	for k, v := range map[string]string{
+		"OIDC_ENABLED":       "true",
+		"OIDC_ISSUER_URL":    "https://idp.example",
+		"OIDC_CLIENT_ID":     "f2b-ui",
+		"OIDC_CLIENT_SECRET": "secret",
+		"OIDC_REDIRECT_URL":  "https://ui.example/auth/callback",
+	} {
+		t.Setenv(k, v)
+	}
+	for provider, wantErr := range map[string]bool{"generic": false, "keycloak": false, "casdoor": true} {
+		t.Setenv("OIDC_PROVIDER", provider)
+		cfg, err := GetOIDCConfigFromEnv()
+		if (err != nil) != wantErr {
+			t.Fatalf("OIDC_PROVIDER=%s: err = %v, want error %v", provider, err, wantErr)
+		}
+		if err == nil && cfg.Provider != provider {
+			t.Fatalf("OIDC_PROVIDER=%s: provider = %q", provider, cfg.Provider)
+		}
+	}
+}

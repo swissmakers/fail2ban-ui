@@ -136,3 +136,20 @@ func TestCheckWSOrigin(t *testing.T) {
 		})
 	}
 }
+
+func TestProviderLogoutURL(t *testing.T) {
+	const redirect = "https://ui.example/auth/login"
+	cases := []struct {
+		name, provider, endSession, want string
+	}{
+		{"keycloak", "keycloak", "", "https://idp.example/protocol/openid-connect/logout?post_logout_redirect_uri=https%3A%2F%2Fui.example%2Fauth%2Flogin&client_id=f2b-ui"},
+		{"generic uses discovery", "generic", "https://idp.example/logout", "https://idp.example/logout?post_logout_redirect_uri=https%3A%2F%2Fui.example%2Fauth%2Flogin&client_id=f2b-ui"},
+		{"generic keeps existing query", "generic", "https://idp.example/logout?tenant=a", "https://idp.example/logout?tenant=a&post_logout_redirect_uri=https%3A%2F%2Fui.example%2Fauth%2Flogin&client_id=f2b-ui"},
+		{"generic without end-session endpoint", "generic", "", ""},
+	}
+	for _, tc := range cases {
+		if got := providerLogoutURL(tc.provider, "https://idp.example", tc.endSession, redirect, "f2b-ui"); got != tc.want {
+			t.Errorf("%s: providerLogoutURL = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
