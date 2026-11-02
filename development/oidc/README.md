@@ -180,6 +180,7 @@ If the automatic configuration fails, create the client by hand:
   - **Client protocol:** `openid-connect`. Click **Next**.
   - **Client authentication:** toggle **ON** (confidential client). Leave **Authorization** off and the authentication flow at the defaults. Click **Next**.
   - **Login settings:** leave Root URL and Home URL empty. Set **Valid redirect URIs** to `http://localhost:3080/auth/callback` (must match exactly) and **Web origins** to `http://localhost:3080`. Click **Save**.
+  - **PKCE:** on the client's **Advanced** tab, under **Advanced settings**, set **Proof Key for Code Exchange Code Challenge Method** to `S256` and save. Fail2Ban UI always sends an S256 challenge, so Keycloak can require it.
 5. **Copy the client secret.** On the client page, open the **Credentials** tab and copy the secret. In `container-compose.yml`, replace `change-me-secret` in the line `- OIDC_CLIENT_SECRET=change-me-secret` with that value.
 6. **Restart fail2ban-ui:**
   ```bash

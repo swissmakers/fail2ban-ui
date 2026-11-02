@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/swissmakers/fail2ban-ui/internal/auth"
 	"github.com/swissmakers/fail2ban-ui/internal/config"
+	"golang.org/x/oauth2"
 )
 
 // =========================================================================
@@ -54,7 +55,19 @@ func redirectToOIDCProvider(c *gin.Context, oidcClient *auth.OIDCClient) {
 	})
 	config.DebugLog("Set state cookie: %s (Secure: %v)", state, isSecure)
 
-	c.Redirect(http.StatusFound, oidcClient.GetAuthURL(state))
+	// PKCE: the verifier stays in an HttpOnly cookie; only its S256 challenge goes to the provider
+	verifier := oauth2.GenerateVerifier()
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oidc_pkce",
+		Value:    verifier,
+		Path:     CookiePath(),
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	c.Redirect(http.StatusFound, oidcClient.GetAuthURL(state, verifier))
 }
 
 func LoginHandler(c *gin.Context) {
@@ -88,16 +101,24 @@ func CallbackHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing state parameter", "details": err.Error()})
 		return
 	}
+	verifier, err := c.Cookie("oidc_pkce")
+	if err != nil {
+		config.DebugLog("Failed to get PKCE verifier cookie: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing PKCE verifier", "details": err.Error()})
+		return
+	}
 	isSecure := auth.RequestIsSecure(c.Request)
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "oidc_state",
-		Value:    "",
-		Path:     CookiePath(),
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	for _, name := range []string{"oidc_state", "oidc_pkce"} {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     CookiePath(),
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   isSecure,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 	returnedState := c.Query("state")
 	if returnedState != stateCookie {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state parameter"})
@@ -113,7 +134,7 @@ func CallbackHandler(c *gin.Context) {
 		}
 		return
 	}
-	token, err := oidcClient.ExchangeCode(c.Request.Context(), code)
+	token, err := oidcClient.ExchangeCode(c.Request.Context(), code, verifier)
 	if err != nil {
 		config.DebugLog("Failed to exchange code for token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange authorization code"})

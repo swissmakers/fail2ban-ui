@@ -82,7 +82,8 @@ if [ -n "$EXISTING_CLIENT" ]; then
             \"redirectUris\": [\"${REDIRECT_URI}\"],
             \"webOrigins\": [\"${WEB_ORIGIN}\"],
             \"attributes\": {
-                \"post.logout.redirect.uris\": \"${POST_LOGOUT_REDIRECT_URI}\"
+                \"post.logout.redirect.uris\": \"${POST_LOGOUT_REDIRECT_URI}\",
+                \"pkce.code.challenge.method\": \"S256\"
             },
             \"protocol\": \"openid-connect\",
             \"publicClient\": false,
@@ -105,7 +106,8 @@ else
             \"redirectUris\": [\"${REDIRECT_URI}\"],
             \"webOrigins\": [\"${WEB_ORIGIN}\"],
             \"attributes\": {
-                \"post.logout.redirect.uris\": \"${POST_LOGOUT_REDIRECT_URI}\"
+                \"post.logout.redirect.uris\": \"${POST_LOGOUT_REDIRECT_URI}\",
+                \"pkce.code.challenge.method\": \"S256\"
             },
             \"protocol\": \"openid-connect\",
             \"publicClient\": false,

@@ -221,9 +221,9 @@ func GetConfig() *config.OIDCConfig {
 //  OAuth2 Flow
 // =========================================================================
 
-// Returns the OAuth2 authorization URL for the given state.
-func (c *OIDCClient) GetAuthURL(state string) string {
-	return c.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+// Returns the OAuth2 authorization URL for the given state and PKCE verifier (RFC 7636, S256).
+func (c *OIDCClient) GetAuthURL(state, verifier string) string {
+	return c.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))
 }
 
 func claimByPath(claims map[string]interface{}, path string) interface{} {
@@ -283,14 +283,14 @@ func stringSliceFromClaim(value interface{}) []string {
 	}
 }
 
-// Exchanges the authorization code for tokens.
-func (c *OIDCClient) ExchangeCode(ctx context.Context, code string) (*oauth2.Token, error) {
+// Exchanges the authorization code for tokens, proving possession of the PKCE verifier.
+func (c *OIDCClient) ExchangeCode(ctx context.Context, code, verifier string) (*oauth2.Token, error) {
 	if c.OAuth2Config == nil {
 		return nil, fmt.Errorf("OIDC client not properly initialized")
 	}
 
 	ctx = contextWithSkipVerify(ctx, c.Config.SkipVerify)
-	token, err := c.OAuth2Config.Exchange(ctx, code)
+	token, err := c.OAuth2Config.Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange code for token: %w", err)
 	}

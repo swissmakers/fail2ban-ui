@@ -202,6 +202,8 @@ See [threat-intel.md](threat-intel.md) for details.
 
 ## OIDC authentication
 
+The login uses the authorization code flow with PKCE (S256, RFC 7636) on top of the client secret and `state`. Keycloak, Authentik and Pocket ID all support PKCE, so the provider can be set to require it; in Keycloak that is the client's *Proof Key for Code Exchange Code Challenge Method* = `S256`.
+
 Required when OIDC is enabled:
 
 | Variable | Description |
