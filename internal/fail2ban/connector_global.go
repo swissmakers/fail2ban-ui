@@ -73,6 +73,11 @@ func checkReloadOutput(output string) error {
 // Marker that identifies a jail.local as generated and owned by Fail2ban-UI
 const managedJailLocalMarker = "ui-custom-action"
 
+// An empty jail.local, as packages and images ship it, counts as missing so the UI can manage it.
+func jailLocalHasContent(content string) bool {
+	return strings.TrimSpace(content) != ""
+}
+
 // =========================================================================
 //  Shared fail2ban-client Output Parsers
 // =========================================================================

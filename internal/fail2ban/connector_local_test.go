@@ -279,3 +279,17 @@ func TestWaitForFail2banGivesUpAtDeadline(t *testing.T) {
 		t.Fatalf("expected a few retries within the deadline: calls=%d elapsed=%s", calls, time.Since(start))
 	}
 }
+
+func TestLocalEmptyJailLocalCountsAsMissing(t *testing.T) {
+	lc := testLocalConnector(t)
+	path := JailLocal(lc.configPath())
+	for content, wantExists := range map[string]bool{"": false, " \n\n": false, "[DEFAULT]\nbantime = 1d\n": true} {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		exists, managed, err := lc.CheckJailLocalIntegrity(context.Background())
+		if err != nil || exists != wantExists || managed {
+			t.Fatalf("jail.local %q: exists=%v managed=%v err=%v, want exists=%v managed=false", content, exists, managed, err, wantExists)
+		}
+	}
+}

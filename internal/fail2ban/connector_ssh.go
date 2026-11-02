@@ -112,7 +112,7 @@ func (sc *SSHConnector) GetJailSummary(ctx context.Context) (*JailSummary, error
 		(renderErr == nil && strings.TrimSpace(summary.actionFile) != strings.TrimSpace(desired))
 	return &JailSummary{
 		Jails:             infos,
-		JailLocalExists:   summary.jailLocalExists,
+		JailLocalExists:   summary.jailLocalExists && jailLocalHasContent(summary.jailLocal),
 		JailLocalManaged:  summary.jailLocalExists && strings.Contains(summary.jailLocal, managedJailLocalMarker),
 		ActionFileDrifted: drifted,
 	}, nil

@@ -252,6 +252,9 @@ func (lc *LocalConnector) CheckJailLocalIntegrity(ctx context.Context) (bool, bo
 		}
 		return false, false, fmt.Errorf("failed to read jail.local: %w", err)
 	}
+	if !jailLocalHasContent(string(content)) {
+		return false, false, nil
+	}
 	hasUIAction := strings.Contains(string(content), managedJailLocalMarker)
 	return true, hasUIAction, nil
 }
