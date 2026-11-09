@@ -245,7 +245,7 @@ func (m *Manager) Repair(ctx context.Context, id string, action, defaults bool) 
 	}
 	m.repairAt[id] = time.Now()
 	m.mu.Unlock()
-	m.RequestConfigSync(id, action, defaults)
+	m.RequestConfigSync(id, action, defaults, false)
 	_ = m.SyncServerConfig(ctx, id)
 	return true
 }

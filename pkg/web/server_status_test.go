@@ -28,24 +28,24 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 )
 
-func TestSettingsSyncFlags(t *testing.T) {
-	st := func(phase string) fail2ban.ConfigSyncStatus { return fail2ban.ConfigSyncStatus{Phase: phase} }
+func TestRestartNeeded(t *testing.T) {
 	tests := []struct {
-		name                     string
-		statuses                 []fail2ban.ConfigSyncStatus
-		wantPending, wantRestart bool
+		name   string
+		status fail2ban.ConfigSyncStatus
+		active bool
+		want   bool
 	}{
-		{name: "none", statuses: nil},
-		{name: "all applied", statuses: []fail2ban.ConfigSyncStatus{st(fail2ban.SyncApplied), st(fail2ban.SyncApplied)}},
-		{name: "one unreachable", statuses: []fail2ban.ConfigSyncStatus{st(fail2ban.SyncApplied), st(fail2ban.SyncPending)}, wantPending: true},
-		{name: "one written", statuses: []fail2ban.ConfigSyncStatus{st(fail2ban.SyncWritten)}, wantRestart: true},
-		{name: "both", statuses: []fail2ban.ConfigSyncStatus{st(fail2ban.SyncWritten), st(fail2ban.SyncPending)}, wantPending: true, wantRestart: true},
+		{name: "applied", status: fail2ban.ConfigSyncStatus{Phase: fail2ban.SyncApplied}},
+		{name: "not written yet", status: fail2ban.ConfigSyncStatus{Phase: fail2ban.SyncPending, Error: "host unreachable"}},
+		{name: "written, apply still running", status: fail2ban.ConfigSyncStatus{Phase: fail2ban.SyncWritten}, active: true},
+		{name: "written, no failure yet", status: fail2ban.ConfigSyncStatus{Phase: fail2ban.SyncWritten}},
+		{name: "written, failed, retry running", status: fail2ban.ConfigSyncStatus{Phase: fail2ban.SyncWritten, Error: "reload failed"}, active: true},
+		{name: "written, failed, idle", status: fail2ban.ConfigSyncStatus{Phase: fail2ban.SyncWritten, Error: "reload failed"}, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pending, restart := settingsSyncFlags(tt.statuses)
-			if pending != tt.wantPending || restart != tt.wantRestart {
-				t.Fatalf("got pending=%v restart=%v, want %v %v", pending, restart, tt.wantPending, tt.wantRestart)
+			if got := restartNeeded(tt.status, tt.active); got != tt.want {
+				t.Fatalf("restartNeeded = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -97,7 +97,7 @@ func TestAliasesShareDaemonLeaseAndCannotBeReconfiguredWhileBusy(t *testing.T) {
 func TestConfigSyncSchedulerDefersWritesUntilDurableWorker(t *testing.T) {
 	conn := &syncTestConnector{}
 	m := &Manager{connectors: map[string]Connector{"test": conn}}
-	m.RequestConfigSync("test", false, true)
+	m.RequestConfigSync("test", false, true, false)
 	var queued []string
 	m.SetConfigSyncScheduler(func(id string) { queued = append(queued, id) })
 	if err := m.SyncServerConfig(context.Background(), "test"); err != nil {

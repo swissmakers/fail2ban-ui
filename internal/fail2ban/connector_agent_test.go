@@ -525,7 +525,7 @@ func TestAgentOperationLostSubmitResponseRecoversWithoutResubmit(t *testing.T) {
 	})
 	ctx := context.WithValue(context.Background(), operationLeaseKey{}, &operationLease{id: "parent-id"})
 	ctx = WithOperationPhase(ctx, "primary-reload")
-	if err := ac.Reload(ctx); err != nil {
+	if err := ac.Reload(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 	if posts.Load() != 1 || submitted.ID != AgentOperationID(ctx, "reload") {
@@ -555,7 +555,7 @@ func TestAgentOperationCancellationAndPhaseIdentity(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(op)
 		time.AfterFunc(10*time.Millisecond, cancel)
 	})
-	if err := ac.Reload(ctx); !errors.Is(err, ErrOperationOutcomeUnknown) {
+	if err := ac.Reload(ctx, false); !errors.Is(err, ErrOperationOutcomeUnknown) {
 		t.Fatalf("cancellation was reported as definitive failure: %v", err)
 	}
 	if posts.Load() != 1 {
@@ -575,7 +575,7 @@ func TestOldAgentRefusesConfigChangesBeforeWriting(t *testing.T) {
 		func() error { return ac.UpdateJailEnabledStates(context.Background(), map[string]bool{"ssh": true}) },
 		func() error { return ac.SetJailConfig(context.Background(), "ssh", "[ssh]\n") },
 		func() error { return ac.SetFilterConfig(context.Background(), "ssh", "[Definition]\n") },
-		func() error { return ac.Reload(context.Background()) },
+		func() error { return ac.Reload(context.Background(), false) },
 		func() error { return ac.ValidateConfiguration(context.Background()) },
 	} {
 		if err := change(); err == nil || !strings.Contains(err.Error(), "upgrade required") {
@@ -622,6 +622,65 @@ func TestAgentReconcileMissingIDSealsDelayedSubmission(t *testing.T) {
 	op, err := ac.ReconcileOperation(ctx, "reload")
 	if err != nil || op.Code != "not_dispatched" || sealed.Load() != 1 {
 		t.Fatalf("missing ID not sealed: %+v %v", op, err)
+	}
+}
+
+func TestAgentJailRestartUsesAdvertisedKind(t *testing.T) {
+	const withJailRestart = `{"version":1,"kinds":["reload","reload-restart","restart","validate","ban","unban"],"configurationSnapshots":true}`
+	tests := []struct {
+		name, caps, mode, wantKind, wantErr string
+	}{
+		{name: "current agent", caps: withJailRestart, wantKind: "reload-restart"},
+		{name: "older agent restarts the service", caps: agentOperationCapabilities, mode: "restart", wantKind: "restart"},
+		{name: "older agent without service manager", caps: agentOperationCapabilities, mode: "reload", wantKind: "restart", wantErr: "restart fail2ban on that host"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var kinds []string
+			ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/operations/capabilities" {
+					_, _ = w.Write([]byte(tt.caps))
+					return
+				}
+				var op AgentOperation
+				_ = json.NewDecoder(r.Body).Decode(&op)
+				kinds = append(kinds, op.Kind)
+				op.State, op.Mode, op.Quiescent = "succeeded", tt.mode, true
+				_ = json.NewEncoder(w).Encode(op)
+			})
+			err := ac.Reload(context.Background(), true)
+			if tt.wantErr == "" && err != nil || tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("err = %v, want %q", err, tt.wantErr)
+			}
+			if len(kinds) != 1 || kinds[0] != tt.wantKind {
+				t.Fatalf("submitted kinds %v, want [%s]", kinds, tt.wantKind)
+			}
+		})
+	}
+}
+
+func TestAgentReconcileSyncFindsSubmittedKind(t *testing.T) {
+	const withJailRestart = `{"version":1,"kinds":["reload","reload-restart","restart","validate","ban","unban"],"configurationSnapshots":true}`
+	ctx := context.WithValue(context.Background(), operationLeaseKey{}, &operationLease{id: "parent-id"})
+	ctx = WithOperationPhase(ctx, "primary-sync")
+	submitted := AgentOperation{ID: AgentOperationID(ctx, "reload-restart"), Kind: "reload-restart", State: "succeeded"}
+	var sealed atomic.Int32
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/operations/capabilities":
+			_, _ = w.Write([]byte(withJailRestart))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/operations/"+submitted.ID:
+			_ = json.NewEncoder(w).Encode(submitted)
+		case r.Method == http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			sealed.Add(1)
+			t.Errorf("found operation must not be sealed: %s %s", r.Method, r.URL.Path)
+		}
+	})
+	op, err := ac.ReconcileSyncOperation(ctx)
+	if err != nil || op.Kind != "reload-restart" || op.State != "succeeded" || sealed.Load() != 0 {
+		t.Fatalf("got %+v %v", op, err)
 	}
 }
 

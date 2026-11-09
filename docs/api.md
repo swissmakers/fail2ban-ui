@@ -38,7 +38,7 @@ Each enabled server in `GET /api/servers` carries its state so the UI can flag a
 | `health.state` | `ok`, `degraded` (Fail2Ban runs but callbacks cannot reach the UI), `down` (Fail2Ban or the host is unreachable), or `unknown` (not probed yet) |
 | `health.checkedAt` | Time of the last probe |
 | `health.fail2banOk`, `health.callbackOk`, `health.error` | Probe details, administrators only. `callbackOk` is omitted when it does not apply, for example on local servers |
-| `restartNeeded` | Configuration files are on the host but not active yet; restarting Fail2Ban applies them |
+| `restartNeeded` | Configuration files are on the host, the last attempt to load them failed, and no retry is running; restarting Fail2Ban applies them |
 | `configSync` | Administrators only: `pending`, `phase` (`pending`, `written`, or `applied`), the last `error`, and the `lastAttempt`, `lastWritten`, and `lastApplied` times |
 
 The UI probes every enabled server every 45 seconds. Read-only users receive only `health.state` and `health.checkedAt`.
@@ -138,13 +138,11 @@ Permanent blocks always target single addresses. Every path (manual, bulk, and t
 
 The settings payload includes the alert provider configuration (`alertProvider`, `webhook`, and `elasticsearch` fields). See [alert-providers.md](alert-providers.md) for the full provider documentation. Servers are not part of the settings payload; manage them through `/api/servers`.
 
-`POST /api/settings` pushes changed defaults to every server before it returns. The response reports what is still outstanding:
+`POST /api/settings` saves the settings and queues a configuration sync for every server. It does not wait for the servers to apply the change; follow the progress in the operation toasts or under **Manage Servers**. The response carries:
 
 | Field | Meaning |
 |-------|---------|
-| `syncPending` | At least one server did not receive the change yet; the UI retries automatically |
-| `restartNeeded` | At least one server received the files but did not load them; restart Fail2Ban on that server |
-| `warnings` | Per-server error messages |
+| `warnings` | Per-server error messages for syncs that could not be queued |
 
 When the SMTP connection uses login credentials without TLS to a non-local relay, the test email still goes out, but the response adds `warning` and `warningKey: settings.email.warning_plaintext_auth`.
 

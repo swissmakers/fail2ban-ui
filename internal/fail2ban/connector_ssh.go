@@ -145,9 +145,12 @@ func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
 	return err
 }
 
-func (sc *SSHConnector) Reload(ctx context.Context) error {
-	// Same tree that ValidateConfiguration checked; the client, not the daemon, reads the files.
-	out, err := sc.runFail2banCommand(ctx, "-c", sc.getFail2banPath(ctx), "reload")
+func (sc *SSHConnector) Reload(ctx context.Context, restartJails bool) error {
+	args := []string{"-c", sc.getFail2banPath(ctx), "reload"}
+	if restartJails {
+		args = append(args, "--restart")
+	}
+	out, err := sc.runFail2banCommand(ctx, args...)
 	if err != nil {
 		return err
 	}
@@ -173,7 +176,7 @@ func (sc *SSHConnector) Restart(ctx context.Context) (string, error) {
 	}
 	// If systemd is not available or if there is an interactive authentication required, we will fall back to fail2ban-client.
 	if sc.isSystemctlUnavailable(out, err) {
-		if reloadErr := sc.Reload(ctx); reloadErr != nil {
+		if reloadErr := sc.Reload(ctx, false); reloadErr != nil {
 			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w", reloadErr)
 		}
 		if err := waitForFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban", restartReadyTimeout); err != nil {

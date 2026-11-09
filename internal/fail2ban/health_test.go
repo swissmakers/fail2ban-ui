@@ -114,7 +114,7 @@ func TestReloadPrunesServerState(t *testing.T) {
 	gone := &probeTestConnector{id: "gone"}
 	m.connectors["gone"] = gone
 	m.recordHealth(gone, ServerHealth{Fail2banOK: true}, time.Now())
-	m.RequestConfigSync("gone", true, true)
+	m.RequestConfigSync("gone", true, true, false)
 	m.repairAt = map[string]time.Time{"gone": time.Now()}
 	if err := m.ReloadFromServers(nil); err != nil {
 		t.Fatal(err)

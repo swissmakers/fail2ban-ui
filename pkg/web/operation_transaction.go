@@ -183,12 +183,10 @@ func (t *operationTransaction) run(ctx context.Context) (gin.H, error) {
 		if err := t.conn.ValidateConfiguration(fail2ban.WithOperationPhase(ctx, "primary-validate")); err != nil {
 			return t.rollback(ctx, err)
 		}
-		// Persist intent before submitting the reload. A crash after this point is
-		// ambiguous and must only use read-only reconciliation.
 		if err := t.checkpoint(ctx, "applying"); err != nil {
 			return t.rollback(ctx, err)
 		}
-		if err := t.conn.Reload(fail2ban.WithOperationPhase(ctx, "primary-reload")); err != nil {
+		if err := t.conn.Reload(fail2ban.WithOperationPhase(ctx, "primary-reload"), false); err != nil {
 			return nil, unknownOutcome(err)
 		}
 	}
@@ -454,7 +452,13 @@ func (t *operationTransaction) reconcile(ctx context.Context) (gin.H, bool, erro
 		if t.op.Kind == "jail.unban" {
 			kind, phase = "unban", "primary-unban"
 		}
-		remote, err := agent.ReconcileOperation(fail2ban.WithOperationPhase(ctx, phase), kind)
+		var remote fail2ban.AgentOperation
+		var err error
+		if t.op.Kind == "server.sync" {
+			remote, err = agent.ReconcileSyncOperation(fail2ban.WithOperationPhase(ctx, phase))
+		} else {
+			remote, err = agent.ReconcileOperation(fail2ban.WithOperationPhase(ctx, phase), kind)
+		}
 		if err != nil {
 			return nil, false, err
 		}

@@ -53,14 +53,15 @@ const (
 
 // Connector for a remote Fail2ban-Agent via HTTP API.
 type AgentConnector struct {
-	server            shared.Fail2banServer
-	base              *url.URL
-	client            *http.Client
-	driftMu           sync.Mutex
-	drifted           bool
-	capabilityMu      sync.Mutex
-	operationCapable  bool
-	capabilityChecked time.Time
+	server             shared.Fail2banServer
+	base               *url.URL
+	client             *http.Client
+	driftMu            sync.Mutex
+	drifted            bool
+	capabilityMu       sync.Mutex
+	operationCapable   bool
+	jailRestartCapable bool
+	capabilityChecked  time.Time
 }
 
 type AgentConfigErrorKind string
@@ -331,12 +332,33 @@ func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
 	return err
 }
 
-func (ac *AgentConnector) Reload(ctx context.Context) error {
-	resp, err := ac.serviceOperation(ctx, "reload")
+// Agents without "reload-restart" fall back to a service restart, which also recreates the jails
+func (ac *AgentConnector) Reload(ctx context.Context, restartJails bool) error {
+	kind := "reload"
+	if restartJails {
+		if !ac.supportsJailRestart(ctx) {
+			mode, err := ac.Restart(ctx)
+			if err == nil && mode == "reload" {
+				return fmt.Errorf("agent on %s has no service manager and is too old to restart jails: restart fail2ban on that host so the changed ban action takes effect", ac.server.Name)
+			}
+			return err
+		}
+		kind = "reload-restart"
+	}
+	resp, err := ac.serviceOperation(ctx, kind)
 	if err != nil {
 		return err
 	}
 	return checkReloadOutput(resp.Output)
+}
+
+func (ac *AgentConnector) supportsJailRestart(ctx context.Context) bool {
+	if ac.RequireOperationSupport(ctx) != nil {
+		return false
+	}
+	ac.capabilityMu.Lock()
+	defer ac.capabilityMu.Unlock()
+	return ac.jailRestartCapable
 }
 
 // Returns the agent-reported mode; agents before 0.2 do not report one.
@@ -403,6 +425,7 @@ func (ac *AgentConnector) RequireOperationSupport(ctx context.Context) error {
 		return err
 	}
 	ac.operationCapable = err == nil && caps.Version >= 1 && slices.Contains(caps.Kinds, "reload") && slices.Contains(caps.Kinds, "restart") && slices.Contains(caps.Kinds, "validate") && slices.Contains(caps.Kinds, "ban") && slices.Contains(caps.Kinds, "unban")
+	ac.jailRestartCapable = ac.operationCapable && slices.Contains(caps.Kinds, "reload-restart")
 	ac.capabilityChecked = time.Now()
 	if !ac.operationCapable {
 		return fmt.Errorf("agent upgrade required: durable service operations and configuration validation are not supported")
@@ -416,6 +439,36 @@ func (ac *AgentConnector) ReconcileOperation(ctx context.Context, kind string) (
 		return AgentOperation{}, fmt.Errorf("operation ID is required for reconciliation")
 	}
 	return ac.reconcileOperationID(ctx, id, kind)
+}
+
+// Configuration sync submits one of these kinds.. depending on the change and the agent version
+func (ac *AgentConnector) syncOperationKinds(ctx context.Context) []string {
+	if ac.supportsJailRestart(ctx) {
+		return []string{"reload", "reload-restart", "restart"}
+	}
+	return []string{"reload", "restart"}
+}
+
+// Finds command an interrupted sync submitted. When none arrived, every candidate ID is reserved so delayed request cannot run
+func (ac *AgentConnector) ReconcileSyncOperation(ctx context.Context) (AgentOperation, error) {
+	if OperationID(ctx) == "" {
+		return AgentOperation{}, fmt.Errorf("operation ID is required for reconciliation")
+	}
+	kinds := ac.syncOperationKinds(ctx)
+	for _, kind := range kinds {
+		op, err := ac.getOperation(ctx, AgentOperationID(ctx, kind), kind)
+		if !agentStatusIs(err, http.StatusNotFound) {
+			return op, err
+		}
+	}
+	var op AgentOperation
+	for _, kind := range kinds {
+		var err error
+		if op, err = ac.reconcileOperationID(ctx, AgentOperationID(ctx, kind), kind); err != nil {
+			return op, err
+		}
+	}
+	return op, nil
 }
 
 func (ac *AgentConnector) reconcileOperationID(ctx context.Context, id, kind string) (AgentOperation, error) {
