@@ -383,7 +383,7 @@ func (s *operationController) execute(ctx context.Context, op operations.Operati
 		if r := recover(); r != nil {
 			runErr = fmt.Errorf("%w: unexpected worker failure: %v", operations.ErrOutcomeUnknown, r)
 		}
-		if ctx.Err() != nil || errors.Is(runErr, fail2ban.ErrOperationOutcomeUnknown) {
+		if (ctx.Err() != nil || errors.Is(runErr, fail2ban.ErrOperationOutcomeUnknown)) && !errors.Is(runErr, operations.ErrOutcomeUnknown) {
 			runErr = fmt.Errorf("%w: %v", operations.ErrOutcomeUnknown, runErr)
 		}
 		if !errors.Is(runErr, operations.ErrOutcomeUnknown) {

@@ -275,6 +275,9 @@ func dedupeConfigBaseNames(localFiles, confFiles []string) []string {
 func checkPingOutput(out string, err error, label string) error {
 	trimmed := strings.TrimSpace(out)
 	if err != nil {
+		if _, carried := CommandOutput(err); carried || trimmed == "" {
+			return fmt.Errorf("%s ping error: %w", label, err)
+		}
 		return fmt.Errorf("%s ping error: %w (output: %s)", label, err, trimmed)
 	}
 	if !strings.Contains(strings.ToLower(trimmed), "pong") {
@@ -298,6 +301,9 @@ type fail2banRunner func(ctx context.Context, args ...string) (string, error)
 
 func pingFail2ban(ctx context.Context, run fail2banRunner, label string) error {
 	out, err := run(ctx, "ping")
+	if err != nil && ctx.Err() != nil {
+		return fmt.Errorf("%s did not answer in time (timed out); it may be busy applying a change: %w", label, ctx.Err())
+	}
 	return checkPingOutput(out, err, label)
 }
 

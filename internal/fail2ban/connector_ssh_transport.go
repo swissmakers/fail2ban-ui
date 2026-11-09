@@ -246,6 +246,9 @@ type CommandError struct {
 }
 
 func (e *CommandError) Error() string {
+	if e.Output == "" {
+		return fmt.Sprintf("%s command failed: %v", e.Kind, e.Err)
+	}
 	return fmt.Sprintf("%s command failed: %v (output: %s)", e.Kind, e.Err, truncateForLog(e.Output, maxLoggedOutputBytes))
 }
 

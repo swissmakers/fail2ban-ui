@@ -17,10 +17,12 @@
 package fail2ban
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
@@ -769,6 +771,43 @@ func TestCheckPingOutput(t *testing.T) {
 			t.Fatalf("the underlying error must survive, got %v", err)
 		}
 	})
+}
+
+func TestPingErrorTextStaysReadable(t *testing.T) {
+	killed := &CommandError{Kind: "fail2ban-client", Err: errors.New("signal: killed")}
+	tests := []struct {
+		name, out, want string
+		err             error
+	}{
+		{name: "empty command output", err: killed, want: "local ping error: fail2ban-client command failed: signal: killed"},
+		{name: "output carried once", out: "boom", err: &CommandError{Kind: "fail2ban-client", Output: "boom", Err: errors.New("exit status 1")}, want: "local ping error: fail2ban-client command failed: exit status 1 (output: boom)"},
+		{name: "plain error keeps output", out: "boom", err: errors.New("exit status 1"), want: "local ping error: exit status 1 (output: boom)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := checkPingOutput(tt.out, tt.err, "local").Error(); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPingFail2banReportsBusyDaemon(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	run := func(ctx context.Context, args ...string) (string, error) {
+		<-ctx.Done()
+		return "", &CommandError{Kind: "fail2ban-client", Err: errors.New("signal: killed")}
+	}
+	err := pingFail2ban(ctx, run, "fail2ban")
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "fail2ban did not answer in time (timed out)") {
+		t.Fatalf("got %v", err)
+	}
+	if err := pingFail2ban(context.Background(), func(context.Context, ...string) (string, error) {
+		return "", errors.New("socket missing")
+	}, "fail2ban"); strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("a fast failure is not a timeout: %v", err)
+	}
 }
 
 // A missed marker means no fallback to fail2ban-client reload.
