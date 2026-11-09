@@ -106,11 +106,93 @@ function banEventToastHTML(event, operationId) {
     + '</div>';
 }
 
+var BAN_TOAST_BURST_WINDOW_MS = 10000;
+var BAN_TOAST_BURST_THRESHOLD = 3;
+var banToastBursts = Object.create(null);
+
+function banToastBurst(state, event, now) {
+  var key = JSON.stringify([event.serverId || '', event.eventType === 'unban' ? 'unban' : 'ban']);
+  var burst = state[key] || (state[key] = { times: [], count: 0, jails: [], summary: false, dismissed: false });
+  burst.times = burst.times.filter(function(time) { return now - time < BAN_TOAST_BURST_WINDOW_MS; });
+  if (!burst.times.length) {
+    burst.count = 0;
+    burst.jails = [];
+    burst.summary = false;
+    burst.dismissed = false;
+  }
+  burst.times.push(now);
+  burst.count++;
+  if (event.jail && burst.jails.indexOf(event.jail) === -1) burst.jails.push(event.jail);
+  if (burst.times.length > BAN_TOAST_BURST_THRESHOLD) burst.summary = true;
+  return burst;
+}
+
+function banEventBurstToastHTML(burst, event) {
+  var isUnban = event.eventType === 'unban';
+  var title = (isUnban ? t('toast.unban.burst_title', '{count} IPs unblocked') : t('toast.ban.burst_title', '{count} new blocks'))
+    .replace('{count}', burst.count);
+  var jails = burst.jails.slice(0, 3).join(', ') + (burst.jails.length > 3 ? ', …' : '');
+  var server = event.serverName || event.serverId || t('common.unknown', 'Unknown');
+  var icon = isUnban ? 'fas fa-check-circle text-green-400' : 'fas fa-shield-alt text-red-500';
+  return ''
+    + '<div class="flex items-start gap-3">'
+    + '  <div class="flex-shrink-0 mt-1">'
+    + '    <i class="' + icon + '"></i>'
+    + '  </div>'
+    + '  <div class="flex-1 min-w-0">'
+    + '    <div class="font-semibold text-sm">' + escapeHtml(title) + '</div>'
+    + '    <div class="text-sm mt-1 font-semibold break-words">' + escapeHtml(jails) + '</div>'
+    + '    <div class="text-xs text-gray-400 mt-1">' + escapeHtml(server) + '</div>'
+    + '  </div>'
+    + '  <button type="button" class="flex-shrink-0 ml-2 mt-0.5 text-gray-400 hover:text-white focus:outline-none" aria-label="' + escapeHtml(t('modal.close', 'Close')) + '">'
+    + '    <i class="fas fa-times text-sm"></i>'
+    + '  </button>'
+    + '</div>';
+}
+
+function showBanEventBurstToast(container, burst, event) {
+  if (burst.dismissed) return;
+  var hide = function() {
+    clearTimeout(burst.timer);
+    var toast = burst.toast;
+    burst.toast = null;
+    if (!toast) return;
+    toast.classList.remove('show');
+    setTimeout(function() { toast.remove(); }, 300);
+  };
+  if (!burst.toast || !burst.toast.isConnected) {
+    var toast = document.createElement('div');
+    toast.className = event.eventType === 'unban' ? 'toast toast-unban-event' : 'toast toast-ban-event';
+    toast.style.cursor = 'pointer';
+    toast.addEventListener('click', function(e) {
+      if (e.target.closest('button')) {
+        e.stopPropagation();
+        burst.dismissed = true;
+        hide();
+        return;
+      }
+      var logSection = document.getElementById('logOverview');
+      if (logSection) logSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    container.appendChild(toast);
+    requestAnimationFrame(function() { toast.classList.add('show'); });
+    burst.toast = toast;
+  }
+  burst.toast.innerHTML = banEventBurstToastHTML(burst, event);
+  clearTimeout(burst.timer);
+  burst.timer = setTimeout(hide, 5000);
+}
+
 // One function for both ban and unban events
 function showBanEventToast(event) {
   var container = document.getElementById('toast-container');
   if (!container || !event) return;
   if (typeof handleOperationBanEventToast === 'function' && handleOperationBanEventToast(event)) return;
+  var burst = banToastBurst(banToastBursts, event, Date.now());
+  if (burst.summary) {
+    showBanEventBurstToast(container, burst, event);
+    return;
+  }
 
   var isUnban = event.eventType === 'unban';
   var toast = document.createElement('div');
@@ -319,17 +401,6 @@ function initializeSearch() {
 // =========================================================================
 //  Navigation
 // =========================================================================
-
-function updateRestartBanner() {
-  var banner = document.getElementById('restartBanner');
-  if (!banner) return;
-  // Don't show restart banner for local connectors; they only reload, not restart
-  if (currentServer && currentServer.restartNeeded && currentServer.type !== 'local') {
-    banner.style.display = 'block';
-  } else {
-    banner.style.display = 'none';
-  }
-}
 
 function showSection(sectionId) {
   if ((sectionId === 'filterSection' || sectionId === 'settingsSection') && typeof hasAccess === 'function' && !hasAccess('admin')) {

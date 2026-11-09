@@ -371,17 +371,6 @@ html:root[data-theme="dark"] body.lotr-mode .animate-spin {
   filter: drop-shadow(0 0 4px rgba(230, 199, 121, 0.7));
 }
 
-html:root[data-theme="dark"] body.lotr-mode #restartBanner {
-  background-color: #1d1709 !important;
-  background-image: linear-gradient(90deg, #2a200b, #4a3a14 50%, #2a200b) !important;
-  color: var(--lotr-gold-pale) !important;
-  border-bottom: 1px solid var(--lotr-gold-line);
-}
-
-html:root[data-theme="dark"] body.lotr-mode #restartBanner :is(button, a) {
-  color: #1f170a !important;
-}
-
 html:root[data-theme="dark"] body.lotr-mode footer {
   border-top: 1px solid var(--lotr-gold-faint);
 }

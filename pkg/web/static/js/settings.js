@@ -3,6 +3,8 @@
 
 let callbackUrlSyncHandler = null;
 const SMTP_REQUIRED_FIELDS = ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpFrom'];
+// Ban action fields as last loaded or saved; null until the settings were loaded.
+let loadedJailActionSettings = null;
 
 // =========================================================================
 //  Load Settings
@@ -150,6 +152,7 @@ function loadSettings() {
       
       document.getElementById('banaction').value = data.banaction || 'nftables-multiport';
       document.getElementById('banactionAllports').value = data.banactionAllports || 'nftables-allports';
+      loadedJailActionSettings = readJailActionSettings();
 
       applyAdvancedActionsSettings(data.advancedActions || {});
       loadPermanentBlockLog();
@@ -164,11 +167,33 @@ function loadSettings() {
 //  Save Settings
 // =========================================================================
 
+function readJailActionSettings() {
+  return {
+    banaction: document.getElementById('banaction').value,
+    banactionAllports: document.getElementById('banactionAllports').value,
+    chain: document.getElementById('defaultChain').value || 'INPUT'
+  };
+}
+
+// changed ban action or chain makes the next sync restart every jail.
+function jailActionSettingsChanged(loaded, current) {
+  if (!loaded) return false;
+  return loaded.banaction !== current.banaction ||
+    loaded.banactionAllports !== current.banactionAllports ||
+    loaded.chain !== current.chain;
+}
+
 function saveSettings(event) {
   event.preventDefault();
   
   if (!validateAllSettings()) {
     showToast(t('settings.toast.fix_validation', 'Please fix validation errors before saving'), 'error');
+    return;
+  }
+
+  const jailActions = readJailActionSettings();
+  if (jailActionSettingsChanged(loadedJailActionSettings, jailActions) &&
+      !confirm(t('settings.confirm.ban_action_change', 'Changing the ban action or chain restarts every jail on all servers. Fail2ban removes each active ban with the old action and adds it again with the new one. With many active bans this can take minutes or hours (firewallcmd-rich-rules is slow), and Fail2ban does not respond to the UI until it finishes. Continue?'))) {
     return;
   }
   
@@ -226,9 +251,9 @@ function saveSettings(event) {
     findtime: document.getElementById('findTime').value.trim(),
     maxretry: parseInt(document.getElementById('maxRetry').value, 10) || 3,
     ignoreips: getIgnoreIPsArray(),
-    banaction: document.getElementById('banaction').value,
-    banactionAllports: document.getElementById('banactionAllports').value,
-    chain: document.getElementById('defaultChain').value || 'INPUT',
+    banaction: jailActions.banaction,
+    banactionAllports: jailActions.banactionAllports,
+    chain: jailActions.chain,
     geoipProvider: document.getElementById('geoipProvider').value || 'builtin',
     geoipDatabasePath: document.getElementById('geoipDatabasePath').value || '/usr/share/GeoIP/GeoLite2-Country.mmdb',
     maxLogLines: parseInt(document.getElementById('maxLogLines').value, 10) || 50,
@@ -251,6 +276,7 @@ function saveSettings(event) {
       data = data || {};
       loadTranslations($('#languageSelect').val());
       checkAndApplyLOTRTheme(settingsData.alertCountries);
+      loadedJailActionSettings = jailActions;
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
         const warningPreview = data.warnings.slice(0, 2).join(' | ');
         showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'warning');

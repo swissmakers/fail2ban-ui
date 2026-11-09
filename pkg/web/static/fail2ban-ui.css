@@ -526,10 +526,6 @@ body:has(#loginPage:not(.hidden)) {
    Layout
    ========================================================================= */
 
-#restartBanner {
-    display: none;
-}
-
 #serverManagerList {
     min-height: 230px;
     max-height: 100%;

@@ -28,3 +28,35 @@ for (const [name, value] of values) {
     assert.equal(vm.runInNewContext(`'${escaped}'`), value);
   });
 }
+
+const { banToastBurst } = context;
+const unblock = (serverId, jail) => ({ serverId, jail, eventType: 'unban' });
+
+test('banToastBurst keeps single toasts up to the threshold, then summarizes', () => {
+  const state = {};
+  for (let i = 0; i < 3; i++) {
+    assert.equal(banToastBurst(state, unblock('local', 'sshd'), 1000 + i).summary, false);
+  }
+  const burst = banToastBurst(state, unblock('local', 'nginx'), 1003);
+  assert.equal(burst.summary, true);
+  assert.equal(burst.count, 4);
+  assert.deepEqual(Array.from(burst.jails), ['sshd', 'nginx']);
+});
+
+test('banToastBurst counts each server and event type on its own', () => {
+  const state = {};
+  for (let i = 0; i < 3; i++) banToastBurst(state, unblock('local', 'sshd'), i);
+  assert.equal(banToastBurst(state, unblock('remote', 'sshd'), 4).summary, false);
+  assert.equal(banToastBurst(state, { serverId: 'local', jail: 'sshd', eventType: 'ban' }, 5).summary, false);
+  assert.equal(banToastBurst(state, unblock('local', 'sshd'), 6).summary, true);
+});
+
+test('banToastBurst stays a summary while events keep coming and resets after a quiet window', () => {
+  const state = {};
+  for (let i = 0; i < 4; i++) banToastBurst(state, unblock('local', 'sshd'), i);
+  assert.equal(banToastBurst(state, unblock('local', 'sshd'), 9000).summary, true);
+  assert.equal(banToastBurst(state, unblock('local', 'sshd'), 18000).summary, true, 'a slow trickle must not fall back to single toasts mid-burst');
+  const fresh = banToastBurst(state, unblock('local', 'sshd'), 28001);
+  assert.equal(fresh.summary, false);
+  assert.equal(fresh.count, 1);
+});
