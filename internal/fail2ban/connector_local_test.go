@@ -103,7 +103,7 @@ exit 255
 `)
 	lc := testLocalConnector(t)
 
-	err := lc.Reload(context.Background())
+	err := lc.Reload(context.Background(), false)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -175,7 +175,7 @@ exit 255
 `)
 	lc := testLocalConnector(t)
 
-	err := lc.Reload(context.Background())
+	err := lc.Reload(context.Background(), false)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -194,14 +194,18 @@ func TestLocalReloadLoadsTheServersOwnTree(t *testing.T) {
 		SocketPath: "/var/run/fail2ban-secondary/fail2ban.sock",
 		ConfigPath: "/etc/fail2ban-secondary",
 	}}
-	if err := lc.Reload(context.Background()); err != nil {
+	if err := lc.Reload(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := lc.Reload(context.Background(), true); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "-s /var/run/fail2ban-secondary/fail2ban.sock -c /etc/fail2ban-secondary reload"
+	want := "-s /var/run/fail2ban-secondary/fail2ban.sock -c /etc/fail2ban-secondary reload\n" +
+		"-s /var/run/fail2ban-secondary/fail2ban.sock -c /etc/fail2ban-secondary reload --restart"
 	if strings.TrimSpace(string(got)) != want {
 		t.Fatalf("reload argv = %q, want %q", strings.TrimSpace(string(got)), want)
 	}
