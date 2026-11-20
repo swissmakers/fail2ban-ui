@@ -390,7 +390,8 @@
               <select id="advancedIntegrationSelect" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="" data-i18n="settings.advanced.integration_none">Select integration</option>
                 <option value="mikrotik">Mikrotik</option>
-                <option value="pfsense">pfSense</option>
+                <option value="pfsense">pfSense (REST API pkg)</option>
+                <option value="pfsense-nexus">pfSense (Netgate Nexus)</option>
                 <option value="opnsense">OPNsense</option>
                 <option value="unifi">UniFi Network</option>
               </select>
@@ -433,6 +434,7 @@
             </div>
             <div id="advancedPfSenseFields" class="hidden border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">
               <p class="text-sm text-gray-500 mb-3" data-i18n="settings.advanced.pfsense.note">Requires the pfSense REST API package. Enter the API key and alias to manage.</p>
+              <p class="text-xs text-amber-600 mb-3" data-i18n="settings.advanced.pfsense.eol_note">Note: the pfSense REST API package is in maintenance mode (see its project announcement) — for pfSense Plus 25.07+ consider the built-in Netgate Nexus integration instead.</p>
               <div class="mb-3 text-sm">
                 <a href="https://github.com/jaredhendrickson13/pfsense-api/releases" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline" data-i18n="settings.advanced.pfsense.install_link">Install REST API Package</a>
                 <span class="text-gray-500 mx-2">-</span>
@@ -455,6 +457,37 @@
                 <div class="flex items-center">
                   <input type="checkbox" id="pfSenseSkipTLS" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
                   <label for="pfSenseSkipTLS" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.pfsense.skip_tls">Skip TLS verification (self-signed)</label>
+                </div>
+              </div>
+            </div>
+            <div id="advancedPfSenseNexusFields" class="hidden border border-gray-200 rounded-lg p-4 overflow-x-auto bg-gray-50">
+              <p class="text-sm text-gray-500 mb-3" data-i18n="settings.advanced.pfsense_nexus.note">Uses the official Netgate Nexus API built into pfSense Plus 25.07+. Enter a pfSense user account with API access and the alias to manage.</p>
+              <div class="mb-3 text-sm">
+                <a href="https://docs.netgate.com/pfsense/en/latest/nexus/" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline" data-i18n="settings.advanced.pfsense_nexus.api_docs">Netgate Nexus Documentation</a>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseNexusBaseURL" data-i18n="settings.advanced.pfsense_nexus.base_url">Base URL</label>
+                  <input id="pfSenseNexusBaseURL" type="url" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" placeholder="https://firewall.local:8443">
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.pfsense_nexus.base_url_hint">Nexus GUI and API listen on port 8443 (HTTPS) or 8080 (HTTP), as shown under System > Advanced > Netgate Nexus</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseNexusUsername" data-i18n="settings.advanced.pfsense_nexus.username">Username</label>
+                  <input id="pfSenseNexusUsername" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" autocomplete="off">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseNexusPassword" data-i18n="settings.advanced.pfsense_nexus.password">Password</label>
+                  <input id="pfSenseNexusPassword" type="password" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500" data-i18n-placeholder="settings.advanced.pfsense_nexus.password_placeholder" placeholder="Password of the pfSense Nexus user">
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.pfsense_nexus.password_hint">The user must belong to a group with API modify capability (User Manager on the Nexus node). No static API tokens exist; Fail2ban-UI logs in per operation.</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700" for="pfSenseNexusAlias" data-i18n="settings.advanced.pfsense_nexus.alias">Alias Name</label>
+                  <input id="pfSenseNexusAlias" type="text" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500">
+                  <p class="text-xs text-gray-500 mt-1" data-i18n="settings.advanced.pfsense_nexus.alias_hint">Nexus alias names only allow alpha-numeric characters and underscores (e.g. banned)</p>
+                </div>
+                <div class="flex items-center">
+                  <input type="checkbox" id="pfSenseNexusSkipTLS" class="h-4 w-4 text-blue-600 border-gray-300 rounded">
+                  <label for="pfSenseNexusSkipTLS" class="ml-2 text-sm text-gray-700" data-i18n="settings.advanced.pfsense_nexus.skip_tls">Skip TLS verification (self-signed)</label>
                 </div>
               </div>
             </div>

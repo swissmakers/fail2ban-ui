@@ -53,6 +53,7 @@ func refreshLogSecretsLocked() {
 	current := []string{s.CallbackSecret, s.SMTP.Password, s.ThreatIntel.AlienVaultAPIKey,
 		s.ThreatIntel.AbuseIPDBAPIKey, s.Elasticsearch.APIKey, s.Elasticsearch.Password,
 		s.AdvancedActions.Mikrotik.Password, s.AdvancedActions.PfSense.APIToken,
+		s.AdvancedActions.PfSenseNexus.Password,
 		s.AdvancedActions.OPNsense.APIKey,
 		s.AdvancedActions.OPNsense.APISecret, s.AdvancedActions.UniFi.APIKey,
 		s.Webhook.URL}
