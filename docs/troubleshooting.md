@@ -520,3 +520,30 @@ If the UI loads but real-time updates fail:
 * Confirm TLS termination and the backend route target are correct.
 
 Reference configurations: [reverse-proxy.md](reverse-proxy.md).
+
+## pfSense (Netgate Nexus) integration
+
+The **pfSense (Netgate Nexus)** integration talks to the official Netgate Nexus API (pfSense Plus 25.07+, enabled under *System > Advanced > Netgate Nexus*). Unlike the legacy pfSense REST API package, Nexus has no static API tokens: Fail2ban-UI authenticates with a pfSense user account and caches the short-lived JWT session token it receives from `POST /login`.
+
+### Nexus login fails (401 / "Nexus login failed")
+
+* Verify Base URL and port: the Nexus GUI/API listens on **8443 (HTTPS)** or **8080 (HTTP)** as shown under *System > Advanced > Netgate Nexus*.
+* Verify the username/password against a direct GUI login at the same URL (e.g. `https://<firewall>:8443/login`).
+* With self-signed certificates tick **Skip TLS verification (self-signed)**.
+* Make sure the Netgate Nexus controller is actually enabled for the instance and reachable from the Fail2ban-UI host (the firewall must allow the API port from the UI's network).
+
+### Nexus login works but blocks fail with permission errors
+
+The configured user must belong to a User Manager group whose API authorization grants the **modify** capability for firewall aliases (for example a group with the `mim_firewall` role or equivalent per-interface modify permissions). Read-only users can list aliases but cannot create or update them.
+
+### Alias updates are refused with "truncated"
+
+Nexus caps the number of values returned per alias (`maxvalues`). Fail2ban-UI requests a high limit, but if the firewall still reports the alias as truncated it refuses to rewrite it to avoid dropping entries. Clean up the alias (or lower its size below the firewall's `maxvalues` cap) and retry.
+
+### Alias creation fails with "name must only contain alpha-numeric and underscore characters"
+
+The Netgate Nexus API is stricter than the pfSense REST API package: alias names may only contain alpha-numeric characters and underscores (no hyphens, no dots). Fail2ban-UI validates this in the settings form, but double-check the configured alias if the setting predates it.
+
+### Blocks apply but traffic is not filtered
+
+Fail2ban-UI triggers a filter reload after every alias change; if it logs a warning about the reload, apply the firewall filter manually once (Status > Filter Reload) and check the alias under *Firewall > Aliases* shows the expected IPs.

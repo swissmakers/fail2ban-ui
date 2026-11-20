@@ -26,7 +26,7 @@ Fail2Ban UI does not replace Fail2Ban. Ban decisions are still made by the Fail2
 * Remote jail and filter configuration management (depending on connector capabilities)
 * Filter debugging with live log-pattern testing
 * Ban insights with a Kibana-like ban/unban timeline, incident comparison to isolate repeat attackers, one-click permanent blocking of a whole time range, and country-level analytics
-* Recurring-offender handling with permanent blocks on MikroTik, pfSense, OPNsense, and UniFi Network
+* Recurring-offender handling with permanent blocks on MikroTik, pfSense (REST API package or built-in Netgate Nexus API), OPNsense, and UniFi Network
 * Persistent event history and permanent-block records, with data management built in
 * Configurable alerts over Email (SMTP), Webhook, and Elasticsearch, with GeoIP/Whois enrichment and country filtering
 * Background changes with progress, per-server queues, and automatic config-recovery for bad configs
@@ -206,7 +206,9 @@ When enabled, the debug console streams the live application log into the browse
 
 [![Advanced Ban Actions](screenshots/4.2_Settings_AdvancedBanActions.png)](screenshots/4.2_Settings_AdvancedBanActions.png)
 
-Permanent blocking, firewall integrations (MikroTik, pfSense, OPNsense, UniFi), and recurring-offender thresholds.
+Permanent blocking, firewall integrations (MikroTik, pfSense, pfSense via Netgate Nexus, OPNsense, UniFi), and recurring-offender thresholds.
+
+For pfSense Plus 25.07+, the **pfSense (Netgate Nexus)** integration uses the official Nexus API built into the firewall (no extra package needed): enable the Netgate Nexus controller under *System > Advanced > Netgate Nexus*, point the Base URL at `https://<firewall>:8443` (or `http://<firewall>:8080`), and enter a pfSense user account whose User Manager group grants API modify capability. Nexus has no static API tokens — Fail2Ban-UI logs in with that account and caches the short-lived JWT session token. The legacy **pfSense (REST API pkg)** integration still targets the community pfSense REST API package (`System > REST API > Keys`), which is in maintenance mode as announced by its maintainer.
 
 #### Alert settings
 

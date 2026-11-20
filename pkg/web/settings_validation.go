@@ -221,6 +221,9 @@ func normalizeJailDefaults(req *config.AppSettings) error {
 func validateAdvancedActionsSettings(cfg *config.AdvancedActionsConfig) error {
 	cfg.PfSense.BaseURL = strings.TrimSpace(cfg.PfSense.BaseURL)
 	cfg.PfSense.Alias = strings.TrimSpace(cfg.PfSense.Alias)
+	cfg.PfSenseNexus.BaseURL = strings.TrimSpace(cfg.PfSenseNexus.BaseURL)
+	cfg.PfSenseNexus.Username = strings.TrimSpace(cfg.PfSenseNexus.Username)
+	cfg.PfSenseNexus.Alias = strings.TrimSpace(cfg.PfSenseNexus.Alias)
 	cfg.OPNsense.BaseURL = strings.TrimSpace(cfg.OPNsense.BaseURL)
 	cfg.OPNsense.Alias = strings.TrimSpace(cfg.OPNsense.Alias)
 	cfg.UniFi.BaseURL = strings.TrimSpace(cfg.UniFi.BaseURL)
@@ -240,6 +243,16 @@ func validateAdvancedActionsSettings(cfg *config.AdvancedActionsConfig) error {
 	}
 	if cfg.PfSense.Alias != "" {
 		if err := integrations.ValidateIdentifier(cfg.PfSense.Alias, "pfSense alias"); err != nil {
+			return err
+		}
+	}
+	if cfg.PfSenseNexus.BaseURL != "" {
+		if err := integrations.ValidateOutboundURL(cfg.PfSenseNexus.BaseURL, "pfSense Nexus base URL"); err != nil {
+			return err
+		}
+	}
+	if cfg.PfSenseNexus.Alias != "" {
+		if err := integrations.ValidateIdentifier(cfg.PfSenseNexus.Alias, "pfSense Nexus alias"); err != nil {
 			return err
 		}
 	}

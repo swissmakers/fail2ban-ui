@@ -85,6 +85,7 @@ func settingsWithAllSecrets() (config.AppSettings, map[string]func(*config.AppSe
 		"Elasticsearch.Password": func(s *config.AppSettings) *string { return &s.Elasticsearch.Password },
 		"Mikrotik.Password":      func(s *config.AppSettings) *string { return &s.AdvancedActions.Mikrotik.Password },
 		"PfSense.APIToken":       func(s *config.AppSettings) *string { return &s.AdvancedActions.PfSense.APIToken },
+		"PfSenseNexus.Password":  func(s *config.AppSettings) *string { return &s.AdvancedActions.PfSenseNexus.Password },
 		"OPNsense.APIKey":        func(s *config.AppSettings) *string { return &s.AdvancedActions.OPNsense.APIKey },
 		"OPNsense.APISecret":     func(s *config.AppSettings) *string { return &s.AdvancedActions.OPNsense.APISecret },
 		"UniFi.APIKey":           func(s *config.AppSettings) *string { return &s.AdvancedActions.UniFi.APIKey },
