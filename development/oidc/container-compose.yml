@@ -284,8 +284,8 @@ services:
       # Required for fail2ban container: Allows to run as root (needed to manage network interfaces and raw sockets)
       - SYS_ADMIN
     #privileged: true
-    # needed to add iptables rules to the host network
-    network_mode: host
+    # Own network namespace, so the test jails never share the firewall table of the host Fail2ban
+    network_mode: bridge
     environment:
       - TZ=Europe/Zurich
       - VERBOSITY=-vv
