@@ -146,7 +146,8 @@ func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
 }
 
 func (sc *SSHConnector) Reload(ctx context.Context, restartJails bool) error {
-	args := []string{"-c", sc.getFail2banPath(ctx), "reload"}
+	root := sc.getFail2banPath(ctx)
+	args := []string{"-c", root, "reload"}
 	if restartJails {
 		args = append(args, "--restart")
 	}
@@ -157,8 +158,56 @@ func (sc *SSHConnector) Reload(ctx context.Context, restartJails bool) error {
 	if err := checkReloadOutput(out); err != nil {
 		return err
 	}
+	if !restartJails {
+		if err := restartJailsMissingActions(ctx, sc.runFail2banCommand, root, sc.server.Name, func(ctx context.Context) (string, map[string][]string, error) {
+			return sc.readActionState(ctx, root)
+		}); err != nil {
+			return err
+		}
+	}
 	sc.reloadPending.Store(false)
 	return nil
+}
+
+const jailActionsMarker = "F2BUI_JAIL_ACTIONS:"
+
+// One remote command: the configuration dump, then the action list of every running jail.
+func (sc *SSHConnector) readActionState(ctx context.Context, root string) (string, map[string][]string, error) {
+	client := shellJoin(append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath)...)...)
+	script := `d=$(` + client + ` -c ` + shellQuote(root) + ` -d) || exit 1
+printf '%s\n' "$d"
+printf '%s\n' "$d" | sed -n "s/^\['start', '\([^']*\)'\]$/\1/p" | while IFS= read -r j; do
+  if a=$(` + client + ` get "$j" actions 2>/dev/null); then
+    echo "` + jailActionsMarker + `$j"
+    printf '%s\n' "$a" | tail -n 1
+  fi
+done`
+	out, err := sc.runRemoteCommand(ctx, []string{script})
+	if err != nil {
+		return "", nil, err
+	}
+	dump, running := parseRemoteActionState(out)
+	return dump, running, nil
+}
+
+// Splits the output of readActionState into the dump and the per-jail action lists.
+func parseRemoteActionState(out string) (string, map[string][]string) {
+	var dump strings.Builder
+	running := make(map[string][]string)
+	lines := strings.Split(out, "\n")
+	for i := 0; i < len(lines); i++ {
+		jail, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), jailActionsMarker)
+		if !ok {
+			dump.WriteString(lines[i] + "\n")
+			continue
+		}
+		running[jail] = nil
+		if i+1 < len(lines) {
+			i++
+			running[jail] = parseRunningActions(lines[i])
+		}
+	}
+	return dump.String(), running
 }
 
 func (sc *SSHConnector) ValidateConfiguration(ctx context.Context) error {

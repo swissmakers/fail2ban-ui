@@ -119,7 +119,13 @@ func (lc *LocalConnector) Reload(ctx context.Context, restartJails bool) error {
 		}
 		return fmt.Errorf("fail2ban reload error: %w", err)
 	}
-	return checkReloadOutput(out)
+	if err := checkReloadOutput(out); err != nil || restartJails {
+		return err
+	}
+	root := lc.configPath()
+	return restartJailsMissingActions(ctx, lc.runFail2banClient, root, lc.server.Name, func(ctx context.Context) (string, map[string][]string, error) {
+		return readActionState(ctx, lc.runFail2banClient, root)
+	})
 }
 
 func (lc *LocalConnector) ValidateConfiguration(ctx context.Context) error {

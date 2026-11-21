@@ -21,6 +21,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -205,9 +207,100 @@ func TestLocalReloadLoadsTheServersOwnTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "-s /var/run/fail2ban-secondary/fail2ban.sock -c /etc/fail2ban-secondary reload\n" +
+		"-s /var/run/fail2ban-secondary/fail2ban.sock -c /etc/fail2ban-secondary -d\n" +
 		"-s /var/run/fail2ban-secondary/fail2ban.sock -c /etc/fail2ban-secondary reload --restart"
 	if strings.TrimSpace(string(got)) != want {
 		t.Fatalf("reload argv = %q, want %q", strings.TrimSpace(string(got)), want)
+	}
+}
+
+const actionDump = `['add', 'sshd', 'auto']
+['set', 'sshd', 'addaction', 'nftables-multiport']
+['set', 'sshd', 'action', 'nftables-multiport', 'actionban', 'nft add element']
+['set', 'sshd', 'addaction', 'ui-custom-action']
+['add', 'nginx', 'auto']
+['set', 'nginx', 'addaction', 'nftables-multiport']
+['set', 'nginx', 'addaction', 'ui-custom-action']
+['add', 'stopped', 'auto']
+['set', 'stopped', 'addaction', 'nftables-multiport']
+['start', 'sshd']
+['start', 'nginx']
+['start', 'stopped']
+`
+
+func TestJailsMissingActions(t *testing.T) {
+	full := []string{"nftables-multiport", "ui-custom-action"}
+	tests := []struct {
+		name    string
+		running map[string][]string
+		want    []string
+	}{
+		{name: "all loaded", running: map[string][]string{"sshd": full, "nginx": full}},
+		{name: "firewall action dropped", running: map[string][]string{"sshd": {"ui-custom-action"}, "nginx": full}, want: []string{"sshd"}},
+		{name: "callback action dropped", running: map[string][]string{"sshd": full, "nginx": {"nftables-multiport"}}, want: []string{"nginx"}},
+		{name: "no actions at all", running: map[string][]string{"sshd": nil, "nginx": nil}, want: []string{"sshd", "nginx"}},
+		{name: "extra running action is fine", running: map[string][]string{"sshd": append([]string{"old"}, full...), "nginx": full}},
+		{name: "jail that is not running is not judged", running: map[string][]string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := jailsMissingActions(actionDump, tt.running); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseRunningActions(t *testing.T) {
+	got := parseRunningActions("The jail sshd has the following actions:\nnftables-multiport, ui-custom-action\n")
+	if want := []string{"nftables-multiport", "ui-custom-action"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got := parseRunningActions("No actions for jail sshd\n"); slices.Contains(got, "nftables-multiport") {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestParseRemoteActionState(t *testing.T) {
+	out := actionDump + "F2BUI_JAIL_ACTIONS:sshd\nui-custom-action\nF2BUI_JAIL_ACTIONS:nginx\nnftables-multiport, ui-custom-action\n"
+	dump, running := parseRemoteActionState(out)
+	if got := jailsMissingActions(dump, running); !reflect.DeepEqual(got, []string{"sshd"}) {
+		t.Fatalf("got %v from %v", got, running)
+	}
+}
+
+// A reload that leaves a running jail without a configured action restarts that jail only.
+func TestLocalReloadRestartsJailsThatLostAnAction(t *testing.T) {
+	for name, tc := range map[string]struct{ sshdActions, wantLast string }{
+		"action dropped": {sshdActions: "ui-custom-action", wantLast: "-c /etc/fail2ban reload --restart sshd"},
+		"all loaded":     {sshdActions: "nftables-multiport, ui-custom-action", wantLast: "get stopped actions"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			logFile := filepath.Join(t.TempDir(), "argv")
+			t.Setenv("F2BUI_TEST_ARGV", logFile)
+			withFakeBinary(t, "fail2ban-client", `printf '%s\n' "$*" >> "$F2BUI_TEST_ARGV"
+case "$*" in
+*" -d") cat <<'DUMP'
+`+actionDump+`DUMP
+;;
+"get sshd actions") printf 'The jail sshd has the following actions:\n`+tc.sshdActions+`\n' ;;
+"get nginx actions") printf 'The jail nginx has the following actions:\nnftables-multiport, ui-custom-action\n' ;;
+"get stopped actions") echo "Sorry but the jail 'stopped' does not exist"; exit 255 ;;
+*) echo OK ;;
+esac`)
+			lc := &LocalConnector{server: shared.Fail2banServer{Name: "local", ConfigPath: "/etc/fail2ban"}}
+			if err := lc.Reload(context.Background(), false); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(logFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := strings.Split(strings.TrimSpace(string(raw)), "\n")
+			if calls[len(calls)-1] != tc.wantLast || strings.Count(string(raw), "--restart") > 1 {
+				t.Fatalf("calls = %q, want last %q", calls, tc.wantLast)
+			}
+		})
 	}
 }
 

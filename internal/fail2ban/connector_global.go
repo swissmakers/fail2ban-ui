@@ -21,7 +21,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -66,6 +69,99 @@ func checkReloadOutput(output string) error {
 	if strings.Contains(output, "Errors in jail") || strings.Contains(output, "Unable to read the filter") ||
 		strings.Contains(output, "Have not found any log file") || strings.Contains(output, "Failed during configuration") {
 		return fmt.Errorf("fail2ban reload completed but with errors (output: %s)", trimmed)
+	}
+	return nil
+}
+
+// =========================================================================
+//  Jail Action Verification
+// =========================================================================
+
+var configuredActionPattern = regexp.MustCompile(`^\['set', '([^']+)', 'addaction', '([^']+)'`)
+
+// Reads the actions every jail is configured with from a "fail2ban-client -d" dump.
+func parseConfiguredActions(dump string) (jails []string, actions map[string][]string) {
+	actions = make(map[string][]string)
+	for _, line := range strings.Split(dump, "\n") {
+		m := configuredActionPattern.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil {
+			continue
+		}
+		if _, seen := actions[m[1]]; !seen {
+			jails = append(jails, m[1])
+		}
+		actions[m[1]] = append(actions[m[1]], m[2])
+	}
+	return jails, actions
+}
+
+// Action names from "fail2ban-client get <jail> actions"; the list is the last line.
+func parseRunningActions(output string) []string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var names []string
+	for _, name := range strings.Split(lines[len(lines)-1], ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// Running jails that lack one of their configured actions. Jails absent from running are not judged.
+func jailsMissingActions(dump string, running map[string][]string) []string {
+	var missing []string
+	jails, configured := parseConfiguredActions(dump)
+	for _, jail := range jails {
+		active, ok := running[jail]
+		if !ok {
+			continue
+		}
+		for _, action := range configured[jail] {
+			if !slices.Contains(active, action) {
+				missing = append(missing, jail)
+				break
+			}
+		}
+	}
+	return missing
+}
+
+// Returns the configuration dump and the action list of every running jail.
+type actionStateReader func(ctx context.Context) (dump string, running map[string][]string, err error)
+
+func readActionState(ctx context.Context, run fail2banRunner, root string) (string, map[string][]string, error) {
+	dump, err := run(ctx, "-c", root, "-d")
+	if err != nil {
+		return "", nil, err
+	}
+	jails, _ := parseConfiguredActions(dump)
+	running := make(map[string][]string, len(jails))
+	for _, jail := range jails {
+		// A jail that is not running has no action list to compare.
+		if out, err := run(ctx, "get", jail, "actions"); err == nil {
+			running[jail] = parseRunningActions(out)
+		}
+	}
+	return dump, running, nil
+}
+
+// Fail2ban drops an action that a reload adds to a running jail, which leaves the jail
+// without its firewall or callback action. Restart only those jails so the action loads.
+func restartJailsMissingActions(ctx context.Context, run fail2banRunner, root, server string, read actionStateReader) error {
+	dump, running, err := read(ctx)
+	if err != nil {
+		log.Printf("warning: could not verify the jail actions on %s after the reload: %v", server, err)
+		return nil
+	}
+	for _, jail := range jailsMissingActions(dump, running) {
+		log.Printf("jail %s on %s runs without a configured action after the reload; restarting the jail", jail, server)
+		out, err := run(ctx, "-c", root, "reload", "--restart", jail)
+		if err != nil {
+			return fmt.Errorf("restarting jail %s to load its actions failed: %w", jail, err)
+		}
+		if err := checkReloadOutput(out); err != nil {
+			return err
+		}
 	}
 	return nil
 }
