@@ -176,12 +176,11 @@ func AcceptHostKey(ctx context.Context, server shared.Fail2banServer, approvedFP
 		return "", fmt.Errorf("cannot determine known_hosts path for server %s", server.Name)
 	}
 
-	key, err := scanHostKey(ctx, server.Host, server.Port)
+	key, presentedFP, err := scanApprovedHostKey(ctx, server.Host, server.Port, approvedFP)
 	if err != nil {
 		return "", fmt.Errorf("failed to read current host key from %s: %w", server.Host, err)
 	}
-	presentedFP := ssh.FingerprintSHA256(key)
-	if subtle.ConstantTimeCompare([]byte(presentedFP), []byte(approvedFP)) != 1 {
+	if key == nil {
 		RecordHostKeyIssue(&SSHHostKeyError{ServerID: server.ID, Host: server.Host, Fingerprint: presentedFP})
 		return "", &HostKeyMismatchError{Approved: approvedFP, Presented: presentedFP}
 	}
@@ -208,7 +207,42 @@ func knownHostsPattern(host string, port int) string {
 	return knownhosts.Normalize(net.JoinHostPort(host, strconv.Itoa(port)))
 }
 
-func scanHostKey(ctx context.Context, host string, port int) (ssh.PublicKey, error) {
+// One entry per host key type, in the order OpenSSH prefers them. A server holds one key per type.
+var hostKeyTypeAlgorithms = [][]string{
+	{ssh.KeyAlgoED25519},
+	{ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521},
+	{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256},
+}
+
+// OpenSSH reports the key type it negotiated, which differs from the one Go would pick.
+// Requests each key type in turn and returns the key that matches approvedFP. Without a
+// match, key is nil and presented holds the fingerprint of the first key the server sent.
+func scanApprovedHostKey(ctx context.Context, host string, port int, approvedFP string) (key ssh.PublicKey, presented string, err error) {
+	for _, algorithms := range hostKeyTypeAlgorithms {
+		k, scanErr := scanHostKey(ctx, host, port, algorithms)
+		var noSuchType *ssh.AlgorithmNegotiationError
+		if errors.As(scanErr, &noSuchType) {
+			err = scanErr
+			continue
+		}
+		if scanErr != nil {
+			return nil, "", scanErr
+		}
+		fp := ssh.FingerprintSHA256(k)
+		if presented == "" {
+			presented = fp
+		}
+		if subtle.ConstantTimeCompare([]byte(fp), []byte(approvedFP)) == 1 {
+			return k, fp, nil
+		}
+	}
+	if presented != "" {
+		return nil, presented, nil
+	}
+	return nil, "", err
+}
+
+func scanHostKey(ctx context.Context, host string, port int, algorithms []string) (ssh.PublicKey, error) {
 	if port <= 0 {
 		port = 22
 	}
@@ -230,7 +264,8 @@ func scanHostKey(ctx context.Context, host string, port int) (ssh.PublicKey, err
 			captured = key
 			return errKeyCaptured
 		},
-		Timeout: 10 * time.Second,
+		HostKeyAlgorithms: algorithms,
+		Timeout:           10 * time.Second,
 	}
 	_, _, _, err = ssh.NewClientConn(conn, addr, cfg)
 	if captured != nil {

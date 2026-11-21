@@ -18,13 +18,17 @@ package fail2ban
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -164,6 +168,92 @@ func generateHostKey(t *testing.T) ssh.PublicKey {
 		t.Fatal(err)
 	}
 	return key
+}
+
+// Starts an SSH server on 127.0.0.1 that presents the given host keys and returns its port.
+func startHostKeyServer(t *testing.T, keys ...ssh.Signer) int {
+	t.Helper()
+	cfg := &ssh.ServerConfig{NoClientAuth: true}
+	for _, k := range keys {
+		cfg.AddHostKey(k)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				_, _, _, _ = ssh.NewServerConn(c, cfg)
+			}()
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port
+}
+
+func TestScanApprovedHostKey(t *testing.T) {
+	_, edPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecPriv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edSigner, err := ssh.NewSignerFromKey(edPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecSigner, err := ssh.NewSignerFromKey(ecPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edFP := ssh.FingerprintSHA256(edSigner.PublicKey())
+	ecFP := ssh.FingerprintSHA256(ecSigner.PublicKey())
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	both := startHostKeyServer(t, edSigner, ecSigner)
+	// OpenSSH reports the ED25519 key while Go alone would negotiate ECDSA.
+	for _, approved := range []string{edFP, ecFP} {
+		key, presented, err := scanApprovedHostKey(ctx, "127.0.0.1", both, approved)
+		if err != nil {
+			t.Fatalf("approved %s: %v", approved, err)
+		}
+		if key == nil || ssh.FingerprintSHA256(key) != approved || presented != approved {
+			t.Errorf("approved %s: got key %v, presented %s", approved, key, presented)
+		}
+	}
+
+	key, presented, err := scanApprovedHostKey(ctx, "127.0.0.1", both, "SHA256:unknown")
+	if err != nil || key != nil {
+		t.Fatalf("unknown fingerprint must be a mismatch, got key %v, err %v", key, err)
+	}
+	if presented != edFP {
+		t.Errorf("presented = %s, want the ED25519 key %s", presented, edFP)
+	}
+
+	ecdsaOnly := startHostKeyServer(t, ecSigner)
+	key, _, err = scanApprovedHostKey(ctx, "127.0.0.1", ecdsaOnly, ecFP)
+	if err != nil || key == nil {
+		t.Fatalf("a server without an ED25519 key must still match its ECDSA key, got key %v, err %v", key, err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	if _, _, err := scanApprovedHostKey(ctx, "127.0.0.1", closed, edFP); err == nil {
+		t.Error("an unreachable server must return an error")
+	}
 }
 
 func TestKnownHostsRoundTrip(t *testing.T) {
