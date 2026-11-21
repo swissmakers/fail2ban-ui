@@ -358,11 +358,23 @@ func (m *Manager) Connectors() []Connector {
 func updateConnectorAction(ctx context.Context, conn Connector) error {
 	switch c := conn.(type) {
 	case *SSHConnector:
-		return c.ensureAction(ctx)
+		if err := c.ensureAction(ctx); err != nil {
+			return err
+		}
+		if err := c.ensureNftablesFix(ctx); err != nil {
+			log.Printf("warning: could not apply the nftables grep fix on %s: %v", c.server.Name, err)
+		}
+		return nil
 	case *AgentConnector:
 		return c.ensureCallbackConfig(ctx)
 	case *LocalConnector:
-		return WriteLocalActionFile(c.configPath(), mustProvider().CallbackURL(), c.Server().ID)
+		if err := WriteLocalActionFile(c.configPath(), mustProvider().CallbackURL(), c.Server().ID); err != nil {
+			return err
+		}
+		if err := ensureLocalNftablesFix(c.configPath()); err != nil {
+			log.Printf("warning: could not apply the nftables grep fix on %s: %v", c.server.Name, err)
+		}
+		return nil
 	default:
 		return nil
 	}
