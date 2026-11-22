@@ -439,6 +439,7 @@
   "settings.save": "Save",
   "settings.save_success": "Settings saved",
   "settings.confirm.ban_action_change": "Changing the ban action or chain restarts every jail on all servers. Fail2ban removes each active ban with the old action and adds it again with the new one. With many active bans this can take minutes or hours (firewallcmd-rich-rules is slow), and Fail2ban does not respond to the UI until it finishes. Continue?",
+  "settings.confirm.default_jail_enable": "Enable Jails by Default starts every jail that is not explicitly disabled, on all servers. This includes all jails that Fail2ban ships in jail.conf, also for services that are not installed. Fail2ban can fail to start when their log files are missing, and many jails can overload small hosts. Continue?",
   "settings.toast.load_error": "Error loading settings",
   "settings.toast.fix_validation": "Please fix validation errors before saving",
   "settings.toast.smtp_port_invalid": "SMTP port must be between 1 and 65535",

@@ -439,6 +439,7 @@
   "settings.save": "Spicherä",
   "settings.save_success": "Iistellige gspeicheret",
   "settings.confirm.ban_action_change": "Ä Änderig vo de Banaction oder de Chain startet aui Jails uf aune Server neu. Fail2ban entfernt jedi aktivi Sperri mit de aute Aktion und setzt se mit de neue wieder. Bi vüune aktive Sperre cha das Minute bis Stunde duure (firewallcmd-rich-rules isch langsam), und Fail2ban reagiert bis denn nid uf d UI. Wiitermache?",
+  "settings.confirm.default_jail_enable": "«Jails standardmässig aktivieren» startet uf allne Server jedes Jail, wo nid usdrücklich deaktiviert isch. Derzue ghöred alli Jails, wo Fail2ban i dr jail.conf mitliferet, au für Dienscht, wo nid installiert sind. Fail2ban startet villicht nid, wenn dene iri Logdateie fähled, und vili Jails chönd chlini Hosts überlaschte. Wiiterfahre?",
   "settings.toast.load_error": "Fähler bim Lade vo de Iistellige",
   "settings.toast.fix_validation": "Bitte vor em Speichere d Validierigsfähler behebe",
   "settings.toast.smtp_port_invalid": "SMTP-Port mues zwüsche 1 und 65535 sii",

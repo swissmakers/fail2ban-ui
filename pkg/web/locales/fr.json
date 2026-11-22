@@ -439,6 +439,7 @@
   "settings.save": "Enregistrer",
   "settings.save_success": "Paramètres enregistrés",
   "settings.confirm.ban_action_change": "Modifier l'action de bannissement ou la chaîne redémarre toutes les jails sur tous les serveurs. Fail2ban retire chaque bannissement actif avec l'ancienne action et le réapplique avec la nouvelle. Avec de nombreux bannissements actifs, cela peut prendre de quelques minutes à plusieurs heures (firewallcmd-rich-rules est lent), et Fail2ban ne répond plus à l'interface jusqu'à la fin. Continuer ?",
+  "settings.confirm.default_jail_enable": "« Jails par défaut activés » démarre sur tous les serveurs chaque jail qui n'est pas explicitement désactivé. Cela comprend tous les jails fournis par Fail2ban dans jail.conf, y compris pour des services qui ne sont pas installés. Fail2ban peut ne pas démarrer si leurs fichiers journaux sont absents, et de nombreux jails peuvent surcharger les petits hôtes. Continuer ?",
   "settings.toast.load_error": "Erreur lors du chargement des paramètres",
   "settings.toast.fix_validation": "Corrigez les erreurs de validation avant d'enregistrer",
   "settings.toast.smtp_port_invalid": "Le port SMTP doit être compris entre 1 et 65535",

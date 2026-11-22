@@ -439,6 +439,7 @@
   "settings.save": "保存",
   "settings.save_success": "設定を保存しました",
   "settings.confirm.ban_action_change": "バンアクションまたはチェーンを変更すると、すべてのサーバーのすべてのJailが再起動されます。Fail2banは有効なBANを旧アクションですべて解除し、新しいアクションで再適用します。有効なBANが多い場合は数分から数時間かかることがあり（firewallcmd-rich-rulesは低速です）、完了するまでFail2banはUIに応答しません。続行しますか？",
+  "settings.confirm.default_jail_enable": "「デフォルトでJailを有効化」をオンにすると、明示的に無効化されていないすべてのJailがすべてのサーバーで起動します。これには、インストールされていないサービス用も含め、Fail2banがjail.confで提供するすべてのJailが含まれます。ログファイルが存在しない場合はFail2banが起動に失敗することがあり、多数のJailは小規模なホストに過大な負荷をかける可能性があります。続行しますか？",
   "settings.toast.load_error": "設定の読み込みエラー",
   "settings.toast.fix_validation": "保存する前に入力エラーを修正してください",
   "settings.toast.smtp_port_invalid": "SMTPポートは1〜65535の範囲で指定してください",

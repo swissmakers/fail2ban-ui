@@ -5,6 +5,8 @@ let callbackUrlSyncHandler = null;
 const SMTP_REQUIRED_FIELDS = ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpFrom'];
 // Ban action fields as last loaded or saved; null until the settings were loaded.
 let loadedJailActionSettings = null;
+// "Enable Jails by Default" as last loaded or saved.
+let loadedDefaultJailEnable = null;
 
 // =========================================================================
 //  Load Settings
@@ -132,6 +134,7 @@ function loadSettings() {
 
       document.getElementById('bantimeIncrement').checked = data.bantimeIncrement || false;
       document.getElementById('defaultJailEnable').checked = data.defaultJailEnable || false;
+      loadedDefaultJailEnable = !!data.defaultJailEnable;
       
       const geoipProvider = data.geoipProvider || 'builtin';
       document.getElementById('geoipProvider').value = geoipProvider;
@@ -207,11 +210,22 @@ function jailActionSettingsChanged(loaded, current) {
     loaded.chain !== current.chain;
 }
 
+// Switching the default on starts every jail that is not disabled explicitly.
+function defaultJailEnableTurnedOn(loaded, current) {
+  return current === true && loaded !== true;
+}
+
 function saveSettings(event) {
   event.preventDefault();
   
   if (!validateAllSettings()) {
     showToast(t('settings.toast.fix_validation', 'Please fix validation errors before saving'), 'error');
+    return;
+  }
+
+  const defaultJailEnable = document.getElementById('defaultJailEnable').checked;
+  if (defaultJailEnableTurnedOn(loadedDefaultJailEnable, defaultJailEnable) &&
+      !confirm(t('settings.confirm.default_jail_enable', 'Enable Jails by Default starts every jail that is not explicitly disabled, on all servers. This includes all jails that Fail2ban ships in jail.conf, also for services that are not installed. Fail2ban can fail to start when their log files are missing, and many jails can overload small hosts. Continue?'))) {
     return;
   }
 
@@ -266,7 +280,7 @@ function saveSettings(event) {
     emailAlertsForBans: document.getElementById('emailAlertsForBans').checked,
     emailAlertsForUnbans: document.getElementById('emailAlertsForUnbans').checked,
     bantimeIncrement: document.getElementById('bantimeIncrement').checked,
-    defaultJailEnable: document.getElementById('defaultJailEnable').checked,
+    defaultJailEnable: defaultJailEnable,
     bantime: document.getElementById('banTime').value.trim(),
     bantimeRndtime: document.getElementById('bantimeRndtime').value.trim(),
     bantimeMaxtime: document.getElementById('bantimeMaxtime').value.trim(),
@@ -301,6 +315,7 @@ function saveSettings(event) {
       loadTranslations($('#languageSelect').val());
       checkAndApplyLOTRTheme(settingsData.alertCountries);
       loadedJailActionSettings = jailActions;
+      loadedDefaultJailEnable = defaultJailEnable;
       setSettingsDirty(false);
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
         const warningPreview = data.warnings.slice(0, 2).join(' | ');

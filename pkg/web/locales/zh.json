@@ -439,6 +439,7 @@
   "settings.save": "保存",
   "settings.save_success": "设置已保存",
   "settings.confirm.ban_action_change": "更改封禁操作或链会重启所有服务器上的全部 jail。Fail2ban 会用旧操作逐一移除每个有效封禁，再用新操作重新应用。有效封禁较多时，这可能需要几分钟到几小时（firewallcmd-rich-rules 很慢），完成之前 Fail2ban 不会响应界面。是否继续？",
+  "settings.confirm.default_jail_enable": "“默认启用 Jails”会在所有服务器上启动每个未被明确禁用的 Jail。这包括 Fail2ban 在 jail.conf 中自带的所有 Jail，也包括未安装服务的 Jail。如果它们的日志文件不存在，Fail2ban 可能无法启动，而且大量 Jail 可能使小型主机过载。是否继续？",
   "settings.toast.load_error": "加载设置出错",
   "settings.toast.fix_validation": "保存前请先修正校验错误",
   "settings.toast.smtp_port_invalid": "SMTP 端口必须在 1 到 65535 之间",

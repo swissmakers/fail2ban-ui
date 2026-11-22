@@ -210,3 +210,40 @@ test('every checkbox in the page template has the same size', () => {
     assert.match(box, /class="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 accent-blue-600[ "]/, box);
   }
 });
+
+function withDefaultJailEnable(h, loaded, checked) {
+  vm.runInContext('loadedDefaultJailEnable = ' + JSON.stringify(loaded), h.context);
+  h.context.document.getElementById('defaultJailEnable').checked = checked;
+  return h;
+}
+
+test('switching Enable Jails by Default on asks first and saves when confirmed', async () => {
+  const h = withDefaultJailEnable(harness({}), false, true);
+  await h.context.saveSettings({ preventDefault() {} });
+  assert.equal(h.confirms.length, 1);
+  assert.equal(JSON.parse(h.requests[0].options.body).defaultJailEnable, true);
+  await h.context.saveSettings({ preventDefault() {} });
+  assert.equal(h.confirms.length, 1, 'a saved choice must not ask again');
+});
+
+test('a cancelled Enable Jails by Default sends nothing', async () => {
+  const h = withDefaultJailEnable(harness({}, 200, false), false, true);
+  await h.context.saveSettings({ preventDefault() {} });
+  assert.equal(h.confirms.length, 1);
+  assert.equal(h.requests.length, 0);
+  assert.deepEqual(h.loading, []);
+});
+
+test('Enable Jails by Default asks only when it is switched on', () => {
+  const h = harness({});
+  const cases = [
+    [false, true, true],
+    [null, true, true],
+    [true, true, false],
+    [true, false, false],
+    [false, false, false]
+  ];
+  for (const [loaded, current, want] of cases) {
+    assert.equal(h.context.defaultJailEnableTurnedOn(loaded, current), want, loaded + '/' + current);
+  }
+});

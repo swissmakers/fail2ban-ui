@@ -439,6 +439,7 @@
   "settings.save": "Desa",
   "settings.save_success": "Configuració desada",
   "settings.confirm.ban_action_change": "Canviar l'acció de bloqueig o la cadena reinicia tots els jails de tots els servidors. Fail2ban elimina cada bloqueig actiu amb l'acció antiga i el torna a aplicar amb la nova. Amb molts bloquejos actius això pot trigar de minuts a hores (firewallcmd-rich-rules és lent) i Fail2ban no respon a la interfície fins que acaba. Voleu continuar?",
+  "settings.confirm.default_jail_enable": "«Habilita Jails per Defecte» inicia a tots els servidors cada jail que no estigui desactivat explícitament. Això inclou tots els jails que Fail2ban inclou a jail.conf, també per a serveis que no estan instal·lats. Fail2ban pot no iniciar-se si falten els seus fitxers de registre, i molts jails poden sobrecarregar servidors petits. Voleu continuar?",
   "settings.toast.load_error": "Error en carregar la configuració",
   "settings.toast.fix_validation": "Corregiu els errors de validació abans de desar",
   "settings.toast.smtp_port_invalid": "El port SMTP ha d'estar entre 1 i 65535",

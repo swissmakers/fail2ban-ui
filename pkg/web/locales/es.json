@@ -439,6 +439,7 @@
   "settings.save": "Guardar",
   "settings.save_success": "Ajustes guardados",
   "settings.confirm.ban_action_change": "Cambiar la acción de bloqueo o la cadena reinicia todas las jails en todos los servidores. Fail2ban elimina cada bloqueo activo con la acción anterior y lo vuelve a aplicar con la nueva. Con muchos bloqueos activos esto puede tardar de minutos a horas (firewallcmd-rich-rules es lento) y Fail2ban no responde a la interfaz hasta que termina. ¿Continuar?",
+  "settings.confirm.default_jail_enable": "«Jails por defecto activados» inicia en todos los servidores cada jail que no esté desactivado explícitamente. Esto incluye todos los jails que Fail2ban incluye en jail.conf, también para servicios que no están instalados. Fail2ban puede no iniciarse si faltan sus archivos de registro, y muchos jails pueden sobrecargar servidores pequeños. ¿Continuar?",
   "settings.toast.load_error": "Error al cargar la configuración",
   "settings.toast.fix_validation": "Corrija los errores de validación antes de guardar",
   "settings.toast.smtp_port_invalid": "El puerto SMTP debe estar entre 1 y 65535",

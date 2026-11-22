@@ -439,6 +439,7 @@
   "settings.save": "Salva",
   "settings.save_success": "Impostazioni salvate",
   "settings.confirm.ban_action_change": "Modificare l'azione di ban o la chain riavvia tutte le jail su tutti i server. Fail2ban rimuove ogni ban attivo con la vecchia azione e lo riapplica con quella nuova. Con molti ban attivi può richiedere da alcuni minuti a ore (firewallcmd-rich-rules è lento) e Fail2ban non risponde all'interfaccia finché non ha terminato. Continuare?",
+  "settings.confirm.default_jail_enable": "«Jails predefiniti attivati» avvia su tutti i server ogni jail che non è disattivato esplicitamente. Sono inclusi tutti i jail che Fail2ban fornisce in jail.conf, anche per servizi non installati. Fail2ban può non avviarsi se mancano i relativi file di log, e molti jail possono sovraccaricare gli host piccoli. Continuare?",
   "settings.toast.load_error": "Errore durante il caricamento delle impostazioni",
   "settings.toast.fix_validation": "Correggere gli errori di validazione prima di salvare",
   "settings.toast.smtp_port_invalid": "La porta SMTP deve essere compresa tra 1 e 65535",
