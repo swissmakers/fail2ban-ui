@@ -39,12 +39,9 @@ type Connector interface {
 	GetBannedIPs(ctx context.Context, jail string) ([]string, error)
 	UnbanIP(ctx context.Context, jail, ip string) error
 	BanIP(ctx context.Context, jail, ip string) error
-	Reload(ctx context.Context) error
-	// Restart restarts fail2ban, or reloads it where no service manager is usable; returns "restart" or "reload".
+	Reload(ctx context.Context, restartJails bool) error
 	Restart(ctx context.Context) (mode string, err error)
-	// ValidateConfiguration checks the on-disk configuration without applying it.
 	ValidateConfiguration(ctx context.Context) error
-	// ProbeHealth checks fail2ban and the callback path without side effects.
 	ProbeHealth(ctx context.Context) ServerHealth
 	GetFilterConfig(ctx context.Context, jail string) (string, string, error)
 	SetFilterConfig(ctx context.Context, jail, content string) error
@@ -188,7 +185,7 @@ func (m *Manager) ReloadFromServers(servers []shared.Fail2banServer) error {
 
 	// Requested only after the swap, so an in-flight retry cannot apply this generation to the old connector.
 	for _, id := range added {
-		m.RequestConfigSync(id, true, true)
+		m.RequestConfigSync(id, true, true, false)
 	}
 	// Tear down the connectors of the servers that were removed, disabled or replaced
 	for id, conn := range old {
@@ -361,11 +358,23 @@ func (m *Manager) Connectors() []Connector {
 func updateConnectorAction(ctx context.Context, conn Connector) error {
 	switch c := conn.(type) {
 	case *SSHConnector:
-		return c.ensureAction(ctx)
+		if err := c.ensureAction(ctx); err != nil {
+			return err
+		}
+		if err := c.ensureNftablesFix(ctx); err != nil {
+			log.Printf("warning: could not apply the nftables grep fix on %s: %v", c.server.Name, err)
+		}
+		return nil
 	case *AgentConnector:
 		return c.ensureCallbackConfig(ctx)
 	case *LocalConnector:
-		return WriteLocalActionFile(c.configPath(), mustProvider().CallbackURL(), c.Server().ID)
+		if err := WriteLocalActionFile(c.configPath(), mustProvider().CallbackURL(), c.Server().ID); err != nil {
+			return err
+		}
+		if err := ensureLocalNftablesFix(c.configPath()); err != nil {
+			log.Printf("warning: could not apply the nftables grep fix on %s: %v", c.server.Name, err)
+		}
+		return nil
 	default:
 		return nil
 	}

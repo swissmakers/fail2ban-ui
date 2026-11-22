@@ -232,10 +232,7 @@ func ListJailBannedIPsHandler(c *gin.Context) {
 	if offset > total {
 		offset = total
 	}
-	end := offset + limit
-	if end > total {
-		end = total
-	}
+	end := min(offset+limit, total)
 	paged := filtered[offset:end]
 
 	resp["bannedIPs"], resp["total"], resp["hasMore"] = paged, total, end < total
@@ -284,8 +281,7 @@ func BanNotificationHandler(c *gin.Context) {
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	if err := c.ShouldBindJSON(&request); err != nil {
-		var verr validator.ValidationErrors
-		if errors.As(err, &verr) {
+		if verr, ok := errors.AsType[validator.ValidationErrors](err); ok {
 			for _, fe := range verr {
 				log.Printf("ERROR: Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
 			}
@@ -351,8 +347,7 @@ func UnbanNotificationHandler(c *gin.Context) {
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 
 	if err := c.ShouldBindJSON(&request); err != nil {
-		var verr validator.ValidationErrors
-		if errors.As(err, &verr) {
+		if verr, ok := errors.AsType[validator.ValidationErrors](err); ok {
 			for _, fe := range verr {
 				log.Printf("ERROR: Validation error: Field '%s' violated rule '%s'", fe.Field(), fe.ActualTag())
 			}
@@ -432,17 +427,13 @@ func ListBanEventsHandler(c *gin.Context) {
 		countErr error
 		wg       sync.WaitGroup
 	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		events, listErr = storage.ListBanEventsFiltered(ctx, filter, limit, offset)
-	}()
+	})
 	if offset == 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			total, countErr = storage.CountBanEventsFiltered(ctx, filter)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -644,10 +635,7 @@ func eventFilterFromQuery(c *gin.Context, since, until time.Time) storage.BanEve
 }
 
 func chooseBucketSeconds(since, until time.Time, override int64) int64 {
-	rangeSeconds := until.Unix() - since.Unix()
-	if rangeSeconds < 1 {
-		rangeSeconds = 1
-	}
+	rangeSeconds := max(until.Unix()-since.Unix(), 1)
 	minAllowed := rangeSeconds/timelineMaxBuckets + 1
 	if override > 0 {
 		if override < minAllowed {

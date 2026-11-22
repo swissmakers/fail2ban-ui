@@ -108,7 +108,7 @@ func TestRedactionCoversWebhookAndCredentialedURLs(t *testing.T) {
 func TestRedactionKeepsAllCurrentSecretsAtScale(t *testing.T) {
 	withLogSecrets(t, func(s *AppSettings) {
 		s.Servers = nil
-		for i := 0; i < 400; i++ {
+		for i := range 400 {
 			// Fixed width, so no secret is a prefix of another and masks a dropped one.
 			s.Servers = append(s.Servers, Fail2banServer{AgentSecret: fmt.Sprintf("agent-secret-%04d", i)})
 		}

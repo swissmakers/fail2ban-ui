@@ -141,7 +141,7 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 	var provider *oidc.Provider
 	var err error
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		ctx = contextWithSkipVerify(ctx, cfg.SkipVerify)
 
@@ -156,10 +156,7 @@ func InitializeOIDC(cfg *config.OIDCConfig) (*OIDCClient, error) {
 		if attempt < maxRetries-1 {
 			time.Sleep(retryDelay)
 			// Increases the delay for each retry (exponential backoff)
-			retryDelay = time.Duration(float64(retryDelay) * 1.5)
-			if retryDelay > 10*time.Second {
-				retryDelay = 10 * time.Second
-			}
+			retryDelay = min(time.Duration(float64(retryDelay)*1.5), 10*time.Second)
 		}
 	}
 
@@ -226,13 +223,13 @@ func (c *OIDCClient) GetAuthURL(state, verifier string) string {
 	return c.OAuth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(verifier))
 }
 
-func claimByPath(claims map[string]interface{}, path string) interface{} {
+func claimByPath(claims map[string]any, path string) any {
 	if path == "" {
 		return nil
 	}
-	var current interface{} = claims
-	for _, part := range strings.Split(path, ".") {
-		m, ok := current.(map[string]interface{})
+	var current any = claims
+	for part := range strings.SplitSeq(path, ".") {
+		m, ok := current.(map[string]any)
 		if !ok {
 			return nil
 		}
@@ -242,7 +239,7 @@ func claimByPath(claims map[string]interface{}, path string) interface{} {
 }
 
 // "email" never falls back; any other claim falls back to preferred_username, then email.
-func usernameFromClaims(claims map[string]interface{}, usernameClaim string) string {
+func usernameFromClaims(claims map[string]any, usernameClaim string) string {
 	get := func(name string) string {
 		s, _ := claims[name].(string)
 		return s
@@ -258,7 +255,7 @@ func usernameFromClaims(claims map[string]interface{}, usernameClaim string) str
 	return ""
 }
 
-func stringSliceFromClaim(value interface{}) []string {
+func stringSliceFromClaim(value any) []string {
 	switch v := value.(type) {
 	case string:
 		return shared.SplitCommaList(v)
@@ -270,7 +267,7 @@ func stringSliceFromClaim(value interface{}) []string {
 			}
 		}
 		return out
-	case []interface{}:
+	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
@@ -323,7 +320,7 @@ func (c *OIDCClient) VerifyToken(ctx context.Context, token *oauth2.Token) (*Use
 		return nil, fmt.Errorf("failed to extract claims: %w", err)
 	}
 
-	allClaims := map[string]interface{}{}
+	allClaims := map[string]any{}
 	if err := idToken.Claims(&allClaims); err != nil {
 		return nil, fmt.Errorf("failed to extract role claims: %w", err)
 	}

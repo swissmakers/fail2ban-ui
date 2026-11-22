@@ -53,14 +53,15 @@ const (
 
 // Connector for a remote Fail2ban-Agent via HTTP API.
 type AgentConnector struct {
-	server            shared.Fail2banServer
-	base              *url.URL
-	client            *http.Client
-	driftMu           sync.Mutex
-	drifted           bool
-	capabilityMu      sync.Mutex
-	operationCapable  bool
-	capabilityChecked time.Time
+	server             shared.Fail2banServer
+	base               *url.URL
+	client             *http.Client
+	driftMu            sync.Mutex
+	drifted            bool
+	capabilityMu       sync.Mutex
+	operationCapable   bool
+	jailRestartCapable bool
+	capabilityChecked  time.Time
 }
 
 type AgentConfigErrorKind string
@@ -144,8 +145,7 @@ func AgentErrorMessageKey(err error) string {
 		return ""
 	}
 
-	var cfgErr *AgentConfigError
-	if errors.As(err, &cfgErr) {
+	if cfgErr, ok := errors.AsType[*AgentConfigError](err); ok {
 		switch cfgErr.Kind {
 		case AgentConfigErrorMissingURL, AgentConfigErrorMissingSecret:
 			return "servers.errors.agent_missing_config"
@@ -154,13 +154,11 @@ func AgentErrorMessageKey(err error) string {
 		}
 	}
 
-	var transportErr *AgentTransportError
-	if errors.As(err, &transportErr) {
+	if _, ok := errors.AsType[*AgentTransportError](err); ok {
 		return "servers.errors.agent_unreachable"
 	}
 
-	var httpErr *AgentHTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*AgentHTTPError](err); ok {
 		if httpErr.StatusCode == http.StatusUnauthorized {
 			return "servers.errors.agent_wrong_secret"
 		}
@@ -331,12 +329,45 @@ func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
 	return err
 }
 
-func (ac *AgentConnector) Reload(ctx context.Context) error {
-	resp, err := ac.serviceOperation(ctx, "reload")
+// Agents without "reload-restart" fall back to a service restart, which also recreates the jails
+func (ac *AgentConnector) Reload(ctx context.Context, restartJails bool) error {
+	kind := "reload"
+	if restartJails {
+		// A failed capability request says nothing about the agent version
+		if err := ac.RequireOperationSupport(ctx); err != nil {
+			return err
+		}
+		if !ac.supportsJailRestart(ctx) {
+			mode, err := ac.Restart(ctx)
+			if err == nil && mode == "reload" {
+				return fmt.Errorf("agent on %s has no service manager and is too old to restart jails: restart fail2ban on that host so the changed ban action takes effect", ac.server.Name)
+			}
+			return err
+		}
+		kind = "reload-restart"
+	}
+	resp, err := ac.serviceOperation(ctx, kind)
 	if err != nil {
+		if restartJails && agentCommandInFlight(resp) {
+			return fmt.Errorf("%w: %w", ErrJailRestartInFlight, err)
+		}
 		return err
 	}
 	return checkReloadOutput(resp.Output)
+}
+
+// Reports whether a failed operation still runs on the agent or ran into its time limit.
+func agentCommandInFlight(op AgentOperation) bool {
+	return op.State == "queued" || op.State == "running" || op.Code == "command_timeout"
+}
+
+func (ac *AgentConnector) supportsJailRestart(ctx context.Context) bool {
+	if ac.RequireOperationSupport(ctx) != nil {
+		return false
+	}
+	ac.capabilityMu.Lock()
+	defer ac.capabilityMu.Unlock()
+	return ac.jailRestartCapable
 }
 
 // Returns the agent-reported mode; agents before 0.2 do not report one.
@@ -403,6 +434,7 @@ func (ac *AgentConnector) RequireOperationSupport(ctx context.Context) error {
 		return err
 	}
 	ac.operationCapable = err == nil && caps.Version >= 1 && slices.Contains(caps.Kinds, "reload") && slices.Contains(caps.Kinds, "restart") && slices.Contains(caps.Kinds, "validate") && slices.Contains(caps.Kinds, "ban") && slices.Contains(caps.Kinds, "unban")
+	ac.jailRestartCapable = ac.operationCapable && slices.Contains(caps.Kinds, "reload-restart")
 	ac.capabilityChecked = time.Now()
 	if !ac.operationCapable {
 		return fmt.Errorf("agent upgrade required: durable service operations and configuration validation are not supported")
@@ -416,6 +448,36 @@ func (ac *AgentConnector) ReconcileOperation(ctx context.Context, kind string) (
 		return AgentOperation{}, fmt.Errorf("operation ID is required for reconciliation")
 	}
 	return ac.reconcileOperationID(ctx, id, kind)
+}
+
+// Configuration sync submits one of these kinds.. depending on the change and the agent version
+func (ac *AgentConnector) syncOperationKinds(ctx context.Context) []string {
+	if ac.supportsJailRestart(ctx) {
+		return []string{"reload", "reload-restart", "restart"}
+	}
+	return []string{"reload", "restart"}
+}
+
+// Finds command an interrupted sync submitted. When none arrived, every candidate ID is reserved so delayed request cannot run
+func (ac *AgentConnector) ReconcileSyncOperation(ctx context.Context) (AgentOperation, error) {
+	if OperationID(ctx) == "" {
+		return AgentOperation{}, fmt.Errorf("operation ID is required for reconciliation")
+	}
+	kinds := ac.syncOperationKinds(ctx)
+	for _, kind := range kinds {
+		op, err := ac.getOperation(ctx, AgentOperationID(ctx, kind), kind)
+		if !agentStatusIs(err, http.StatusNotFound) {
+			return op, err
+		}
+	}
+	var op AgentOperation
+	for _, kind := range kinds {
+		var err error
+		if op, err = ac.reconcileOperationID(ctx, AgentOperationID(ctx, kind), kind); err != nil {
+			return op, err
+		}
+	}
+	return op, nil
 }
 
 func (ac *AgentConnector) reconcileOperationID(ctx context.Context, id, kind string) (AgentOperation, error) {
@@ -605,8 +667,7 @@ func healthFromDetail(d agentHealthDetail, serverID, fingerprint string) (Server
 }
 
 func agentTransportReachable(err error) *bool {
-	var httpErr *AgentHTTPError
-	if errors.As(err, &httpErr) {
+	if _, ok := errors.AsType[*AgentHTTPError](err); ok {
 		reachable := true
 		return &reachable
 	}
@@ -617,8 +678,7 @@ func agentTransportReachable(err error) *bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
 	}
-	var transportErr *AgentTransportError
-	if errors.As(err, &transportErr) {
+	if _, ok := errors.AsType[*AgentTransportError](err); ok {
 		reachable := false
 		return &reachable
 	}
@@ -852,8 +912,7 @@ func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, log
 		FilterPath string `json:"filterPath"`
 	}
 	if err := ac.post(ctx, "/v1/filters/test", payload, &resp); err != nil {
-		var httpErr *AgentHTTPError
-		if errors.As(err, &httpErr) {
+		if httpErr, ok := errors.AsType[*AgentHTTPError](err); ok {
 			var fail struct {
 				Error      string `json:"error"`
 				Output     string `json:"output"`
@@ -1034,7 +1093,7 @@ func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content stri
 	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":    jailName,
 		"content": content,
 	}
@@ -1058,7 +1117,7 @@ func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content 
 	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":    filterName,
 		"content": content,
 	}

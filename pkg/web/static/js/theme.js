@@ -1,19 +1,46 @@
 "use strict";
 
+var THEME_STORAGE_KEY = 'fail2ban-ui-theme';
+var THEME_CHOICES = ['system', 'light', 'dark'];
 var themeMediaQuery = null;
 
-function isAutoDarkEnabled() {
-  return document.documentElement.getAttribute('data-auto-dark') === 'true';
+// The Appearance choice is kept per browser. Without a stored choice the UI follows the device.
+function getThemePreference() {
+  try {
+    var stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (THEME_CHOICES.indexOf(stored) !== -1) {
+      return stored;
+    }
+  } catch (e) { }
+  return 'system';
 }
 
-function getSystemTheme() {
-  if (!isAutoDarkEnabled()) {
-    return 'light';
+function setThemePreference(preference) {
+  if (THEME_CHOICES.indexOf(preference) === -1) {
+    return;
   }
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+  try {
+    if (preference === 'system') {
+      window.localStorage.removeItem(THEME_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(THEME_STORAGE_KEY, preference);
+    }
+  } catch (e) { }
+  syncSystemTheme();
+}
+
+function systemPrefersDark() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
+function resolveTheme(preference, systemDark, lotrActive) {
+  if (lotrActive || preference === 'dark') {
     return 'dark';
   }
-  return 'light';
+  if (preference === 'light') {
+    return 'light';
+  }
+  return systemDark ? 'dark' : 'light';
 }
 
 function applyTheme(theme) {
@@ -35,19 +62,23 @@ function syncFavicons(theme) {
   if (appleTouchIcon) { appleTouchIcon.setAttribute('href', href); }
 }
 
-function syncSystemTheme() {
-  if (document.body && document.body.classList.contains('lotr-mode')) {
-    applyTheme('dark');
-    return;
+function updateThemeControl(preference) {
+  var buttons = document.querySelectorAll('[data-theme-choice]');
+  for (var i = 0; i < buttons.length; i++) {
+    var active = buttons[i].getAttribute('data-theme-choice') === preference;
+    buttons[i].setAttribute('aria-checked', active ? 'true' : 'false');
   }
-  applyTheme(getSystemTheme());
+}
+
+function syncSystemTheme() {
+  var preference = getThemePreference();
+  var lotrActive = !!(document.body && document.body.classList.contains('lotr-mode'));
+  applyTheme(resolveTheme(preference, systemPrefersDark(), lotrActive));
+  updateThemeControl(preference);
 }
 
 function initThemeManager() {
   syncSystemTheme();
-  if (!isAutoDarkEnabled()) {
-    return;
-  }
   if (!window.matchMedia || themeMediaQuery) {
     return;
   }
@@ -60,3 +91,4 @@ function initThemeManager() {
 
 window.initThemeManager = initThemeManager;
 window.syncSystemTheme = syncSystemTheme;
+window.setThemePreference = setThemePreference;

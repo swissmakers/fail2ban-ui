@@ -145,17 +145,73 @@ func (sc *SSHConnector) BanIP(ctx context.Context, jail, ip string) error {
 	return err
 }
 
-func (sc *SSHConnector) Reload(ctx context.Context) error {
-	// Same tree that ValidateConfiguration checked; the client, not the daemon, reads the files.
-	out, err := sc.runFail2banCommand(ctx, "-c", sc.getFail2banPath(ctx), "reload")
+func (sc *SSHConnector) Reload(ctx context.Context, restartJails bool) error {
+	root := sc.getFail2banPath(ctx)
+	args := []string{"-c", root, "reload"}
+	if restartJails {
+		args = append(args, "--restart")
+	}
+	out, err := sc.runFail2banCommand(ctx, args...)
 	if err != nil {
+		if restartJails && ctx.Err() != nil {
+			return fmt.Errorf("%w: %w", ErrJailRestartInFlight, err)
+		}
 		return err
 	}
 	if err := checkReloadOutput(out); err != nil {
 		return err
 	}
+	if !restartJails {
+		if err := restartJailsMissingActions(ctx, sc.runFail2banCommand, root, sc.server.Name, func(ctx context.Context) (string, map[string][]string, error) {
+			return sc.readActionState(ctx, root)
+		}); err != nil {
+			return err
+		}
+	}
 	sc.reloadPending.Store(false)
 	return nil
+}
+
+const jailActionsMarker = "F2BUI_JAIL_ACTIONS:"
+
+// One remote command: the configuration dump, then the action list of every running jail.
+func (sc *SSHConnector) readActionState(ctx context.Context, root string) (string, map[string][]string, error) {
+	client := shellJoin(append([]string{"sudo", "fail2ban-client"}, fail2banArgs(sc.server.SocketPath)...)...)
+	script := `d=$(` + client + ` -c ` + shellQuote(root) + ` -d) || exit 1
+printf '%s\n' "$d"
+printf '%s\n' "$d" | sed -n "s/^\['start', '\([^']*\)'\]$/\1/p" | while IFS= read -r j; do
+  if a=$(` + client + ` get "$j" actions 2>/dev/null </dev/null); then
+    echo "` + jailActionsMarker + `$j"
+    printf '%s\n' "$a" | tail -n 1
+  fi
+done`
+	out, err := sc.runRemoteCommand(ctx, []string{script})
+	if err != nil {
+		return "", nil, err
+	}
+	dump, running := parseRemoteActionState(out)
+	return dump, running, nil
+}
+
+// Splits the output of readActionState into the dump and the per-jail action lists.
+func parseRemoteActionState(out string) (string, map[string][]string) {
+	var dump strings.Builder
+	running := make(map[string][]string)
+	lines := strings.Split(out, "\n")
+	for i := 0; i < len(lines); i++ {
+		jail, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), jailActionsMarker)
+		if !ok {
+			dump.WriteString(lines[i])
+			dump.WriteByte('\n')
+			continue
+		}
+		running[jail] = nil
+		if i+1 < len(lines) {
+			i++
+			running[jail] = parseRunningActions(lines[i])
+		}
+	}
+	return dump.String(), running
 }
 
 func (sc *SSHConnector) ValidateConfiguration(ctx context.Context) error {
@@ -173,7 +229,7 @@ func (sc *SSHConnector) Restart(ctx context.Context) (string, error) {
 	}
 	// If systemd is not available or if there is an interactive authentication required, we will fall back to fail2ban-client.
 	if sc.isSystemctlUnavailable(out, err) {
-		if reloadErr := sc.Reload(ctx); reloadErr != nil {
+		if reloadErr := sc.Reload(ctx, false); reloadErr != nil {
 			return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client on remote: %w", reloadErr)
 		}
 		if err := waitForFail2ban(ctx, sc.runFail2banCommand, "remote fail2ban", restartReadyTimeout); err != nil {
@@ -220,7 +276,7 @@ func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 
 // Returns the value after marker on the first matching line, or "".
 func extractMarkerValue(output, marker string) string {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if rest, ok := strings.CutPrefix(line, marker); ok {
 			return strings.TrimSpace(rest)
@@ -271,7 +327,7 @@ func splitBannedSummary(out string) (bannedSummary, error) {
 	mode := inBanned
 	complete := false
 
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if mode == inJailLocal || mode == inAction {
 			if content, marker, ok := cutTrailingMarker(line); ok {
 				if mode == inJailLocal {

@@ -35,7 +35,7 @@ type Request struct {
 	Context context.Context
 	IP      string
 	Config  config.AdvancedActionsConfig
-	Logger  func(format string, args ...interface{})
+	Logger  func(format string, args ...any)
 }
 
 // =========================================================================

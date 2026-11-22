@@ -118,7 +118,7 @@ func setDebugFlag(enabled bool) {
 }
 
 // Prints debug messages if debug mode is enabled.
-func DebugLog(format string, v ...interface{}) {
+func DebugLog(format string, v ...any) {
 	if !debugEnabled.Load() {
 		return
 	}

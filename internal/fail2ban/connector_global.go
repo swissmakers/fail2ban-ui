@@ -21,7 +21,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -70,6 +73,99 @@ func checkReloadOutput(output string) error {
 	return nil
 }
 
+// =========================================================================
+//  Jail Action Verification
+// =========================================================================
+
+var configuredActionPattern = regexp.MustCompile(`^\['set', '([^']+)', 'addaction', '([^']+)'`)
+
+// Reads the actions every jail is configured with from a "fail2ban-client -d" dump.
+func parseConfiguredActions(dump string) (jails []string, actions map[string][]string) {
+	actions = make(map[string][]string)
+	for line := range strings.SplitSeq(dump, "\n") {
+		m := configuredActionPattern.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil {
+			continue
+		}
+		if _, seen := actions[m[1]]; !seen {
+			jails = append(jails, m[1])
+		}
+		actions[m[1]] = append(actions[m[1]], m[2])
+	}
+	return jails, actions
+}
+
+// Action names from "fail2ban-client get <jail> actions"; the list is the last line.
+func parseRunningActions(output string) []string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var names []string
+	for name := range strings.SplitSeq(lines[len(lines)-1], ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// Running jails that lack one of their configured actions. Jails absent from running are not judged.
+func jailsMissingActions(dump string, running map[string][]string) []string {
+	var missing []string
+	jails, configured := parseConfiguredActions(dump)
+	for _, jail := range jails {
+		active, ok := running[jail]
+		if !ok {
+			continue
+		}
+		for _, action := range configured[jail] {
+			if !slices.Contains(active, action) {
+				missing = append(missing, jail)
+				break
+			}
+		}
+	}
+	return missing
+}
+
+// Returns the configuration dump and the action list of every running jail.
+type actionStateReader func(ctx context.Context) (dump string, running map[string][]string, err error)
+
+func readActionState(ctx context.Context, run fail2banRunner, root string) (string, map[string][]string, error) {
+	dump, err := run(ctx, "-c", root, "-d")
+	if err != nil {
+		return "", nil, err
+	}
+	jails, _ := parseConfiguredActions(dump)
+	running := make(map[string][]string, len(jails))
+	for _, jail := range jails {
+		// A jail that is not running has no action list to compare.
+		if out, err := run(ctx, "get", jail, "actions"); err == nil {
+			running[jail] = parseRunningActions(out)
+		}
+	}
+	return dump, running, nil
+}
+
+// Fail2ban drops an action that a reload adds to a running jail, which leaves the jail
+// without its firewall or callback action. Restart only those jails so the action loads.
+func restartJailsMissingActions(ctx context.Context, run fail2banRunner, root, server string, read actionStateReader) error {
+	dump, running, err := read(ctx)
+	if err != nil {
+		log.Printf("warning: could not verify the jail actions on %s after the reload: %v", server, err)
+		return nil
+	}
+	for _, jail := range jailsMissingActions(dump, running) {
+		log.Printf("jail %s on %s runs without a configured action after the reload; restarting the jail", jail, server)
+		out, err := run(ctx, "-c", root, "reload", "--restart", jail)
+		if err != nil {
+			return fmt.Errorf("restarting jail %s to load its actions failed: %w", jail, err)
+		}
+		if err := checkReloadOutput(out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Marker that identifies a jail.local as generated and owned by Fail2ban-UI
 const managedJailLocalMarker = "ui-custom-action"
 
@@ -85,7 +181,7 @@ func jailLocalHasContent(content string) bool {
 // Locates the banned payload line. fail2ban prints the whole repr as one line on stdout, but a fail2ban.conf with 'logtarget = STDOUT' makes the
 // client write its own log lines to stdout first, so skip anything ahead of the first line that starts the list.
 func extractBannedPayload(out string) (string, bool) {
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "[") {
 			return trimmed, true
@@ -275,6 +371,9 @@ func dedupeConfigBaseNames(localFiles, confFiles []string) []string {
 func checkPingOutput(out string, err error, label string) error {
 	trimmed := strings.TrimSpace(out)
 	if err != nil {
+		if _, carried := CommandOutput(err); carried || trimmed == "" {
+			return fmt.Errorf("%s ping error: %w", label, err)
+		}
 		return fmt.Errorf("%s ping error: %w (output: %s)", label, err, trimmed)
 	}
 	if !strings.Contains(strings.ToLower(trimmed), "pong") {
@@ -298,6 +397,9 @@ type fail2banRunner func(ctx context.Context, args ...string) (string, error)
 
 func pingFail2ban(ctx context.Context, run fail2banRunner, label string) error {
 	out, err := run(ctx, "ping")
+	if err != nil && ctx.Err() != nil {
+		return fmt.Errorf("%s did not answer in time (timed out); it may be busy applying a change: %w", label, ctx.Err())
+	}
 	return checkPingOutput(out, err, label)
 }
 

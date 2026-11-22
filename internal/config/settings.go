@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -799,7 +800,7 @@ func initializeFromJailFile() error {
 	}
 	if val, ok := settings["ignoreip"]; ok {
 		currentSettings.IgnoreIPs = []string{}
-		for _, entry := range strings.Fields(val) {
+		for entry := range strings.FieldsSeq(val) {
 			if entry != ignoreIPExtraRef {
 				currentSettings.IgnoreIPs = append(currentSettings.IgnoreIPs, entry)
 			}
@@ -1019,23 +1020,36 @@ func BuildJailLocalContent() string {
 	return buildJailLocalContent(GetSettings())
 }
 
+// Ban actions and chain as written to jail.local, with defaults for empty values.
+func effectiveJailActions(settings AppSettings) (banaction, banactionAllports, chain string) {
+	banaction = settings.Banaction
+	if banaction == "" {
+		banaction = "nftables-multiport"
+	}
+	banactionAllports = settings.BanactionAllports
+	if banactionAllports == "" {
+		banactionAllports = "nftables-allports"
+	}
+	chain = settings.Chain
+	if chain == "" {
+		chain = "INPUT"
+	}
+	return banaction, banactionAllports, chain
+}
+
+// fail2ban reload cannot swap jail actions -> so these changes need jail restart
+func JailActionsChanged(old, updated AppSettings) bool {
+	oldAction, oldAllports, oldChain := effectiveJailActions(old)
+	newAction, newAllports, newChain := effectiveJailActions(updated)
+	return oldAction != newAction || oldAllports != newAllports || oldChain != newChain
+}
+
 func buildJailLocalContent(settings AppSettings) string {
 	ignoreIPStr := strings.Join(settings.IgnoreIPs, " ")
 	if ignoreIPStr == "" {
 		ignoreIPStr = "127.0.0.1/8 ::1"
 	}
-	banaction := settings.Banaction
-	if banaction == "" {
-		banaction = "nftables-multiport"
-	}
-	banactionAllports := settings.BanactionAllports
-	if banactionAllports == "" {
-		banactionAllports = "nftables-allports"
-	}
-	chain := settings.Chain
-	if chain == "" {
-		chain = "INPUT"
-	}
+	banaction, banactionAllports, chain := effectiveJailActions(settings)
 	defaultSection := fmt.Sprintf(`[DEFAULT]
 enabled = %t
 bantime.increment = %t
@@ -1503,9 +1517,7 @@ func cloneSettings(s AppSettings) AppSettings {
 	s.IgnoreIPs = append([]string(nil), s.IgnoreIPs...)
 	s.AlertCountries = append([]string(nil), s.AlertCountries...)
 	headers := make(map[string]string, len(s.Webhook.Headers))
-	for key, value := range s.Webhook.Headers {
-		headers[key] = value
-	}
+	maps.Copy(headers, s.Webhook.Headers)
 	s.Webhook.Headers = headers
 	return s
 }

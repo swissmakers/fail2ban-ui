@@ -20,7 +20,7 @@ import "sync"
 
 // Supplies application settings needed by connectors without importing config.
 type Provider interface {
-	DebugLog(format string, v ...interface{})
+	DebugLog(format string, v ...any)
 	CallbackURL() string
 	CallbackSecret() string
 	ServerPort() int
@@ -50,13 +50,13 @@ func mustProvider() Provider {
 	return p
 }
 
-func debugf(format string, v ...interface{}) {
+func debugf(format string, v ...any) {
 	mustProvider().DebugLog(format, v...)
 }
 
 type noopProvider struct{}
 
-func (noopProvider) DebugLog(format string, v ...interface{}) {}
+func (noopProvider) DebugLog(format string, v ...any) {}
 
 func (noopProvider) CallbackURL() string { return "" }
 

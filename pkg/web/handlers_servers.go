@@ -63,7 +63,8 @@ func ListServersHandler(c *gin.Context) {
 		item := serverStatus{Fail2banServer: server}
 		if server.Enabled {
 			status := manager.ConfigSyncStatus(server.ID)
-			item.RestartNeeded = status.Phase == fail2ban.SyncWritten
+			_, busy := manager.OperationStatus(server.ID)
+			item.RestartNeeded = restartNeeded(status, busy)
 			item.Health = healthForRole(manager.Health(server.ID), isAdmin)
 			if isAdmin {
 				status.Error = config.RedactLog(status.Error)
@@ -73,6 +74,11 @@ func ListServersHandler(c *gin.Context) {
 		response = append(response, item)
 	}
 	c.JSON(http.StatusOK, gin.H{"servers": response})
+}
+
+// Files are on the host but the last apply failed, and nothing is retrying right now.
+func restartNeeded(status fail2ban.ConfigSyncStatus, operationActive bool) bool {
+	return status.Phase == fail2ban.SyncWritten && status.Error != "" && !operationActive
 }
 
 // Health as read-only users see it; probe details can name hosts and paths.
@@ -158,7 +164,7 @@ func UpsertServerHandler(c *gin.Context) {
 	var jailLocalWarning bool
 	if server.Enabled {
 		// Saving is the manual way to re-deploy the action file and jail.local.
-		manager.RequestConfigSync(server.ID, true, true)
+		manager.RequestConfigSync(server.ID, true, true, false)
 		if err := manager.SyncServerConfig(c.Request.Context(), server.ID); err != nil {
 			actionFileWarning = err.Error()
 		}
@@ -371,8 +377,7 @@ func AcceptHostKeyHandler(c *gin.Context) {
 	accepted, err := fail2ban.AcceptHostKey(ctx, server, fingerprint)
 	if err != nil {
 		status := http.StatusInternalServerError
-		var mismatch *fail2ban.HostKeyMismatchError
-		if errors.As(err, &mismatch) {
+		if mismatch, ok := errors.AsType[*fail2ban.HostKeyMismatchError](err); ok {
 			status = http.StatusConflict
 			c.JSON(status, gin.H{
 				"error":              mismatch.Error(),
@@ -386,7 +391,7 @@ func AcceptHostKeyHandler(c *gin.Context) {
 	}
 	// The pinned key unblocks any config sync that failed on the mismatch
 	manager := fail2ban.GetManager()
-	manager.RequestConfigSync(server.ID, true, true)
+	manager.RequestConfigSync(server.ID, true, true, false)
 	go func() {
 		syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()

@@ -19,6 +19,7 @@ package fail2ban
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ type syncTestConnector struct {
 	restartErr      error
 	writes, reloads int
 	restarts        int
+	jailRestarts    int
 	onReload        func()
 }
 
@@ -48,7 +50,11 @@ func (c *syncTestConnector) EnsureJailLocalStructure(context.Context) error {
 	c.writes++
 	return c.writeErr
 }
-func (c *syncTestConnector) Reload(context.Context) error {
+func (c *syncTestConnector) Reload(_ context.Context, restartJails bool) error {
+	if restartJails {
+		c.jailRestarts++
+		return c.reloadErr
+	}
 	c.reloads++
 	if c.onReload != nil {
 		c.onReload()
@@ -60,10 +66,80 @@ func (c *syncTestConnector) ValidateConfiguration(context.Context) error {
 	return c.validationErr
 }
 
+func TestConfigSyncRestartsJailsUntilActionChangeIsApplied(t *testing.T) {
+	conn := &syncTestConnector{reloadErr: errors.New("fail2ban busy")}
+	m := &Manager{connectors: map[string]Connector{"test": conn}}
+	m.RequestConfigSync("test", false, true, true)
+	if err := m.SyncServerConfig(context.Background(), "test"); err == nil {
+		t.Fatal("failed jail restart was hidden")
+	}
+	m.RequestConfigSync("test", false, true, false)
+	conn.reloadErr = nil
+	if err := m.SyncServerConfig(context.Background(), "test"); err != nil {
+		t.Fatal(err)
+	}
+	if conn.jailRestarts != 2 || conn.reloads != 0 {
+		t.Fatalf("a later plain change must not drop the pending jail restart: restarts=%d reloads=%d", conn.jailRestarts, conn.reloads)
+	}
+	m.RequestConfigSync("test", false, true, false)
+	if err := m.SyncServerConfig(context.Background(), "test"); err != nil {
+		t.Fatal(err)
+	}
+	if conn.jailRestarts != 2 || conn.reloads != 1 {
+		t.Fatalf("an applied jail restart must not repeat: restarts=%d reloads=%d", conn.jailRestarts, conn.reloads)
+	}
+}
+func TestConfigSyncDoesNotRepeatAJailRestartFail2banReceived(t *testing.T) {
+	for name, afterFailure := range map[string]func(*Manager){
+		"restart still in flight":     nil,
+		"service restarted meanwhile": func(m *Manager) { m.NoteServiceRestarted("test") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			conn := &syncTestConnector{reloadErr: fmt.Errorf("%w: killed", ErrJailRestartInFlight)}
+			if afterFailure != nil {
+				conn.reloadErr = errors.New("fail2ban is not running")
+			}
+			m := &Manager{connectors: map[string]Connector{"test": conn}}
+			m.RequestConfigSync("test", false, true, true)
+			if err := m.SyncServerConfig(context.Background(), "test"); !errors.Is(err, ErrOperationOutcomeUnknown) {
+				t.Fatalf("err = %v, want an unknown outcome", err)
+			}
+			if afterFailure != nil {
+				afterFailure(m)
+			}
+			conn.reloadErr = nil
+			if err := m.SyncServerConfig(context.Background(), "test"); err != nil {
+				t.Fatal(err)
+			}
+			if conn.jailRestarts != 1 || conn.reloads != 1 || m.ConfigSyncStatus("test").Pending {
+				t.Fatalf("the retry must be a plain reload: restarts=%d reloads=%d", conn.jailRestarts, conn.reloads)
+			}
+		})
+	}
+}
+
+// Files that were not written yet still need the jail restart after a service restart.
+func TestServiceRestartKeepsJailRestartForUnwrittenChanges(t *testing.T) {
+	conn := &syncTestConnector{writeErr: errors.New("host offline")}
+	m := &Manager{connectors: map[string]Connector{"test": conn}}
+	m.RequestConfigSync("test", false, true, true)
+	if err := m.SyncServerConfig(context.Background(), "test"); err == nil {
+		t.Fatal("failed write was hidden")
+	}
+	m.NoteServiceRestarted("test")
+	conn.writeErr = nil
+	if err := m.SyncServerConfig(context.Background(), "test"); err != nil {
+		t.Fatal(err)
+	}
+	if conn.jailRestarts != 1 || conn.reloads != 0 {
+		t.Fatalf("restarts=%d reloads=%d, want one jail restart", conn.jailRestarts, conn.reloads)
+	}
+}
+
 func TestConfigSyncDoesNotReloadInvalidConfiguration(t *testing.T) {
 	conn := &syncTestConnector{validationErr: errors.New("invalid action configuration")}
 	m := &Manager{connectors: map[string]Connector{"test": conn}}
-	m.RequestConfigSync("test", false, true)
+	m.RequestConfigSync("test", false, true, false)
 	if err := m.SyncServerConfig(context.Background(), "test"); err == nil {
 		t.Fatal("validation failure was hidden")
 	}
@@ -81,7 +157,7 @@ func TestConfigSyncDoesNotReloadInvalidConfiguration(t *testing.T) {
 func TestConfigSyncRetriesOfflineDefaultsWithoutAnotherSave(t *testing.T) {
 	conn := &syncTestConnector{writeErr: errors.New("host unavailable")}
 	m := &Manager{connectors: map[string]Connector{"test": conn}}
-	m.RequestConfigSync("test", false, true)
+	m.RequestConfigSync("test", false, true, false)
 	if err := m.SyncServerConfig(context.Background(), "test"); err == nil {
 		t.Fatal("write failure was hidden")
 	}
@@ -98,8 +174,8 @@ func TestConfigSyncRetriesOfflineDefaultsWithoutAnotherSave(t *testing.T) {
 func TestConfigSyncPreservesChangesQueuedDuringReload(t *testing.T) {
 	conn := &syncTestConnector{}
 	m := &Manager{connectors: map[string]Connector{"test": conn}}
-	m.RequestConfigSync("test", false, true)
-	conn.onReload = func() { m.RequestConfigSync("test", true, true) }
+	m.RequestConfigSync("test", false, true, false)
+	conn.onReload = func() { m.RequestConfigSync("test", true, true, false) }
 	if err := m.SyncServerConfig(context.Background(), "test"); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +208,7 @@ func TestConfigRetryDelayBacksOff(t *testing.T) {
 func TestConfigRetryBacksOffUntilANewRequest(t *testing.T) {
 	conn := &syncTestConnector{writeErr: errors.New("host unavailable")}
 	m := &Manager{connectors: map[string]Connector{"test": conn}}
-	m.RequestConfigSync("test", false, true)
+	m.RequestConfigSync("test", false, true, false)
 	_ = m.SyncServerConfig(context.Background(), "test")
 	m.RetryPendingConfig(context.Background())
 	if conn.writes != 2 {
@@ -142,7 +218,7 @@ func TestConfigRetryBacksOffUntilANewRequest(t *testing.T) {
 	if conn.writes != 2 {
 		t.Fatal("a repeatedly failing host was rewritten again without backing off")
 	}
-	m.RequestConfigSync("test", false, true)
+	m.RequestConfigSync("test", false, true, false)
 	m.RetryPendingConfig(context.Background())
 	if conn.writes != 3 {
 		t.Fatal("a new sync request must reset the backoff")
@@ -151,7 +227,7 @@ func TestConfigRetryBacksOffUntilANewRequest(t *testing.T) {
 
 func TestConfigSyncRecordsMissingConnectorError(t *testing.T) {
 	m := &Manager{connectors: map[string]Connector{}}
-	m.RequestConfigSync("gone", true, true)
+	m.RequestConfigSync("gone", true, true, false)
 	if err := m.SyncServerConfig(context.Background(), "gone"); err == nil {
 		t.Fatal("expected an error for a missing connector")
 	}
@@ -198,12 +274,12 @@ func TestSyncPhase(t *testing.T) {
 func TestSyncStatusReportsWrittenPhaseAfterFailedReload(t *testing.T) {
 	conn := &syncTestConnector{reloadErr: errors.New("daemon down")}
 	m := &Manager{connectors: map[string]Connector{"test": conn}}
-	m.RequestConfigSync("test", false, true)
+	m.RequestConfigSync("test", false, true, false)
 	_ = m.SyncServerConfig(context.Background(), "test")
 	if phase := m.ConfigSyncStatus("test").Phase; phase != SyncWritten {
 		t.Fatalf("phase = %s, want written", phase)
 	}
-	m.RequestConfigSync("test", false, true)
+	m.RequestConfigSync("test", false, true, false)
 	if phase := m.ConfigSyncStatus("test").Phase; phase != SyncPending {
 		t.Fatalf("a newer request must be pending again, got %s", phase)
 	}
@@ -213,7 +289,7 @@ func TestApplyAndRestart(t *testing.T) {
 	t.Run("unknown reload outcome refuses a second service command", func(t *testing.T) {
 		conn := &syncTestConnector{reloadErr: errors.New("daemon down")}
 		m := &Manager{connectors: map[string]Connector{"test": conn}}
-		m.RequestConfigSync("test", false, true)
+		m.RequestConfigSync("test", false, true, false)
 		if _, err := m.ApplyAndRestart(context.Background(), "test"); !errors.Is(err, ErrOperationOutcomeUnknown) {
 			t.Fatalf("ApplyAndRestart: %v, want unknown outcome", err)
 		}
@@ -224,7 +300,7 @@ func TestApplyAndRestart(t *testing.T) {
 	t.Run("unwritten config refuses restart", func(t *testing.T) {
 		conn := &syncTestConnector{writeErr: errors.New("host unreachable")}
 		m := &Manager{connectors: map[string]Connector{"test": conn}}
-		m.RequestConfigSync("test", false, true)
+		m.RequestConfigSync("test", false, true, false)
 		if _, err := m.ApplyAndRestart(context.Background(), "test"); !errors.Is(err, ErrConfigNotApplied) {
 			t.Fatalf("err = %v, want ErrConfigNotApplied", err)
 		}
@@ -245,7 +321,7 @@ func TestApplyAndRestart(t *testing.T) {
 	t.Run("failed restart keeps pending", func(t *testing.T) {
 		conn := &syncTestConnector{reloadErr: errors.New("daemon down"), restartErr: errors.New("systemctl failed")}
 		m := &Manager{connectors: map[string]Connector{"test": conn}}
-		m.RequestConfigSync("test", false, true)
+		m.RequestConfigSync("test", false, true, false)
 		if _, err := m.ApplyAndRestart(context.Background(), "test"); err == nil {
 			t.Fatal("restart failure was hidden")
 		}

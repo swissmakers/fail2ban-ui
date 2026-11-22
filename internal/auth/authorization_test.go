@@ -40,9 +40,9 @@ func TestSessionHasPermission(t *testing.T) {
 }
 
 func TestClaimByPathAndStringSliceFromClaim(t *testing.T) {
-	claims := map[string]interface{}{
-		"realm_access": map[string]interface{}{
-			"roles": []interface{}{"fail2ban-admins", "offline_access"},
+	claims := map[string]any{
+		"realm_access": map[string]any{
+			"roles": []any{"fail2ban-admins", "offline_access"},
 		},
 	}
 
@@ -53,10 +53,10 @@ func TestClaimByPathAndStringSliceFromClaim(t *testing.T) {
 }
 
 func TestUsernameFromClaims(t *testing.T) {
-	full := map[string]interface{}{"preferred_username": "alice", "email": "alice@example.com", "upn": "alice@corp.example"}
+	full := map[string]any{"preferred_username": "alice", "email": "alice@example.com", "upn": "alice@corp.example"}
 	tests := []struct {
 		name   string
-		claims map[string]interface{}
+		claims map[string]any
 		claim  string
 		want   string
 	}{
@@ -64,10 +64,10 @@ func TestUsernameFromClaims(t *testing.T) {
 		{"preferred_username", full, "preferred_username", "alice"},
 		{"custom claim", full, "upn", "alice@corp.example"},
 		{"missing custom claim falls back to preferred_username", full, "sAMAccountName", "alice"},
-		{"then to email", map[string]interface{}{"email": "bob@example.com"}, "upn", "bob@example.com"},
-		{"preferred_username falls back to email", map[string]interface{}{"email": "bob@example.com"}, "preferred_username", "bob@example.com"},
-		{"email does not fall back", map[string]interface{}{"preferred_username": "bob"}, "email", ""},
-		{"non-string claim is skipped", map[string]interface{}{"upn": 42, "preferred_username": "bob"}, "upn", "bob"},
+		{"then to email", map[string]any{"email": "bob@example.com"}, "upn", "bob@example.com"},
+		{"preferred_username falls back to email", map[string]any{"email": "bob@example.com"}, "preferred_username", "bob@example.com"},
+		{"email does not fall back", map[string]any{"preferred_username": "bob"}, "email", ""},
+		{"non-string claim is skipped", map[string]any{"upn": 42, "preferred_username": "bob"}, "upn", "bob"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

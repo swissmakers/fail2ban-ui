@@ -246,14 +246,16 @@ type CommandError struct {
 }
 
 func (e *CommandError) Error() string {
+	if e.Output == "" {
+		return fmt.Sprintf("%s command failed: %v", e.Kind, e.Err)
+	}
 	return fmt.Sprintf("%s command failed: %v (output: %s)", e.Kind, e.Err, truncateForLog(e.Output, maxLoggedOutputBytes))
 }
 
 func (e *CommandError) Unwrap() error { return e.Err }
 
 func CommandOutput(err error) (string, bool) {
-	var ce *CommandError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*CommandError](err); ok {
 		return ce.Output, true
 	}
 	return "", false
@@ -319,8 +321,7 @@ func isSSHTransportError(err error, stderr string) bool {
 
 func (sc *SSHConnector) runRemoteCommand(ctx context.Context, command []string) (string, error) {
 	output, stderr, err := sc.runRemoteCommandOnce(ctx, command)
-	var hk *SSHHostKeyError
-	if errors.As(err, &hk) {
+	if _, ok := errors.AsType[*SSHHostKeyError](err); ok {
 		return output, err
 	}
 	if err != nil && sc.tunnelPort > 0 && isSSHTransportError(err, stderr) && ctx.Err() == nil {

@@ -107,15 +107,28 @@ func (lc *LocalConnector) BanIP(ctx context.Context, jail, ip string) error {
 }
 
 // Reload the Fail2ban service.
-func (lc *LocalConnector) Reload(ctx context.Context) error {
-	out, err := lc.runFail2banClient(ctx, "-c", lc.configPath(), "reload")
+func (lc *LocalConnector) Reload(ctx context.Context, restartJails bool) error {
+	args := []string{"-c", lc.configPath(), "reload"}
+	if restartJails {
+		args = append(args, "--restart")
+	}
+	out, err := lc.runFail2banClient(ctx, args...)
 	if err != nil {
 		if isIncompleteConfigTree(err.Error()) {
 			return fmt.Errorf("fail2ban reload error: %w - fail2ban-ui cannot see the complete fail2ban configuration: when sharing a socket with a fail2ban container, /etc/fail2ban inside the fail2ban-ui container must contain the full configuration tree (including fail2ban.conf and jail.conf), not only the custom jail/filter files", err)
 		}
-		return fmt.Errorf("fail2ban reload error: %w (output: %s)", err, strings.TrimSpace(out))
+		if restartJails && ctx.Err() != nil {
+			return fmt.Errorf("%w: %w", ErrJailRestartInFlight, err)
+		}
+		return fmt.Errorf("fail2ban reload error: %w", err)
 	}
-	return checkReloadOutput(out)
+	if err := checkReloadOutput(out); err != nil || restartJails {
+		return err
+	}
+	root := lc.configPath()
+	return restartJailsMissingActions(ctx, lc.runFail2banClient, root, lc.server.Name, func(ctx context.Context) (string, map[string][]string, error) {
+		return readActionState(ctx, lc.runFail2banClient, root)
+	})
 }
 
 func (lc *LocalConnector) ValidateConfiguration(ctx context.Context) error {
@@ -135,7 +148,7 @@ func (lc *LocalConnector) Restart(ctx context.Context) (string, error) {
 		}
 		return "restart", nil
 	}
-	if err := lc.Reload(ctx); err != nil {
+	if err := lc.Reload(ctx, false); err != nil {
 		return "reload", fmt.Errorf("failed to reload fail2ban via fail2ban-client (systemctl not available): %w", err)
 	}
 	if err := waitForFail2ban(ctx, lc.runFail2banClient, "fail2ban", restartReadyTimeout); err != nil {

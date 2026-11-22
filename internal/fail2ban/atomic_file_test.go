@@ -61,7 +61,7 @@ func TestAtomicConfigPreservesBackupOnRetry(t *testing.T) {
 			if err := os.Chmod(path, 0640); err != nil {
 				t.Fatal(err)
 			}
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				if tc.remote {
 					script, err := buildRemoteWriteScript(path, "[sshd]\nenabled = true\n")
 					if err != nil {
@@ -124,7 +124,7 @@ func TestRemoteWriteDetectsTrailingNewlineChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if output, err := exec.Command("sh", "-c", script).CombinedOutput(); err != nil {
 			t.Fatalf("write: %v %s", err, output)
 		}

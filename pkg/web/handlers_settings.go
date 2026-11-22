@@ -37,10 +37,8 @@ type appSettingsResponse struct {
 }
 
 type settingsUpdateResponse struct {
-	Message       string   `json:"message,omitempty"`
-	SyncPending   bool     `json:"syncPending"`
-	RestartNeeded bool     `json:"restartNeeded"`
-	Warnings      []string `json:"warnings,omitempty"`
+	Message  string   `json:"message,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // =========================================================================
@@ -137,7 +135,7 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	releaseConfig()
 
 	var warnings []string
-	warn := func(format string, v ...interface{}) {
+	warn := func(format string, v ...any) {
 		msg := fmt.Sprintf(format, v...)
 		log.Printf("WARNING: %s", msg)
 		warnings = append(warnings, msg)
@@ -145,40 +143,20 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 
 	defaultSettingsChanged := oldDefaults != config.BuildJailLocalContent()
 	connectors := manager.Connectors()
+	restartJails := config.JailActionsChanged(oldSettings, newSettings)
 	if callbackChanged || defaultSettingsChanged {
 		for _, conn := range connectors {
-			manager.RequestConfigSync(conn.Server().ID, callbackChanged, defaultSettingsChanged)
+			manager.RequestConfigSync(conn.Server().ID, callbackChanged, defaultSettingsChanged, restartJails)
 		}
 	}
 	for _, err := range manager.SyncAll(c.Request.Context(), 20*time.Second) {
 		warn("%v", err)
 	}
-	statuses := make([]fail2ban.ConfigSyncStatus, 0, len(connectors))
-	for _, conn := range connectors {
-		statuses = append(statuses, manager.ConfigSyncStatus(conn.Server().ID))
-	}
-	syncPending, restartNeeded := settingsSyncFlags(statuses)
 
 	c.JSON(http.StatusOK, settingsUpdateResponse{
-		Message:       "Settings updated",
-		SyncPending:   syncPending,
-		RestartNeeded: restartNeeded,
-		Warnings:      warnings,
+		Message:  "Settings updated",
+		Warnings: warnings,
 	})
-}
-
-// syncPending -> some host has not received the files yet
-// restartNeeded -> files are written but not active.
-func settingsSyncFlags(statuses []fail2ban.ConfigSyncStatus) (syncPending, restartNeeded bool) {
-	for _, st := range statuses {
-		switch st.Phase {
-		case fail2ban.SyncPending:
-			syncPending = true
-		case fail2ban.SyncWritten:
-			restartNeeded = true
-		}
-	}
-	return syncPending, restartNeeded
 }
 
 // Saves new settings, pushes defaults to servers, and reloads.

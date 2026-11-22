@@ -50,6 +50,7 @@ type configSyncState struct {
 	generation       uint64
 	writtenGen       uint64
 	action, defaults bool
+	restartJails     bool
 	failures         int
 	status           ConfigSyncStatus
 }
@@ -92,13 +93,14 @@ func (m *Manager) syncState(id string) *configSyncState {
 	return state
 }
 
-func (m *Manager) RequestConfigSync(id string, action, defaults bool) {
+func (m *Manager) RequestConfigSync(id string, action, defaults, restartJails bool) {
 	state := m.syncState(id)
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	state.generation++
 	state.action = state.action || action
 	state.defaults = state.defaults || defaults
+	state.restartJails = state.restartJails || restartJails
 	state.failures = 0
 	state.status.Pending = true
 }
@@ -156,7 +158,7 @@ func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
 		state.mu.Unlock()
 		return nil
 	}
-	generation, action, defaults := state.generation, state.action, state.defaults
+	generation, action, defaults, restartJails := state.generation, state.action, state.defaults, state.restartJails
 	state.status.LastAttempt = time.Now().UTC()
 	state.mu.Unlock()
 
@@ -192,7 +194,10 @@ func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
 		}
 		if err == nil {
 			if err = OperationCheckpoint(ctx, "applying"); err == nil {
-				if reloadErr := conn.Reload(ctx); reloadErr != nil {
+				if reloadErr := conn.Reload(ctx, restartJails); reloadErr != nil {
+					if errors.Is(reloadErr, ErrJailRestartInFlight) {
+						state.clearRestartJails(generation)
+					}
 					err = fmt.Errorf("%w: %v", ErrOperationOutcomeUnknown, reloadErr)
 				} else {
 					err = OperationCheckpoint(ctx, "applied")
@@ -225,8 +230,28 @@ func (state *configSyncState) markAppliedLocked(generation uint64) {
 	state.status.LastApplied = time.Now().UTC()
 	state.status.Error = ""
 	if state.generation == generation {
-		state.action, state.defaults = false, false
+		state.action, state.defaults, state.restartJails = false, false, false
 		state.status.Pending = false
+	}
+}
+
+// The retry of a sync must not restart every jail a second time
+func (state *configSyncState) clearRestartJails(generation uint64) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.generation == generation {
+		state.restartJails = false
+	}
+}
+
+// Service restart loads the written files -> so a pending sync has no jails left to restart..
+func (m *Manager) NoteServiceRestarted(id string) {
+	state := m.syncState(id)
+	state.mu.Lock()
+	generation, written := state.generation, state.writtenGen == state.generation
+	state.mu.Unlock()
+	if written {
+		state.clearRestartJails(generation)
 	}
 }
 
@@ -279,11 +304,9 @@ func (m *Manager) RetryPendingConfig(ctx context.Context) {
 		if !m.configRetryDue(id) {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = m.SyncServerConfig(ctx, id)
-		}()
+		})
 	}
 	wg.Wait()
 }

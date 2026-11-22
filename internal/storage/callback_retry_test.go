@@ -28,10 +28,8 @@ func TestCallbackRetriesAreDeduplicated(t *testing.T) {
 	record := BanEventRecord{ServerID: "server-a", ServerName: "A", Jail: "sshd", IP: "192.0.2.1", CallbackID: "event-1"}
 	var created atomic.Int32
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			id, inserted, err := RecordBanEventOnce(context.Background(), record)
 			if err != nil || id <= 0 {
 				t.Errorf("record callback: id=%d err=%v", id, err)
@@ -40,7 +38,7 @@ func TestCallbackRetriesAreDeduplicated(t *testing.T) {
 			if inserted {
 				created.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if created.Load() != 1 {
@@ -55,7 +53,7 @@ func TestCallbackRetriesAreDeduplicated(t *testing.T) {
 		t.Fatal("ID reuse with different event content must fail")
 	}
 	record.CallbackID = ""
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, inserted, err := RecordBanEventOnce(context.Background(), record); err != nil || !inserted {
 			t.Fatalf("legacy callback without an ID was dropped: %v", err)
 		}

@@ -87,3 +87,29 @@ func TestInitializeFromJailFileDropsIgnoreIPExtraRef(t *testing.T) {
 		t.Errorf("IgnoreIPs = %v, want %v", got, want)
 	}
 }
+
+func TestJailActionsChanged(t *testing.T) {
+	base := AppSettings{Banaction: "nftables-multiport", BanactionAllports: "nftables-allports", Chain: "INPUT"}
+	tests := []struct {
+		name    string
+		updated AppSettings
+		want    bool
+	}{
+		{name: "unchanged", updated: base},
+		{name: "empty means default", updated: AppSettings{}},
+		{name: "unrelated setting", updated: AppSettings{Banaction: "nftables-multiport", Bantime: "1h"}},
+		{name: "banaction", updated: AppSettings{Banaction: "firewallcmd-rich-rules"}, want: true},
+		{name: "allports", updated: AppSettings{BanactionAllports: "iptables-allports"}, want: true},
+		{name: "chain", updated: AppSettings{Chain: "FORWARD"}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := JailActionsChanged(base, tt.updated); got != tt.want {
+				t.Errorf("JailActionsChanged = %v, want %v", got, tt.want)
+			}
+			if got := JailActionsChanged(tt.updated, base); got != tt.want {
+				t.Errorf("JailActionsChanged reversed = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

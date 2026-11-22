@@ -111,7 +111,7 @@ func runAdvancedIntegrationAction(ctx context.Context, action, ip string, settin
 		return fmt.Errorf("integration configuration is invalid: %w", err)
 	}
 
-	logger := func(format string, args ...interface{}) {
+	logger := func(format string, args ...any) {
 		if settings.Debug {
 			log.Printf(format, args...)
 		}

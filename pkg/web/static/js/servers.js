@@ -95,7 +95,6 @@ function reloadServerViews() {
 function renderServerState() {
   renderServerSelector();
   renderServerSubtitle();
-  updateRestartBanner();
   updateStatusIndicator();
   if (typeof renderOperations === 'function') renderOperations();
 }

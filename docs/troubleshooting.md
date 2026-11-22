@@ -442,6 +442,21 @@ Symptoms often mention `iptables (nf_tables)` or action startup errors. Use a ba
 | nftables | `nftables-multiport` | `nftables-allports` |
 | legacy iptables | `iptables-multiport` | `iptables-allports` |
 
+## Banned IPs pass the firewall after a jail stops (nftables)
+
+All nftables jails share one table, `inet f2b-table`. When a jail stops, the `nftables` action of Fail2Ban 1.1.0 runs `grep -P` to check whether other jails still have sets in that table. Busybox `grep` in Alpine based containers, such as `linuxserver/fail2ban` and the agent image, has no `-P`, and SELinux denies it to Fail2Ban on RHEL. The check fails, and the action deletes the whole table with the sets of all other jails. Fail2Ban still lists the bans, but the firewall no longer blocks them. A jail stops when you disable or delete it, and when the UI restarts a single jail after a ban action change.
+
+Fail2Ban UI prevents this with `action.d/nftables.local`, which replaces the two commands with the fixed versions from Fail2Ban 1.1.1. The UI writes it together with `ui-custom-action.conf`, and the agent before each reload or restart. The file is removed again once `nftables.conf` no longer uses `grep -P`. If you maintain your own `nftables.local`, the UI leaves it alone and logs a warning; copy the two commands into your file.
+
+To check a host, compare the bans of a jail with its firewall set:
+
+```bash
+fail2ban-client get <jail> banip
+nft list set inet f2b-table addr-set-<jail>
+```
+
+If the set is missing or holds fewer addresses, restart Fail2Ban. It restores the bans from its database.
+
 ## OIDC login problems
 
 Check:

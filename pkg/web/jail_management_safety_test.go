@@ -90,7 +90,7 @@ func (f *jailSafetyConnector) ValidateConfiguration(ctx context.Context) error {
 	}
 	return ctx.Err()
 }
-func (f *jailSafetyConnector) Reload(ctx context.Context) error {
+func (f *jailSafetyConnector) Reload(ctx context.Context, _ bool) error {
 	f.mu.Lock()
 	f.reloads++
 	start, release := f.reloadStarted, f.reloadRelease

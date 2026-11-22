@@ -82,7 +82,7 @@ The UI synchronizes callback configuration and managed `jail.local` defaults on 
 
 The UI runs `fail2ban-client -t` before it reloads Fail2Ban after a configuration push or a restart request, on local and SSH servers and on agents from version 0.2. A successful write does not clear pending work: validation and reload must also succeed. Failed operations remain pending and retry every 45 seconds, even with no browser open. Startup reconstructs desired configuration from saved settings. Administrators can see pending work and the last error under **Manage Servers**. Reading SSH jail status also detects action-file drift, and agents report a missing or outdated callback registration; both trigger a repair, at most once every 5 minutes per server.
 
-When the files reached a host but Fail2Ban could not load them, for example because the service was stopped, the server shows **Restart required**. **Restart Fail2ban** first re-applies pending configuration and validates it. The UI refuses the restart when validation fails, because restarting into a broken configuration would leave the host unprotected.
+When the files reached a host, the last attempt to load them failed, for example because the service was stopped, and no retry is running, the server shows **Restart required**. **Restart Fail2ban** first re-applies pending configuration and validates it. The UI refuses the restart when validation fails, because restarting into a broken configuration would leave the host unprotected.
 
 ### Server health
 
@@ -105,11 +105,19 @@ Generated callbacks use bounded curl retries and a stable event ID for each deli
 | `DISABLE_EXTERNAL_IP_LOOKUP=true` | Disables the external public-IP lookup used for display in the UI |
 | `UPDATE_CHECK=false` | Disables the GitHub release update check |
 
-## UI behavior flags
+## Appearance (light and dark mode)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AUTODARK` | `false` | When `true`, enables automatic dark mode based on the browser or OS preference. The default remains light mode. |
+Each user chooses the appearance under **Settings > General Settings > Appearance**:
+
+| Choice | Behavior |
+|--------|----------|
+| System | Follows the light or dark setting of the device. This is the default. |
+| Light | Always uses the light design. |
+| Dark | Always uses the dark design. |
+
+The choice is saved in the browser, so it applies per browser and not per account or server. The Middle-earth (LOTR) mode always uses its dark design.
+
+The `AUTODARK` environment variable of earlier versions is ignored. Remove it from your compose file.
 
 ## Container runtime marker
 
@@ -135,6 +143,8 @@ Configure under **Settings -> Global Settings**. These values are written to the
   * `bantime.overalljails`  -  count repeat offenses across all jails instead of per jail
 
 Duration fields accept plain seconds or Fail2Ban time suffixes (`3600`, `48h`, `5w`, `1d 12h`). `bantime` additionally accepts `-1` for permanent bans.
+
+Changing `banaction`, `banaction_allports`, or `chain` restarts every jail with `fail2ban-client reload --restart`, because a plain reload cannot replace the ban action of a running jail. Fail2Ban removes each active ban with the old action and restores it from its database with the new one. The UI asks for confirmation first: with many active bans this takes a while, and Fail2Ban does not answer the UI until it finishes. Actions without a bulk flush, such as `firewallcmd-rich-rules`, remove bans one at a time and can take hours for thousands of bans.
 
 ### Extending the ignore list for a seperate jail only
 

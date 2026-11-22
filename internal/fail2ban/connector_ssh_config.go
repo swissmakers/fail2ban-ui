@@ -107,7 +107,7 @@ func (a *jailAccumulator) add(content, fileType string) {
 func jailEnabledOptions(content string) map[string]bool {
 	values := make(map[string]bool)
 	section := ""
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(line[1 : len(line)-1])
@@ -316,7 +316,7 @@ fail2ban-regex "$TMPFILE" "$FILTER_PATH" || true
 // Splits the marker line carrying the resolved filter path from the fail2ban-regex output
 func splitFilterTestOutput(out string) (output, filterPath string) {
 	var outputLines []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if rest, ok := strings.CutPrefix(line, filterPathMarker); ok {
 			filterPath = strings.TrimSpace(rest)
 			continue
@@ -356,7 +356,7 @@ const (
 
 func parseLogpathProbe(out string) ([]string, error) {
 	var matches []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

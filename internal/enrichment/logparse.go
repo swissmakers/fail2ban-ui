@@ -69,7 +69,7 @@ func compileAll(defs []PatternDef) []compiledPattern {
 }
 
 // Parses the raw log text from a Fail2ban event and returns a map of structured fields.
-func ParseLogLines(logs, jail string) map[string]interface{} {
+func ParseLogLines(logs, jail string) map[string]any {
 	ensureInit()
 
 	if strings.TrimSpace(logs) == "" {
@@ -83,8 +83,8 @@ func ParseLogLines(logs, jail string) map[string]interface{} {
 
 	ordered := orderedPatterns(jail)
 
-	var parsedEntries []map[string]interface{}
-	var bestResult map[string]interface{}
+	var parsedEntries []map[string]any
+	var bestResult map[string]any
 	var bestDef PatternDef
 	bestFieldCount := 0
 
@@ -108,7 +108,7 @@ func ParseLogLines(logs, jail string) map[string]interface{} {
 		return nil
 	}
 
-	enriched := make(map[string]interface{}, len(bestResult)+4)
+	enriched := make(map[string]any, len(bestResult)+4)
 	for k, v := range bestResult {
 		if k == "log.original" {
 			continue
@@ -175,7 +175,7 @@ func containsAny(s string, substrs ...string) bool {
 }
 
 // Tries every compiled pattern in priority order and returns the first successful match.
-func parseLine(line string, ordered [][]compiledPattern) (map[string]interface{}, PatternDef) {
+func parseLine(line string, ordered [][]compiledPattern) (map[string]any, PatternDef) {
 	for _, group := range ordered {
 		for _, cp := range group {
 			result, err := cp.grok.ParseTypedString(line)
@@ -193,7 +193,7 @@ func parseLine(line string, ordered [][]compiledPattern) (map[string]interface{}
 }
 
 // Removes keys whose value is empty or a dash placeholder.
-func cleanEmpty(m map[string]interface{}) {
+func cleanEmpty(m map[string]any) {
 	for k, v := range m {
 		if s, ok := v.(string); ok && (s == "" || s == "-") {
 			delete(m, k)
@@ -202,12 +202,12 @@ func cleanEmpty(m map[string]interface{}) {
 }
 
 // Performs secondary enrichment on the parsed fields.
-func postProcessFields(m map[string]interface{}) {
+func postProcessFields(m map[string]any) {
 	// Splits url.original into url.path and url.query
 	if raw, ok := m["url.original"].(string); ok && raw != "" {
-		if idx := strings.IndexByte(raw, '?'); idx >= 0 {
-			m["url.path"] = raw[:idx]
-			m["url.query"] = raw[idx+1:]
+		if before, after, ok := strings.Cut(raw, "?"); ok {
+			m["url.path"] = before
+			m["url.query"] = after
 		} else {
 			m["url.path"] = raw
 		}

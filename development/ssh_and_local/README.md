@@ -17,7 +17,7 @@ This stack provides a complete test environment covering all three connector typ
 | --------- | ----------------------------------------------- |
 | Container | `DEV_fail2ban-local`                            |
 | Purpose   | Local Fail2Ban instance for the local connector |
-| Network   | `host` mode, for iptables access                |
+| Network   | bridge mode, isolated from the host            |
 | Config    | `./fail2ban-config-local/`                      |
 | Socket    | `./f2b-run-local/`                              |
 
@@ -29,7 +29,7 @@ This stack provides a complete test environment covering all three connector typ
 | ------------------------------- | ------------------------------------------------------------------------ |
 | Container                       | `DEV_fail2ban-local-secondary`                                           |
 | Purpose                         | Second local Fail2Ban instance, for testing two independent local connectors at once |
-| Network                         | bridge mode, unlike the primary, which uses host mode                    |
+| Network                         | bridge mode, like the primary                                            |
 | Config                          | `./fail2ban-config-local-secondary/`                                     |
 | Socket                          | `./f2b-run-local-secondary/`                                             |
 | Paths inside `DEV_fail2ban-ui`  | `/etc/fail2ban-secondary` (config) and `/var/run/fail2ban-secondary` (socket) |
@@ -170,7 +170,6 @@ environment:
   - BASE_PATH=/dev                            # remove to serve the UI at the root
   - CALLBACK_URL=http://10.88.0.1:3080/dev    # must include BASE_PATH
   - CALLBACK_SECRET=same-as-ui-callback-secret
-  - AUTODARK=true
   # - OIDC_ENABLED=true                       # use development/oidc/ for a full OIDC stack
 ```
 

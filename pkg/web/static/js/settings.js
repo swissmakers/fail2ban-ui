@@ -3,6 +3,10 @@
 
 let callbackUrlSyncHandler = null;
 const SMTP_REQUIRED_FIELDS = ['smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpFrom'];
+// Ban action fields as last loaded or saved; null until the settings were loaded.
+let loadedJailActionSettings = null;
+// "Enable Jails by Default" as last loaded or saved.
+let loadedDefaultJailEnable = null;
 
 // =========================================================================
 //  Load Settings
@@ -130,6 +134,7 @@ function loadSettings() {
 
       document.getElementById('bantimeIncrement').checked = data.bantimeIncrement || false;
       document.getElementById('defaultJailEnable').checked = data.defaultJailEnable || false;
+      loadedDefaultJailEnable = !!data.defaultJailEnable;
       
       const geoipProvider = data.geoipProvider || 'builtin';
       document.getElementById('geoipProvider').value = geoipProvider;
@@ -144,15 +149,19 @@ function loadSettings() {
       document.getElementById('bantimeOveralljails').checked = data.bantimeOveralljails || false;
       document.getElementById('findTime').value = data.findtime || '';
       document.getElementById('maxRetry').value = data.maxretry || '';
-      document.getElementById('defaultChain').value = data.chain || 'INPUT';
+      setSelectValue('defaultChain', data.chain || 'INPUT');
       const ignoreIPs = data.ignoreips || [];
       renderIgnoreIPsTags(ignoreIPs);
       
-      document.getElementById('banaction').value = data.banaction || 'nftables-multiport';
-      document.getElementById('banactionAllports').value = data.banactionAllports || 'nftables-allports';
+      setSelectValue('banaction', data.banaction || 'nftables-multiport');
+      setSelectValue('banactionAllports', data.banactionAllports || 'nftables-allports');
+      loadedJailActionSettings = jailActionSettings(data);
 
       applyAdvancedActionsSettings(data.advancedActions || {});
+      updateAdvancedActionsState();
       loadPermanentBlockLog();
+      setSettingsDirty(false);
+      updateSettingsNav();
     })
     .catch(err => {
       showToast(t('settings.toast.load_error', 'Error loading settings') + ': ' + err.message, 'error');
@@ -164,11 +173,65 @@ function loadSettings() {
 //  Save Settings
 // =========================================================================
 
+// Keeps a stored value selectable that the list does not offer, so saving another setting does not reset it.
+function setSelectValue(id, value) {
+  const select = document.getElementById(id);
+  if (select.options && !Array.from(select.options).some(option => option.value === value)) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  }
+  select.value = value;
+}
+
+// An empty value means the default, as on the server.
+function jailActionSettings(source) {
+  return {
+    banaction: source.banaction || 'nftables-multiport',
+    banactionAllports: source.banactionAllports || 'nftables-allports',
+    chain: source.chain || 'INPUT'
+  };
+}
+
+function readJailActionSettings() {
+  return jailActionSettings({
+    banaction: document.getElementById('banaction').value,
+    banactionAllports: document.getElementById('banactionAllports').value,
+    chain: document.getElementById('defaultChain').value
+  });
+}
+
+// changed ban action or chain makes the next sync restart every jail.
+function jailActionSettingsChanged(loaded, current) {
+  if (!loaded) return false;
+  return loaded.banaction !== current.banaction ||
+    loaded.banactionAllports !== current.banactionAllports ||
+    loaded.chain !== current.chain;
+}
+
+// Switching the default on starts every jail that is not disabled explicitly.
+function defaultJailEnableTurnedOn(loaded, current) {
+  return current === true && loaded !== true;
+}
+
 function saveSettings(event) {
   event.preventDefault();
   
   if (!validateAllSettings()) {
     showToast(t('settings.toast.fix_validation', 'Please fix validation errors before saving'), 'error');
+    return;
+  }
+
+  const defaultJailEnable = document.getElementById('defaultJailEnable').checked;
+  if (defaultJailEnableTurnedOn(loadedDefaultJailEnable, defaultJailEnable) &&
+      !confirm(t('settings.confirm.default_jail_enable', 'Enable Jails by Default starts every jail that is not explicitly disabled, on all servers. This includes all jails that Fail2ban ships in jail.conf, also for services that are not installed. Fail2ban can fail to start when their log files are missing, and many jails can overload small hosts. Continue?'))) {
+    return;
+  }
+
+  const jailActions = readJailActionSettings();
+  if (jailActionSettingsChanged(loadedJailActionSettings, jailActions) &&
+      !confirm(t('settings.confirm.ban_action_change', 'Changing the ban action or chain restarts every jail on all servers. Fail2ban removes each active ban with the old action and adds it again with the new one. With many active bans this can take minutes or hours (firewallcmd-rich-rules is slow), and Fail2ban does not respond to the UI until it finishes. Continue?'))) {
     return;
   }
   
@@ -217,7 +280,7 @@ function saveSettings(event) {
     emailAlertsForBans: document.getElementById('emailAlertsForBans').checked,
     emailAlertsForUnbans: document.getElementById('emailAlertsForUnbans').checked,
     bantimeIncrement: document.getElementById('bantimeIncrement').checked,
-    defaultJailEnable: document.getElementById('defaultJailEnable').checked,
+    defaultJailEnable: defaultJailEnable,
     bantime: document.getElementById('banTime').value.trim(),
     bantimeRndtime: document.getElementById('bantimeRndtime').value.trim(),
     bantimeMaxtime: document.getElementById('bantimeMaxtime').value.trim(),
@@ -226,9 +289,9 @@ function saveSettings(event) {
     findtime: document.getElementById('findTime').value.trim(),
     maxretry: parseInt(document.getElementById('maxRetry').value, 10) || 3,
     ignoreips: getIgnoreIPsArray(),
-    banaction: document.getElementById('banaction').value,
-    banactionAllports: document.getElementById('banactionAllports').value,
-    chain: document.getElementById('defaultChain').value || 'INPUT',
+    banaction: jailActions.banaction,
+    banactionAllports: jailActions.banactionAllports,
+    chain: jailActions.chain,
     geoipProvider: document.getElementById('geoipProvider').value || 'builtin',
     geoipDatabasePath: document.getElementById('geoipDatabasePath').value || '/usr/share/GeoIP/GeoLite2-Country.mmdb',
     maxLogLines: parseInt(document.getElementById('maxLogLines').value, 10) || 50,
@@ -251,6 +314,9 @@ function saveSettings(event) {
       data = data || {};
       loadTranslations($('#languageSelect').val());
       checkAndApplyLOTRTheme(settingsData.alertCountries);
+      loadedJailActionSettings = jailActions;
+      loadedDefaultJailEnable = defaultJailEnable;
+      setSettingsDirty(false);
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
         const warningPreview = data.warnings.slice(0, 2).join(' | ');
         showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'warning');
@@ -262,6 +328,63 @@ function saveSettings(event) {
     })
     .catch(err => showToast(t('settings.toast.save_error', 'Error saving settings') + ': ' + err.message, 'error'))
     .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Settings Navigation
+// =========================================================================
+
+function setSettingsDirty(dirty) {
+  const hint = document.getElementById('settingsUnsavedHint');
+  if (hint && hint.classList) hint.classList.toggle('hidden', !dirty);
+}
+
+// The active section is the last one whose top edge has passed the sticky bar.
+function activeSettingsSection(sections, offset) {
+  let active = sections.length ? sections[0].id : '';
+  sections.forEach(function(section) {
+    if (section.top <= offset) active = section.id;
+  });
+  return active;
+}
+
+function settingsNavTarget(link) {
+  return document.getElementById(link.getAttribute('href').slice(1));
+}
+
+function updateSettingsNav() {
+  const nav = document.getElementById('settingsNav');
+  if (!nav || !nav.offsetParent) return;
+  const links = Array.from(nav.querySelectorAll('.settings-nav-link'));
+  const sections = links.map(settingsNavTarget).filter(Boolean).map(function(el) {
+    return { id: el.id, top: el.getBoundingClientRect().top };
+  });
+  const active = activeSettingsSection(sections, nav.getBoundingClientRect().bottom + 24);
+  links.forEach(function(link) {
+    link.classList.toggle('settings-nav-link-active', link.getAttribute('href') === '#' + active);
+  });
+}
+
+function initSettingsNav() {
+  const nav = document.getElementById('settingsNav');
+  const form = document.getElementById('settingsForm');
+  if (!nav || !form) return;
+  nav.addEventListener('click', function(event) {
+    const link = event.target.closest('.settings-nav-link');
+    if (!link) return;
+    event.preventDefault();
+    const target = settingsNavTarget(link);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  window.addEventListener('scroll', updateSettingsNav, { passive: true });
+  form.addEventListener('input', function() { setSettingsDirty(true); });
+  form.addEventListener('change', function() { setSettingsDirty(true); });
+  form.addEventListener('click', function(event) {
+    if (event.target.closest('#ignoreIPsTags button')) setSettingsDirty(true);
+  });
+  // Select2 reports its changes through jQuery only.
+  $('#alertCountries').on('change', function() { setSettingsDirty(true); });
+  updateSettingsNav();
 }
 
 // =========================================================================
@@ -485,6 +608,16 @@ function copyElasticsearchTemplate(btn) {
 // =========================================================================
 //  Advanced Actions
 // =========================================================================
+
+// The threshold only counts while automatic blocking is on. The integration stays editable,
+// because manual blocks use it too.
+function updateAdvancedActionsState() {
+  const enabled = document.getElementById('advancedActionsEnabled').checked;
+  const field = document.getElementById('advancedThresholdField');
+  if (field) field.classList.toggle('opacity-50', !enabled);
+  const threshold = document.getElementById('advancedThreshold');
+  if (threshold) threshold.disabled = !enabled;
+}
 
 function applyAdvancedActionsSettings(cfg) {
   cfg = cfg || {};

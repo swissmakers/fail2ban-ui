@@ -20,7 +20,6 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -152,7 +151,7 @@ func TestLogpathHandler(c *gin.Context) {
 	// Fail2ban accepts several logpaths separated by spaces or newlines.
 	logpaths := strings.Fields(originalLogpath)
 
-	var allResults []map[string]interface{}
+	var allResults []map[string]any
 
 	for _, logpathLine := range logpaths {
 		logpathLine = strings.TrimSpace(logpathLine)
@@ -162,7 +161,7 @@ func TestLogpathHandler(c *gin.Context) {
 		_, resolvedPath, filesOnServer, err := conn.TestLogpathWithResolution(c.Request.Context(), logpathLine)
 		if err != nil {
 			if errors.Is(err, fail2ban.ErrLogpathInaccessible) {
-				allResults = append(allResults, map[string]interface{}{
+				allResults = append(allResults, map[string]any{
 					"logpath":       logpathLine,
 					"resolved_path": resolvedPath,
 					"found":         false,
@@ -173,7 +172,7 @@ func TestLogpathHandler(c *gin.Context) {
 				})
 				continue
 			}
-			allResults = append(allResults, map[string]interface{}{
+			allResults = append(allResults, map[string]any{
 				"logpath":       logpathLine,
 				"resolved_path": resolvedPath,
 				"found":         false,
@@ -182,7 +181,7 @@ func TestLogpathHandler(c *gin.Context) {
 			})
 			continue
 		}
-		allResults = append(allResults, map[string]interface{}{
+		allResults = append(allResults, map[string]any{
 			"logpath":       logpathLine,
 			"resolved_path": resolvedPath,
 			"found":         len(filesOnServer) > 0,
@@ -220,15 +219,6 @@ func ManageJailsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func getJailNames(jails map[string]bool) []string {
-	names := make([]string, 0, len(jails))
-	for name := range jails {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 var jailErrorPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`Errors in jail '([^']+)'`),
 	regexp.MustCompile(`Have not found any log file for (\S+) jail`),
@@ -236,7 +226,7 @@ var jailErrorPatterns = []*regexp.Regexp{
 
 func parseJailErrorsFromReloadOutput(output string) []string {
 	var problematicJails []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		for _, pattern := range jailErrorPatterns {
 			for _, matches := range pattern.FindAllStringSubmatch(line, -1) {
 				if len(matches) > 1 {
