@@ -117,6 +117,9 @@ func (lc *LocalConnector) Reload(ctx context.Context, restartJails bool) error {
 		if isIncompleteConfigTree(err.Error()) {
 			return fmt.Errorf("fail2ban reload error: %w - fail2ban-ui cannot see the complete fail2ban configuration: when sharing a socket with a fail2ban container, /etc/fail2ban inside the fail2ban-ui container must contain the full configuration tree (including fail2ban.conf and jail.conf), not only the custom jail/filter files", err)
 		}
+		if restartJails && ctx.Err() != nil {
+			return fmt.Errorf("%w: %w", ErrJailRestartInFlight, err)
+		}
 		return fmt.Errorf("fail2ban reload error: %w", err)
 	}
 	if err := checkReloadOutput(out); err != nil || restartJails {

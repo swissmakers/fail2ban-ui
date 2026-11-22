@@ -195,6 +195,9 @@ func (m *Manager) SyncServerConfig(ctx context.Context, id string) error {
 		if err == nil {
 			if err = OperationCheckpoint(ctx, "applying"); err == nil {
 				if reloadErr := conn.Reload(ctx, restartJails); reloadErr != nil {
+					if errors.Is(reloadErr, ErrJailRestartInFlight) {
+						state.clearRestartJails(generation)
+					}
 					err = fmt.Errorf("%w: %v", ErrOperationOutcomeUnknown, reloadErr)
 				} else {
 					err = OperationCheckpoint(ctx, "applied")
@@ -229,6 +232,26 @@ func (state *configSyncState) markAppliedLocked(generation uint64) {
 	if state.generation == generation {
 		state.action, state.defaults, state.restartJails = false, false, false
 		state.status.Pending = false
+	}
+}
+
+// The retry of a sync must not restart every jail a second time
+func (state *configSyncState) clearRestartJails(generation uint64) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.generation == generation {
+		state.restartJails = false
+	}
+}
+
+// Service restart loads the written files -> so a pending sync has no jails left to restart..
+func (m *Manager) NoteServiceRestarted(id string) {
+	state := m.syncState(id)
+	state.mu.Lock()
+	generation, written := state.generation, state.writtenGen == state.generation
+	state.mu.Unlock()
+	if written {
+		state.clearRestartJails(generation)
 	}
 }
 

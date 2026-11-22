@@ -153,6 +153,9 @@ func (sc *SSHConnector) Reload(ctx context.Context, restartJails bool) error {
 	}
 	out, err := sc.runFail2banCommand(ctx, args...)
 	if err != nil {
+		if restartJails && ctx.Err() != nil {
+			return fmt.Errorf("%w: %w", ErrJailRestartInFlight, err)
+		}
 		return err
 	}
 	if err := checkReloadOutput(out); err != nil {
@@ -177,7 +180,7 @@ func (sc *SSHConnector) readActionState(ctx context.Context, root string) (strin
 	script := `d=$(` + client + ` -c ` + shellQuote(root) + ` -d) || exit 1
 printf '%s\n' "$d"
 printf '%s\n' "$d" | sed -n "s/^\['start', '\([^']*\)'\]$/\1/p" | while IFS= read -r j; do
-  if a=$(` + client + ` get "$j" actions 2>/dev/null); then
+  if a=$(` + client + ` get "$j" actions 2>/dev/null </dev/null); then
     echo "` + jailActionsMarker + `$j"
     printf '%s\n' "$a" | tail -n 1
   fi
@@ -198,7 +201,8 @@ func parseRemoteActionState(out string) (string, map[string][]string) {
 	for i := 0; i < len(lines); i++ {
 		jail, ok := strings.CutPrefix(strings.TrimSpace(lines[i]), jailActionsMarker)
 		if !ok {
-			dump.WriteString(lines[i] + "\n")
+			dump.WriteString(lines[i])
+			dump.WriteByte('\n')
 			continue
 		}
 		running[jail] = nil

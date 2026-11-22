@@ -336,6 +336,10 @@ func (ac *AgentConnector) BanIP(ctx context.Context, jail, ip string) error {
 func (ac *AgentConnector) Reload(ctx context.Context, restartJails bool) error {
 	kind := "reload"
 	if restartJails {
+		// A failed capability request says nothing about the agent version
+		if err := ac.RequireOperationSupport(ctx); err != nil {
+			return err
+		}
 		if !ac.supportsJailRestart(ctx) {
 			mode, err := ac.Restart(ctx)
 			if err == nil && mode == "reload" {
@@ -347,9 +351,17 @@ func (ac *AgentConnector) Reload(ctx context.Context, restartJails bool) error {
 	}
 	resp, err := ac.serviceOperation(ctx, kind)
 	if err != nil {
+		if restartJails && agentCommandInFlight(resp) {
+			return fmt.Errorf("%w: %w", ErrJailRestartInFlight, err)
+		}
 		return err
 	}
 	return checkReloadOutput(resp.Output)
+}
+
+// Reports whether a failed operation still runs on the agent or ran into its time limit.
+func agentCommandInFlight(op AgentOperation) bool {
+	return op.State == "queued" || op.State == "running" || op.Code == "command_timeout"
 }
 
 func (ac *AgentConnector) supportsJailRestart(ctx context.Context) bool {

@@ -659,6 +659,65 @@ func TestAgentJailRestartUsesAdvertisedKind(t *testing.T) {
 	}
 }
 
+// A failed capability request must not be mistaken for an old agent.
+func TestAgentJailRestartDoesNotFallBackOnCapabilityError(t *testing.T) {
+	const caps = `{"version":1,"kinds":["reload","reload-restart","restart","validate","ban","unban"],"configurationSnapshots":true}`
+	var probes, submitted atomic.Int32
+	ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/operations/capabilities" {
+			if probes.Add(1) == 1 {
+				http.Error(w, "upstream gone", http.StatusBadGateway)
+				return
+			}
+			_, _ = w.Write([]byte(caps))
+			return
+		}
+		submitted.Add(1)
+		var op AgentOperation
+		_ = json.NewDecoder(r.Body).Decode(&op)
+		op.State, op.Mode, op.Quiescent = "succeeded", "reload", true
+		_ = json.NewEncoder(w).Encode(op)
+	})
+	if err := ac.Reload(context.Background(), true); err == nil || strings.Contains(err.Error(), "too old") {
+		t.Fatalf("err = %v, want the capability error", err)
+	}
+	if submitted.Load() != 0 {
+		t.Fatalf("%d operations submitted without knowing the agent capabilities", submitted.Load())
+	}
+}
+
+func TestAgentJailRestartReportsWhenItIsStillInFlight(t *testing.T) {
+	const caps = `{"version":1,"kinds":["reload","reload-restart","restart","validate","ban","unban"],"configurationSnapshots":true}`
+	for name, tc := range map[string]struct {
+		code string
+		want bool
+	}{
+		"agent time limit":      {code: "command_timeout", want: true},
+		"command failed":        {code: "outcome_unknown"},
+		"command never reached": {code: "not_dispatched"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ac := newTestAgent(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/operations/capabilities" {
+					_, _ = w.Write([]byte(caps))
+					return
+				}
+				var op AgentOperation
+				_ = json.NewDecoder(r.Body).Decode(&op)
+				op.State, op.Code, op.Error = "unknown", tc.code, "detail"
+				_ = json.NewEncoder(w).Encode(op)
+			})
+			err := ac.Reload(context.Background(), true)
+			if err == nil || errors.Is(err, ErrJailRestartInFlight) != tc.want {
+				t.Fatalf("err = %v, in flight want %v", err, tc.want)
+			}
+		})
+	}
+	if !agentCommandInFlight(AgentOperation{State: "running"}) || !agentCommandInFlight(AgentOperation{State: "queued"}) || agentCommandInFlight(AgentOperation{State: "failed"}) {
+		t.Fatal("only a queued or running operation is still in flight")
+	}
+}
+
 func TestAgentReconcileSyncFindsSubmittedKind(t *testing.T) {
 	const withJailRestart = `{"version":1,"kinds":["reload","reload-restart","restart","validate","ban","unban"],"configurationSnapshots":true}`
 	ctx := context.WithValue(context.Background(), operationLeaseKey{}, &operationLease{id: "parent-id"})

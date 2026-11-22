@@ -101,6 +101,9 @@ func (t *operationTransaction) run(ctx context.Context) (gin.H, error) {
 			}
 			return nil, unknownOutcome(err)
 		}
+		if mode == "restart" {
+			fail2ban.GetManager().NoteServiceRestarted(t.op.ServerID)
+		}
 		if err := t.checkpoint(ctx, "applied"); err != nil {
 			return nil, unknownOutcome(err)
 		}

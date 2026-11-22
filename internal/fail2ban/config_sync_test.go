@@ -19,6 +19,7 @@ package fail2ban
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -86,6 +87,52 @@ func TestConfigSyncRestartsJailsUntilActionChangeIsApplied(t *testing.T) {
 	}
 	if conn.jailRestarts != 2 || conn.reloads != 1 {
 		t.Fatalf("an applied jail restart must not repeat: restarts=%d reloads=%d", conn.jailRestarts, conn.reloads)
+	}
+}
+func TestConfigSyncDoesNotRepeatAJailRestartFail2banReceived(t *testing.T) {
+	for name, afterFailure := range map[string]func(*Manager){
+		"restart still in flight":     nil,
+		"service restarted meanwhile": func(m *Manager) { m.NoteServiceRestarted("test") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			conn := &syncTestConnector{reloadErr: fmt.Errorf("%w: killed", ErrJailRestartInFlight)}
+			if afterFailure != nil {
+				conn.reloadErr = errors.New("fail2ban is not running")
+			}
+			m := &Manager{connectors: map[string]Connector{"test": conn}}
+			m.RequestConfigSync("test", false, true, true)
+			if err := m.SyncServerConfig(context.Background(), "test"); !errors.Is(err, ErrOperationOutcomeUnknown) {
+				t.Fatalf("err = %v, want an unknown outcome", err)
+			}
+			if afterFailure != nil {
+				afterFailure(m)
+			}
+			conn.reloadErr = nil
+			if err := m.SyncServerConfig(context.Background(), "test"); err != nil {
+				t.Fatal(err)
+			}
+			if conn.jailRestarts != 1 || conn.reloads != 1 || m.ConfigSyncStatus("test").Pending {
+				t.Fatalf("the retry must be a plain reload: restarts=%d reloads=%d", conn.jailRestarts, conn.reloads)
+			}
+		})
+	}
+}
+
+// Files that were not written yet still need the jail restart after a service restart.
+func TestServiceRestartKeepsJailRestartForUnwrittenChanges(t *testing.T) {
+	conn := &syncTestConnector{writeErr: errors.New("host offline")}
+	m := &Manager{connectors: map[string]Connector{"test": conn}}
+	m.RequestConfigSync("test", false, true, true)
+	if err := m.SyncServerConfig(context.Background(), "test"); err == nil {
+		t.Fatal("failed write was hidden")
+	}
+	m.NoteServiceRestarted("test")
+	conn.writeErr = nil
+	if err := m.SyncServerConfig(context.Background(), "test"); err != nil {
+		t.Fatal(err)
+	}
+	if conn.jailRestarts != 1 || conn.reloads != 0 {
+		t.Fatalf("restarts=%d reloads=%d, want one jail restart", conn.jailRestarts, conn.reloads)
 	}
 }
 

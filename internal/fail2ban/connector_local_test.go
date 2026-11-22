@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -301,6 +302,23 @@ esac`)
 				t.Fatalf("calls = %q, want last %q", calls, tc.wantLast)
 			}
 		})
+	}
+}
+func TestLocalJailRestartReportsWhenItIsStillInFlight(t *testing.T) {
+	sleepBin, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep not available")
+	}
+	lc := &LocalConnector{server: shared.Fail2banServer{Name: "local", ConfigPath: "/etc/fail2ban"}}
+	withFakeBinary(t, "fail2ban-client", "exec "+sleepBin+" 5")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := lc.Reload(ctx, true); !errors.Is(err, ErrJailRestartInFlight) {
+		t.Fatalf("timed out jail restart: err = %v", err)
+	}
+	withFakeBinary(t, "fail2ban-client", "echo 'Failed to access socket path' >&2; exit 255")
+	if err := lc.Reload(context.Background(), true); err == nil || errors.Is(err, ErrJailRestartInFlight) {
+		t.Fatalf("refused jail restart: err = %v", err)
 	}
 }
 

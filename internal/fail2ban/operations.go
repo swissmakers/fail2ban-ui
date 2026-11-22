@@ -30,13 +30,12 @@ import (
 	"github.com/swissmakers/fail2ban-ui/internal/shared"
 )
 
-// A timeout after command submission cannot tell us whether the daemon applied
-// the command. Callers must verify its outcome instead of retrying or rolling back.
-var ErrOperationOutcomeUnknown = errors.New("Fail2Ban operation outcome is unknown")
+var (
+	ErrOperationOutcomeUnknown = errors.New("fail2ban operation outcome is unknown")
+	ErrJailRestartInFlight     = errors.New("fail2ban is still restarting the jails")
+)
 
-// SetConfigSyncScheduler routes every automatic or request-triggered config
-// sync into the application's durable queue. Passing nil restores direct mode
-// for standalone callers and tests. The callback must return promptly.
+// Routes every automatic or request-triggered config sync into the applications queue
 func (m *Manager) SetConfigSyncScheduler(schedule func(string)) {
 	m.mu.Lock()
 	m.configSyncScheduler = schedule
@@ -151,9 +150,6 @@ type operationGate struct {
 	activity OperationActivity
 }
 
-// GuardServerConfiguration keeps operation admission out of the small window
-// between a server-edit preflight and its persisted connector replacement.
-// Release it before scheduling or waiting for any daemon operation.
 func (m *Manager) GuardServerConfiguration() func() {
 	m.operationAdmission.Lock()
 	var once sync.Once
