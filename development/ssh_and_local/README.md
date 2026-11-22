@@ -170,7 +170,6 @@ environment:
   - BASE_PATH=/dev                            # remove to serve the UI at the root
   - CALLBACK_URL=http://10.88.0.1:3080/dev    # must include BASE_PATH
   - CALLBACK_SECRET=same-as-ui-callback-secret
-  - AUTODARK=true
   # - OIDC_ENABLED=true                       # use development/oidc/ for a full OIDC stack
 ```
 

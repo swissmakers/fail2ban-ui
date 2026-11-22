@@ -105,11 +105,19 @@ Generated callbacks use bounded curl retries and a stable event ID for each deli
 | `DISABLE_EXTERNAL_IP_LOOKUP=true` | Disables the external public-IP lookup used for display in the UI |
 | `UPDATE_CHECK=false` | Disables the GitHub release update check |
 
-## UI behavior flags
+## Appearance (light and dark mode)
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AUTODARK` | `false` | When `true`, enables automatic dark mode based on the browser or OS preference. The default remains light mode. |
+Each user chooses the appearance under **Settings > General Settings > Appearance**:
+
+| Choice | Behavior |
+|--------|----------|
+| System | Follows the light or dark setting of the device. This is the default. |
+| Light | Always uses the light design. |
+| Dark | Always uses the dark design. |
+
+The choice is saved in the browser, so it applies per browser and not per account or server. The Middle-earth (LOTR) mode always uses its dark design.
+
+The `AUTODARK` environment variable of earlier versions is ignored. Remove it from your compose file.
 
 ## Container runtime marker
 

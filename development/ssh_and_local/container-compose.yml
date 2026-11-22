@@ -147,7 +147,6 @@ services:
       - CALLBACK_URL=http://10.88.0.1:3080/dev
       #- CALLBACK_URL=http://10.88.0.1:3080
       - CALLBACK_SECRET=same-as-ui-callback-secret
-      - AUTODARK=true
     volumes:
       # Required for fail2ban-ui: Stores SQLite database, application settings, and SSH keys of the fail2ban-ui container
       - ./config:/config:Z

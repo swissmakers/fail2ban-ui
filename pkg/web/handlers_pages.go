@@ -51,7 +51,6 @@ type githubReleaseResponse struct {
 // Renders the main SPA page with template variables.
 func renderIndexPage(c *gin.Context) {
 	disableExternalIP := shared.EnvBool("DISABLE_EXTERNAL_IP_LOOKUP")
-	autoDark := shared.EnvBool("AUTODARK")
 	languageOptions := listLocaleOptions()
 
 	oidcEnabled := auth.IsEnabled()
@@ -72,7 +71,6 @@ func renderIndexPage(c *gin.Context) {
 		"appVersion":         version.Version,
 		"updateCheckEnabled": updateCheckEnabled,
 		"disableExternalIP":  disableExternalIP,
-		"autoDark":           autoDark,
 		"languageOptions":    languageOptions,
 		"oidcEnabled":        oidcEnabled,
 		"skipLoginPage":      skipLoginPage,
