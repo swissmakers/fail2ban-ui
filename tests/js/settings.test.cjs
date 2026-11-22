@@ -151,3 +151,62 @@ test('a stored value missing from a dropdown stays selectable', () => {
   h.context.setSelectValue('banaction', 'nftables-multiport');
   assert.equal(select.options.length, 2, 'a listed value must not be added again');
 });
+
+test('the active settings section is the last one above the sticky bar', () => {
+  const h = harness({});
+  const sections = [{ id: 'a', top: -900 }, { id: 'b', top: 40 }, { id: 'c', top: 700 }];
+  assert.equal(h.context.activeSettingsSection(sections, 80), 'b');
+  assert.equal(h.context.activeSettingsSection(sections, 20), 'a');
+  assert.equal(h.context.activeSettingsSection([{ id: 'a', top: 300 }, { id: 'b', top: 900 }], 80), 'a', 'the first section is active at the top of the page');
+  assert.equal(h.context.activeSettingsSection([], 80), '');
+});
+
+test('the unsaved hint shows after a change and hides after a successful save', async () => {
+  const h = harness({});
+  const classes = new Set(['hidden']);
+  h.context.document.getElementById('settingsUnsavedHint').classList = {
+    toggle: (name, on) => { if (on) classes.add(name); else classes.delete(name); }
+  };
+  h.context.setSettingsDirty(true);
+  assert.equal(classes.has('hidden'), false);
+  await h.context.saveSettings({ preventDefault() {} });
+  assert.equal(classes.has('hidden'), true);
+});
+
+test('a failed save keeps the unsaved hint', async () => {
+  const h = harness({ error: 'Could not save settings' }, 500);
+  const classes = new Set();
+  h.context.document.getElementById('settingsUnsavedHint').classList = {
+    toggle: (name, on) => { if (on) classes.add(name); else classes.delete(name); }
+  };
+  h.context.setSettingsDirty(true);
+  await h.context.saveSettings({ preventDefault() {} });
+  assert.equal(classes.has('hidden'), false);
+});
+
+test('the threshold is only editable while automatic blocking is on', () => {
+  const h = harness({});
+  const doc = h.context.document;
+  const dimmed = new Set();
+  doc.getElementById('advancedThresholdField').classList = {
+    toggle: (name, on) => { if (on) dimmed.add(name); else dimmed.delete(name); }
+  };
+  doc.getElementById('advancedActionsEnabled').checked = false;
+  h.context.updateAdvancedActionsState();
+  assert.equal(doc.getElementById('advancedThreshold').disabled, true);
+  assert.equal(dimmed.has('opacity-50'), true);
+  assert.notEqual(doc.getElementById('advancedIntegrationSelect').disabled, true, 'manual blocks still need the integration');
+  doc.getElementById('advancedActionsEnabled').checked = true;
+  h.context.updateAdvancedActionsState();
+  assert.equal(doc.getElementById('advancedThreshold').disabled, false);
+  assert.equal(dimmed.has('opacity-50'), false);
+});
+
+test('every checkbox in the page template has the same size', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../../pkg/web/templates/index.html'), 'utf8');
+  const boxes = html.match(/<input type="checkbox"[^>]*>/g);
+  assert.ok(boxes.length >= 18);
+  for (const box of boxes) {
+    assert.match(box, /class="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 accent-blue-600[ "]/, box);
+  }
+});

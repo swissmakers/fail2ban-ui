@@ -155,7 +155,10 @@ function loadSettings() {
       loadedJailActionSettings = jailActionSettings(data);
 
       applyAdvancedActionsSettings(data.advancedActions || {});
+      updateAdvancedActionsState();
       loadPermanentBlockLog();
+      setSettingsDirty(false);
+      updateSettingsNav();
     })
     .catch(err => {
       showToast(t('settings.toast.load_error', 'Error loading settings') + ': ' + err.message, 'error');
@@ -298,6 +301,7 @@ function saveSettings(event) {
       loadTranslations($('#languageSelect').val());
       checkAndApplyLOTRTheme(settingsData.alertCountries);
       loadedJailActionSettings = jailActions;
+      setSettingsDirty(false);
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
         const warningPreview = data.warnings.slice(0, 2).join(' | ');
         showToast(t('settings.toast.saved_warnings', 'Settings saved with warnings') + ': ' + warningPreview, 'warning');
@@ -309,6 +313,63 @@ function saveSettings(event) {
     })
     .catch(err => showToast(t('settings.toast.save_error', 'Error saving settings') + ': ' + err.message, 'error'))
     .finally(() => showLoading(false));
+}
+
+// =========================================================================
+//  Settings Navigation
+// =========================================================================
+
+function setSettingsDirty(dirty) {
+  const hint = document.getElementById('settingsUnsavedHint');
+  if (hint && hint.classList) hint.classList.toggle('hidden', !dirty);
+}
+
+// The active section is the last one whose top edge has passed the sticky bar.
+function activeSettingsSection(sections, offset) {
+  let active = sections.length ? sections[0].id : '';
+  sections.forEach(function(section) {
+    if (section.top <= offset) active = section.id;
+  });
+  return active;
+}
+
+function settingsNavTarget(link) {
+  return document.getElementById(link.getAttribute('href').slice(1));
+}
+
+function updateSettingsNav() {
+  const nav = document.getElementById('settingsNav');
+  if (!nav || !nav.offsetParent) return;
+  const links = Array.from(nav.querySelectorAll('.settings-nav-link'));
+  const sections = links.map(settingsNavTarget).filter(Boolean).map(function(el) {
+    return { id: el.id, top: el.getBoundingClientRect().top };
+  });
+  const active = activeSettingsSection(sections, nav.getBoundingClientRect().bottom + 24);
+  links.forEach(function(link) {
+    link.classList.toggle('settings-nav-link-active', link.getAttribute('href') === '#' + active);
+  });
+}
+
+function initSettingsNav() {
+  const nav = document.getElementById('settingsNav');
+  const form = document.getElementById('settingsForm');
+  if (!nav || !form) return;
+  nav.addEventListener('click', function(event) {
+    const link = event.target.closest('.settings-nav-link');
+    if (!link) return;
+    event.preventDefault();
+    const target = settingsNavTarget(link);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  window.addEventListener('scroll', updateSettingsNav, { passive: true });
+  form.addEventListener('input', function() { setSettingsDirty(true); });
+  form.addEventListener('change', function() { setSettingsDirty(true); });
+  form.addEventListener('click', function(event) {
+    if (event.target.closest('#ignoreIPsTags button')) setSettingsDirty(true);
+  });
+  // Select2 reports its changes through jQuery only.
+  $('#alertCountries').on('change', function() { setSettingsDirty(true); });
+  updateSettingsNav();
 }
 
 // =========================================================================
@@ -532,6 +593,16 @@ function copyElasticsearchTemplate(btn) {
 // =========================================================================
 //  Advanced Actions
 // =========================================================================
+
+// The threshold only counts while automatic blocking is on. The integration stays editable,
+// because manual blocks use it too.
+function updateAdvancedActionsState() {
+  const enabled = document.getElementById('advancedActionsEnabled').checked;
+  const field = document.getElementById('advancedThresholdField');
+  if (field) field.classList.toggle('opacity-50', !enabled);
+  const threshold = document.getElementById('advancedThreshold');
+  if (threshold) threshold.disabled = !enabled;
+}
 
 function applyAdvancedActionsSettings(cfg) {
   cfg = cfg || {};

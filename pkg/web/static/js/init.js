@@ -139,4 +139,6 @@ function initAlertCountriesSelect() {
       checkAndApplyLOTRTheme($('#alertCountries').val() || []);
     }, 100);
   });
+
+  initSettingsNav();
 }

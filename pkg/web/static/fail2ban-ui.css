@@ -451,6 +451,43 @@ html:root[data-theme="dark"] body .toast-warning {
 }
 
 /* =========================================================================
+   Settings Page
+   ========================================================================= */
+
+.settings-nav {
+    background-color: var(--f2b-page-bg);
+}
+
+html:root body .settings-nav-link.settings-nav-link-active {
+    background-color: var(--f2b-ui-bg-blue-600);
+    color: #fff !important;
+    font-weight: 600;
+}
+
+.settings-card {
+    scroll-margin-top: 5rem;
+}
+
+#settingsSection select:not([multiple]) {
+    height: 42px;
+}
+
+.theme-choice {
+    height: 42px;
+    background-color: var(--f2b-select-bg);
+}
+
+.theme-choice-btn + .theme-choice-btn {
+    border-left: 1px solid var(--f2b-ui-border);
+}
+
+html:root body .theme-choice-btn[aria-checked="true"] {
+    background-color: var(--f2b-ui-bg-blue-600);
+    color: #fff !important;
+    font-weight: 600;
+}
+
+/* =========================================================================
    Loading Overlay
    ========================================================================= */
 
