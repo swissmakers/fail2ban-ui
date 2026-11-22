@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -257,7 +258,7 @@ func sendWebhookAlert(alertType, ip, jail, hostname, failures, whois, logs, coun
 		return err
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"event":     alertType,
 		"ip":        ip,
 		"jail":      jail,
@@ -316,7 +317,7 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 		return err
 	}
 
-	doc := map[string]interface{}{
+	doc := map[string]any{
 		"@timestamp":                  time.Now().UTC().Format(time.RFC3339),
 		"event.kind":                  "alert",
 		"event.type":                  alertType,
@@ -331,16 +332,12 @@ func sendElasticsearchAlert(alertType, ip, jail, hostname, failures, whois, logs
 
 	// Parses log lines into structured ECS fields
 	if logFields := enrichment.ParseLogLines(logs, jail); logFields != nil {
-		for k, v := range logFields {
-			doc[k] = v
-		}
+		maps.Copy(doc, logFields)
 	}
 
 	// Parses whois text into structured fields
 	if whoisFields := enrichment.ParseWhois(whois); whoisFields != nil {
-		for k, v := range whoisFields {
-			doc[k] = v
-		}
+		maps.Copy(doc, whoisFields)
 	}
 	for k, v := range dataStreamFields(target) {
 		doc[k] = v

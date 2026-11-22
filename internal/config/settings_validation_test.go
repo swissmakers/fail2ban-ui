@@ -123,7 +123,7 @@ func TestFail2banActionTemplateFlushesInOneCall(t *testing.T) {
 	if !strings.Contains(content, "\nactionflush = ") {
 		t.Fatal("rendered action config lost actionflush")
 	}
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if strings.HasPrefix(line, "actionflush") && strings.Contains(line, "curl") {
 			t.Fatalf("actionflush must not issue a callback, got %q", line)
 		}

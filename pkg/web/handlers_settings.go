@@ -135,7 +135,7 @@ func applySettingsUpdate(c *gin.Context, req config.AppSettings) {
 	releaseConfig()
 
 	var warnings []string
-	warn := func(format string, v ...interface{}) {
+	warn := func(format string, v ...any) {
 		msg := fmt.Sprintf(format, v...)
 		log.Printf("WARNING: %s", msg)
 		warnings = append(warnings, msg)

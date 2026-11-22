@@ -377,8 +377,7 @@ func AcceptHostKeyHandler(c *gin.Context) {
 	accepted, err := fail2ban.AcceptHostKey(ctx, server, fingerprint)
 	if err != nil {
 		status := http.StatusInternalServerError
-		var mismatch *fail2ban.HostKeyMismatchError
-		if errors.As(err, &mismatch) {
+		if mismatch, ok := errors.AsType[*fail2ban.HostKeyMismatchError](err); ok {
 			status = http.StatusConflict
 			c.JSON(status, gin.H{
 				"error":              mismatch.Error(),

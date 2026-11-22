@@ -145,8 +145,7 @@ func AgentErrorMessageKey(err error) string {
 		return ""
 	}
 
-	var cfgErr *AgentConfigError
-	if errors.As(err, &cfgErr) {
+	if cfgErr, ok := errors.AsType[*AgentConfigError](err); ok {
 		switch cfgErr.Kind {
 		case AgentConfigErrorMissingURL, AgentConfigErrorMissingSecret:
 			return "servers.errors.agent_missing_config"
@@ -155,13 +154,11 @@ func AgentErrorMessageKey(err error) string {
 		}
 	}
 
-	var transportErr *AgentTransportError
-	if errors.As(err, &transportErr) {
+	if _, ok := errors.AsType[*AgentTransportError](err); ok {
 		return "servers.errors.agent_unreachable"
 	}
 
-	var httpErr *AgentHTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*AgentHTTPError](err); ok {
 		if httpErr.StatusCode == http.StatusUnauthorized {
 			return "servers.errors.agent_wrong_secret"
 		}
@@ -670,8 +667,7 @@ func healthFromDetail(d agentHealthDetail, serverID, fingerprint string) (Server
 }
 
 func agentTransportReachable(err error) *bool {
-	var httpErr *AgentHTTPError
-	if errors.As(err, &httpErr) {
+	if _, ok := errors.AsType[*AgentHTTPError](err); ok {
 		reachable := true
 		return &reachable
 	}
@@ -682,8 +678,7 @@ func agentTransportReachable(err error) *bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil
 	}
-	var transportErr *AgentTransportError
-	if errors.As(err, &transportErr) {
+	if _, ok := errors.AsType[*AgentTransportError](err); ok {
 		reachable := false
 		return &reachable
 	}
@@ -917,8 +912,7 @@ func (ac *AgentConnector) TestFilter(ctx context.Context, filterName string, log
 		FilterPath string `json:"filterPath"`
 	}
 	if err := ac.post(ctx, "/v1/filters/test", payload, &resp); err != nil {
-		var httpErr *AgentHTTPError
-		if errors.As(err, &httpErr) {
+		if httpErr, ok := errors.AsType[*AgentHTTPError](err); ok {
 			var fail struct {
 				Error      string `json:"error"`
 				Output     string `json:"output"`
@@ -1099,7 +1093,7 @@ func (ac *AgentConnector) CreateJail(ctx context.Context, jailName, content stri
 	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":    jailName,
 		"content": content,
 	}
@@ -1123,7 +1117,7 @@ func (ac *AgentConnector) CreateFilter(ctx context.Context, filterName, content 
 	if err := ac.RequireOperationSupport(ctx); err != nil {
 		return err
 	}
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"name":    filterName,
 		"content": content,
 	}

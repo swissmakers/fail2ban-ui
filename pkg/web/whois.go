@@ -98,8 +98,8 @@ func lookupWhois(ip string) (string, error) {
 // =========================================================================
 
 func extractCountryFromWhois(whoisData string) string {
-	lines := strings.Split(whoisData, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(whoisData, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		lineLower := strings.ToLower(line)
 

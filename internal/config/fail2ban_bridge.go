@@ -24,7 +24,7 @@ import "github.com/swissmakers/fail2ban-ui/internal/fail2ban"
 
 type fail2banRuntime struct{}
 
-func (fail2banRuntime) DebugLog(format string, v ...interface{}) {
+func (fail2banRuntime) DebugLog(format string, v ...any) {
 	DebugLog(format, v...)
 }
 

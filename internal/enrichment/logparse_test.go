@@ -101,7 +101,7 @@ func TestParseLogLinesSSH(t *testing.T) {
 		t.Fatal("ParseLogLines returned nil for a standard sshd failed-password line")
 	}
 
-	want := map[string]interface{}{
+	want := map[string]any{
 		"source.address":   "203.0.113.77",
 		"source.user.name": "root",
 		"process.name":     "sshd",
@@ -197,7 +197,7 @@ func TestParseLogLinesEdgeCases(t *testing.T) {
 		if got == nil {
 			t.Fatal("want both lines parsed, got nil")
 		}
-		entries, ok := got["fail2ban.parsed_logs"].([]map[string]interface{})
+		entries, ok := got["fail2ban.parsed_logs"].([]map[string]any)
 		if !ok {
 			t.Fatalf("fail2ban.parsed_logs = %#v, want a slice of entries", got["fail2ban.parsed_logs"])
 		}

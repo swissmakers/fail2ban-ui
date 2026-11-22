@@ -304,11 +304,9 @@ func (m *Manager) RetryPendingConfig(ctx context.Context) {
 		if !m.configRetryDue(id) {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = m.SyncServerConfig(ctx, id)
-		}()
+		})
 	}
 	wg.Wait()
 }

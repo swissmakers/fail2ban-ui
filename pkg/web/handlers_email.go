@@ -679,8 +679,8 @@ func formatLogsForEmail(ip, logs string, lang string, isModern bool) string {
 	if isModern {
 		var b strings.Builder
 		b.WriteString(`<div class="email-log-stack">`)
-		lines := strings.Split(logs, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(logs, "\n")
+		for line := range lines {
 			trimmed := strings.TrimRight(line, "\r")
 			if trimmed == "" {
 				continue

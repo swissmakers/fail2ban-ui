@@ -276,7 +276,7 @@ func (sc *SSHConnector) ensureAction(ctx context.Context) error {
 
 // Returns the value after marker on the first matching line, or "".
 func extractMarkerValue(output, marker string) string {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		line = strings.TrimSpace(line)
 		if rest, ok := strings.CutPrefix(line, marker); ok {
 			return strings.TrimSpace(rest)
@@ -327,7 +327,7 @@ func splitBannedSummary(out string) (bannedSummary, error) {
 	mode := inBanned
 	complete := false
 
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if mode == inJailLocal || mode == inAction {
 			if content, marker, ok := cutTrailingMarker(line); ok {
 				if mode == inJailLocal {

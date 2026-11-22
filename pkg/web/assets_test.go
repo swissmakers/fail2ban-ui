@@ -19,6 +19,7 @@ package web
 import (
 	"bytes"
 	"html/template"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -33,13 +34,7 @@ func TestEmbeddedTemplatesIndexName(t *testing.T) {
 	for _, tp := range tmpl.Templates() {
 		names = append(names, tp.Name())
 	}
-	ok := false
-	for _, n := range names {
-		if n == "index.html" {
-			ok = true
-			break
-		}
-	}
+	ok := slices.Contains(names, "index.html")
 	if !ok {
 		t.Fatalf("template index.html not found; templates: %v", names)
 	}

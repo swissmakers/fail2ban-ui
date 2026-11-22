@@ -72,8 +72,7 @@ func (e *HostKeyMismatchError) Error() string {
 }
 
 func SSHErrorMessageKey(err error) string {
-	var hk *SSHHostKeyError
-	if errors.As(err, &hk) {
+	if _, ok := errors.AsType[*SSHHostKeyError](err); ok {
 		return "servers.errors.host_key_changed"
 	}
 	return ""
@@ -220,8 +219,7 @@ var hostKeyTypeAlgorithms = [][]string{
 func scanApprovedHostKey(ctx context.Context, host string, port int, approvedFP string) (key ssh.PublicKey, presented string, err error) {
 	for _, algorithms := range hostKeyTypeAlgorithms {
 		k, scanErr := scanHostKey(ctx, host, port, algorithms)
-		var noSuchType *ssh.AlgorithmNegotiationError
-		if errors.As(scanErr, &noSuchType) {
+		if _, ok := errors.AsType[*ssh.AlgorithmNegotiationError](scanErr); ok {
 			err = scanErr
 			continue
 		}

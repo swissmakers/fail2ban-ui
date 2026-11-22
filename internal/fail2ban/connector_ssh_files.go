@@ -59,7 +59,7 @@ func parseRemoteFileDump(out string) []remoteFile {
 		current = nil
 		content.Reset()
 	}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		trimmed := strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(trimmed, batchFileBegin):
@@ -108,7 +108,7 @@ func (sc *SSHConnector) listRemoteFiles(ctx context.Context, directory, pattern 
 	}
 
 	var files []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || line == "." || strings.HasPrefix(line, "./") {
 			continue
@@ -165,7 +165,7 @@ func buildRemoteWriteScript(filePath, content string) (string, error) {
 
 func buildRemoteWriteScriptMode(filePath, content string, private bool) (string, error) {
 	quoted := shellQuote(filePath)
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if strings.TrimSpace(line) == remoteWriteDelimiter {
 			return "", fmt.Errorf("content contains the heredoc delimiter %q", remoteWriteDelimiter)
 		}

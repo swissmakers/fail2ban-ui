@@ -104,7 +104,7 @@ func checkWSOrigin(r *http.Request) bool {
 
 // Broadcasts the console log message to all connected admin clients.
 func (h *Hub) BroadcastConsoleLog(message string) {
-	logMsg := map[string]interface{}{
+	logMsg := map[string]any{
 		"type":    "console_log",
 		"message": message,
 		"time":    time.Now().UTC().Format(time.RFC3339),
@@ -124,7 +124,7 @@ func (h *Hub) BroadcastConsoleLog(message string) {
 
 // Pushes a transient toast notification to all connected clients.
 func (h *Hub) BroadcastToast(level, message string) {
-	toastMsg := map[string]interface{}{
+	toastMsg := map[string]any{
 		"type":    "toast",
 		"level":   level,
 		"message": message,
@@ -242,7 +242,7 @@ func (h *Hub) deliver(message []byte) {
 }
 
 func (h *Hub) sendHeartbeat() {
-	message := map[string]interface{}{
+	message := map[string]any{
 		"type":   "heartbeat",
 		"time":   time.Now().UTC().Unix(),
 		"status": "healthy",
@@ -270,7 +270,7 @@ func (h *Hub) sendHeartbeat() {
 // =========================================================================
 
 func (h *Hub) broadcastEvent(msgType string, event storage.BanEventRecord) {
-	message := map[string]interface{}{
+	message := map[string]any{
 		"type": msgType,
 		"data": event,
 	}
@@ -349,7 +349,7 @@ func (c *Client) writePump() {
 			w.Write(message)
 
 			n := len(c.send)
-			for i := 0; i < n; i++ {
+			for range n {
 				w.Write([]byte{'\n'})
 				w.Write(<-c.send)
 			}

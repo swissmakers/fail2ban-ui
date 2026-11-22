@@ -98,8 +98,7 @@ func resolveServerForNotification(serverID, hostname string) (config.Fail2banSer
 
 func buildErrorResponse(err error, fallbackKey string) gin.H {
 	resp := gin.H{"error": err.Error()}
-	var keyed keyedError
-	if errors.As(err, &keyed) {
+	if keyed, ok := errors.AsType[keyedError](err); ok {
 		resp["messageKey"] = keyed.key
 		return resp
 	}

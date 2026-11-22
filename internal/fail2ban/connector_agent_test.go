@@ -34,10 +34,10 @@ import (
 
 type testProvider struct{}
 
-func (testProvider) DebugLog(format string, v ...interface{}) {}
-func (testProvider) CallbackURL() string                      { return "http://127.0.0.1:8080" }
-func (testProvider) CallbackSecret() string                   { return "test-secret" }
-func (testProvider) ServerPort() int                          { return 8080 }
+func (testProvider) DebugLog(format string, v ...any) {}
+func (testProvider) CallbackURL() string              { return "http://127.0.0.1:8080" }
+func (testProvider) CallbackSecret() string           { return "test-secret" }
+func (testProvider) ServerPort() int                  { return 8080 }
 func (testProvider) BuildFail2banActionConfig(callbackURL, serverID, secret string) (string, error) {
 	return fmt.Sprintf("[Definition]\nactionban = curl -X POST %s/api/ban -H 'X-Callback-Secret: %s' --data 'serverId=%s'\n",
 		callbackURL, secret, serverID), nil
@@ -156,7 +156,7 @@ func TestAgentConnectorGetJailsParsesResponse(t *testing.T) {
 
 func TestAgentConnectorGetAllJailsLargeResponse(t *testing.T) {
 	var jailObjs []map[string]any
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		jailObjs = append(jailObjs, map[string]any{
 			"jailName":      fmt.Sprintf("jail-%d", i),
 			"totalBanned":   0,

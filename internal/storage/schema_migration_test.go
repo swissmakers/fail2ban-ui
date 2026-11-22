@@ -207,7 +207,7 @@ func TestEnsureSchemaIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := ensureSchema(ctx); err != nil {
 			t.Fatalf("repeat ensureSchema: %v", err)
 		}

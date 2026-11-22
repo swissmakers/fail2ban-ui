@@ -782,7 +782,7 @@ func TestListBanEventsFilteredOffset(t *testing.T) {
 	initTestStorage(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ev := BanEventRecord{ServerID: "srv-1", ServerName: "s1", Jail: "sshd", IP: fmt.Sprintf("192.0.2.%d", i+1), EventType: "ban", OccurredAt: now.Add(-time.Duration(i) * time.Minute)}
 		if _, _, err := RecordBanEventOnce(ctx, ev); err != nil {
 			t.Fatalf("RecordBanEventOnce: %v", err)

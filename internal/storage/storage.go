@@ -103,7 +103,7 @@ func addOccurredAtSinceFilter(query *string, args *[]any, since time.Time) {
 // Turns user input into an FTS5 MATCH expression. -> each whitespace token becomes a quoted prefix phrase ("203.0.113"* matches 203.0.113.45), joined with implicit AND
 func buildFTSMatch(search string) string {
 	var parts []string
-	for _, token := range strings.Fields(search) {
+	for token := range strings.FieldsSeq(search) {
 		token = strings.ReplaceAll(token, `"`, `""`)
 		parts = append(parts, `"`+token+`"*`)
 	}
@@ -121,7 +121,7 @@ func addSearchFilter(query *string, args *[]any, search string) {
 	}
 	*query += " AND (ip LIKE ? OR jail LIKE ? OR server_name LIKE ? OR COALESCE(hostname,'') LIKE ? OR COALESCE(country,'') LIKE ?)"
 	pattern := "%" + search + "%"
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		*args = append(*args, pattern)
 	}
 }

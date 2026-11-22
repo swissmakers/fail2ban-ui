@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -799,7 +800,7 @@ func initializeFromJailFile() error {
 	}
 	if val, ok := settings["ignoreip"]; ok {
 		currentSettings.IgnoreIPs = []string{}
-		for _, entry := range strings.Fields(val) {
+		for entry := range strings.FieldsSeq(val) {
 			if entry != ignoreIPExtraRef {
 				currentSettings.IgnoreIPs = append(currentSettings.IgnoreIPs, entry)
 			}
@@ -1516,9 +1517,7 @@ func cloneSettings(s AppSettings) AppSettings {
 	s.IgnoreIPs = append([]string(nil), s.IgnoreIPs...)
 	s.AlertCountries = append([]string(nil), s.AlertCountries...)
 	headers := make(map[string]string, len(s.Webhook.Headers))
-	for key, value := range s.Webhook.Headers {
-		headers[key] = value
-	}
+	maps.Copy(headers, s.Webhook.Headers)
 	s.Webhook.Headers = headers
 	return s
 }

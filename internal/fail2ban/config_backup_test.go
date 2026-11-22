@@ -95,7 +95,7 @@ func TestConfigurationBackupRestoresExactFilesAndModes(t *testing.T) {
 			if err := run("op1", "backup"); err != nil {
 				t.Fatal(err)
 			} // Retrying must not replace the original.
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				if err := run("op1", "restore"); err != nil {
 					t.Fatal(err)
 				}

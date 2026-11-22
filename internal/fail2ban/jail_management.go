@@ -140,7 +140,7 @@ func GetAllJails(configPath string) ([]JailInfo, error) {
 // Returns the jail section names of a jail file body, in order.
 func jailSectionNames(content string) []string {
 	var names []string
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if name, ok := sectionHeaderName(line); ok && name != "" && !isReservedSection(name) {
 			names = append(names, name)
 		}
@@ -212,7 +212,7 @@ func jailFilesDefining(jailName, jailDPath string) ([]string, error) {
 			debugf("Skipping unreadable jail file %s: %v", path, err)
 			continue
 		}
-		for _, line := range strings.Split(string(content), "\n") {
+		for line := range strings.SplitSeq(string(content), "\n") {
 			if strings.TrimSpace(line) == sectionHeader {
 				files = append(files, path)
 				break
@@ -236,7 +236,7 @@ func setJailEnabledInFile(jailFilePath, jailName string, enabled bool) error {
 }
 
 func containsJailSection(content, jailName string) bool {
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if strings.TrimSpace(line) == "["+jailName+"]" {
 			return true
 		}
@@ -651,14 +651,15 @@ func MigrateJailsFromJailLocal(configPath string) error {
 		enabledSet := strings.Contains(jailContent, "enabled") || strings.Contains(jailContent, "Enabled")
 		if !enabledSet {
 			lines := strings.Split(jailContent, "\n")
-			modifiedContent := ""
+			var modifiedContent strings.Builder
 			for i, line := range lines {
-				modifiedContent += line + "\n"
+				modifiedContent.WriteString(line)
+				modifiedContent.WriteByte('\n')
 				if i == 0 && strings.HasPrefix(strings.TrimSpace(line), "[") && strings.HasSuffix(strings.TrimSpace(line), "]") {
-					modifiedContent += "enabled = false\n"
+					modifiedContent.WriteString("enabled = false\n")
 				}
 			}
-			jailContent = modifiedContent
+			jailContent = modifiedContent.String()
 		} else {
 			jailContent = enabledTruePattern.ReplaceAllString(jailContent, "enabled = false")
 		}
@@ -688,8 +689,8 @@ func MigrateJailsFromJailLocal(configPath string) error {
 					inCommentedJail = true
 					commentedJailContent.Reset()
 					commentedJailName = strings.Trim(trimmed, "[]")
-					if strings.HasPrefix(commentedJailName, "#") {
-						commentedJailName = strings.TrimSpace(strings.TrimPrefix(commentedJailName, "#"))
+					if after, ok := strings.CutPrefix(commentedJailName, "#"); ok {
+						commentedJailName = strings.TrimSpace(after)
 					}
 					commentedJailContent.WriteString(line)
 					commentedJailContent.WriteString("\n")
@@ -753,8 +754,8 @@ func parseJailSectionsUncommented(content string) (map[string]string, string, er
 
 			if isCommented {
 				sectionName := strings.Trim(trimmed, "[]")
-				if strings.HasPrefix(sectionName, "#") {
-					sectionName = strings.TrimSpace(strings.TrimPrefix(sectionName, "#"))
+				if after, ok := strings.CutPrefix(sectionName, "#"); ok {
+					sectionName = strings.TrimSpace(after)
 				}
 				currentSection = sectionName
 				sectionIsCommented = true

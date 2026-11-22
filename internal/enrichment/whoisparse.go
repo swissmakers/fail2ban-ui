@@ -68,15 +68,15 @@ var kvLineRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*):\s+(.+)$`)
 // Parses WHOIS text into structured fields.
 // Handles ARIN, RIPE, APNIC, LACNIC and AfriNIC formats.
 // Fields that cannot be extracted are omitted.
-func ParseWhois(whois string) map[string]interface{} {
+func ParseWhois(whois string) map[string]any {
 	if strings.TrimSpace(whois) == "" {
 		return nil
 	}
 
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 	seenKeys := make(map[string]bool)
 
-	for _, line := range strings.Split(whois, "\n") {
+	for line := range strings.SplitSeq(whois, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
