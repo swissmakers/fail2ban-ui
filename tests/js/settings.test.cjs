@@ -116,3 +116,38 @@ test('a rejected settings update shows its error and does not report success', a
   assert.equal(h.serverRefreshes(), 0);
   assert.deepEqual(h.loading, [true, false]);
 });
+
+test('a stored ban action the list does not offer asks before it is replaced', async () => {
+  const h = harness({});
+  const stored = { banaction: 'nftables-multiport[blocktype=drop]', banactionAllports: '', chain: 'f2b-chain' };
+  vm.runInContext('loadedJailActionSettings = jailActionSettings(' + JSON.stringify(stored) + ')', h.context);
+  await h.context.saveSettings({ preventDefault() {} });
+  assert.equal(h.confirms.length, 1, 'blank dropdowns would replace the stored action and chain');
+});
+
+test('blank ban action fields equal the loaded defaults and do not ask', async () => {
+  const h = withLoadedActions(harness({}), { banaction: '', banactionAllports: '', chain: '' });
+  await h.context.saveSettings({ preventDefault() {} });
+  assert.equal(h.confirms.length, 0);
+  assert.equal(h.requests.length, 1);
+});
+
+test('empty ban action settings mean the defaults', () => {
+  const h = harness({});
+  const defaults = h.context.jailActionSettings({});
+  assert.deepEqual({ ...defaults }, loadedActions);
+  assert.equal(h.context.jailActionSettingsChanged(defaults, h.context.jailActionSettings({ banaction: '', chain: 'INPUT' })), false);
+});
+
+test('a stored value missing from a dropdown stays selectable', () => {
+  const h = harness({});
+  const select = h.context.document.getElementById('banaction');
+  select.options = [{ value: 'nftables-multiport' }];
+  select.appendChild = option => select.options.push(option);
+  h.context.document.createElement = () => ({});
+  h.context.setSelectValue('banaction', 'nftables-multiport[blocktype=drop]');
+  assert.deepEqual(select.options.map(o => o.value), ['nftables-multiport', 'nftables-multiport[blocktype=drop]']);
+  assert.equal(select.value, 'nftables-multiport[blocktype=drop]');
+  h.context.setSelectValue('banaction', 'nftables-multiport');
+  assert.equal(select.options.length, 2, 'a listed value must not be added again');
+});

@@ -146,13 +146,13 @@ function loadSettings() {
       document.getElementById('bantimeOveralljails').checked = data.bantimeOveralljails || false;
       document.getElementById('findTime').value = data.findtime || '';
       document.getElementById('maxRetry').value = data.maxretry || '';
-      document.getElementById('defaultChain').value = data.chain || 'INPUT';
+      setSelectValue('defaultChain', data.chain || 'INPUT');
       const ignoreIPs = data.ignoreips || [];
       renderIgnoreIPsTags(ignoreIPs);
       
-      document.getElementById('banaction').value = data.banaction || 'nftables-multiport';
-      document.getElementById('banactionAllports').value = data.banactionAllports || 'nftables-allports';
-      loadedJailActionSettings = readJailActionSettings();
+      setSelectValue('banaction', data.banaction || 'nftables-multiport');
+      setSelectValue('banactionAllports', data.banactionAllports || 'nftables-allports');
+      loadedJailActionSettings = jailActionSettings(data);
 
       applyAdvancedActionsSettings(data.advancedActions || {});
       loadPermanentBlockLog();
@@ -167,12 +167,33 @@ function loadSettings() {
 //  Save Settings
 // =========================================================================
 
-function readJailActionSettings() {
+// Keeps a stored value selectable that the list does not offer, so saving another setting does not reset it.
+function setSelectValue(id, value) {
+  const select = document.getElementById(id);
+  if (select.options && !Array.from(select.options).some(option => option.value === value)) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  }
+  select.value = value;
+}
+
+// An empty value means the default, as on the server.
+function jailActionSettings(source) {
   return {
+    banaction: source.banaction || 'nftables-multiport',
+    banactionAllports: source.banactionAllports || 'nftables-allports',
+    chain: source.chain || 'INPUT'
+  };
+}
+
+function readJailActionSettings() {
+  return jailActionSettings({
     banaction: document.getElementById('banaction').value,
     banactionAllports: document.getElementById('banactionAllports').value,
-    chain: document.getElementById('defaultChain').value || 'INPUT'
-  };
+    chain: document.getElementById('defaultChain').value
+  });
 }
 
 // changed ban action or chain makes the next sync restart every jail.
