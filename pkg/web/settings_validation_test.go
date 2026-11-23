@@ -187,3 +187,69 @@ func TestNormalizeSettingsUniFiAllowsIncompleteSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeSettingsPfSenseNexus(t *testing.T) {
+	t.Run("valid configuration is normalized", func(t *testing.T) {
+		input := config.PfSenseNexusIntegrationSettings{
+			BaseURL: " https://pfsense.lan:8443 ", Username: " svc-fail2ban ",
+			Password: "secret", Alias: " banned ",
+		}
+		want := config.PfSenseNexusIntegrationSettings{
+			BaseURL: "https://pfsense.lan:8443", Username: "svc-fail2ban",
+			Password: "secret", Alias: "banned",
+		}
+		req := config.AppSettings{AdvancedActions: config.AdvancedActionsConfig{
+			Integration: "pfsense-nexus", Enabled: true, PfSenseNexus: input,
+		}}
+		if err := normalizeAndValidateSettingsRequest(&req); err != nil {
+			t.Fatalf("valid Nexus configuration should be accepted: %v", err)
+		}
+		if got := req.AdvancedActions.PfSenseNexus; got != want {
+			t.Errorf("normalized Nexus settings = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("rejects invalid fields", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			field  string
+			mutate func(*config.PfSenseNexusIntegrationSettings)
+		}{
+			{"unsupported scheme", "pfSense Nexus base URL", func(s *config.PfSenseNexusIntegrationSettings) { s.BaseURL = "file:///etc/passwd" }},
+			{"missing host", "pfSense Nexus base URL", func(s *config.PfSenseNexusIntegrationSettings) { s.BaseURL = "https://" }},
+			{"alias traversal", "pfSense Nexus alias", func(s *config.PfSenseNexusIntegrationSettings) { s.Alias = "../banned" }},
+			{"alias control characters", "pfSense Nexus alias", func(s *config.PfSenseNexusIntegrationSettings) { s.Alias = "banned\nx" }},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				input := config.PfSenseNexusIntegrationSettings{
+					BaseURL: "https://pfsense.lan:8443", Username: "u", Password: "p", Alias: "banned",
+				}
+				tt.mutate(&input)
+				req := config.AppSettings{AdvancedActions: config.AdvancedActionsConfig{
+					Integration: "pfsense-nexus", Enabled: true, PfSenseNexus: input,
+				}}
+				err := normalizeAndValidateSettingsRequest(&req)
+				if err == nil || !strings.Contains(err.Error(), tt.field) {
+					t.Fatalf("expected validation error for %s, got %v", tt.field, err)
+				}
+			})
+		}
+	})
+
+	t.Run("incomplete settings remain saveable", func(t *testing.T) {
+		for _, input := range []config.PfSenseNexusIntegrationSettings{
+			{},
+			{BaseURL: " ", Username: " ", Alias: " "},
+			{BaseURL: "https://pfsense.lan:8443"},
+			{Username: "u", Password: "p", Alias: "banned"},
+		} {
+			req := config.AppSettings{AdvancedActions: config.AdvancedActionsConfig{
+				Integration: "pfsense-nexus", Enabled: true, PfSenseNexus: input,
+			}}
+			if err := normalizeAndValidateSettingsRequest(&req); err != nil {
+				t.Errorf("incomplete configuration %+v should remain saveable: %v", input, err)
+			}
+		}
+	})
+}

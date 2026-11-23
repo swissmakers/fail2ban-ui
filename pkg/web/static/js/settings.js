@@ -654,6 +654,18 @@ function applyAdvancedActionsSettings(cfg) {
   const pfTLS = document.getElementById('pfSenseSkipTLS');
   if (pfTLS) pfTLS.checked = !!pf.skipTLSVerify;
 
+  const pfn = cfg.pfSenseNexus || {};
+  const pfnURL = document.getElementById('pfSenseNexusBaseURL');
+  if (pfnURL) pfnURL.value = pfn.baseUrl || '';
+  const pfnUsername = document.getElementById('pfSenseNexusUsername');
+  if (pfnUsername) pfnUsername.value = pfn.username || '';
+  const pfnPassword = document.getElementById('pfSenseNexusPassword');
+  if (pfnPassword) pfnPassword.value = pfn.password || '';
+  const pfnAlias = document.getElementById('pfSenseNexusAlias');
+  if (pfnAlias) pfnAlias.value = pfn.alias || '';
+  const pfnTLS = document.getElementById('pfSenseNexusSkipTLS');
+  if (pfnTLS) pfnTLS.checked = !!pfn.skipTLSVerify;
+
   const opn = cfg.opnsense || {};
   const opnURL = document.getElementById('opnsenseBaseURL');
   if (opnURL) opnURL.value = opn.baseUrl || '';
@@ -701,6 +713,13 @@ function collectAdvancedActionsSettings() {
       alias: document.getElementById('pfSenseAlias').value.trim(),
       skipTLSVerify: document.getElementById('pfSenseSkipTLS').checked,
     },
+    pfSenseNexus: {
+      baseUrl: document.getElementById('pfSenseNexusBaseURL').value.trim(),
+      username: document.getElementById('pfSenseNexusUsername').value.trim(),
+      password: document.getElementById('pfSenseNexusPassword').value,
+      alias: document.getElementById('pfSenseNexusAlias').value.trim(),
+      skipTLSVerify: document.getElementById('pfSenseNexusSkipTLS').checked,
+    },
     opnsense: {
       baseUrl: document.getElementById('opnsenseBaseURL').value.trim(),
       apiKey: document.getElementById('opnsenseKey').value.trim(),
@@ -724,6 +743,7 @@ function updateAdvancedIntegrationFields() {
   const selected = document.getElementById('advancedIntegrationSelect').value;
   document.getElementById('advancedMikrotikFields').classList.toggle('hidden', selected !== 'mikrotik');
   document.getElementById('advancedPfSenseFields').classList.toggle('hidden', selected !== 'pfsense');
+  document.getElementById('advancedPfSenseNexusFields').classList.toggle('hidden', selected !== 'pfsense-nexus');
   document.getElementById('advancedOPNsenseFields').classList.toggle('hidden', selected !== 'opnsense');
   document.getElementById('advancedUniFiFields').classList.toggle('hidden', selected !== 'unifi');
 }

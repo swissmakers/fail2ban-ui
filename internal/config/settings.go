@@ -101,10 +101,11 @@ type AdvancedActionsConfig struct {
 	Enabled     bool                        `json:"enabled"`
 	Threshold   int                         `json:"threshold"`
 	Integration string                      `json:"integration"`
-	Mikrotik    MikrotikIntegrationSettings `json:"mikrotik"`
-	PfSense     PfSenseIntegrationSettings  `json:"pfSense"`
-	OPNsense    OPNsenseIntegrationSettings `json:"opnsense"`
-	UniFi       UniFiIntegrationSettings    `json:"unifi"`
+	Mikrotik       MikrotikIntegrationSettings       `json:"mikrotik"`
+	PfSense        PfSenseIntegrationSettings        `json:"pfSense"`
+	PfSenseNexus   PfSenseNexusIntegrationSettings   `json:"pfSenseNexus"`
+	OPNsense       OPNsenseIntegrationSettings       `json:"opnsense"`
+	UniFi          UniFiIntegrationSettings          `json:"unifi"`
 }
 
 type MikrotikIntegrationSettings struct {
@@ -120,6 +121,17 @@ type MikrotikIntegrationSettings struct {
 type PfSenseIntegrationSettings struct {
 	BaseURL       string `json:"baseUrl"`
 	APIToken      string `json:"apiToken"`
+	Alias         string `json:"alias"`
+	SkipTLSVerify bool   `json:"skipTLSVerify"`
+}
+
+// PfSenseNexusIntegrationSettings configures the official Netgate Nexus API
+// (pfSense Plus 25.07+). Authentication uses a pfSense user account; the API
+// only issues short-lived JWT session tokens, so no static API key exists.
+type PfSenseNexusIntegrationSettings struct {
+	BaseURL       string `json:"baseUrl"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
 	Alias         string `json:"alias"`
 	SkipTLSVerify bool   `json:"skipTLSVerify"`
 }
